@@ -1,0 +1,240 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-canvas: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f1f5f9;
+  --color-surface-active: #e2e8f0;
+  --color-border: #e2e8f0;
+  --color-border-subtle: #f1f5f9;
+  --color-text-main: #0f172a;
+  --color-text-muted: #64748b;
+  --color-text-faint: #94a3b8;
+  --color-primary: #c0392b;
+  --color-primary-hover: #a93226;
+  --color-accent-navy: #2c3e50;
+  --color-accent-green: #27ae60;
+  --color-accent-amber: #f59e0b;
+  --color-accent-blue: #0284c7;
+  --card-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+  --card-shadow-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.08);
+}
+
+.dark {
+  --color-canvas: #090d16;
+  --color-surface: #0f172a;
+  --color-surface-hover: #1e293b;
+  --color-surface-active: #334155;
+  --color-border: #1e293b;
+  --color-border-subtle: #0f172a;
+  --color-text-main: #f8fafc;
+  --color-text-muted: #94a3b8;
+  --color-text-faint: #64748b;
+  --color-primary: #e74c3c;
+  --color-primary-hover: #c0392b;
+  --color-accent-navy: #1e293b;
+  --color-accent-green: #10b981;
+  --color-accent-amber: #fbbf24;
+  --color-accent-blue: #38bdf8;
+  --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+  --card-shadow-hover: 0 12px 20px -4px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+}
+
+@layer base {
+  * {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    box-sizing: border-box;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-text-main);
+    overflow: hidden;
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+/* =========================================================
+   GLOBAL REUSABLE THEME UTILITY CLASSES FOR FUTURE FEATURES
+   (Her yeni bileşen bu sınıfları doğrudan kullanabilir)
+   ========================================================= */
+@layer components {
+  /* Dynamic Backgrounds */
+  .theme-canvas {
+    background-color: var(--color-canvas);
+    color: var(--color-text-main);
+  }
+
+  .theme-surface {
+    background-color: var(--color-surface);
+    color: var(--color-text-main);
+    border-color: var(--color-border);
+  }
+
+  /* Universal Responsive Card */
+  .theme-card {
+    background-color: var(--color-surface);
+    color: var(--color-text-main);
+    border: 1px solid var(--color-border);
+    border-radius: 1rem;
+    box-shadow: var(--card-shadow);
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .theme-card:hover {
+    box-shadow: var(--card-shadow-hover);
+    border-color: var(--color-border);
+  }
+
+  /* Universal Input & Select Fields */
+  .theme-input {
+    background-color: var(--color-surface-hover);
+    color: var(--color-text-main);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    padding: 0.625rem 0.875rem;
+    font-size: 0.8125rem;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .theme-input:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(192, 57, 43, 0.15);
+  }
+  .theme-input::placeholder {
+    color: var(--color-text-faint);
+  }
+
+  /* Universal Theme Buttons */
+  .theme-btn-primary {
+    background-color: var(--color-primary);
+    color: #ffffff;
+    font-weight: 800;
+    border-radius: 0.75rem;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.8125rem;
+    transition: background-color 0.15s ease, transform 0.1s ease;
+    box-shadow: 0 2px 4px rgba(192, 57, 43, 0.2);
+  }
+  .theme-btn-primary:hover {
+    background-color: var(--color-primary-hover);
+  }
+  .theme-btn-primary:active {
+    transform: scale(0.97);
+  }
+
+  .theme-btn-secondary {
+    background-color: var(--color-surface-hover);
+    color: var(--color-text-main);
+    border: 1px solid var(--color-border);
+    font-weight: 700;
+    border-radius: 0.75rem;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.8125rem;
+    transition: all 0.15s ease;
+  }
+  .theme-btn-secondary:hover {
+    background-color: var(--color-surface-active);
+  }
+
+  /* Universal Tables */
+  .theme-table {
+    width: 100%;
+    text-align: left;
+    font-size: 0.75rem;
+    border-collapse: collapse;
+  }
+  .theme-table th {
+    background-color: var(--color-surface-hover);
+    color: var(--color-text-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.6875rem;
+    letter-spacing: 0.05em;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .theme-table td {
+    padding: 0.875rem 1rem;
+    color: var(--color-text-main);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .theme-table tr:hover td {
+    background-color: var(--color-surface-hover);
+  }
+
+  /* Modal Overlays & Containers */
+  .theme-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 50;
+  }
+  .theme-modal-container {
+    background-color: var(--color-surface);
+    color: var(--color-text-main);
+    border: 1px solid var(--color-border);
+    border-radius: 1.5rem;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+  }
+}
+
+/* Custom Touch Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-faint);
+}
+
+/* POS Touch Micro-Interactions */
+.pos-touch-card {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, box-shadow;
+}
+.pos-touch-card:active {
+  transform: scale(0.97);
+  opacity: 0.92;
+}
+
+/* Glow effects for active table states */
+.table-glow-empty {
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.5);
+}
+.table-glow-occupied {
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.6);
+}
+.table-glow-bill {
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.3);
+  border-color: rgba(59, 130, 246, 0.7);
+  animation: pulse 1.5s infinite;
+}
+.table-glow-reserved {
+  box-shadow: 0 0 12px rgba(234, 179, 8, 0.25);
+  border-color: rgba(234, 179, 8, 0.6);
+}
+.table-glow-call {
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.45);
+  border-color: rgba(168, 85, 247, 0.8);
+  animation: bounce-subtle 1s infinite;
+}
+
+/* ESC/POS Thermal Receipt Font */
+.font-thermal {
+  font-family: 'JetBrains Mono', 'Courier New', Courier, monospace;
+}
