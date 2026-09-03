@@ -1,39 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  X, Banknote, CreditCard, Sparkles, Users, 
-  Receipt, ArrowRight, CheckCircle2, RotateCcw, DollarSign, Plus 
+  Save, Printer, X, History, ArrowLeft, Check, Percent, Tag, 
+  Users, ChevronRight, AlertCircle, CheckCircle2 
 } from 'lucide-react';
 import { Table, Order, PaymentItem, PaymentMethodConfig } from '../../types';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
-
-const getMethodColor = (id: string) => {
-  switch (id) {
-    case 'credit_card':
-      return 'from-blue-600 to-indigo-600';
-    case 'cash':
-      return 'from-emerald-600 to-teal-600';
-    case 'sodexo':
-      return 'from-orange-600 to-amber-600';
-    case 'multinet':
-      return 'from-purple-600 to-pink-600';
-    case 'ticket':
-      return 'from-red-600 to-rose-600';
-    case 'open_account':
-      return 'from-slate-700 to-zinc-800';
-    default:
-      return 'from-indigo-600 to-purple-600';
-  }
-};
-
-const defaultPaymentMethodsFallback: PaymentMethodConfig[] = [
-  { id: 'credit_card', name: 'Kredi Kartı', icon: '💳', desc: 'Fiziki POS ve temassız çekim', is_active: true },
-  { id: 'cash', name: 'Nakit Para', icon: '💵', desc: 'Kasada anlık nakit tahsilat', is_active: true },
-  { id: 'sodexo', name: 'Sodexo', icon: '🍱', desc: 'Yemek kartı entegrasyonu', is_active: true },
-  { id: 'multinet', name: 'Multinet', icon: '💳', desc: 'Multinet kart ve karekod', is_active: true },
-  { id: 'ticket', name: 'Ticket Edenred', icon: '🎫', desc: 'Edenred yemek kartı', is_active: true },
-  { id: 'open_account', name: 'Açık Hesap / Veresiye', icon: '📋', desc: 'Cari müşteri borçlandırma', is_active: true }
-];
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -44,6 +16,61 @@ interface CheckoutModalProps {
   onPaymentCompleted: () => void;
   onViewFiscal: (orderId: number) => void;
 }
+
+// 👆 Hand touch pointer icon matching reference image
+const TouchHandIcon = ({ active }: { active?: boolean }) => (
+  <svg 
+    className={`w-5 h-5 transition-colors ${active ? 'text-red-600' : 'text-gray-700'}`} 
+    viewBox="0 0 24 24" 
+    fill="currentColor"
+  >
+    {/* Touch wave / ripple */}
+    <path 
+      d="M13.8 2.2a4.5 4.5 0 0 0-4.5 4.5v3.8c-.3-.2-.7-.4-1.1-.5a2.5 2.5 0 0 0-2.9 2.5v4.5a8 8 0 0 0 8 8h3.2a7 7 0 0 0 7-7v-4.5a2.5 2.5 0 0 0-2.5-2.5c-.4 0-.8.1-1.1.3v-1.6a2.5 2.5 0 0 0-2.5-2.5c-.3 0-.6.1-.9.2V6.7a2.5 2.5 0 0 0-2.7-4.5z" 
+      opacity="0.2"
+    />
+    <path d="M12.5 3.5a1.5 1.5 0 0 1 1.5 1.5v6.5h1V8a1.5 1.5 0 0 1 3 0v3.5h1V9.5a1.5 1.5 0 0 1 3 0v4.5a6 6 0 0 1-6 6h-2.8a7 7 0 0 1-7-7v-3.5a1.5 1.5 0 0 1 2.8-.7l1.5 2.2V5a1.5 1.5 0 0 1 2-1.5z"/>
+  </svg>
+);
+
+// 💵 Realistic green banknotes stack icon
+const CashStackIcon = () => (
+  <div className="w-16 h-12 flex items-center justify-center">
+    <svg viewBox="0 0 64 48" className="w-full h-full drop-shadow-sm">
+      {/* Bottom bill */}
+      <path d="M6 34 L32 20 L58 34 L32 46 Z" fill="#2e7d32" stroke="#1b5e20" strokeWidth="1" />
+      {/* Middle bill */}
+      <path d="M6 28 L32 14 L58 28 L32 40 Z" fill="#388e3c" stroke="#1b5e20" strokeWidth="1" />
+      {/* Top bill */}
+      <path d="M6 22 L32 8 L58 22 L32 34 Z" fill="#4caf50" stroke="#2e7d32" strokeWidth="1" />
+      <ellipse cx="32" cy="21" rx="7" ry="4" fill="#81c784" stroke="#2e7d32" strokeWidth="1" />
+      {/* White band */}
+      <path d="M26 12 L38 18 L38 32 L26 26 Z" fill="#f8f9fa" opacity="0.95" stroke="#cfd8dc" strokeWidth="0.8" />
+    </svg>
+  </div>
+);
+
+// 💳 Visa & Mastercard logos icon
+const CreditCardLogosIcon = () => (
+  <div className="w-16 h-12 flex flex-col items-center justify-center gap-1">
+    <div className="flex items-center -space-x-2">
+      <div className="w-5 h-5 rounded-full bg-[#eb001b]" />
+      <div className="w-5 h-5 rounded-full bg-[#f79e1b] opacity-90" />
+    </div>
+    <span className="text-[11px] font-black tracking-widest text-[#1a1f71] italic leading-none font-sans">
+      VISA
+    </span>
+  </div>
+);
+
+// 🤝 Blue circle with handshake icon
+const OpenAccountHandshakeIcon = () => (
+  <div className="w-12 h-12 rounded-full bg-[#2072c4] flex items-center justify-center shadow-sm">
+    <svg className="w-7 h-7 text-white" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M19.5 7.5l-4-4a2.12 2.12 0 0 0-3 0L10 6 7.5 3.5a2.12 2.12 0 0 0-3 0l-1 1a2.12 2.12 0 0 0 0 3L6 10l-2.5 2.5a2.12 2.12 0 0 0 0 3l5 5a2.12 2.12 0 0 0 3 0l6-6a2.12 2.12 0 0 0 0-3L15 9l2.5-2.5a2.12 2.12 0 0 0 2-2zM9 18.5l-4-4L6.5 13l2 2a1 1 0 0 0 1.41 0l4-4 1.5 1.5-6.41 6z"/>
+    </svg>
+  </div>
+);
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   isOpen,
@@ -57,77 +84,45 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Available Active Payment Methods from Settings
-  const [availableMethods, setAvailableMethods] = useState<PaymentMethodConfig[]>(defaultPaymentMethodsFallback);
+  // Active Tab on Right Panel ('methods' | 'tip')
+  const [activeRightTab, setActiveRightTab] = useState<'methods' | 'tip'>('methods');
 
-  // Payment Mode: 'mixed' (Parçalı), 'split_equal' (Eşit Bölme), 'split_item' (Ürün Bazlı)
-  const [mode, setMode] = useState<'mixed' | 'split_equal' | 'split_item'>('mixed');
+  // Entered amount on numeric keypad
+  const [payAmount, setPayAmount] = useState<string>('0.00');
 
-  // Mixed Payment Form
-  const [currentMethod, setCurrentMethod] = useState<string>('credit_card');
-  const [payAmount, setPayAmount] = useState<string>('');
-  const [tipAmount, setTipAmount] = useState<number>(0);
-  const [roundingAmount, setRoundingAmount] = useState<number>(0);
-  const [paymentEntries, setPaymentEntries] = useState<any[]>([]);
-
-  // Split Equal State
-  const [splitPersons, setSplitPersons] = useState<number>(2);
-
-  // Split Itemized State
+  // Selected item IDs for partial payment (Parçalı Öde)
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
+
+  // Item paid amounts tracking (simulated for UI display per item)
+  const [itemPaidMap, setItemPaidMap] = useState<Record<number, number>>({});
+
+  // Modals for 1/n, İndirim, and Tahsilat Geçmişi
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+  const [isDiscountModalOpen, setIsDiscountModalOpen] = useState<boolean>(false);
+  const [isSplitNModalOpen, setIsSplitNModalOpen] = useState<boolean>(false);
+  const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
+  const [discountValue, setDiscountValue] = useState<string>('10');
+  const [splitCount, setSplitCount] = useState<number>(2);
+
+  // Tip state
+  const [tipAmount, setTipAmount] = useState<number>(0);
+
+  // Status message / toast
+  const [statusNotice, setStatusNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && orderId) {
       loadOrderData();
-      loadActivePaymentMethods();
     }
   }, [isOpen, orderId]);
-
-  const loadActivePaymentMethods = async () => {
-    try {
-      const data = await api.getSettings();
-      if (data && data.payment_methods && Array.isArray(data.payment_methods)) {
-        const activeOnly = data.payment_methods.filter((m: PaymentMethodConfig) => m.is_active);
-        if (activeOnly.length > 0) {
-          setAvailableMethods(activeOnly);
-          setCurrentMethod(prev => activeOnly.some((m: PaymentMethodConfig) => m.id === prev) ? prev : activeOnly[0].id);
-        } else {
-          setAvailableMethods(defaultPaymentMethodsFallback);
-        }
-      } else {
-        const cached = localStorage.getItem('boncore_payment_methods');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          const activeOnly = parsed.filter((m: PaymentMethodConfig) => m.is_active);
-          if (activeOnly.length > 0) {
-            setAvailableMethods(activeOnly);
-            setCurrentMethod(prev => activeOnly.some((m: PaymentMethodConfig) => m.id === prev) ? prev : activeOnly[0].id);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to fetch settings for payment methods, using cache:', e);
-      const cached = localStorage.getItem('boncore_payment_methods');
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          const activeOnly = parsed.filter((m: PaymentMethodConfig) => m.is_active);
-          if (activeOnly.length > 0) {
-            setAvailableMethods(activeOnly);
-            setCurrentMethod(prev => activeOnly.some((m: PaymentMethodConfig) => m.id === prev) ? prev : activeOnly[0].id);
-          }
-        } catch (err) {}
-      }
-    }
-  };
 
   const loadOrderData = async () => {
     setLoading(true);
     try {
       const data = await api.getOrder(orderId);
       setOrder(data);
-      setPayAmount(data.remaining_total.toFixed(2));
-      setPaymentEntries([]);
+      setPayAmount(data.remaining_total > 0 ? data.remaining_total.toFixed(2) : '0.00');
+      setSelectedItemIds([]);
     } catch (e) {
       console.warn('Failed to fetch order', e);
     } finally {
@@ -137,448 +132,707 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   if (!isOpen || !order) return null;
 
-  const handleAddPaymentEntry = (method = currentMethod, amount = parseFloat(payAmount)) => {
-    if (isNaN(amount) || amount <= 0) return;
-    sound.beep();
-    const entry = { method, amount, tip: tipAmount };
-    const updated = [...paymentEntries, entry];
-    setPaymentEntries(updated);
+  // Selected items total sum
+  const selectedItemsSum = order.items
+    .filter(it => it.id && selectedItemIds.includes(it.id))
+    .reduce((sum, it) => sum + it.total_price, 0);
 
-    const totalEntered = updated.reduce((sum, p) => sum + p.amount, 0);
-    const newRemaining = Math.max(0, order.remaining_total - totalEntered);
-    setPayAmount(newRemaining > 0 ? newRemaining.toFixed(2) : '');
+  // Toggle item selection for Parçalı Ödeme
+  const handleToggleItem = (itemId?: number) => {
+    if (!itemId) return;
+    sound.beep();
+    setSelectedItemIds(prev => {
+      const isAlreadySelected = prev.includes(itemId);
+      const next = isAlreadySelected ? prev.filter(id => id !== itemId) : [...prev, itemId];
+      
+      // Update payAmount based on selection
+      if (next.length > 0) {
+        const sum = order.items
+          .filter(it => it.id && next.includes(it.id))
+          .reduce((s, it) => s + it.total_price, 0);
+        setPayAmount(sum.toFixed(2));
+      } else {
+        setPayAmount(order.remaining_total.toFixed(2));
+      }
+      return next;
+    });
   };
 
-  const handleSettleFull = async () => {
+  // Numpad key press handler
+  const handleNumpad = (key: string) => {
+    sound.beep();
+    if (key === 'Tüm') {
+      setSelectedItemIds([]);
+      setPayAmount(order.remaining_total.toFixed(2));
+      return;
+    }
+    if (key === '1/n') {
+      setIsSplitNModalOpen(true);
+      return;
+    }
+    if (key === 'İndirim') {
+      setIsDiscountModalOpen(true);
+      return;
+    }
+    if (key === '←') {
+      setPayAmount(prev => {
+        if (prev.length <= 1) return '0.00';
+        return prev.slice(0, -1);
+      });
+      return;
+    }
+    if (key === '.') {
+      if (!payAmount.includes('.')) {
+        setPayAmount(prev => prev + '.');
+      }
+      return;
+    }
+
+    // Digit 0-9
+    setPayAmount(prev => {
+      if (prev === '0.00' || prev === '0') return key;
+      return prev + key;
+    });
+  };
+
+  // Apply Split 1/n
+  const handleApplySplitN = (n: number) => {
+    sound.beep();
+    const base = selectedItemIds.length > 0 ? selectedItemsSum : order.remaining_total;
+    const divided = (base / n).toFixed(2);
+    setPayAmount(divided);
+    setIsSplitNModalOpen(false);
+    setStatusNotice(`Tutar ${n} kişiye bölündü: ₺${divided}`);
+    setTimeout(() => setStatusNotice(null), 3000);
+  };
+
+  // Apply Discount
+  const handleApplyDiscount = async () => {
+    const val = parseFloat(discountValue);
+    if (isNaN(val) || val <= 0) return;
     setLoading(true);
     sound.beep();
     try {
-      // If no entries added yet, treat current input as full payment
-      const paymentsToSend = paymentEntries.length > 0 
-        ? paymentEntries 
-        : [{ method: currentMethod, amount: parseFloat(payAmount) || order.remaining_total, tip: tipAmount }];
+      await api.applyDiscount(
+        order.id,
+        discountType,
+        val,
+        'Kasa İndirimi',
+        cashierName
+      );
+      await loadOrderData();
+      setIsDiscountModalOpen(false);
+      setStatusNotice('İndirim başarıyla uygulandı.');
+      setTimeout(() => setStatusNotice(null), 3000);
+    } catch (err: any) {
+      alert(err.message || 'İndirim uygulanamadı.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  // Perform Settlement with chosen payment method
+  const handleProcessPayment = async (method: string, shouldPrint: boolean = false, shouldCloseTable: boolean = true) => {
+    const amountToPay = parseFloat(payAmount);
+    if (isNaN(amountToPay) || amountToPay <= 0) {
+      alert('Lütfen geçerli bir ödeme tutarı giriniz.');
+      return;
+    }
+
+    setLoading(true);
+    sound.beep();
+
+    try {
       const res = await api.settlePayment({
         order_id: order.id,
-        payments: paymentsToSend,
-        rounding: roundingAmount,
+        payments: [{
+          method,
+          amount: amountToPay,
+          tip: tipAmount
+        }],
+        rounding: 0,
         cashier_name: cashierName,
-        close_table: true
+        close_table: shouldCloseTable
       });
 
       sound.cashDrawer();
-      onPaymentCompleted();
-      onClose();
-      onViewFiscal(order.id);
+
+      // If items were selected, mark them as paid in state
+      if (selectedItemIds.length > 0) {
+        setItemPaidMap(prev => {
+          const next = { ...prev };
+          selectedItemIds.forEach(id => {
+            const it = order.items.find(item => item.id === id);
+            if (it) next[id] = it.total_price;
+          });
+          return next;
+        });
+        setSelectedItemIds([]);
+      }
+
+      if (shouldPrint) {
+        onViewFiscal(order.id);
+      }
+
+      if (res.is_fully_paid && shouldCloseTable) {
+        onPaymentCompleted();
+        onClose();
+      } else {
+        // Refresh local order data for partial payment
+        await loadOrderData();
+        setStatusNotice(`₺${amountToPay.toFixed(2)} tahsil edildi (${method === 'cash' ? 'Nakit' : method === 'credit_card' ? 'Kredi Kartı' : 'Açık Hesap'}).`);
+        setTimeout(() => setStatusNotice(null), 3500);
+      }
     } catch (err: any) {
-      alert(err.message || 'Ödeme tamamlanamadı.');
+      alert(err.message || 'Ödeme işlemi tamamlanamadı.');
       sound.warning();
     } finally {
       setLoading(false);
     }
   };
 
-  const totalPaidInForm = paymentEntries.reduce((sum, p) => sum + p.amount, 0);
-  const remainingInForm = Math.max(0, order.remaining_total - totalPaidInForm);
-
-  // Quick Numpad for Custom Amount
-  const handleNumpad = (digit: string) => {
+  // Save changes without closing
+  const handleSaveOnly = () => {
     sound.beep();
-    if (digit === 'C') {
-      setPayAmount('');
-    } else if (digit === '.') {
-      if (!payAmount.includes('.')) setPayAmount(prev => prev + '.');
-    } else {
-      setPayAmount(prev => prev + digit);
-    }
+    onPaymentCompleted();
+    onClose();
   };
 
+  const waiterName = order.waiter_name || cashierName || 'YUSUF PEKER';
+  const tableName = table ? table.name : (order.table_name || 'MASA 100');
+
   return (
-    <div className="fixed inset-0 bg-black/60 dark:bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4 select-none font-sans animate-fadeIn">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] text-slate-900 dark:text-slate-100 transition-colors duration-200">
-        {/* Header */}
-        <div className="p-4 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-500/30 shadow-sm">
-              <Banknote className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg md:text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                  Tahsilat & Ödeme ({table ? `Masa ${table.name}` : 'Paket Servis'})
-                </h2>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono font-bold">
-                  {order.order_no}
-                </span>
-              </div>
-              <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Kasiyer: {cashierName}</div>
-            </div>
+    <div className="fixed inset-0 z-50 bg-[#f4f5f7] text-[#212529] flex flex-col select-none font-sans overflow-hidden animate-fadeIn">
+      {/* ================= TOP HEADER BAR ================= */}
+      <header className="bg-white border-b border-gray-200/90 px-6 py-3 flex items-center justify-between shadow-xs">
+        {/* Left: Table & Waiter info */}
+        <div>
+          <h1 className="text-[15px] font-bold text-[#212529] tracking-tight leading-tight">
+            Masa Adı: <span className="font-extrabold">{tableName}</span>
+          </h1>
+          <div className="text-[13px] text-gray-500 font-medium leading-tight">
+            Garson: {waiterName}
           </div>
+        </div>
 
-          {/* Mode Switcher Tabs */}
-          <div className="flex bg-slate-200/80 dark:bg-slate-800 p-1 rounded-2xl border border-slate-300/60 dark:border-slate-700">
-            <button
-              onClick={() => { sound.beep(); setMode('mixed'); }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition ${
-                mode === 'mixed' 
-                  ? 'bg-blue-600 text-white shadow-sm' 
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              Parçalı / Miks
-            </button>
-            <button
-              onClick={() => { sound.beep(); setMode('split_equal'); }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition ${
-                mode === 'split_equal' 
-                  ? 'bg-blue-600 text-white shadow-sm' 
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              Alman Usulü (Eşit)
-            </button>
-            <button
-              onClick={() => { sound.beep(); setMode('split_item'); }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition ${
-                mode === 'split_item' 
-                  ? 'bg-blue-600 text-white shadow-sm' 
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              Ürün Seçerek Böl
-            </button>
-          </div>
-
+        {/* Right Action Buttons */}
+        <div className="flex items-center gap-6 text-[#d32f2f] text-[13px] font-semibold">
+          {/* Kaydet */}
           <button 
-            onClick={onClose} 
-            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition"
+            onClick={handleSaveOnly}
+            className="flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95"
           >
-            <X className="w-5 h-5" />
+            <Save className="w-4 h-4 text-[#d32f2f]" />
+            <span>Kaydet</span>
+          </button>
+
+          {/* Öde ve Kapat */}
+          <button 
+            onClick={() => handleProcessPayment('cash', false, true)}
+            className="flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95"
+          >
+            <Save className="w-4 h-4 text-[#d32f2f]" />
+            <span>Öde ve Kapat</span>
+          </button>
+
+          {/* Öde ve Yazdır */}
+          <button 
+            onClick={() => handleProcessPayment('cash', true, false)}
+            className="flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95"
+          >
+            <Printer className="w-4 h-4 text-[#d32f2f]" />
+            <span>Öde ve Yazdır</span>
+          </button>
+
+          {/* Öde, Yazdır ve Kapat */}
+          <button 
+            onClick={() => handleProcessPayment('cash', true, true)}
+            className="flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95"
+          >
+            <Printer className="w-4 h-4 text-[#d32f2f]" />
+            <span>Öde, Yazdır ve Kapat</span>
+          </button>
+
+          {/* Ödeme Ekranını Kapat */}
+          <button 
+            onClick={onClose}
+            className="flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95 ml-2"
+          >
+            <X className="w-4 h-4 text-[#d32f2f]" />
+            <span>Ödeme Ekranını Kapat</span>
           </button>
         </div>
+      </header>
 
-        {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-12 gap-6 bg-slate-50/50 dark:bg-slate-900/50">
-          {/* Left Column: Order Bill Breakdown (5 cols) */}
-          <div className="md:col-span-5 bg-white dark:bg-slate-950/80 rounded-3xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
-            <div>
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
-                Adisyon Detayı ({order.items.length} Kalem)
-              </h4>
-              <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                {order.items.map((it) => (
-                  <div key={it.id} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 dark:border-slate-800/60">
-                    <span className="text-slate-700 dark:text-slate-300 font-medium">
-                      <span className="font-bold text-slate-900 dark:text-white mr-1">{it.quantity}x</span> {it.product_name}
-                      {it.variant_name && <span className="text-slate-400 text-[10px] ml-1">({it.variant_name})</span>}
-                    </span>
-                    <span className="font-mono font-bold text-slate-900 dark:text-emerald-400">₺{it.total_price.toFixed(2)}</span>
-                  </div>
-                ))}
-              </div>
+      {/* ================= STATUS NOTIFICATION TOAST ================= */}
+      {statusNotice && (
+        <div className="bg-emerald-600 text-white text-xs font-bold py-1.5 px-4 text-center shadow-sm animate-slideDown">
+          {statusNotice}
+        </div>
+      )}
+
+      {/* ================= MAIN THREE-COLUMN CONTAINER ================= */}
+      <main className="flex-1 p-4 md:p-6 overflow-hidden grid grid-cols-1 md:grid-cols-12 gap-5">
+        
+        {/* ================= COLUMN 1: PARÇALI ÖDE (Left: 4 cols) ================= */}
+        <section className="md:col-span-4 bg-white rounded-2xl border border-gray-200 shadow-xs p-4 flex flex-col justify-between overflow-hidden">
+          <div className="flex flex-col flex-1 overflow-hidden">
+            {/* Header: PARÇALI ÖDE and Selected Total */}
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <h2 className="text-[15px] font-bold text-[#212529] tracking-tight">
+                PARÇALI ÖDE
+              </h2>
+              <span className="text-[15px] font-bold text-[#212529] font-mono">
+                ₺{selectedItemsSum.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
             </div>
 
-            {/* Totals Summary Card */}
-            <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-1.5 text-xs">
-              <div className="flex justify-between text-slate-500 dark:text-slate-400 font-medium">
-                <span>Ara Toplam:</span>
-                <span className="font-mono font-bold text-slate-700 dark:text-slate-300">₺{order.subtotal.toFixed(2)}</span>
-              </div>
-              {order.kuver_total > 0 && (
-                <div className="flex justify-between text-indigo-600 dark:text-indigo-300 font-medium">
-                  <span>Kuver:</span>
-                  <span className="font-mono font-bold">₺{order.kuver_total.toFixed(2)}</span>
-                </div>
-              )}
-              {order.discount_amount > 0 && (
-                <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold">
-                  <span>İndirim:</span>
-                  <span className="font-mono">-₺{order.discount_amount.toFixed(2)}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-sm font-black text-slate-900 dark:text-white pt-1">
-                <span>Genel Toplam:</span>
-                <span className="font-mono text-emerald-600 dark:text-emerald-400">₺{order.grand_total.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-base font-black bg-amber-50 dark:bg-slate-900 p-3 rounded-2xl border border-amber-200 dark:border-slate-700 shadow-sm">
-                <span className="text-amber-800 dark:text-amber-400">Kalan Tutar:</span>
-                <span className="font-mono text-amber-700 dark:text-amber-400 text-lg">₺{remainingInForm.toFixed(2)}</span>
-              </div>
+            {/* Filter Pill: Ödenmemiş Olanlar */}
+            <div className="flex justify-center my-3">
+              <span className="bg-[#e9ecef] text-[#495057] px-5 py-1 rounded-full text-xs font-semibold shadow-2xs">
+                Ödenmemiş Olanlar
+              </span>
+            </div>
+
+            {/* Scrollable Products List */}
+            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1.5 custom-scrollbar">
+              {order.items.map((it) => {
+                const isSelected = it.id ? selectedItemIds.includes(it.id) : false;
+                const paidAmt = (it.id && itemPaidMap[it.id]) || 0;
+                const remainingAmt = Math.max(0, it.total_price - paidAmt);
+
+                return (
+                  <div
+                    key={it.id || Math.random()}
+                    onClick={() => handleToggleItem(it.id)}
+                    className={`py-2 px-3 rounded-xl border transition cursor-pointer select-none ${
+                      isSelected 
+                        ? 'bg-red-50/80 border-red-300 shadow-2xs' 
+                        : 'border-transparent hover:border-gray-200 hover:bg-gray-50/80'
+                    }`}
+                  >
+                    {/* Top Row: Qty - Name and Price + Hand icon */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-[13px] font-bold text-[#212529] truncate pr-2">
+                        {it.quantity} - (ADET) {it.product_name.toUpperCase()}
+                        {it.variant_name && <span className="text-gray-500 text-xs ml-1 font-normal">({it.variant_name})</span>}
+                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[13px] font-bold text-[#212529] font-mono">
+                          ₺{it.total_price.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                        </span>
+                        <TouchHandIcon active={isSelected} />
+                      </div>
+                    </div>
+
+                    {/* Bottom Row: Ödenen & Kalan */}
+                    <div className="text-[11px] text-gray-500 font-medium mt-0.5">
+                      Ödenen: ₺{paidAmt.toFixed(2)}  ·  Kalan: ₺{remainingAmt.toFixed(2)}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          {/* Right Column: Payment Methods & Numpad Engine (7 cols) */}
-          <div className="md:col-span-7 flex flex-col justify-between space-y-4">
-            {mode === 'mixed' && (
-              <>
-                {/* Payment Method Badges (Only Active Methods) */}
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                  {availableMethods.map((m) => {
-                    const isSel = currentMethod === m.id;
-                    const colorGrad = getMethodColor(m.id);
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => { sound.beep(); setCurrentMethod(m.id); }}
-                        className={`p-2.5 rounded-2xl border text-center transition flex flex-col items-center justify-center gap-1 shadow-sm cursor-pointer ${
-                          isSel
-                            ? `bg-gradient-to-tr ${colorGrad} text-white border-white/40 shadow-md scale-[1.02]`
-                            : 'bg-white hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        <span className="text-lg leading-none">{m.icon || '💳'}</span>
-                        <span className="text-[10px] font-black leading-tight truncate max-w-full">{m.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Amount Input & Numpad */}
-                <div className="grid grid-cols-12 gap-3">
-                  <div className="col-span-7 space-y-3">
-                    <div>
-                      <label className="text-xs font-bold text-slate-600 dark:text-slate-400 mb-1 block">Çekilecek Tutar (₺):</label>
-                      <input
-                        type="text"
-                        value={payAmount}
-                        onChange={(e) => setPayAmount(e.target.value)}
-                        placeholder="0.00"
-                        className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-2xl p-3 text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono focus:outline-none focus:border-blue-500 text-center shadow-inner"
-                      />
-                    </div>
-
-                    {/* Quick Amount Helper Chips */}
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <button
-                        onClick={() => setPayAmount(remainingInForm.toFixed(2))}
-                        className="py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-extrabold text-blue-600 dark:text-blue-400 border border-slate-200 dark:border-slate-700 transition"
-                      >
-                        Tam Tutar
-                      </button>
-                      <button
-                        onClick={() => setPayAmount((remainingInForm / 2).toFixed(2))}
-                        className="py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition"
-                      >
-                        1/2 Yarısı
-                      </button>
-                      <button
-                        onClick={() => setPayAmount((remainingInForm / 3).toFixed(2))}
-                        className="py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition"
-                      >
-                        1/3 Üçte Biri
-                      </button>
-                    </div>
-
-                    {/* Add Partial Payment Entry */}
-                    <button
-                      onClick={() => handleAddPaymentEntry()}
-                      className="w-full py-2.5 rounded-2xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-extrabold text-xs border border-slate-300 dark:border-slate-600 transition flex items-center justify-center gap-1 shadow-sm cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                      <span>Bu Tutarı Ekle ({availableMethods.find(m => m.id === currentMethod)?.name || currentMethod.toUpperCase()})</span>
-                    </button>
-                  </div>
-
-                  {/* Touch Numpad */}
-                  <div className="col-span-5 grid grid-cols-3 gap-1.5">
-                    {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '.'].map((k) => (
-                      <button
-                        key={k}
-                        onClick={() => handleNumpad(k)}
-                        className="h-10 rounded-xl bg-white hover:bg-slate-100 active:bg-blue-600 active:text-white dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-mono font-black text-base border border-slate-200 dark:border-slate-700 shadow-sm transition flex items-center justify-center"
-                      >
-                        {k}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Added Payments List */}
-                {paymentEntries.length > 0 && (
-                  <div className="p-2.5 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-1 shadow-sm">
-                    <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Eklenen Ödemeler:</div>
-                    {paymentEntries.map((p, i) => (
-                      <div key={i} className="flex items-center justify-between text-xs py-0.5">
-                        <span className="capitalize text-slate-700 dark:text-slate-300 font-semibold">• {p.method.replace('_', ' ')}</span>
-                        <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">₺{p.amount.toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-
-            {mode === 'split_equal' && (
-              <div className="space-y-4">
-                <div className="p-4 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-center shadow-sm">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 font-bold block mb-2">Kaç Kişiye Eşit Bölünecek?</span>
-                  <div className="flex items-center justify-center gap-3">
-                    <button
-                      onClick={() => { sound.beep(); setSplitPersons(Math.max(2, splitPersons - 1)); }}
-                      className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-900 dark:text-white font-bold text-xl transition cursor-pointer"
-                    >
-                      -
-                    </button>
-                    <span className="text-3xl font-black text-slate-900 dark:text-white font-mono">{splitPersons} Kişi</span>
-                    <button
-                      onClick={() => { sound.beep(); setSplitPersons(splitPersons + 1); }}
-                      className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-900 dark:text-white font-bold text-xl transition cursor-pointer"
-                    >
-                      +
-                    </button>
-                  </div>
-                  <div className="mt-3 text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                    Kişi Başı: ₺{(order.remaining_total / splitPersons).toFixed(2)}
-                  </div>
-                </div>
-
-                {/* Quick Method Chips for Split */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                  <span className="text-[11px] font-bold text-slate-500 mr-1">Ödeyen Yöntemi:</span>
-                  {availableMethods.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => { sound.beep(); setCurrentMethod(m.id); }}
-                      className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 whitespace-nowrap cursor-pointer ${
-                        currentMethod === m.id
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
-                      }`}
-                    >
-                      <span>{m.icon}</span>
-                      <span>{m.name}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  {Array.from({ length: splitPersons }).map((_, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleAddPaymentEntry(currentMethod, order.remaining_total / splitPersons)}
-                      className="p-3 bg-white dark:bg-slate-800 hover:bg-blue-600 hover:text-white rounded-2xl border border-slate-200 dark:border-slate-700 text-left transition group shadow-sm cursor-pointer"
-                    >
-                      <div className="font-bold text-xs text-slate-800 dark:text-white group-hover:text-white flex items-center justify-between">
-                        <span>{idx + 1}. Misafir Payı</span>
-                        <span className="text-[10px] opacity-70 group-hover:opacity-100">{availableMethods.find(m => m.id === currentMethod)?.name}</span>
-                      </div>
-                      <div className="text-sm font-mono font-black text-emerald-600 dark:text-emerald-400 group-hover:text-white">
-                        ₺{(order.remaining_total / splitPersons).toFixed(2)}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Added Payments List */}
-                {paymentEntries.length > 0 && (
-                  <div className="p-2.5 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-1 shadow-sm">
-                    <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Eklenen Ödemeler:</div>
-                    {paymentEntries.map((p, i) => (
-                      <div key={i} className="flex items-center justify-between text-xs py-0.5">
-                        <span className="capitalize text-slate-700 dark:text-slate-300 font-semibold">• {availableMethods.find(m => m.id === p.method)?.name || p.method}</span>
-                        <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">₺{p.amount.toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {mode === 'split_item' && (
-              <div className="space-y-3">
-                <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Şu Anda Ödenecek Ürünleri Seçiniz:</div>
-                <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
-                  {order.items.map((it) => {
-                    const isChecked = selectedItemIds.includes(it.id || 0);
-                    return (
-                      <div
-                        key={it.id}
-                        onClick={() => {
-                          sound.beep();
-                          if (it.id) {
-                            setSelectedItemIds(prev => isChecked ? prev.filter(id => id !== it.id) : [...prev, it.id]);
-                          }
-                        }}
-                        className={`p-2.5 rounded-xl border cursor-pointer flex items-center justify-between transition ${
-                          isChecked
-                            ? 'bg-blue-50 dark:bg-blue-600/30 border-blue-500 text-blue-900 dark:text-white font-bold'
-                            : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        <span className="text-xs font-semibold">{it.quantity}x {it.product_name}</span>
-                        <span className="font-mono font-bold text-slate-900 dark:text-emerald-400">₺{it.total_price.toFixed(2)}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Method selector for itemized split */}
-                <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                    <span className="text-[11px] font-bold text-slate-500 mr-1">Ödeme Yöntemi:</span>
-                    {availableMethods.map((m) => (
-                      <button
-                        key={m.id}
-                        onClick={() => { sound.beep(); setCurrentMethod(m.id); }}
-                        className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 whitespace-nowrap cursor-pointer ${
-                          currentMethod === m.id
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
-                        }`}
-                      >
-                        <span>{m.icon}</span>
-                        <span>{m.name}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  {selectedItemIds.length > 0 && (
-                    <button
-                      onClick={() => {
-                        const total = order.items
-                          .filter(it => selectedItemIds.includes(it.id || 0))
-                          .reduce((s, it) => s + it.total_price, 0);
-                        handleAddPaymentEntry(currentMethod, total);
-                        setSelectedItemIds([]);
-                      }}
-                      className="w-full py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>
-                        Seçili Ürünleri Ekle (₺{order.items.filter(it => selectedItemIds.includes(it.id || 0)).reduce((s, it) => s + it.total_price, 0).toFixed(2)})
-                      </span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Added Payments List */}
-                {paymentEntries.length > 0 && (
-                  <div className="p-2.5 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-1 shadow-sm">
-                    <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Eklenen Ödemeler:</div>
-                    {paymentEntries.map((p, i) => (
-                      <div key={i} className="flex items-center justify-between text-xs py-0.5">
-                        <span className="capitalize text-slate-700 dark:text-slate-300 font-semibold">• {availableMethods.find(m => m.id === p.method)?.name || p.method}</span>
-                        <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">₺{p.amount.toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Bottom Finalize Button */}
+          {/* Bottom Action Buttons */}
+          <div className="grid grid-cols-2 gap-3 pt-3 mt-2 border-t border-gray-100">
             <button
-              onClick={handleSettleFull}
-              disabled={loading}
-              className="w-full py-3.5 rounded-2xl bg-[#27ae60] hover:bg-[#219653] text-white font-black text-sm shadow-xl shadow-emerald-600/20 transition flex items-center justify-center gap-2 active:scale-[0.98]"
+              onClick={() => {
+                sound.beep();
+                setIsSplitNModalOpen(true);
+              }}
+              className="bg-[#f4f5f7] hover:bg-[#eaecef] text-[#d32f2f] font-bold text-xs py-2.5 px-2 rounded-xl border border-gray-200/80 shadow-2xs transition cursor-pointer text-center"
             >
-              <CheckCircle2 className="w-5 h-5" />
-              <span>TAHSİLATI TAMAMLA & MASAYI KAPAT</span>
+              Ürün Bazlı 1/n
+            </button>
+            <button
+              onClick={() => {
+                sound.beep();
+                setIsDiscountModalOpen(true);
+              }}
+              className="bg-[#f4f5f7] hover:bg-[#eaecef] text-[#d32f2f] font-bold text-xs py-2.5 px-2 rounded-xl border border-gray-200/80 shadow-2xs transition cursor-pointer text-center"
+            >
+              Ürün Bazlı İndirim
             </button>
           </div>
+        </section>
+
+        {/* ================= COLUMN 2: TOPLAM & NUMPAD (Center: 5 cols) ================= */}
+        <section className="md:col-span-5 bg-white rounded-2xl border border-gray-200 shadow-xs p-5 flex flex-col justify-between">
+          {/* Top Header: TOPLAM & Tahsilat Geçmişi & Total Amount */}
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <h2 className="text-[15px] font-bold text-[#212529] tracking-tight">
+                TOPLAM
+              </h2>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => {
+                    sound.beep();
+                    setIsHistoryModalOpen(true);
+                  }}
+                  className="flex items-center gap-1 text-xs font-semibold text-gray-700 hover:text-[#d32f2f] transition cursor-pointer"
+                >
+                  <History className="w-4 h-4 text-[#d32f2f]" />
+                  <span>TAHSİLAT GEÇMİŞİ</span>
+                </button>
+                <span className="text-[15px] font-bold text-[#212529] font-mono">
+                  ₺{order.grand_total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            {/* Middle White Display Area with Ödenecek Tutar at bottom */}
+            <div className="h-36 flex flex-col justify-end items-end pb-3 pr-2">
+              <div className="text-right">
+                <span className="text-base md:text-lg font-bold text-[#212529] mr-2">
+                  Ödenecek Tutar:
+                </span>
+                <span className="text-xl md:text-2xl font-black text-[#111827] font-mono">
+                  ₺{payAmount}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Numeric Keypad Table Grid */}
+          <div className="border border-gray-200 rounded-xl overflow-hidden shadow-2xs">
+            {/* Row 1: 7 | 8 | 9 | Tüm */}
+            <div className="grid grid-cols-4 border-b border-gray-200">
+              {['7', '8', '9', 'Tüm'].map((k) => (
+                <button
+                  key={k}
+                  onClick={() => handleNumpad(k)}
+                  className="py-3.5 bg-white hover:bg-gray-50 active:bg-gray-100 border-r border-gray-200 last:border-r-0 text-center font-medium text-lg text-gray-800 transition cursor-pointer"
+                >
+                  {k === 'Tüm' ? <span className="text-sm font-semibold text-gray-700">Tüm</span> : k}
+                </button>
+              ))}
+            </div>
+
+            {/* Row 2: 4 | 5 | 6 | 1/n */}
+            <div className="grid grid-cols-4 border-b border-gray-200">
+              {['4', '5', '6', '1/n'].map((k) => (
+                <button
+                  key={k}
+                  onClick={() => handleNumpad(k)}
+                  className="py-3.5 bg-white hover:bg-gray-50 active:bg-gray-100 border-r border-gray-200 last:border-r-0 text-center font-medium text-lg text-gray-800 transition cursor-pointer"
+                >
+                  {k === '1/n' ? <span className="text-sm font-semibold text-gray-700">1/n</span> : k}
+                </button>
+              ))}
+            </div>
+
+            {/* Row 3: 1 | 2 | 3 | İndirim */}
+            <div className="grid grid-cols-4 border-b border-gray-200">
+              {['1', '2', '3', 'İndirim'].map((k) => (
+                <button
+                  key={k}
+                  onClick={() => handleNumpad(k)}
+                  className="py-3.5 bg-white hover:bg-gray-50 active:bg-gray-100 border-r border-gray-200 last:border-r-0 text-center font-medium text-lg text-gray-800 transition cursor-pointer"
+                >
+                  {k === 'İndirim' ? <span className="text-sm font-semibold text-gray-700">İndirim</span> : k}
+                </button>
+              ))}
+            </div>
+
+            {/* Row 4: . | 0 | ← | Empty */}
+            <div className="grid grid-cols-4">
+              {['.', '0', '←', ''].map((k, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => k && handleNumpad(k)}
+                  disabled={!k}
+                  className={`py-3.5 bg-white hover:bg-gray-50 active:bg-gray-100 border-r border-gray-200 last:border-r-0 text-center font-medium text-lg text-gray-800 transition ${
+                    k ? 'cursor-pointer' : 'cursor-default bg-gray-50/50'
+                  }`}
+                >
+                  {k === '←' ? <span className="text-xl font-bold">←</span> : k}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ================= COLUMN 3: ÖDEME TİPLERİ (Right: 3 cols) ================= */}
+        <section className="md:col-span-3 bg-white rounded-2xl border border-gray-200 shadow-xs p-5 flex flex-col justify-between">
+          <div>
+            {/* Tab Bar: Ödeme Tipleri & Bahşiş ekle */}
+            <div className="flex border-b border-gray-200">
+              <button
+                onClick={() => { sound.beep(); setActiveRightTab('methods'); }}
+                className={`pb-2.5 px-3 text-sm font-bold transition cursor-pointer relative ${
+                  activeRightTab === 'methods'
+                    ? 'text-[#d32f2f]'
+                    : 'text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                <span>Ödeme Tipleri</span>
+                {activeRightTab === 'methods' && (
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#d32f2f]" />
+                )}
+              </button>
+
+              <button
+                onClick={() => { sound.beep(); setActiveRightTab('tip'); }}
+                className={`pb-2.5 px-3 text-sm font-semibold transition cursor-pointer relative ${
+                  activeRightTab === 'tip'
+                    ? 'text-[#d32f2f] font-bold'
+                    : 'text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                <span>Bahşiş ekle</span>
+                {activeRightTab === 'tip' && (
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#d32f2f]" />
+                )}
+              </button>
+            </div>
+
+            {/* TAB CONTENT 1: Ödeme Tipleri Tiles */}
+            {activeRightTab === 'methods' && (
+              <div className="grid grid-cols-2 gap-4 pt-5">
+                {/* Tile 1: Nakit */}
+                <button
+                  onClick={() => handleProcessPayment('cash', false, true)}
+                  className="border border-gray-200 rounded-xl p-5 bg-white hover:border-emerald-500 hover:shadow-md transition active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-2 group"
+                >
+                  <CashStackIcon />
+                  <span className="font-bold text-sm text-[#212529] group-hover:text-emerald-600 transition">
+                    Nakit
+                  </span>
+                </button>
+
+                {/* Tile 2: Kredi Kartı */}
+                <button
+                  onClick={() => handleProcessPayment('credit_card', false, true)}
+                  className="border border-gray-200 rounded-xl p-5 bg-white hover:border-blue-500 hover:shadow-md transition active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-2 group"
+                >
+                  <CreditCardLogosIcon />
+                  <span className="font-bold text-sm text-[#212529] group-hover:text-blue-600 transition">
+                    Kredi Kartı
+                  </span>
+                </button>
+
+                {/* Tile 3: Açık Hesap */}
+                <button
+                  onClick={() => handleProcessPayment('open_account', false, true)}
+                  className="border border-gray-200 rounded-xl p-5 bg-white hover:border-indigo-500 hover:shadow-md transition active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-2 group"
+                >
+                  <OpenAccountHandshakeIcon />
+                  <span className="font-bold text-sm text-[#212529] group-hover:text-indigo-600 transition">
+                    Açık Hesap
+                  </span>
+                </button>
+              </div>
+            )}
+
+            {/* TAB CONTENT 2: Bahşiş Ekle */}
+            {activeRightTab === 'tip' && (
+              <div className="pt-5 space-y-4">
+                <span className="text-xs text-gray-500 font-semibold block">Hızlı Bahşiş Oranı:</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {[5, 10, 15, 20].map((pct) => {
+                    const tipVal = (order.remaining_total * pct) / 100;
+                    return (
+                      <button
+                        key={pct}
+                        onClick={() => {
+                          sound.beep();
+                          setTipAmount(tipVal);
+                          setPayAmount((order.remaining_total + tipVal).toFixed(2));
+                          setActiveRightTab('methods');
+                          setStatusNotice(`%${pct} Bahşiş (₺${tipVal.toFixed(2)}) eklendi.`);
+                          setTimeout(() => setStatusNotice(null), 3000);
+                        }}
+                        className="py-2.5 px-3 rounded-xl bg-gray-50 hover:bg-gray-100 border border-gray-200 text-xs font-bold text-gray-800 transition"
+                      >
+                        %{pct} (₺{tipVal.toFixed(2)})
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-2 border-t border-gray-100">
+                  <label className="text-xs text-gray-500 font-semibold mb-1 block">Özel Bahşiş Tutarı (₺):</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      placeholder="0.00"
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        setTipAmount(val);
+                      }}
+                      className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm font-bold font-mono focus:outline-none focus:border-red-500"
+                    />
+                    <button
+                      onClick={() => {
+                        sound.beep();
+                        setPayAmount((order.remaining_total + tipAmount).toFixed(2));
+                        setActiveRightTab('methods');
+                      }}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition"
+                    >
+                      Ekle
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      </main>
+
+      {/* ================= MODAL 1: TAHSİLAT GEÇMİŞİ ================= */}
+      {isHistoryModalOpen && (
+        <div className="fixed inset-0 z-60 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-lg p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2 text-[#d32f2f] font-bold text-base">
+                <History className="w-5 h-5" />
+                <span>Tahsilat Geçmişi ({tableName})</span>
+              </div>
+              <button 
+                onClick={() => setIsHistoryModalOpen(false)}
+                className="text-gray-400 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="max-h-64 overflow-y-auto space-y-2">
+              {order.payments && order.payments.length > 0 ? (
+                order.payments.map((p, idx) => (
+                  <div key={idx} className="p-3 bg-gray-50 rounded-xl border border-gray-200 flex items-center justify-between text-xs">
+                    <div>
+                      <div className="font-bold text-gray-800 capitalize">
+                        {p.method === 'cash' ? 'Nakit' : p.method === 'credit_card' ? 'Kredi Kartı' : p.method}
+                      </div>
+                      <div className="text-gray-500 text-[11px]">
+                        {p.created_at ? new Date(p.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : 'Az önce'}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-mono font-bold text-emerald-600 text-sm">
+                        ₺{p.amount.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-gray-500 text-sm">
+                  Bu adisyon için henüz yapılmış bir tahsilat kaydı bulunmamaktadır.
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setIsHistoryModalOpen(false)}
+                className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition"
+              >
+                Kapat
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* ================= MODAL 2: 1/n HESAP BÖLME ================= */}
+      {isSplitNModalOpen && (
+        <div className="fixed inset-0 z-60 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <span className="font-bold text-base text-gray-800">Hesabı Böl (1/n)</span>
+              <button 
+                onClick={() => setIsSplitNModalOpen(false)}
+                className="text-gray-400 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="text-xs text-gray-600 text-center">
+              Kaç kişi arasında eşit bölünsün?
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {[2, 3, 4, 5, 6, 8].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => handleApplySplitN(n)}
+                  className="p-3 bg-gray-50 hover:bg-red-50 hover:border-red-300 hover:text-[#d32f2f] rounded-xl border border-gray-200 text-center font-bold text-sm transition"
+                >
+                  {n} Kişi
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL 3: İNDİRİM UYGULAMA ================= */}
+      {isDiscountModalOpen && (
+        <div className="fixed inset-0 z-60 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <span className="font-bold text-base text-gray-800">İndirim Uygula</span>
+              <button 
+                onClick={() => setIsDiscountModalOpen(false)}
+                className="text-gray-400 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex bg-gray-100 p-1 rounded-xl">
+              <button
+                onClick={() => setDiscountType('percentage')}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition ${
+                  discountType === 'percentage' ? 'bg-white text-red-600 shadow-2xs' : 'text-gray-600'
+                }`}
+              >
+                Yüzde (%)
+              </button>
+              <button
+                onClick={() => setDiscountType('fixed')}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition ${
+                  discountType === 'fixed' ? 'bg-white text-red-600 shadow-2xs' : 'text-gray-600'
+                }`}
+              >
+                Tutar (₺)
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                {discountType === 'percentage' ? 'İndirim Oranı (%):' : 'İndirim Tutarı (₺):'}
+              </label>
+              <input
+                type="number"
+                value={discountValue}
+                onChange={(e) => setDiscountValue(e.target.value)}
+                className="w-full border border-gray-300 rounded-xl p-2.5 text-lg font-bold font-mono text-center focus:outline-none focus:border-red-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                onClick={() => setIsDiscountModalOpen(false)}
+                className="py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition"
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={handleApplyDiscount}
+                className="py-2.5 bg-[#d32f2f] hover:bg-red-700 text-white rounded-xl text-xs font-bold transition"
+              >
+                İndirimi Uygula
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
