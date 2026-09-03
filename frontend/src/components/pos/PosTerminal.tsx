@@ -51,7 +51,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [isNoteModalOpen, setIsNoteModalOpen] = useState<boolean>(false);
   const [orderNote, setOrderNote] = useState<string>('');
   const [isDiscountModalOpen, setIsDiscountModalOpen] = useState<boolean>(false);
-  const [discountPercent, setDiscountPercent] = useState<number>(10);
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
 
   // Settings state (API-first, localStorage fallback)
   const [settings, setSettings] = useState<{
@@ -68,6 +68,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
   // Load existing order
   useEffect(() => {
+    setDiscountPercent(0);
     if (activeTable?.active_order?.id && activeTable.status !== 'empty') {
       loadOrder(activeTable.active_order.id);
     } else {
@@ -766,19 +767,22 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               <div className="flex items-center gap-2">
                 <input
                   type="number"
-                  min="1"
+                  min="0"
                   max="100"
-                  value={discountPercent}
-                  onChange={(e) => setDiscountPercent(Number(e.target.value))}
+                  placeholder="10"
+                  value={discountPercent === 0 ? '' : discountPercent}
+                  onChange={(e) => setDiscountPercent(Number(e.target.value) || 0)}
                   className="w-24 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-center font-black text-slate-900 dark:text-white"
                 />
                 <button
                   onClick={() => {
                     sound.beep();
-                    alert(`%${discountPercent} İndirim uygulandı.`);
+                    if (discountPercent > 0) {
+                      alert(`%${discountPercent} İndirim uygulandı.`);
+                    }
                     setIsDiscountModalOpen(false);
                   }}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow transition"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow transition cursor-pointer"
                 >
                   Özel İndirimi Uygula
                 </button>
