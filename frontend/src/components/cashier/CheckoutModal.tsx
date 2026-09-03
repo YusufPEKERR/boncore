@@ -274,15 +274,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         onViewFiscal(order.id);
       }
 
-      if (res.is_fully_paid && shouldCloseTable) {
-        onPaymentCompleted();
-        onClose();
-      } else {
-        // Refresh local order data for partial payment
-        await loadOrderData();
-        setStatusNotice(`₺${amountToPay.toFixed(2)} tahsil edildi (${method === 'cash' ? 'Nakit' : method === 'credit_card' ? 'Kredi Kartı' : 'Açık Hesap'}).`);
-        setTimeout(() => setStatusNotice(null), 3500);
-      }
+      // Hesap tahsil edildikten sonra ödeme ekranından otomatik çıkış yap
+      onPaymentCompleted();
+      onClose();
     } catch (err: any) {
       alert(err.message || 'Ödeme işlemi tamamlanamadı.');
       sound.warning();
