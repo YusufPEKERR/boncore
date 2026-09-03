@@ -87,6 +87,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Active Tab on Right Panel ('methods' | 'tip')
   const [activeRightTab, setActiveRightTab] = useState<'methods' | 'tip'>('methods');
 
+  // Selected payment method (Nakit, Kredi Kartı, Açık Hesap)
+  const [selectedMethod, setSelectedMethod] = useState<string>('cash');
+
   // Entered amount on numeric keypad
   const [payAmount, setPayAmount] = useState<string>('0.00');
 
@@ -238,7 +241,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   };
 
   // Perform Settlement with chosen payment method
-  const handleProcessPayment = async (method: string, shouldPrint: boolean = false, shouldCloseTable: boolean = true) => {
+  const handleProcessPayment = async (method: string = selectedMethod, shouldPrint: boolean = false, shouldCloseTable: boolean = true) => {
     const amountToPay = parseFloat(payAmount);
     if (isNaN(amountToPay) || amountToPay <= 0) {
       alert('Lütfen geçerli bir ödeme tutarı giriniz.');
@@ -280,9 +283,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         onViewFiscal(order.id);
       }
 
-      // Hesap tahsil edildikten sonra ödeme ekranından otomatik çıkış yap
-      onPaymentCompleted();
-      onClose();
+      // Sadece 'Öde ve Kapat' veya 'Öde, Yazdır ve Kapat' dendiğinde masayı kapat ve çık
+      if (shouldCloseTable) {
+        onPaymentCompleted();
+        onClose();
+      } else {
+        // Masayı kapatmadan ara tahsilat yapıldı: siparişi güncelle ve ekranda kal
+        await loadOrderData();
+        const methodName = method === 'cash' ? 'Nakit' : method === 'credit_card' ? 'Kredi Kartı' : 'Açık Hesap';
+        setStatusNotice(`₺${amountToPay.toFixed(2)} ${methodName} olarak kaydedildi (Masa açık).`);
+        setTimeout(() => setStatusNotice(null), 3500);
+      }
     } catch (err: any) {
       alert(err.message || 'Ödeme işlemi tamamlanamadı.');
       sound.warning();
@@ -319,8 +330,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         <div className="flex items-center gap-6 text-[#d32f2f] text-[13px] font-semibold">
           {/* Kaydet */}
           <button 
-            onClick={handleSaveOnly}
+            onClick={() => handleProcessPayment(selectedMethod, false, false)}
             className="flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95"
+            title="Masayı kapatmadan tahsilatı kaydeder"
           >
             <Save className="w-4 h-4 text-[#d32f2f]" />
             <span>Kaydet</span>
@@ -328,8 +340,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
           {/* Öde ve Kapat */}
           <button 
-            onClick={() => handleProcessPayment('cash', false, true)}
+            onClick={() => handleProcessPayment(selectedMethod, false, true)}
             className="flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95"
+            title="Ödemeyi alır ve masayı kapatır"
           >
             <Save className="w-4 h-4 text-[#d32f2f]" />
             <span>Öde ve Kapat</span>
@@ -337,8 +350,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
           {/* Öde ve Yazdır */}
           <button 
-            onClick={() => handleProcessPayment('cash', true, false)}
+            onClick={() => handleProcessPayment(selectedMethod, true, false)}
             className="flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95"
+            title="Ödemeyi alır, fiş yazdırır, masayı kapatmaz"
           >
             <Printer className="w-4 h-4 text-[#d32f2f]" />
             <span>Öde ve Yazdır</span>
@@ -346,8 +360,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
           {/* Öde, Yazdır ve Kapat */}
           <button 
-            onClick={() => handleProcessPayment('cash', true, true)}
+            onClick={() => handleProcessPayment(selectedMethod, true, true)}
             className="flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95"
+            title="Ödemeyi alır, fiş yazdırır ve masayı kapatır"
           >
             <Printer className="w-4 h-4 text-[#d32f2f]" />
             <span>Öde, Yazdır ve Kapat</span>
@@ -591,39 +606,93 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             {/* TAB CONTENT 1: Ödeme Tipleri Tiles */}
             {activeRightTab === 'methods' && (
-              <div className="grid grid-cols-2 gap-4 pt-5">
-                {/* Tile 1: Nakit */}
-                <button
-                  onClick={() => handleProcessPayment('cash', false, true)}
-                  className="border border-gray-200 rounded-xl p-5 bg-white hover:border-emerald-500 hover:shadow-md transition active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-2 group"
-                >
-                  <CashStackIcon />
-                  <span className="font-bold text-sm text-[#212529] group-hover:text-emerald-600 transition">
-                    Nakit
-                  </span>
-                </button>
+              <div className="pt-5 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Tile 1: Nakit */}
+                  <button
+                    onClick={() => {
+                      sound.beep();
+                      setSelectedMethod('cash');
+                    }}
+                    className={`relative border rounded-xl p-5 bg-white transition active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-2 group ${
+                      selectedMethod === 'cash'
+                        ? 'border-2 border-[#d32f2f] shadow-sm bg-red-50/20 ring-2 ring-red-500/20'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    {selectedMethod === 'cash' && (
+                      <span className="absolute top-2 right-2 w-5 h-5 bg-[#d32f2f] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-2xs">
+                        ✓
+                      </span>
+                    )}
+                    <CashStackIcon />
+                    <span className={`font-bold text-sm transition ${
+                      selectedMethod === 'cash' ? 'text-[#d32f2f]' : 'text-[#212529]'
+                    }`}>
+                      Nakit
+                    </span>
+                  </button>
 
-                {/* Tile 2: Kredi Kartı */}
-                <button
-                  onClick={() => handleProcessPayment('credit_card', false, true)}
-                  className="border border-gray-200 rounded-xl p-5 bg-white hover:border-blue-500 hover:shadow-md transition active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-2 group"
-                >
-                  <CreditCardLogosIcon />
-                  <span className="font-bold text-sm text-[#212529] group-hover:text-blue-600 transition">
-                    Kredi Kartı
-                  </span>
-                </button>
+                  {/* Tile 2: Kredi Kartı */}
+                  <button
+                    onClick={() => {
+                      sound.beep();
+                      setSelectedMethod('credit_card');
+                    }}
+                    className={`relative border rounded-xl p-5 bg-white transition active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-2 group ${
+                      selectedMethod === 'credit_card'
+                        ? 'border-2 border-[#d32f2f] shadow-sm bg-red-50/20 ring-2 ring-red-500/20'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    {selectedMethod === 'credit_card' && (
+                      <span className="absolute top-2 right-2 w-5 h-5 bg-[#d32f2f] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-2xs">
+                        ✓
+                      </span>
+                    )}
+                    <CreditCardLogosIcon />
+                    <span className={`font-bold text-sm transition ${
+                      selectedMethod === 'credit_card' ? 'text-[#d32f2f]' : 'text-[#212529]'
+                    }`}>
+                      Kredi Kartı
+                    </span>
+                  </button>
 
-                {/* Tile 3: Açık Hesap */}
-                <button
-                  onClick={() => handleProcessPayment('open_account', false, true)}
-                  className="border border-gray-200 rounded-xl p-5 bg-white hover:border-indigo-500 hover:shadow-md transition active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-2 group"
-                >
-                  <OpenAccountHandshakeIcon />
-                  <span className="font-bold text-sm text-[#212529] group-hover:text-indigo-600 transition">
-                    Açık Hesap
+                  {/* Tile 3: Açık Hesap */}
+                  <button
+                    onClick={() => {
+                      sound.beep();
+                      setSelectedMethod('open_account');
+                    }}
+                    className={`relative border rounded-xl p-5 bg-white transition active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-2 group ${
+                      selectedMethod === 'open_account'
+                        ? 'border-2 border-[#d32f2f] shadow-sm bg-red-50/20 ring-2 ring-red-500/20'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    {selectedMethod === 'open_account' && (
+                      <span className="absolute top-2 right-2 w-5 h-5 bg-[#d32f2f] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-2xs">
+                        ✓
+                      </span>
+                    )}
+                    <OpenAccountHandshakeIcon />
+                    <span className={`font-bold text-sm transition ${
+                      selectedMethod === 'open_account' ? 'text-[#d32f2f]' : 'text-[#212529]'
+                    }`}>
+                      Açık Hesap
+                    </span>
+                  </button>
+                </div>
+
+                {/* Info pill about selected method */}
+                <div className="bg-gray-50 border border-gray-200/80 rounded-xl p-3 text-center text-xs text-gray-600 font-medium">
+                  Seçili Yöntem: <span className="font-bold text-[#d32f2f]">
+                    {selectedMethod === 'cash' ? 'Nakit' : selectedMethod === 'credit_card' ? 'Kredi Kartı' : 'Açık Hesap'}
                   </span>
-                </button>
+                  <div className="text-[11px] text-gray-500 mt-0.5">
+                    Tahsil etmek için üstteki <strong className="text-gray-700">Öde ve Kapat</strong> veya <strong className="text-gray-700">Öde, Yazdır ve Kapat</strong> butonuna basınız.
+                  </div>
+                </div>
               </div>
             )}
 

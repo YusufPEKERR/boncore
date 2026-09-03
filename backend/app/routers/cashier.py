@@ -92,11 +92,11 @@ async def settle_order_payment(payload: SettlePaymentRequest, db: AsyncSession =
     order.cashier_name = payload.cashier_name
 
     # Masayı kapatma ve ödemeyi tamamlama:
-    # Kalan tutar bittiyse (<= 0.05) VEYA close_table istenmişse masayı kesin olarak kapat
+    # Masa SADECE payload.close_table True olduğunda kapatılır (Öde ve Kapat / Öde Yazdır ve Kapat)
     is_fully_paid = order.remaining_total <= 0.05
     table = order.table
 
-    if is_fully_paid or payload.close_table:
+    if payload.close_table:
         order.status = "paid"
         order.remaining_total = 0.0
         order.closed_at = datetime.utcnow()
@@ -119,6 +119,11 @@ async def settle_order_payment(payload: SettlePaymentRequest, db: AsyncSession =
             table.waiter_name = None
             table.current_order_id = None
             table.waiter_call_reason = None
+    elif is_fully_paid:
+        # Tutar tamamen ödendi ancak masayı kapat emri verilmedi
+        order.status = "paid"
+        order.remaining_total = 0.0
+        order.closed_at = datetime.utcnow()
 
     # Generate E-Adisyon snapshot
     fiscal_doc = FiscalService.generate_e_adisyon(order, payload.payments, payload.cashier_name)
