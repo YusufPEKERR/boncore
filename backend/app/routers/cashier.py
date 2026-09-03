@@ -60,6 +60,10 @@ async def settle_order_payment(payload: SettlePaymentRequest, db: AsyncSession =
     if not order:
         raise HTTPException(status_code=404, detail="Sipariş bulunamadı.")
 
+    # Daha önce tahsilatı tamamlanmış siparişe mükerrer ödeme alınmasını engelle
+    if order.status == "paid":
+        raise HTTPException(status_code=400, detail="Bu adisyonun tahsilatı zaten tamamlanmış ve masa kapatılmıştır.")
+
     has_cash = False
     total_paid_in_request = 0.0
 
@@ -82,36 +86,59 @@ async def settle_order_payment(payload: SettlePaymentRequest, db: AsyncSession =
         db.add(payment)
         total_paid_in_request += p_input.amount
 
-    order.paid_total += total_paid_in_request
-    order.remaining_total = max(0.0, order.grand_total - order.paid_total)
+    # Toplam ödenen tutarı ve kalan tutarı doğru hesapla
+    order.paid_total = min(order.grand_total, round(order.paid_total + total_paid_in_request, 2))
+    order.remaining_total = max(0.0, round(order.grand_total - order.paid_total, 2))
     order.cashier_name = payload.cashier_name
 
-    # If fully paid or close table requested
+    # Masayı kapatma ve ödemeyi tamamlama:
+    # Kalan tutar bittiyse (<= 0.05) VEYA close_table istenmişse masayı kesin olarak kapat
     is_fully_paid = order.remaining_total <= 0.05
-    if is_fully_paid and payload.close_table:
+    table = order.table
+
+    if is_fully_paid or payload.close_table:
         order.status = "paid"
+        order.remaining_total = 0.0
         order.closed_at = datetime.utcnow()
 
-        if order.table:
-            order.table.status = "empty"
-            order.table.opened_at = None
-            order.table.kuver_count = 0
-            order.table.waiter_name = None
-            order.table.current_order_id = None
-            order.table.waiter_call_reason = None
+        # Masayı bul ve kesin olarak boşalt (empty)
+        if not table and order.table_id:
+            t_stmt = select(Table).where(Table.id == order.table_id)
+            t_res = await db.execute(t_stmt)
+            table = t_res.scalar_one_or_none()
+
+        if not table:
+            t_stmt = select(Table).where(Table.current_order_id == order.id)
+            t_res = await db.execute(t_stmt)
+            table = t_res.scalar_one_or_none()
+
+        if table:
+            table.status = "empty"
+            table.opened_at = None
+            table.kuver_count = 0
+            table.waiter_name = None
+            table.current_order_id = None
+            table.waiter_call_reason = None
 
     # Generate E-Adisyon snapshot
     fiscal_doc = FiscalService.generate_e_adisyon(order, payload.payments, payload.cashier_name)
 
     await db.commit()
 
-    # Trigger events
+    # Trigger WebSocket events
     await ws_hub.broadcast_all("ORDER_PAID", {
         "order_id": order.id,
-        "is_fully_paid": is_fully_paid,
+        "is_fully_paid": is_fully_paid or payload.close_table,
         "remaining_total": order.remaining_total,
         "table_id": order.table_id
     })
+
+    if table and (is_fully_paid or payload.close_table):
+        await ws_hub.broadcast_all("TABLE_STATUS_CHANGED", {
+            "table_id": table.id,
+            "status": "empty",
+            "order_id": None
+        })
 
     if has_cash:
         await ws_hub.broadcast_to_channel("cashier", "CASH_DRAWER_KICK", {"trigger_by": payload.cashier_name})

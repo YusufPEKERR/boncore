@@ -441,8 +441,14 @@ export const App: React.FC = () => {
           table={selectedTable}
           cashierName={currentUser?.name || 'Kasiyer'}
           onPaymentCompleted={() => {
+            // Tahsilat tamamlandı: Masayı kapat, seçimi sıfırla ve masalar ekranına dön
+            setSelectedTable(null);
+            try {
+              localStorage.removeItem('boncore_selected_table');
+            } catch {}
+            setActiveTab('tables');
             loadAreas();
-            addToast('Tahsilat başarıyla tamamlandı!', 'success');
+            addToast('Tahsilat başarıyla tamamlandı, masa kapatıldı.', 'success');
           }}
           onViewFiscal={(id) => setActiveFiscalOrderId(id)}
         />

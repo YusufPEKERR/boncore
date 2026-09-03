@@ -120,6 +120,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setLoading(true);
     try {
       const data = await api.getOrder(orderId);
+      if (data.status === 'paid' || (data.remaining_total <= 0.01 && data.paid_total > 0)) {
+        alert('Bu masanın ödemesi zaten tamamlanmıştır.');
+        onPaymentCompleted();
+        onClose();
+        return;
+      }
       setOrder(data);
       setPayAmount(data.remaining_total > 0 ? data.remaining_total.toFixed(2) : '0.00');
       setSelectedItemIds([]);

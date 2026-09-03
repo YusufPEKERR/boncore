@@ -35,7 +35,7 @@ async def get_areas_with_tables(db: AsyncSession = Depends(get_db)):
             # Active open order
             active_order = None
             if table.orders:
-                for o in table.orders:
+                for o in sorted(table.orders, key=lambda x: x.id, reverse=True):
                     if o.status in ["open", "bill_requested"]:
                         active_order = {
                             "id": o.id,
@@ -50,6 +50,15 @@ async def get_areas_with_tables(db: AsyncSession = Depends(get_db)):
                             "created_at": o.created_at.isoformat() if o.created_at else None,
                         }
                         break
+
+            # Eğer aktif açık sipariş yoksa ve rezerve değilse masa kesinlikle BOŞ'tur
+            if not active_order and table.status not in ["reserved"]:
+                table.status = "empty"
+                table.opened_at = None
+                table.kuver_count = 0
+                table.waiter_name = None
+                table.current_order_id = None
+                table.waiter_call_reason = None
 
             # Calculate seated duration in minutes
             duration_minutes = 0

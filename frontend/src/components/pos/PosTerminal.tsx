@@ -68,7 +68,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
   // Load existing order
   useEffect(() => {
-    if (activeTable?.active_order?.id) {
+    if (activeTable?.active_order?.id && activeTable.status !== 'empty') {
       loadOrder(activeTable.active_order.id);
     } else {
       setActiveOrderId(null);
@@ -112,6 +112,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const loadOrder = async (orderId: number) => {
     try {
       const ord = await api.getOrder(orderId);
+      if (ord.status === 'paid' || ord.remaining_total <= 0.05) {
+        // Ödenmiş sipariş, aktif siparişi ve sepeti temizle
+        setActiveOrderId(null);
+        setExistingOrder(null);
+        setCartItems([]);
+        return;
+      }
       setExistingOrder(ord);
       setActiveOrderId(ord.id);
       setCartItems(ord.items || []);
@@ -504,7 +511,9 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               className="col-span-5 py-3 px-2 rounded-xl bg-[#27ae60] hover:bg-[#219653] disabled:opacity-50 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Tag className="w-3.5 h-3.5 flex-shrink-0" />
-              <span className="truncate">ÖDE ₺{grandTotal.toFixed(2)}</span>
+              <span className="truncate">
+                ÖDE ₺{(existingOrder ? existingOrder.remaining_total : grandTotal).toFixed(2)}
+              </span>
             </button>
 
             <button
