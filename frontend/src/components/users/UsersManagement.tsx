@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, UserPlus, Search, Edit3, Trash2, Key, 
-  CheckCircle2, XCircle, Shield, Phone, Mail, MoreVertical, 
+  CheckCircle2, XCircle, AlertTriangle, Shield, Phone, Mail, MoreVertical, 
   Eye, EyeOff, ChevronDown, ChevronUp, X 
 } from 'lucide-react';
 import { StaffUser } from '../../types';
@@ -85,6 +85,12 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [showPins, setShowPins] = useState<Record<number, boolean>>({});
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
 
   // Add / Edit Modal
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -167,6 +173,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
           pin_code: formPin,
           is_active: formActive
         });
+        showToast('Kullanıcı başarıyla güncellendi.', 'success');
       } else {
         await api.createStaff({
           name: formName,
@@ -174,12 +181,14 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
           pin_code: formPin,
           is_active: formActive
         });
+        showToast('Yeni kullanıcı başarıyla oluşturuldu.', 'success');
       }
       await loadStaffUsers();
       onStaffUpdated?.();
       setIsModalOpen(false);
     } catch (err: any) {
-      alert(err.message || 'Kullanıcı kaydedilemedi.');
+      showToast(err.message || 'Kullanıcı kaydedilemedi.', 'error');
+      sound.warning();
     }
   };
 
@@ -188,11 +197,13 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
       sound.beep();
       try {
         await api.deleteStaff(id);
+        showToast('Kullanıcı başarıyla silindi.', 'success');
         await loadStaffUsers();
         onStaffUpdated?.();
         setIsModalOpen(false);
       } catch (err: any) {
-        alert(err.message || 'Kullanıcı silinemedi.');
+        showToast(err.message || 'Kullanıcı silinemedi.', 'error');
+        sound.warning();
       }
     }
   };
@@ -234,6 +245,18 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
 
   return (
     <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none animate-fadeIn font-sans transition-colors duration-200 space-y-6">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-lg transition-all animate-slideDown ${
+          toast.type === 'success' 
+            ? 'bg-emerald-600/95 text-white border border-emerald-500' 
+            : 'bg-rose-600/95 text-white border border-rose-500'
+        }`}>
+          {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
       {/* Top Header Bar */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>

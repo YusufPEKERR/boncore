@@ -34,6 +34,7 @@ import { api } from './services/api';
 import { sound } from './services/sound';
 import { useWebSocket } from './services/websocket';
 import { useTheme } from './context/ThemeContext';
+import { syncOfflineQueue } from './services/offlineDb';
 
 export const App: React.FC = () => {
   // Global Theme Hook (Dark / Light)
@@ -135,6 +136,26 @@ export const App: React.FC = () => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 4500);
   };
+
+  // Auto-sync offline transactions when network is online or on application start
+  useEffect(() => {
+    const runOfflineSync = async () => {
+      try {
+        const { syncedOrders, syncedPayments } = await syncOfflineQueue();
+        if (syncedOrders > 0 || syncedPayments > 0) {
+          addToast(`🔄 Çevrimdışı kuyruktan ${syncedOrders} sipariş ve ${syncedPayments} tahsilat sunucuya aktarıldı.`, 'success');
+          sound.cashDrawer();
+          loadAreas();
+        }
+      } catch (e) {
+        console.warn('Sync failed', e);
+      }
+    };
+
+    runOfflineSync();
+    window.addEventListener('online', runOfflineSync);
+    return () => window.removeEventListener('online', runOfflineSync);
+  }, []);
 
   // Real-time WebSocket connection
   const { isConnected } = useWebSocket('all', (type, data) => {
@@ -369,7 +390,7 @@ export const App: React.FC = () => {
 
         {activeTab === 'restaurant_statistics' && <RestaurantStatistics />}
 
-        {activeTab === 'app_store' && <AppStore />}
+        {activeTab === 'app_store' && <AppStore onNavigateTab={setActiveTab} />}
 
         {activeTab === 'settings' && <AdisyoSettings />}
 

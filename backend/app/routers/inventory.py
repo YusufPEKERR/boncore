@@ -109,8 +109,9 @@ async def enter_purchase_invoice(payload: PurchaseInvoiceRequest, db: AsyncSessi
         res = await db.execute(stmt)
         ing = res.scalar_one_or_none()
         if ing:
+            price = item.get_unit_price()
             ing.current_stock += item.quantity
-            ing.cost_per_unit = item.unit_price
+            ing.cost_per_unit = price
 
             movement = StockMovement(
                 movement_type="purchase_invoice",
@@ -118,9 +119,9 @@ async def enter_purchase_invoice(payload: PurchaseInvoiceRequest, db: AsyncSessi
                 target_warehouse_id=item.target_warehouse_id,
                 amount=item.quantity,
                 unit=ing.unit,
-                cost_price=item.unit_price,
+                cost_price=price,
                 reference_no=payload.invoice_no,
-                notes=f"Tedarikçi: {payload.supplier_name}",
+                notes=f"Tedarikçi: {payload.get_supplier()}",
                 created_by=payload.created_by,
                 created_at=datetime.utcnow()
             )

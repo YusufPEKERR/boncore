@@ -26,6 +26,7 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
   const [pin, setPin] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [loginMode, setLoginMode] = useState<'pin' | 'password'>('pin');
+  const [resetNotice, setResetNotice] = useState<string | null>(null);
 
   useEffect(() => {
     loadStaff();
@@ -307,10 +308,25 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                   <input type="checkbox" defaultChecked className="rounded text-red-600" />
                   <span>Beni Hatırla</span>
                 </label>
-                <a href="#" onClick={(e) => { e.preventDefault(); alert('Şifre sıfırlama bağlantısı gönderildi.'); }} className="text-red-600 hover:underline">
+                <a
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    sound.beep();
+                    setResetNotice('✓ Şifre sıfırlama bağlantısı e-posta adresinize iletildi.');
+                    setTimeout(() => setResetNotice(null), 4000);
+                  }}
+                  className="text-red-600 hover:underline"
+                >
                   Şifremi Unuttum
                 </a>
               </div>
+
+              {resetNotice && (
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs font-bold rounded-xl text-center animate-fadeIn">
+                  {resetNotice}
+                </div>
+              )}
 
               <button
                 type="submit"

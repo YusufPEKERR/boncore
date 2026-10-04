@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import update
 from sqlalchemy.orm import selectinload
 from datetime import datetime
 from app.database import get_db
@@ -10,10 +11,11 @@ from app.models.audit import AuditLog
 from app.schemas.all import (
     TablePositionUpdate, TableMoveRequest, TableMergeRequest, 
     TableItemTransferRequest, TableKuverRequest, WaiterCallRequest,
-    AreaCreate, TableCreateSchema, TableBulkCreateSchema
+    AreaCreate, TableCreateSchema, TableUpdateSchema, TableBulkCreateSchema
 )
 from app.websocket_hub import ws_hub
 from app.cache import cache_manager
+import uuid
 
 router = APIRouter(prefix="/tables", tags=["Tables & Floor"])
 
@@ -246,12 +248,21 @@ async def transfer_items_between_tables(payload: TableItemTransferRequest, db: A
     target_order = next((o for o in target_table.orders if o.status in ["open", "bill_requested"]), None)
     if not target_order:
         # Create new order on target table
-        order_no = f"ORD-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{target_table.id}"
+        order_no = f"ORD-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{target_table.id}-{uuid.uuid4().hex[:4].upper()}"
         target_order = Order(
             order_no=order_no,
             table_id=target_table.id,
             order_type="dine_in",
             status="open",
+            subtotal=0.0,
+            discount_amount=0.0,
+            discount_rate=0.0,
+            treat_amount=0.0,
+            kuver_count=0,
+            kuver_total=0.0,
+            grand_total=0.0,
+            paid_total=0.0,
+            remaining_total=0.0,
             waiter_name=payload.operator_name,
             created_at=datetime.utcnow()
         )
@@ -272,13 +283,23 @@ async def transfer_items_between_tables(payload: TableItemTransferRequest, db: A
             transferred_amount += item.total_price
 
     # Recalculate totals
-    src_order.subtotal = max(0.0, src_order.subtotal - transferred_amount)
-    src_order.grand_total = max(0.0, src_order.subtotal - src_order.discount_amount - src_order.treat_amount + src_order.kuver_total)
-    src_order.remaining_total = src_order.grand_total
+    src_order.subtotal = max(0.0, (src_order.subtotal or 0.0) - transferred_amount)
+    src_order.grand_total = max(0.0, src_order.subtotal - (src_order.discount_amount or 0.0) - (src_order.treat_amount or 0.0) + (src_order.kuver_total or 0.0))
+    src_order.remaining_total = max(0.0, src_order.grand_total - (src_order.paid_total or 0.0))
 
-    target_order.subtotal += transferred_amount
-    target_order.grand_total = target_order.subtotal - target_order.discount_amount - target_order.treat_amount + target_order.kuver_total
-    target_order.remaining_total = target_order.grand_total
+    target_order.subtotal = (target_order.subtotal or 0.0) + transferred_amount
+    target_order.grand_total = max(0.0, target_order.subtotal - (target_order.discount_amount or 0.0) - (target_order.treat_amount or 0.0) + (target_order.kuver_total or 0.0))
+    target_order.remaining_total = max(0.0, target_order.grand_total - (target_order.paid_total or 0.0))
+
+    # If src_order has no amount left, release source table
+    if src_order.subtotal <= 0.001:
+        src_order.status = "paid"
+        src_order.remaining_total = 0.0
+        src_table.status = "empty"
+        src_table.opened_at = None
+        src_table.kuver_count = 0
+        src_table.waiter_name = None
+        src_table.current_order_id = None
 
     # Audit log
     audit = AuditLog(
@@ -330,8 +351,8 @@ async def update_table_kuver(table_id: int, payload: TableKuverRequest, db: Asyn
     if active_order:
         active_order.kuver_count = payload.kuver_count if kuver_enabled else 0
         active_order.kuver_total = (payload.kuver_count * kuver_unit_price) if kuver_enabled else 0.0
-        active_order.grand_total = max(0.0, active_order.subtotal - active_order.discount_amount - active_order.treat_amount + active_order.kuver_total)
-        active_order.remaining_total = max(0.0, active_order.grand_total - active_order.paid_total)
+        active_order.grand_total = max(0.0, (active_order.subtotal or 0.0) - (active_order.discount_amount or 0.0) - (active_order.treat_amount or 0.0) + (active_order.kuver_total or 0.0))
+        active_order.remaining_total = max(0.0, active_order.grand_total - (active_order.paid_total or 0.0))
 
     await db.commit()
     await ws_hub.broadcast_all("TABLE_UPDATED", {"table_id": table_id, "kuver_count": payload.kuver_count})
@@ -414,7 +435,7 @@ async def update_area(area_id: int, payload: AreaCreate, db: AsyncSession = Depe
 @router.delete("/areas/{area_id}")
 async def delete_area(area_id: int, db: AsyncSession = Depends(get_db)):
     """
-    Deletes an area and associated empty tables.
+    Deletes an area and associated empty tables, safely detaching past order history.
     """
     stmt = select(Area).where(Area.id == area_id).options(selectinload(Area.tables))
     res = await db.execute(stmt)
@@ -426,6 +447,8 @@ async def delete_area(area_id: int, db: AsyncSession = Depends(get_db)):
     for t in area.tables:
         if t.status in ["occupied", "bill_requested"]:
             raise HTTPException(status_code=400, detail="Bu bölgede aktif dolu masa bulunmaktadır. Önce masaları kapatınız.")
+        # Safely detach historical closed/cancelled orders from table
+        await db.execute(update(Order).where(Order.table_id == t.id).values(table_id=None))
         await db.delete(t)
 
     await db.delete(area)
@@ -456,7 +479,7 @@ async def create_single_table(payload: TableCreateSchema, db: AsyncSession = Dep
     return {"status": "success", "table_id": new_table.id}
 
 @router.put("/single/{table_id}")
-async def update_single_table(table_id: int, payload: TableCreateSchema, db: AsyncSession = Depends(get_db)):
+async def update_single_table(table_id: int, payload: TableUpdateSchema, db: AsyncSession = Depends(get_db)):
     """
     Updates table name, seats, shape, or area.
     """
@@ -465,10 +488,14 @@ async def update_single_table(table_id: int, payload: TableCreateSchema, db: Asy
     table = res.scalar_one_or_none()
     if not table:
         raise HTTPException(status_code=404, detail="Masa bulunamadı.")
-    table.name = payload.name
-    table.area_id = payload.area_id
-    if payload.seats: table.seats = payload.seats
-    if payload.shape: table.shape = payload.shape
+    if payload.name is not None and payload.name.strip():
+        table.name = payload.name.strip()
+    if payload.area_id is not None:
+        table.area_id = payload.area_id
+    if payload.seats is not None:
+        table.seats = payload.seats
+    if payload.shape is not None:
+        table.shape = payload.shape
     await db.commit()
     await ws_hub.broadcast_all("AREAS_UPDATED", {"table_id": table_id})
     return {"status": "success", "message": "Masa güncellendi."}
@@ -476,7 +503,7 @@ async def update_single_table(table_id: int, payload: TableCreateSchema, db: Asy
 @router.delete("/single/{table_id}")
 async def delete_single_table(table_id: int, db: AsyncSession = Depends(get_db)):
     """
-    Deletes a table if it is empty.
+    Deletes a table if it is empty, safely detaching past order history.
     """
     stmt = select(Table).where(Table.id == table_id)
     res = await db.execute(stmt)
@@ -486,6 +513,8 @@ async def delete_single_table(table_id: int, db: AsyncSession = Depends(get_db))
     if table.status in ["occupied", "bill_requested"]:
         raise HTTPException(status_code=400, detail="Masa şu anda dolu! Önce hesabı kapatınız.")
     
+    # Safely detach historical closed/cancelled orders from table
+    await db.execute(update(Order).where(Order.table_id == table_id).values(table_id=None))
     await db.delete(table)
     await db.commit()
     await ws_hub.broadcast_all("AREAS_UPDATED", {"deleted_table_id": table_id})

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Plus, Search, Edit3, Trash2, Layers, Grid, 
-  Users, Square, Circle, CheckCircle2, MoreVertical, X, Sparkles, Move 
+  Users, Square, Circle, CheckCircle2, AlertTriangle, MoreVertical, X, Sparkles, Move 
 } from 'lucide-react';
 import { Area, Table } from '../../types';
 import { api } from '../../services/api';
@@ -18,6 +18,12 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
 }) => {
   const [activeAreaId, setActiveAreaId] = useState<number>(areas[0]?.id || 1);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
 
   // Modals state
   const [isAddAreaModalOpen, setIsAddAreaModalOpen] = useState<boolean>(false);
@@ -69,13 +75,16 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
     try {
       if (editingArea) {
         await api.updateArea(editingArea.id, areaNameInput);
+        showToast('Bölge başarıyla güncellendi.', 'success');
       } else {
         await api.createArea(areaNameInput);
+        showToast('Yeni bölge başarıyla oluşturuldu.', 'success');
       }
       onRefreshAreas();
       setIsAddAreaModalOpen(false);
     } catch (err: any) {
-      alert(err.message || 'Bölge kaydedilemedi.');
+      showToast(err.message || 'Bölge kaydedilemedi.', 'error');
+      sound.warning();
     }
   };
 
@@ -85,9 +94,11 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
       sound.beep();
       try {
         await api.deleteArea(a.id);
+        showToast(`"${a.name}" bölgesi silindi.`, 'success');
         onRefreshAreas();
       } catch (err: any) {
-        alert(err.message || 'Bölge silinemedi.');
+        showToast(err.message || 'Bölge silinemedi.', 'error');
+        sound.warning();
       }
     }
   };
@@ -123,6 +134,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
           seats: tableSeatsInput,
           shape: tableShapeInput
         });
+        showToast('Masa bilgileri güncellendi.', 'success');
       } else {
         await api.createTable({
           area_id: tableAreaSelect,
@@ -130,11 +142,13 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
           seats: tableSeatsInput,
           shape: tableShapeInput
         });
+        showToast('Yeni masa oluşturuldu.', 'success');
       }
       onRefreshAreas();
       setIsAddTableModalOpen(false);
     } catch (err: any) {
-      alert(err.message || 'Masa kaydedilemedi.');
+      showToast(err.message || 'Masa kaydedilemedi.', 'error');
+      sound.warning();
     }
   };
 
@@ -143,9 +157,11 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
       sound.beep();
       try {
         await api.deleteTable(t.id);
+        showToast(`"${t.name}" masası silindi.`, 'success');
         onRefreshAreas();
       } catch (err: any) {
-        alert(err.message || 'Masa silinemedi.');
+        showToast(err.message || 'Masa silinemedi.', 'error');
+        sound.warning();
       }
     }
   };
@@ -163,15 +179,29 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
         seats: Number(bulkSeats),
         shape: 'square'
       });
+      showToast('Toplu masalar başarıyla eklendi.', 'success');
       onRefreshAreas();
       setIsBulkModalOpen(false);
     } catch (err: any) {
-      alert(err.message || 'Toplu masa eklenemedi.');
+      showToast(err.message || 'Toplu masa eklenemedi.', 'error');
+      sound.warning();
     }
   };
 
   return (
-    <div className="flex-1 flex h-[calc(100vh-3.5rem)] bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none overflow-hidden font-sans transition-colors duration-200">
+    <div className="relative flex-1 flex h-[calc(100vh-3.5rem)] bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none overflow-hidden font-sans transition-colors duration-200">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`absolute top-4 right-4 z-50 p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-2xl transition-all animate-slideDown ${
+          toast.type === 'success' 
+            ? 'bg-emerald-600/95 text-white border border-emerald-500' 
+            : 'bg-rose-600/95 text-white border border-rose-500'
+        }`}>
+          {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
       {/* Left Sidebar: Areas List (Bölge Listesi) */}
       <div className="w-64 md:w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shadow-sm z-10">
         {/* Top Button: + Bölge Ekle */}

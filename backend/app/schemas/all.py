@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -12,6 +12,26 @@ class StaffUserResponse(BaseModel):
     role: str
     is_active: bool
 
+class StaffUserCreate(BaseModel):
+    name: str = Field(..., min_length=2, description="Personel adı")
+    role: str = Field("waiter", description="Personel rolü")
+    pin_code: str = Field("1234", min_length=4, max_length=10, description="4 haneli PIN kodu")
+    is_active: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_name_fallback(cls, data: Any):
+        if isinstance(data, dict):
+            if "name" not in data and "full_name" in data:
+                data["name"] = data["full_name"]
+        return data
+
+class StaffUserUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    pin_code: Optional[str] = None
+    is_active: Optional[bool] = None
+
 # --- Table & Floor ---
 class AreaCreate(BaseModel):
     name: str
@@ -22,6 +42,12 @@ class TableCreateSchema(BaseModel):
     name: str
     seats: Optional[int] = 4
     shape: Optional[str] = "square"
+
+class TableUpdateSchema(BaseModel):
+    area_id: Optional[int] = None
+    name: Optional[str] = None
+    seats: Optional[int] = None
+    shape: Optional[str] = None
 
 class TableBulkCreateSchema(BaseModel):
     area_id: int
@@ -110,7 +136,7 @@ class SelectedModifier(BaseModel):
 class OrderItemInput(BaseModel):
     product_id: int
     variant_name: Optional[str] = None
-    unit_price: float
+    unit_price: Optional[float] = None
     quantity: int = 1
     selected_modifiers: List[SelectedModifier] = []
     negative_modifiers: List[str] = [] # ["Soğansız", "Buzsuz"]
@@ -150,15 +176,26 @@ class ApplyDiscountRequest(BaseModel):
 
 class ApplyTreatRequest(BaseModel):
     order_item_ids: Optional[List[int]] = None # If None, treat whole order
-    reason: str
-    operator_name: str
+    reason: str = "Müessese İkramı"
+    operator_name: str = "Yetkili"
     manager_pin: Optional[str] = None
 
 # --- Payments & Split Bill ---
 class SinglePaymentItem(BaseModel):
-    method: str # cash, credit_card, sodexo, multinet, ticket, meal_card, online, other
-    amount: float
+    method: Optional[str] = "cash" # cash, credit_card, sodexo, multinet, ticket, meal_card, online, other
+    payment_method: Optional[str] = None
+    amount: float = Field(..., ge=0, description="Ödenen tutar negatif olamaz")
     tip: float = 0.0
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_method_fallback(cls, data: Any):
+        if isinstance(data, dict):
+            if "method" not in data and "payment_method" in data:
+                data["method"] = data["payment_method"]
+            elif "payment_method" not in data and "method" in data:
+                data["payment_method"] = data["method"]
+        return data
 
 class SettlePaymentRequest(BaseModel):
     order_id: int
@@ -202,17 +239,38 @@ class StockTransferRequest(BaseModel):
     notes: Optional[str] = None
     created_by: str = "Müdür"
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_aliases(cls, data: Any):
+        if isinstance(data, dict):
+            if "amount" not in data and "quantity" in data:
+                data["amount"] = data["quantity"]
+            if "source_warehouse_id" not in data and "from_warehouse_id" in data:
+                data["source_warehouse_id"] = data["from_warehouse_id"]
+            if "target_warehouse_id" not in data and "to_warehouse_id" in data:
+                data["target_warehouse_id"] = data["to_warehouse_id"]
+        return data
+
 class PurchaseInvoiceItem(BaseModel):
     ingredient_id: int
     quantity: float
-    unit_price: float
+    unit_price: Optional[float] = None
+    unit_cost: Optional[float] = None
     target_warehouse_id: int = 1
 
+    def get_unit_price(self) -> float:
+        return self.unit_price if self.unit_price is not None else (self.unit_cost or 0.0)
+
 class PurchaseInvoiceRequest(BaseModel):
-    supplier_name: str
+    supplier_name: Optional[str] = None
+    supplier_title: Optional[str] = None
     invoice_no: str
     items: List[PurchaseInvoiceItem]
     created_by: str = "Müdür"
+    warehouse_id: Optional[int] = 1
+
+    def get_supplier(self) -> str:
+        return self.supplier_name or self.supplier_title or "Tedarikçi"
 
 # --- Delivery & Aggregators ---
 class AssignCourierRequest(BaseModel):
@@ -225,11 +283,21 @@ class CourierMutabakatRequest(BaseModel):
     collected_card: float
     cashier_name: str = "Kasiyer"
 
+class OnlineOrderItem(BaseModel):
+    product_id: Optional[int] = None
+    name: Optional[str] = None
+    product_name: Optional[str] = None
+    unit_price: float = 0.0
+    quantity: int = 1
+    total_price: Optional[float] = None
+    kitchen_note: Optional[str] = None
+
 class OnlineOrderIngestRequest(BaseModel):
-    platform: str # yemeksepeti, getir, trendyol
+    platform: Optional[str] = None
+    channel: Optional[str] = None
     customer_name: str
     customer_phone: str
     delivery_address: str
-    items: List[OrderItemInput]
+    items: List[OnlineOrderItem]
     payment_type: str = "online_odendi"
     notes: Optional[str] = None

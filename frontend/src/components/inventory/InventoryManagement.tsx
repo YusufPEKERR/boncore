@@ -25,6 +25,12 @@ export const InventoryManagement: React.FC = () => {
   const [purchaseWh, setPurchaseWh] = useState<number>(1);
 
   const [loading, setLoading] = useState<boolean>(true);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
 
   useEffect(() => {
     loadData();
@@ -54,10 +60,10 @@ export const InventoryManagement: React.FC = () => {
     sound.beep();
     try {
       await api.transferStock(transferIngId, fromWh, toWh, transferQty, 'Depolar arası transfer');
-      alert('Depolar arası stok transferi başarıyla yapıldı.');
+      showToast('Depolar arası stok transferi başarıyla yapıldı.', 'success');
       await loadData();
     } catch (err: any) {
-      alert(err.message || 'Transfer başarısız.');
+      showToast(err.message || 'Transfer başarısız.', 'error');
       sound.warning();
     }
   };
@@ -68,6 +74,7 @@ export const InventoryManagement: React.FC = () => {
     try {
       await api.enterPurchaseInvoice({
         warehouse_id: purchaseWh,
+        supplier_name: 'Özdemir Et & Gıda Ltd.',
         supplier_title: 'Özdemir Et & Gıda Ltd.',
         invoice_no: 'IRS-' + Date.now().toString().slice(-6),
         items: [
@@ -78,10 +85,10 @@ export const InventoryManagement: React.FC = () => {
           }
         ]
       });
-      alert('Tedarikçi irsaliye girişi ve stok artışı tamamlandı.');
+      showToast('Tedarikçi irsaliye girişi ve stok artışı tamamlandı.', 'success');
       await loadData();
     } catch (err: any) {
-      alert(err.message || 'İrsaliye kaydedilemedi.');
+      showToast(err.message || 'İrsaliye kaydedilemedi.', 'error');
       sound.warning();
     }
   };
@@ -90,6 +97,18 @@ export const InventoryManagement: React.FC = () => {
 
   return (
     <div className="flex-1 overflow-y-auto p-6 bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 space-y-6 select-none transition-colors duration-200">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-lg transition-all animate-slideDown ${
+          toast.type === 'success' 
+            ? 'bg-emerald-600/95 text-white border border-emerald-500' 
+            : 'bg-rose-600/95 text-white border border-rose-500'
+        }`}>
+          {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
       {/* Top Header */}
       <div className="flex items-center justify-between">
         <div>

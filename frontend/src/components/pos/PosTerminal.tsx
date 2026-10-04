@@ -52,6 +52,24 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [orderNote, setOrderNote] = useState<string>('');
   const [isDiscountModalOpen, setIsDiscountModalOpen] = useState<boolean>(false);
   const [discountPercent, setDiscountPercent] = useState<number>(0);
+  const [isTreatModalOpen, setIsTreatModalOpen] = useState<boolean>(false);
+  const [treatReason, setTreatReason] = useState<string>('Müessese İkramı');
+  const [treatSelectedItems, setTreatSelectedItems] = useState<number[]>([]);
+  const [treatManagerPin, setTreatManagerPin] = useState<string>('9999');
+
+  // Void Item Modal
+  const [isVoidModalOpen, setIsVoidModalOpen] = useState<boolean>(false);
+  const [selectedItemForVoid, setSelectedItemForVoid] = useState<OrderItem | null>(null);
+  const [voidReasonCode, setVoidReasonCode] = useState<string>('MUSTERI_VAZGECTI');
+  const [voidReasonText, setVoidReasonText] = useState<string>('Müşteri vazgeçti');
+  const [voidManagerPin, setVoidManagerPin] = useState<string>('1234');
+
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
 
   // Settings state (API-first, localStorage fallback)
   const [settings, setSettings] = useState<{
@@ -123,6 +141,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       setExistingOrder(ord);
       setActiveOrderId(ord.id);
       setCartItems(ord.items || []);
+      if (ord.notes) setOrderNote(ord.notes);
     } catch (e) {
       console.warn('Failed to load order', e);
     }
@@ -205,8 +224,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         }
       });
     } else {
-      // Saved item notification
-      alert('Kayıtlı ürün adedini azaltmak için iptal yetkisi gerekir.');
+      // Saved item: trigger void modal
+      const savedItem = cartItems.find(i => i.id && i.product_id === productId);
+      if (savedItem) {
+        sound.beep();
+        setSelectedItemForVoid(savedItem);
+        setIsVoidModalOpen(true);
+      }
     }
   };
 
@@ -214,6 +238,45 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     sound.beep();
     setCartItems(prev => [...prev, item]);
     setSelectedProductForModal(null);
+  };
+
+  const handleSaveOrderNote = async () => {
+    sound.beep();
+    if (activeOrderId) {
+      try {
+        await api.updateOrderNotes(activeOrderId, orderNote);
+      } catch (err: any) {
+        console.warn('Order note update failed:', err);
+      }
+    }
+    setIsNoteModalOpen(false);
+  };
+
+  const handleConfirmVoid = async () => {
+    if (!selectedItemForVoid?.id) return;
+    sound.beep();
+    setLoading(true);
+    try {
+      await api.voidItem(
+        selectedItemForVoid.id,
+        voidReasonCode,
+        voidReasonText,
+        currentUser?.name || 'Müdür',
+        voidManagerPin
+      );
+      sound.warning();
+      setIsVoidModalOpen(false);
+      setSelectedItemForVoid(null);
+      if (activeOrderId) {
+        await loadOrder(activeOrderId);
+      }
+      onRefreshData();
+    } catch (err: any) {
+      showToast(err.message || 'Ürün iptal edilemedi.', 'error');
+      sound.warning();
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSaveOrSendOrder = async () => {
@@ -226,6 +289,9 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     try {
       if (activeOrderId) {
         await api.addItemsToOrder(activeOrderId, unsavedItems, currentUser?.name || 'MEHMETABİ');
+        if (orderNote) {
+          await api.updateOrderNotes(activeOrderId, orderNote);
+        }
         sound.kitchenBell();
         await loadOrder(activeOrderId);
       } else {
@@ -234,6 +300,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           order_type: activeTable ? 'dine_in' : 'takeaway',
           items: unsavedItems,
           waiter_name: currentUser?.name || 'MEHMETABİ',
+          notes: orderNote || null,
           kuver_count: activeTable?.kuver_count || 1
         };
         const res = await api.createOrder(payload);
@@ -245,10 +312,106 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       onRefreshData();
       onBackToTables();
     } catch (err: any) {
-      alert(err.message || 'Sipariş kaydedilemedi.');
+      showToast(err.message || 'Sipariş kaydedilemedi.', 'error');
       sound.warning();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFastCashPayment = async () => {
+    sound.beep();
+    setLoading(true);
+    try {
+      let targetOrderId = activeOrderId;
+      const unsavedItems = cartItems.filter(i => !i.id);
+      if (!targetOrderId && unsavedItems.length > 0) {
+        const payload = {
+          table_id: activeTable?.id || null,
+          order_type: activeTable ? 'dine_in' : 'takeaway',
+          items: unsavedItems,
+          waiter_name: currentUser?.name || 'Garson',
+          kuver_count: activeTable?.kuver_count || 1
+        };
+        const orderRes = await api.createOrder(payload);
+        targetOrderId = orderRes.order_id;
+      } else if (activeOrderId && unsavedItems.length > 0) {
+        await api.addItemsToOrder(activeOrderId, unsavedItems, currentUser?.name || 'Garson');
+      }
+
+      if (targetOrderId) {
+        await api.settlePayment({
+          order_id: targetOrderId,
+          payments: [{ method: 'cash', amount: grandTotal }],
+          cashier_name: currentUser?.name || 'Garson',
+          close_table: true
+        });
+        sound.cashDrawer();
+        onRefreshData();
+        onBackToTables();
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Hızlı ödeme işlemi başarısız.', 'error');
+      sound.warning();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApplyTreatSubmit = async (wholeOrder: boolean = false) => {
+    if (!activeOrderId) {
+      showToast('İkram uygulamak için önce adisyonu kaydediniz.', 'error');
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.applyTreat(
+        activeOrderId,
+        wholeOrder ? null : treatSelectedItems,
+        treatReason || 'Müessese İkramı',
+        currentUser?.name || 'Yetkili',
+        treatManagerPin || '9999'
+      );
+      sound.cashDrawer();
+      await loadOrder(activeOrderId);
+      setIsTreatModalOpen(false);
+      showToast('İkram başarıyla uygulandı.', 'success');
+      onRefreshData();
+    } catch (err: any) {
+      showToast(err.message || 'İkram uygulanamadı.', 'error');
+      sound.warning();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApplyDiscountSubmit = async (val: number, name: string) => {
+    sound.beep();
+    setDiscountPercent(val);
+    if (activeOrderId) {
+      setLoading(true);
+      try {
+        await api.applyDiscount(
+          activeOrderId,
+          'percentage',
+          val,
+          name,
+          currentUser?.name || 'Yetkili',
+          '9999'
+        );
+        sound.cashDrawer();
+        await loadOrder(activeOrderId);
+        setIsDiscountModalOpen(false);
+        showToast('İndirim başarıyla uygulandı.', 'success');
+        onRefreshData();
+      } catch (err: any) {
+        showToast(err.message || 'İndirim uygulanamadı.', 'error');
+        sound.warning();
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      setIsDiscountModalOpen(false);
     }
   };
 
@@ -291,7 +454,19 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const vatAmount = ((grandTotal) * 10) / 110; // %10 KDV Dahil tutarı
 
   return (
-    <div className="flex-1 flex h-[calc(100vh-3.5rem)] bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none overflow-hidden font-sans transition-colors duration-200">
+    <div className="relative flex-1 flex h-[calc(100vh-3.5rem)] bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none overflow-hidden font-sans transition-colors duration-200">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`absolute top-4 right-4 z-50 p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-2xl transition-all animate-slideDown ${
+          toast.type === 'success' 
+            ? 'bg-emerald-600/95 text-white border border-emerald-500' 
+            : 'bg-rose-600/95 text-white border border-rose-500'
+        }`}>
+          {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
       {/* Left Panel: Adisyon & Cart (Matching Adisyo Frame 070) - ~360px */}
       <div className="w-[340px] md:w-[380px] flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shadow-lg z-10">
         {/* Ticket Top Header: ← Masa 9 + Action Icons */}
@@ -418,7 +593,9 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                       if (!isSaved) {
                         setCartItems(prev => prev.filter((_, i) => i !== idx));
                       } else {
-                        alert('Kayıtlı siparişi iptal etmek için lütfen müdür yetkisiyle İptal/İade işlemi yapınız.');
+                        sound.beep();
+                        setSelectedItemForVoid(item);
+                        setIsVoidModalOpen(true);
                       }
                     }}
                     className="text-slate-300 hover:text-red-500 p-1 transition"
@@ -518,15 +695,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             </button>
 
             <button
-              onClick={() => {
-                if (activeOrderId) {
-                  sound.cashDrawer();
-                  alert(`Hızlı Nakit Ödeme ₺${grandTotal.toFixed(2)} alındı.`);
-                  onRefreshData();
-                  onBackToTables();
-                }
-              }}
-              disabled={cartItems.length === 0}
+              onClick={handleFastCashPayment}
+              disabled={loading || (cartItems.length === 0 && !existingOrder)}
               className="col-span-4 py-3 px-1.5 rounded-xl bg-[#fff9db] dark:bg-amber-950/40 border border-[#f59f00]/40 text-[#d97706] hover:bg-[#ffec99] disabled:opacity-50 font-black text-[11px] transition flex items-center justify-center gap-1 truncate cursor-pointer"
             >
               <Zap className="w-3 h-3 flex-shrink-0 text-amber-500 fill-amber-500" />
@@ -582,7 +752,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
             {/* Treat / Kuver Button 🍽️ */}
             <button
-              onClick={() => alert('İkram Modalı Açıldı')}
+              onClick={() => { sound.beep(); setIsTreatModalOpen(true); }}
               className="p-2 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition"
               title="İkram Uygula"
             >
@@ -714,12 +884,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 Kapat
               </button>
               <button
-                onClick={() => {
-                  sound.beep();
-                  alert('Adisyon notu kaydedildi.');
-                  setIsNoteModalOpen(false);
-                }}
-                className="flex-1 py-2 rounded-xl bg-red-600 text-white font-black text-xs"
+                onClick={handleSaveOrderNote}
+                className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs transition"
               >
                 Kaydet
               </button>
@@ -746,12 +912,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 ].map((d, i) => (
                   <button
                     key={i}
-                    onClick={() => {
-                      sound.beep();
-                      setDiscountPercent(d.val);
-                      alert(`${d.name} (%${d.val}) adisyona uygulandı.`);
-                      setIsDiscountModalOpen(false);
-                    }}
+                    onClick={() => handleApplyDiscountSubmit(d.val, d.name)}
                     className="p-2.5 bg-slate-50 hover:bg-red-50 dark:bg-slate-800 dark:hover:bg-red-950/40 border border-slate-200 dark:border-slate-700 hover:border-red-400 rounded-xl text-left transition flex items-center justify-between"
                   >
                     <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{d.name}</span>
@@ -776,11 +937,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 />
                 <button
                   onClick={() => {
-                    sound.beep();
                     if (discountPercent > 0) {
-                      alert(`%${discountPercent} İndirim uygulandı.`);
+                      handleApplyDiscountSubmit(discountPercent, `%${discountPercent} Özel İndirim`);
+                    } else {
+                      setIsDiscountModalOpen(false);
                     }
-                    setIsDiscountModalOpen(false);
                   }}
                   className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow transition cursor-pointer"
                 >
@@ -801,6 +962,106 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         </div>
       )}
 
+      {/* Treat Modal (İkram Modalı) */}
+      {isTreatModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn font-sans">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Utensils className="w-5 h-5 text-amber-500" />
+                <h3 className="text-base font-black">Adisyona İkram Uygula</h3>
+              </div>
+              <button onClick={() => setIsTreatModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Reason Chips */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-500">İkram Nedeni:</label>
+              <div className="flex flex-wrap gap-1.5">
+                {['Müessese İkramı', 'Şef İkramı', 'VIP Misafir', 'Hizmet Telafisi', 'Yönetim Onayı'].map(r => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => { sound.beep(); setTreatReason(r); }}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      treatReason === r
+                        ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Manager PIN Verification */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-500">Yetkili / Müdür PIN Kodu:</label>
+              <input
+                type="password"
+                maxLength={6}
+                value={treatManagerPin}
+                onChange={(e) => setTreatManagerPin(e.target.value)}
+                placeholder="9999"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-center font-black tracking-widest text-slate-900 dark:text-white"
+              />
+            </div>
+
+            {/* Itemized Selection if existing order has saved items */}
+            {existingOrder && existingOrder.items && existingOrder.items.length > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-500">Kalem Bazlı İkram (Opsiyonel):</label>
+                <div className="max-h-36 overflow-y-auto space-y-1 border border-slate-200 dark:border-slate-800 rounded-2xl p-2">
+                  {existingOrder.items.filter(it => !it.is_voided).map(it => {
+                    const isSelected = treatSelectedItems.includes(it.id);
+                    return (
+                      <div
+                        key={it.id}
+                        onClick={() => {
+                          sound.beep();
+                          setTreatSelectedItems(prev =>
+                            isSelected ? prev.filter(id => id !== it.id) : [...prev, it.id]
+                          );
+                        }}
+                        className={`p-2 rounded-xl text-xs flex items-center justify-between cursor-pointer border transition ${
+                          isSelected
+                            ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 text-amber-900 dark:text-amber-200 font-bold'
+                            : 'bg-slate-50 dark:bg-slate-800/60 border-transparent text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        <span>{it.quantity}x {it.product_name}</span>
+                        <span className="font-mono">₺{it.total_price.toFixed(2)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                onClick={() => handleApplyTreatSubmit(true)}
+                disabled={loading}
+                className="py-3 rounded-2xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-black text-xs shadow-md transition flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <span>TÜM ADİSYON İKRAM</span>
+              </button>
+              <button
+                onClick={() => handleApplyTreatSubmit(false)}
+                disabled={loading || treatSelectedItems.length === 0}
+                className="py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-black text-xs shadow-md transition flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <span>SEÇİLENLERİ İKRAM ET ({treatSelectedItems.length})</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Kuver / Kişi Sayısı Modalı */}
       {isKuverModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn font-sans">
@@ -812,9 +1073,20 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               {[1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20].map(n => (
                 <button
                   key={n}
-                  onClick={() => {
+                  onClick={async () => {
                     sound.beep();
                     setKuverCount(n);
+                    if (activeTable?.id) {
+                      try {
+                        await api.updateKuver(activeTable.id, n, currentUser?.name || 'Garson');
+                        if (activeOrderId) {
+                          await loadOrder(activeOrderId);
+                        }
+                        onRefreshData();
+                      } catch (e) {
+                        console.warn('Failed to update kuver count', e);
+                      }
+                    }
                     setIsKuverModalOpen(false);
                   }}
                   className={`py-2.5 rounded-xl font-mono font-black text-sm border transition ${
@@ -834,6 +1106,98 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs"
               >
                 Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Void (İptal/İade) Modal */}
+      {isVoidModalOpen && selectedItemForVoid && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn font-sans">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-black text-red-600 dark:text-red-400">Ürün İptal & İade</h3>
+                <p className="text-xs text-slate-500 font-semibold">{selectedItemForVoid.product_name}</p>
+              </div>
+              <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
+                ₺{selectedItemForVoid.unit_price.toFixed(2)}
+              </span>
+            </div>
+
+            <div className="space-y-3 text-xs font-semibold">
+              <div>
+                <label className="text-slate-500 block mb-1.5 font-bold">İptal Sebebi:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { code: 'MUSTERI_VAZGECTI', label: 'Müşteri Vazgeçti' },
+                    { code: 'YANLIS_SIPARIS', label: 'Yanlış Sipariş Girişi' },
+                    { code: 'GECIKME', label: 'Mutfak Gecikmesi' },
+                    { code: 'BOZUK_URUN', label: 'Bozuk / Soğuk Ürün' },
+                  ].map((r) => (
+                    <button
+                      key={r.code}
+                      type="button"
+                      onClick={() => {
+                        sound.beep();
+                        setVoidReasonCode(r.code);
+                        setVoidReasonText(r.label);
+                      }}
+                      className={`p-2 rounded-xl text-left font-bold transition border ${
+                        voidReasonCode === r.code
+                          ? 'bg-red-50 dark:bg-red-950/60 border-red-500 text-red-600 dark:text-red-300'
+                          : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-500 block mb-1 font-bold">Açıklama / Not:</label>
+                <input
+                  type="text"
+                  value={voidReasonText}
+                  onChange={(e) => setVoidReasonText(e.target.value)}
+                  placeholder="İptal ayrıntısı..."
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-500 block mb-1 font-bold">Müdür / Yetkili PIN:</label>
+                <input
+                  type="password"
+                  value={voidManagerPin}
+                  onChange={(e) => setVoidManagerPin(e.target.value)}
+                  maxLength={6}
+                  placeholder="PIN"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-center tracking-widest text-slate-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsVoidModalOpen(false);
+                  setSelectedItemForVoid(null);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmVoid}
+                disabled={loading}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs shadow-md transition disabled:opacity-50"
+              >
+                {loading ? 'İptal Ediliyor...' : 'İptali Onayla'}
               </button>
             </div>
           </div>

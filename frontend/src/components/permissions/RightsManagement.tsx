@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Shield, Search, Save, CheckCircle2, UserCheck, HelpCircle } from 'lucide-react';
 import { sound } from '../../services/sound';
+import { api } from '../../services/api';
 
 interface PermissionItem {
   id: string;
@@ -84,9 +85,31 @@ const initialPermissions: PermissionItem[] = [
 ];
 
 export const RightsManagement: React.FC = () => {
-  const [permissions, setPermissions] = useState<PermissionItem[]>(initialPermissions);
+  const [permissions, setPermissions] = useState<PermissionItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('boncore_role_permissions');
+      return saved ? JSON.parse(saved) : initialPermissions;
+    } catch {
+      return initialPermissions;
+    }
+  });
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
+
+  useEffect(() => {
+    const loadPermissions = async () => {
+      try {
+        const settings = await api.getSettings();
+        if (settings?.role_permissions && Array.isArray(settings.role_permissions)) {
+          setPermissions(settings.role_permissions);
+          localStorage.setItem('boncore_role_permissions', JSON.stringify(settings.role_permissions));
+        }
+      } catch (err) {
+        console.warn('Failed to load settings permissions', err);
+      }
+    };
+    loadPermissions();
+  }, []);
 
   const roles = [
     { key: 'waiter', label: 'Garson' },
@@ -113,8 +136,14 @@ export const RightsManagement: React.FC = () => {
     }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     sound.beep();
+    try {
+      localStorage.setItem('boncore_role_permissions', JSON.stringify(permissions));
+      await api.updateSettings({ role_permissions: permissions });
+    } catch (e) {
+      console.warn('Failed to save permissions to backend', e);
+    }
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
   };

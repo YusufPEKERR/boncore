@@ -74,3 +74,66 @@ export async function queueOfflinePayment(payload: any) {
     is_synced: false
   });
 }
+
+export async function syncOfflineQueue(): Promise<{ syncedOrders: number; syncedPayments: number }> {
+  let syncedOrders = 0;
+  let syncedPayments = 0;
+
+  try {
+    const pendingOrders = await offlineDb.offlineOrdersQueue.toArray();
+    for (const ord of pendingOrders) {
+      if (!ord.is_synced && ord.id) {
+        try {
+          const res = await fetch('/api/orders/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              table_id: ord.table_id,
+              order_type: ord.order_type,
+              items: ord.items,
+              waiter_name: ord.waiter_name,
+              notes: ord.notes
+            })
+          });
+          if (res.ok) {
+            await offlineDb.offlineOrdersQueue.delete(ord.id);
+            syncedOrders++;
+          }
+        } catch (e) {
+          console.warn('[OfflineDB] Sync order failed, network may still be offline', e);
+          break;
+        }
+      }
+    }
+
+    const pendingPayments = await offlineDb.offlinePaymentsQueue.toArray();
+    for (const pay of pendingPayments) {
+      if (!pay.is_synced && pay.id) {
+        try {
+          const res = await fetch('/api/cashier/settle-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              order_id: pay.order_id,
+              payments: pay.payments,
+              rounding: pay.rounding,
+              cashier_name: pay.cashier_name,
+              close_table: true
+            })
+          });
+          if (res.ok) {
+            await offlineDb.offlinePaymentsQueue.delete(pay.id);
+            syncedPayments++;
+          }
+        } catch (e) {
+          console.warn('[OfflineDB] Sync payment failed, network may still be offline', e);
+          break;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[OfflineDB] Offline queue sync error', err);
+  }
+
+  return { syncedOrders, syncedPayments };
+}

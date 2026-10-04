@@ -9,7 +9,10 @@ from app.schemas.all import ProductDetailResponse, ProductVariantSchema, Modifie
 router = APIRouter(prefix="/products", tags=["Products & Menu"])
 
 @router.get("/categories")
-async def get_categories_with_products(db: AsyncSession = Depends(get_db)):
+async def get_categories_with_products(
+    all_items: bool = Query(True),
+    db: AsyncSession = Depends(get_db)
+):
     """
     Returns full menu tree: Categories -> Products -> Variants & Modifier Groups.
     """
@@ -25,7 +28,7 @@ async def get_categories_with_products(db: AsyncSession = Depends(get_db)):
     for cat in categories:
         prods = []
         for p in cat.products:
-            if not p.is_available:
+            if not all_items and not p.is_available:
                 continue
             prods.append({
                 "id": p.id,
@@ -42,6 +45,7 @@ async def get_categories_with_products(db: AsyncSession = Depends(get_db)):
                 "allergens": p.allergens or [],
                 "is_vegan": p.is_vegan,
                 "is_spicy": p.is_spicy,
+                "is_available": p.is_available if p.is_available is not None else True,
                 "variants": [
                     {
                         "id": v.id,
@@ -102,6 +106,7 @@ async def search_products(q: str = Query(..., min_length=1), db: AsyncSession = 
             "plu_code": p.plu_code,
             "barcode": p.barcode,
             "station": p.station,
+            "is_available": p.is_available if p.is_available is not None else True,
             "variants": [{"id": v.id, "name": v.name, "price_delta": v.price_delta} for v in p.variants],
             "modifier_groups": [
                 {

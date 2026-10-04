@@ -5,7 +5,7 @@ import {
   CreditCard, Wallet, Receipt, Percent, Clock, Truck, Phone,
   ShoppingBag, Store, QrCode, Search, CheckCircle2, AlertCircle,
   Coffee, UtensilsCrossed, ArrowDownRight, Sparkles, RotateCcw,
-  FileText, XCircle, Gift, ChevronDown, Check
+  FileText, XCircle, Gift, ChevronDown, Check, RefreshCw
 } from 'lucide-react';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
@@ -16,6 +16,7 @@ export const RestaurantStatistics: React.FC = () => {
   const [showDateMenu, setShowDateMenu] = useState<boolean>(false);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [refreshToast, setRefreshToast] = useState<string | null>(null);
 
   // Sub-filters
   const [chartSegment, setChartSegment] = useState<'hourly' | 'category' | 'trend' | 'payment'>('hourly');
@@ -212,6 +213,77 @@ export const RestaurantStatistics: React.FC = () => {
     ]
   };
 
+  const exportToExcel = () => {
+    sound.beep();
+    try {
+      const rows: string[] = [];
+      rows.push('"BONCORE RESTORAN İSTATİSTİK RAPORU"');
+      rows.push(`"Tarih Aralığı";"${dateRange}"`);
+      rows.push(`"Oluşturulma Tarihi";"${new Date().toLocaleString('tr-TR')}"`);
+      rows.push('');
+
+      rows.push('"GENEL ÖZET"');
+      rows.push(`"Toplam Net Ciro";"${totalTurnover.toFixed(2)} TL"`);
+      rows.push(`"Toplam Sipariş / Adisyon";"${totalOrders}"`);
+      rows.push(`"Ortalama Hesap";"${avgTicket.toFixed(2)} TL"`);
+      rows.push(`"Toplam İndirim & İkram";"${totalDiscounts.toFixed(2)} TL"`);
+      rows.push('');
+
+      rows.push('"ÖDEME YÖNTEMLERİ DAĞILIMI"');
+      rows.push('"Ödeme Yöntemi";"Tutar (TL)";"İşlem Sayısı";"Pay (%)"');
+      if (dailyData?.payment_breakdown) {
+        Object.values(dailyData.payment_breakdown).forEach((p: any) => {
+          rows.push(`"${p.name}";"${p.amount.toFixed(2)}";"${p.count}";"%${p.percent}"`);
+        });
+      }
+      rows.push('');
+
+      rows.push('"SAATLİK SATIŞ PERFORMANSI"');
+      rows.push('"Zaman Dilimi";"Sipariş Sayısı";"Ciro (TL)";"Ortalama Hesap (TL)";"Pay (%)"');
+      if (dailyData?.hourly_breakdown) {
+        dailyData.hourly_breakdown.forEach((h: any) => {
+          rows.push(`"${h.time_range}";"${h.orders_count}";"${h.turnover.toFixed(2)}";"${h.avg_ticket.toFixed(2)}";"%${h.percent}"`);
+        });
+      }
+      rows.push('');
+
+      rows.push('"SON ADİSYONLAR"');
+      rows.push('"Adisyon No";"Masa / Kanal";"Garson";"Saat";"Tutar (TL)";"Ödeme Yöntemi";"Durum"');
+      if (dailyData?.recent_bills) {
+        dailyData.recent_bills.forEach((b: any) => {
+          rows.push(`"${b.order_no}";"${b.table_name}";"${b.waiter}";"${b.time}";"${b.grand_total.toFixed(2)}";"${b.payment_method}";"${b.status}"`);
+        });
+      }
+      rows.push('');
+
+      rows.push('"İKRAM EDİLEN ÜRÜNLER"');
+      rows.push('"Adisyon No";"Masa";"Ürün";"Adet";"Tutar (TL)";"Sebep";"Personel";"Saat"');
+      if (complimentaryData?.treat_items) {
+        complimentaryData.treat_items.forEach((t: any) => {
+          rows.push(`"${t.order_no}";"${t.table_name}";"${t.product_name}";"${t.quantity}";"${t.amount.toFixed(2)}";"${t.reason}";"${t.staff}";"${t.time}"`);
+        });
+      }
+
+      const csvContent = '\uFEFF' + rows.join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `BonCore_Rapor_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      sound.cashDrawer();
+      setRefreshToast('✓ CSV raporu başarıyla indirildi.');
+      setTimeout(() => setRefreshToast(null), 3500);
+    } catch (err: any) {
+      sound.warning();
+      setRefreshToast('⚠ Dışa aktarma hatası: ' + (err.message || 'Hata oluştu.'));
+      setTimeout(() => setRefreshToast(null), 3500);
+    }
+  };
+
   return (
     <div className="flex-1 flex h-[calc(100vh-3.5rem)] bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none overflow-hidden font-sans transition-colors duration-200">
       {/* Left Sidebar Submenu */}
@@ -281,7 +353,7 @@ export const RestaurantStatistics: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => { sound.beep(); alert('Rapor Excel (.xlsx) formatında indirildi.'); }}
+              onClick={exportToExcel}
               className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
             >
               <Download className="w-3.5 h-3.5 text-red-600" />
@@ -294,11 +366,21 @@ export const RestaurantStatistics: React.FC = () => {
               <Printer className="w-3.5 h-3.5 text-slate-500" />
               <span>Yazdır</span>
             </button>
+            {refreshToast && (
+              <span className="px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs border border-emerald-200 dark:border-emerald-800 animate-fadeIn">
+                {refreshToast}
+              </span>
+            )}
             <button
-              onClick={() => { sound.beep(); loadStatistics(); alert('Canlı veriler güncellendi.'); }}
+              onClick={async () => {
+                sound.beep();
+                await loadStatistics();
+                setRefreshToast('✓ Canlı veriler güncellendi.');
+                setTimeout(() => setRefreshToast(null), 3000);
+              }}
               className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
             >
-              <Filter className="w-3.5 h-3.5 text-slate-500" />
+              <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
               <span>Yenile</span>
             </button>
           </div>

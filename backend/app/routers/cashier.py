@@ -64,12 +64,17 @@ async def settle_order_payment(payload: SettlePaymentRequest, db: AsyncSession =
     if order.status == "paid":
         raise HTTPException(status_code=400, detail="Bu adisyonun tahsilatı zaten tamamlanmış ve masa kapatılmıştır.")
 
+    valid_payments = [p for p in payload.payments if p.amount > 0]
+    if not valid_payments:
+        if order.remaining_total <= 0.05 and payload.close_table:
+            pass
+        else:
+            raise HTTPException(status_code=400, detail="Geçerli bir ödeme tutarı girilmedi.")
+
     has_cash = False
     total_paid_in_request = 0.0
 
-    for p_input in payload.payments:
-        if p_input.amount <= 0:
-            continue
+    for p_input in valid_payments:
         if p_input.method == "cash":
             has_cash = True
 

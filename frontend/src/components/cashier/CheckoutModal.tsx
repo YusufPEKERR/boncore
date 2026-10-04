@@ -112,6 +112,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Status message / toast
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
+  const [isNoticeError, setIsNoticeError] = useState(false);
+
+  const showNotice = (msg: string, isError: boolean = false) => {
+    setStatusNotice(msg);
+    setIsNoticeError(isError);
+    setTimeout(() => setStatusNotice(null), 3500);
+  };
 
   useEffect(() => {
     if (isOpen && orderId) {
@@ -124,9 +131,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     try {
       const data = await api.getOrder(orderId);
       if (data.status === 'paid' || (data.remaining_total <= 0.01 && data.paid_total > 0)) {
-        alert('Bu masanın ödemesi zaten tamamlanmıştır.');
-        onPaymentCompleted();
-        onClose();
+        showNotice('Bu masanın ödemesi zaten tamamlanmıştır.', false);
+        setTimeout(() => {
+          onPaymentCompleted();
+          onClose();
+        }, 1200);
         return;
       }
       setOrder(data);
@@ -231,10 +240,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       );
       await loadOrderData();
       setIsDiscountModalOpen(false);
-      setStatusNotice('İndirim başarıyla uygulandı.');
-      setTimeout(() => setStatusNotice(null), 3000);
+      showNotice('İndirim başarıyla uygulandı.', false);
     } catch (err: any) {
-      alert(err.message || 'İndirim uygulanamadı.');
+      showNotice(err.message || 'İndirim uygulanamadı.', true);
     } finally {
       setLoading(false);
     }
@@ -244,7 +252,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const handleProcessPayment = async (method: string = selectedMethod, shouldPrint: boolean = false, shouldCloseTable: boolean = true) => {
     const amountToPay = parseFloat(payAmount);
     if (isNaN(amountToPay) || amountToPay <= 0) {
-      alert('Lütfen geçerli bir ödeme tutarı giriniz.');
+      showNotice('Lütfen geçerli bir ödeme tutarı giriniz.', true);
       return;
     }
 
@@ -291,11 +299,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         // Masayı kapatmadan ara tahsilat yapıldı: siparişi güncelle ve ekranda kal
         await loadOrderData();
         const methodName = method === 'cash' ? 'Nakit' : method === 'credit_card' ? 'Kredi Kartı' : 'Açık Hesap';
-        setStatusNotice(`₺${amountToPay.toFixed(2)} ${methodName} olarak kaydedildi (Masa açık).`);
-        setTimeout(() => setStatusNotice(null), 3500);
+        showNotice(`₺${amountToPay.toFixed(2)} ${methodName} olarak kaydedildi (Masa açık).`, false);
       }
     } catch (err: any) {
-      alert(err.message || 'Ödeme işlemi tamamlanamadı.');
+      showNotice(err.message || 'Ödeme işlemi tamamlanamadı.', true);
       sound.warning();
     } finally {
       setLoading(false);
@@ -381,7 +388,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       {/* ================= STATUS NOTIFICATION TOAST ================= */}
       {statusNotice && (
-        <div className="bg-emerald-600 text-white text-xs font-bold py-1.5 px-4 text-center shadow-sm animate-slideDown">
+        <div className={`${isNoticeError ? 'bg-rose-600' : 'bg-emerald-600'} text-white text-xs font-bold py-1.5 px-4 text-center shadow-sm animate-slideDown`}>
           {statusNotice}
         </div>
       )}

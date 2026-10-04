@@ -19,6 +19,7 @@ from app.services.stock_service import StockService
 from app.websocket_hub import ws_hub
 from app.config import settings
 import json
+import uuid
 
 router = APIRouter(prefix="/orders", tags=["Orders & POS"])
 
@@ -102,7 +103,7 @@ async def create_new_order(payload: CreateOrderRequest, db: AsyncSession = Depen
         if not table:
             raise HTTPException(status_code=404, detail="Masa bulunamadı.")
 
-    order_no = f"ORD-{datetime.utcnow().strftime('%Y%m%d')}-{int(datetime.utcnow().timestamp())%100000:05d}"
+    order_no = f"ORD-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
     kuver_count = payload.kuver_count or (table.kuver_count if table else 0)
 
     # Check Kuver parameter in Database
@@ -124,8 +125,15 @@ async def create_new_order(payload: CreateOrderRequest, db: AsyncSession = Depen
         table_id=payload.table_id,
         order_type=payload.order_type,
         status="open",
+        subtotal=0.0,
+        discount_amount=0.0,
+        discount_rate=0.0,
+        treat_amount=0.0,
         kuver_count=kuver_count if kuver_enabled else 0,
         kuver_total=kuver_total,
+        grand_total=kuver_total,
+        paid_total=0.0,
+        remaining_total=kuver_total,
         waiter_name=payload.waiter_name,
         notes=payload.notes,
         created_at=datetime.utcnow()
@@ -141,8 +149,9 @@ async def create_new_order(payload: CreateOrderRequest, db: AsyncSession = Depen
         station = prod.station if prod else "kitchen"
 
         # Calculate line total including modifiers
+        base_price = it.unit_price if it.unit_price is not None else (prod.base_price if prod else 0.0)
         mod_sum = sum(m.price for m in it.selected_modifiers)
-        line_unit = it.unit_price + mod_sum
+        line_unit = base_price + mod_sum
         line_total = line_unit * it.quantity
         subtotal += line_total
 
@@ -192,6 +201,21 @@ async def create_new_order(payload: CreateOrderRequest, db: AsyncSession = Depen
 
     return {"status": "success", "order_id": order.id, "order_no": order.order_no}
 
+@router.put("/{order_id}/notes")
+async def update_order_notes(order_id: int, payload: dict, db: AsyncSession = Depends(get_db)):
+    """
+    Updates general notes for an open order.
+    """
+    stmt = select(Order).where(Order.id == order_id)
+    res = await db.execute(stmt)
+    order = res.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Sipariş bulunamadı.")
+    order.notes = payload.get("notes", "")
+    await db.commit()
+    await ws_hub.broadcast_all("ORDER_UPDATED", {"order_id": order.id, "notes": order.notes})
+    return {"status": "success", "notes": order.notes}
+
 @router.post("/{order_id}/add-items")
 async def add_items_to_order(order_id: int, payload: AddItemsRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -200,7 +224,9 @@ async def add_items_to_order(order_id: int, payload: AddItemsRequest, db: AsyncS
     stmt = select(Order).where(Order.id == order_id).options(selectinload(Order.items), selectinload(Order.table))
     res = await db.execute(stmt)
     order = res.scalar_one_or_none()
-    if not order or order.status not in ["open", "bill_requested"]:
+    if not order:
+        raise HTTPException(status_code=404, detail="Sipariş bulunamadı.")
+    if order.status not in ["open", "bill_requested"]:
         raise HTTPException(status_code=400, detail="Açık sipariş bulunamadı.")
 
     added_amount = 0.0
@@ -210,8 +236,9 @@ async def add_items_to_order(order_id: int, payload: AddItemsRequest, db: AsyncS
         p_name = prod.name if prod else "Ürün"
         station = prod.station if prod else "kitchen"
 
+        base_price = it.unit_price if it.unit_price is not None else (prod.base_price if prod else 0.0)
         mod_sum = sum(m.price for m in it.selected_modifiers)
-        line_unit = it.unit_price + mod_sum
+        line_unit = base_price + mod_sum
         line_total = line_unit * it.quantity
         added_amount += line_total
 
@@ -237,9 +264,9 @@ async def add_items_to_order(order_id: int, payload: AddItemsRequest, db: AsyncS
         if not it.is_hold:
             await StockService.deduct_order_ingredients(db, it.product_id, it.quantity, order.order_no)
 
-    order.subtotal += added_amount
-    order.grand_total = max(0.0, order.subtotal - order.discount_amount - order.treat_amount + order.kuver_total)
-    order.remaining_total = max(0.0, order.grand_total - order.paid_total)
+    order.subtotal = (order.subtotal or 0.0) + added_amount
+    order.grand_total = max(0.0, (order.subtotal or 0.0) - (order.discount_amount or 0.0) - (order.treat_amount or 0.0) + (order.kuver_total or 0.0))
+    order.remaining_total = max(0.0, order.grand_total - (order.paid_total or 0.0))
 
     await db.commit()
 
@@ -282,7 +309,10 @@ async def void_order_item(payload: VoidItemRequest, db: AsyncSession = Depends(g
         # Check if staff has manager role
         pass
 
-    stmt = select(OrderItem).where(OrderItem.id == payload.order_item_id).options(selectinload(OrderItem.order))
+    stmt = select(OrderItem).where(OrderItem.id == payload.order_item_id).options(
+        selectinload(OrderItem.order).selectinload(Order.items),
+        selectinload(OrderItem.order).selectinload(Order.table)
+    )
     res = await db.execute(stmt)
     item = res.scalar_one_or_none()
     if not item:
@@ -295,9 +325,18 @@ async def void_order_item(payload: VoidItemRequest, db: AsyncSession = Depends(g
 
     # Recalculate order totals
     order = item.order
-    order.subtotal = max(0.0, order.subtotal - item.total_price)
-    order.grand_total = max(0.0, order.subtotal - order.discount_amount - order.treat_amount + order.kuver_total)
-    order.remaining_total = max(0.0, order.grand_total - order.paid_total)
+    order.subtotal = max(0.0, (order.subtotal or 0.0) - item.total_price)
+    order.grand_total = max(0.0, (order.subtotal or 0.0) - (order.discount_amount or 0.0) - (order.treat_amount or 0.0) + (order.kuver_total or 0.0))
+    order.remaining_total = max(0.0, order.grand_total - (order.paid_total or 0.0))
+
+    # If all items are voided, release table
+    if order.table and all(it.is_voided for it in (order.items or [])):
+        order.status = "cancelled"
+        order.table.status = "empty"
+        order.table.current_order_id = None
+        order.table.opened_at = None
+        order.table.kuver_count = 0
+        order.table.waiter_name = None
 
     # Add audit log
     audit = AuditLog(
@@ -328,16 +367,17 @@ async def apply_discount(order_id: int, payload: ApplyDiscountRequest, db: Async
     if not order:
         raise HTTPException(status_code=404, detail="Sipariş bulunamadı.")
 
+    subtot = order.subtotal or 0.0
     if payload.discount_type == "percentage":
         order.discount_rate = payload.value
-        order.discount_amount = round((order.subtotal * payload.value) / 100.0, 2)
+        order.discount_amount = round((subtot * payload.value) / 100.0, 2)
     else:
         order.discount_rate = 0.0
         order.discount_amount = round(payload.value, 2)
 
     order.discount_reason = payload.reason
-    order.grand_total = max(0.0, order.subtotal - order.discount_amount - order.treat_amount + order.kuver_total)
-    order.remaining_total = max(0.0, order.grand_total - order.paid_total)
+    order.grand_total = max(0.0, subtot - (order.discount_amount or 0.0) - (order.treat_amount or 0.0) + (order.kuver_total or 0.0))
+    order.remaining_total = max(0.0, order.grand_total - (order.paid_total or 0.0))
 
     audit = AuditLog(
         action_type="APPLY_DISCOUNT",
@@ -369,14 +409,14 @@ async def apply_treat(order_id: int, payload: ApplyTreatRequest, db: AsyncSessio
                 treat_sum += it.total_price
     else:
         # Treat whole order
-        treat_sum = order.subtotal
+        treat_sum = order.subtotal or 0.0
         for it in order.items:
             it.is_treat = True
 
     order.treat_amount = treat_sum
     order.treat_reason = payload.reason
-    order.grand_total = max(0.0, order.subtotal - order.discount_amount - order.treat_amount + order.kuver_total)
-    order.remaining_total = max(0.0, order.grand_total - order.paid_total)
+    order.grand_total = max(0.0, (order.subtotal or 0.0) - (order.discount_amount or 0.0) - (order.treat_amount or 0.0) + (order.kuver_total or 0.0))
+    order.remaining_total = max(0.0, order.grand_total - (order.paid_total or 0.0))
 
     audit = AuditLog(
         action_type="APPLY_TREAT",
@@ -434,11 +474,11 @@ async def get_restaurant_statistics(db: AsyncSession = Depends(get_db)):
     res = await db.execute(stmt)
     all_orders = res.scalars().all()
 
-    total_turnover = sum(o.grand_total for o in all_orders if o.status in ["paid", "open", "bill_requested"])
+    total_turnover = sum((o.grand_total or 0.0) for o in all_orders if o.status in ["paid", "open", "bill_requested"])
     total_orders = len(all_orders)
     avg_ticket = (total_turnover / total_orders) if total_orders > 0 else 0.0
-    total_discounts = sum(o.discount_amount for o in all_orders)
-    total_treats = sum(o.treat_amount for o in all_orders)
+    total_discounts = sum((o.discount_amount or 0.0) for o in all_orders)
+    total_treats = sum((o.treat_amount or 0.0) for o in all_orders)
     gross_sales = total_turnover + total_discounts + total_treats
 
     # Payments aggregation
@@ -487,7 +527,7 @@ async def get_restaurant_statistics(db: AsyncSession = Depends(get_db)):
         waiter_map[w_name]["orders_count"] += 1
         waiter_map[w_name]["total_sales"] += o.grand_total
         waiter_map[w_name]["total_kuver"] += (o.kuver_count or 1)
-        waiter_map[w_name]["total_tip"] += sum(p.tip_amount for p in o.payments)
+        waiter_map[w_name]["total_tip"] += sum((p.tip_amount or 0.0) for p in o.payments)
 
     waiter_stats = sorted(waiter_map.values(), key=lambda x: x["total_sales"], reverse=True)
     badges = ["Günün Yıldızı", "En Yüksek Ciro", "Hızlı Servis", "Misafir Favorisi"]

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, ArrowRight, Merge, RefreshCw, Users, Bell, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, ArrowRight, Merge, RefreshCw, Users, Bell, CheckCircle, ArrowRightLeft } from 'lucide-react';
 import { Table, Area } from '../../types';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
@@ -326,6 +326,159 @@ export const BuzzerListModal: React.FC<{
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+};
+
+// 5. Transfer Items Modal (Masa Ürün Aktarımı)
+export const TransferItemsModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  areas: Area[];
+  sourceTable: Table | null;
+  operatorName: string;
+  onSuccess: () => void;
+}> = ({ isOpen, onClose, areas, sourceTable, operatorName, onSuccess }) => {
+  const [targetId, setTargetId] = useState<number | null>(null);
+  const [orderItems, setOrderItems] = useState<any[]>([]);
+  const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+
+  useEffect(() => {
+    if (isOpen && sourceTable?.active_order?.id) {
+      setSelectedItemIds([]);
+      setTargetId(null);
+      setError('');
+      api.getOrder(sourceTable.active_order.id)
+        .then(o => {
+          setOrderItems((o.items || []).filter((it: any) => !it.is_voided));
+        })
+        .catch(() => setOrderItems([]));
+    }
+  }, [isOpen, sourceTable]);
+
+  if (!isOpen || !sourceTable) return null;
+
+  const allTables = areas.flatMap(a => a.tables);
+  const eligibleTargets = allTables.filter(t => t.id !== sourceTable.id);
+
+  const handleTransfer = async () => {
+    if (!targetId) {
+      setError('Lütfen ürünlerin aktarılacağı hedef masayı seçiniz.');
+      return;
+    }
+    if (selectedItemIds.length === 0) {
+      setError('Lütfen aktarılacak en az bir ürün seçiniz.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.transferItems(sourceTable.id, targetId, selectedItemIds, operatorName);
+      sound.beep();
+      onSuccess();
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Ürünler aktarılamadı.');
+      sound.warning();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none font-sans animate-fadeIn">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl text-slate-900 dark:text-slate-100 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ArrowRightLeft className="w-5 h-5 text-emerald-500" />
+            <h3 className="text-lg font-black text-slate-900 dark:text-white">Masa Ürün Aktarımı (Item Transfer)</h3>
+          </div>
+          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+          <span>Kaynak Masa:</span>
+          <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-50 dark:bg-emerald-500/20 px-3 py-1 rounded-xl">
+            {sourceTable.name} ({sourceTable.active_order?.grand_total.toFixed(2) || 0} ₺)
+          </span>
+        </div>
+
+        {/* Source Order Items to Select */}
+        <div>
+          <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block">
+            Aktarılacak Ürünleri Seçiniz ({selectedItemIds.length}/{orderItems.length}):
+          </label>
+          <div className="max-h-40 overflow-y-auto space-y-1.5 border border-slate-200 dark:border-slate-800 rounded-2xl p-2">
+            {orderItems.map((it) => {
+              const isSelected = selectedItemIds.includes(it.id);
+              return (
+                <div
+                  key={it.id}
+                  onClick={() => {
+                    sound.beep();
+                    setSelectedItemIds(prev =>
+                      isSelected ? prev.filter(id => id !== it.id) : [...prev, it.id]
+                    );
+                  }}
+                  className={`p-2.5 rounded-xl text-xs flex items-center justify-between cursor-pointer border transition ${
+                    isSelected
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 text-emerald-900 dark:text-emerald-200 font-bold'
+                      : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      readOnly
+                      className="rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <span>{it.quantity}x {it.product_name}</span>
+                  </div>
+                  <span className="font-mono font-bold">₺{it.total_price.toFixed(2)}</span>
+                </div>
+              );
+            })}
+            {orderItems.length === 0 && (
+              <p className="text-xs text-slate-400 p-2 text-center">Aktarılabilecek ürün bulunamadı.</p>
+            )}
+          </div>
+        </div>
+
+        {/* Target Table Selector */}
+        <div>
+          <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block">Hedef Masayı Seçiniz:</label>
+          <div className="grid grid-cols-4 gap-2 max-h-36 overflow-y-auto pr-1">
+            {eligibleTargets.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => { sound.beep(); setTargetId(t.id); setError(''); }}
+                className={`py-2 px-1.5 rounded-xl font-bold text-xs border transition flex flex-col items-center ${
+                  targetId === t.id
+                    ? 'bg-emerald-600 border-emerald-400 text-white shadow-md'
+                    : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                }`}
+              >
+                <span>{t.name}</span>
+                <span className="text-[10px] opacity-75">{t.status === 'empty' ? 'Boş' : `${t.active_order?.grand_total || 0}₺`}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {error && <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 p-2.5 rounded-xl font-bold">{error}</div>}
+
+        <button
+          onClick={handleTransfer}
+          disabled={loading || !targetId || selectedItemIds.length === 0}
+          className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black text-xs transition shadow-md cursor-pointer"
+        >
+          {loading ? 'Aktarılıyor...' : `SEÇİLEN ${selectedItemIds.length} ÜRÜNÜ AKTAR`}
+        </button>
       </div>
     </div>
   );

@@ -81,7 +81,7 @@ export const PinModal: React.FC<PinModalProps> = ({
 
   const verifyPin = async (pinToVerify: string) => {
     // 1. Check currently selected staff user
-    if (selectedStaff && (selectedStaff.pin_code === pinToVerify || pinToVerify === '1234' || pinToVerify === '0000')) {
+    if (selectedStaff && (selectedStaff.pin_code === pinToVerify || (!selectedStaff.pin_code && pinToVerify === '1234'))) {
       sound.beep();
       onLoginSuccess(selectedStaff);
       onClose();

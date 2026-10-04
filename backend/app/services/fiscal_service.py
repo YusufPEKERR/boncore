@@ -73,12 +73,12 @@ class FiscalService:
 """
         xml_payload += f"""    </Kalemler>
     <Toplamlar>
-        <AraToplam>{order.subtotal:.2f}</AraToplam>
-        <Indirim>{order.discount_amount:.2f}</Indirim>
-        <Ikram>{order.treat_amount:.2f}</Ikram>
-        <Kuver>{order.kuver_total:.2f}</Kuver>
+        <AraToplam>{(order.subtotal or 0.0):.2f}</AraToplam>
+        <Indirim>{(order.discount_amount or 0.0):.2f}</Indirim>
+        <Ikram>{(order.treat_amount or 0.0):.2f}</Ikram>
+        <Kuver>{(order.kuver_total or 0.0):.2f}</Kuver>
         <KDV10>{vat_summary['vat_10']['tax']:.2f}</KDV10>
-        <GenelToplam>{order.grand_total:.2f}</GenelToplam>
+        <GenelToplam>{(order.grand_total or 0.0):.2f}</GenelToplam>
     </Toplamlar>
     <Karekod>{gib_qr_code}</Karekod>
 </E-Adisyon>"""
@@ -94,11 +94,11 @@ class FiscalService:
             "waiter_name": order.waiter_name,
             "cashier_name": cashier_name,
             "items": items_list,
-            "subtotal": order.subtotal,
-            "discount": order.discount_amount,
-            "treat": order.treat_amount,
-            "kuver": order.kuver_total,
-            "grand_total": order.grand_total,
+            "subtotal": order.subtotal or 0.0,
+            "discount": order.discount_amount or 0.0,
+            "treat": order.treat_amount or 0.0,
+            "kuver": order.kuver_total or 0.0,
+            "grand_total": order.grand_total or 0.0,
             "vat_summary": vat_summary,
             "qr_code_content": gib_qr_code,
             "xml_content": xml_payload
@@ -138,16 +138,16 @@ class FiscalService:
                 lines.append(f"  * Not: {item.kitchen_note}")
 
         lines.append("-" * w)
-        lines.append(f"{'Ara Toplam:':<28}{order.subtotal:>14.2f} TL")
-        if order.discount_amount > 0:
-            lines.append(f"{'Indirim:':<28}{-order.discount_amount:>14.2f} TL")
-        if order.treat_amount > 0:
-            lines.append(f"{'Ikram:':<28}{-order.treat_amount:>14.2f} TL")
-        if order.kuver_total > 0:
-            lines.append(f"{f'Kuver ({order.kuver_count} Kisi):':<28}{order.kuver_total:>14.2f} TL")
+        lines.append(f"{'Ara Toplam:':<28}{(order.subtotal or 0.0):>14.2f} TL")
+        if (order.discount_amount or 0.0) > 0:
+            lines.append(f"{'Indirim:':<28}{-(order.discount_amount or 0.0):>14.2f} TL")
+        if (order.treat_amount or 0.0) > 0:
+            lines.append(f"{'Ikram:':<28}{-(order.treat_amount or 0.0):>14.2f} TL")
+        if (order.kuver_total or 0.0) > 0:
+            lines.append(f"{f'Kuver ({order.kuver_count or 1} Kisi):':<28}{(order.kuver_total or 0.0):>14.2f} TL")
 
         lines.append("=" * w)
-        lines.append(f"{'GENEL TOPLAM:':<26}{order.grand_total:>14.2f} TL")
+        lines.append(f"{'GENEL TOPLAM:':<26}{(order.grand_total or 0.0):>14.2f} TL")
         lines.append("=" * w)
         lines.append("     MALI DEGERI YOKTUR - BILGI FISIDIR".center(w))
         lines.append("           AFIYET OLSUN!".center(w))

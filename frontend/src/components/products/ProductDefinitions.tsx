@@ -1,17 +1,16 @@
 import React, { useState } from 'react';
 import { 
   Plus, Search, MoreVertical, Heart, Palette, Copy, 
-  Trash2, Edit3, CheckCircle2, Box, Layers 
+  Trash2, Edit3, CheckCircle2, AlertTriangle, Box, Layers 
 } from 'lucide-react';
 import { Category, Product } from '../../types';
 import { sound } from '../../services/sound';
+import { api } from '../../services/api';
 
 interface ProductDefinitionsProps {
   categories: Category[];
   onRefreshData?: () => void;
 }
-
-import { api } from '../../services/api';
 
 export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
   categories,
@@ -19,6 +18,12 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
 }) => {
   const [activeCatId, setActiveCatId] = useState<number>(categories[0]?.id || 1);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState<boolean>(false);
   const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState<boolean>(false);
   const [newCatName, setNewCatName] = useState<string>('');
@@ -41,10 +46,12 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     try {
       await api.createCategory({ name: newCatName });
       if (onRefreshData) onRefreshData();
+      showToast('Kategori başarıyla eklendi.', 'success');
       setNewCatName('');
       setIsAddCategoryModalOpen(false);
     } catch (err: any) {
-      alert(err.message || 'Kategori eklenemedi.');
+      showToast(err.message || 'Kategori eklenemedi.', 'error');
+      sound.warning();
     }
   };
 
@@ -61,10 +68,12 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
         is_available: true
       });
       if (onRefreshData) onRefreshData();
+      showToast('Ürün başarıyla eklendi.', 'success');
       setNewProdName('');
       setIsAddProductModalOpen(false);
     } catch (err: any) {
-      alert(err.message || 'Ürün eklenemedi.');
+      showToast(err.message || 'Ürün eklenemedi.', 'error');
+      sound.warning();
     }
   };
 
@@ -73,15 +82,74 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
       sound.beep();
       try {
         await api.deleteProduct(prodId);
+        showToast('Ürün silindi.', 'success');
         if (onRefreshData) onRefreshData();
       } catch (err: any) {
-        alert(err.message || 'Ürün silinemedi.');
+        showToast(err.message || 'Ürün silinemedi.', 'error');
+        sound.warning();
       }
     }
   };
 
+  const handleDeleteCategory = async (catId: number, catName: string) => {
+    if (confirm(`"${catName}" kategorisini ve bağlı tüm ürünleri silmek istediğinize emin misiniz?`)) {
+      sound.beep();
+      try {
+        await api.deleteCategory(catId);
+        showToast(`"${catName}" kategorisi silindi.`, 'success');
+        if (onRefreshData) onRefreshData();
+      } catch (err: any) {
+        showToast(err.message || 'Kategori silinemedi.', 'error');
+        sound.warning();
+      }
+    }
+  };
+
+  const handleDuplicateProduct = async (p: Product) => {
+    sound.beep();
+    try {
+      await api.createProduct({
+        category_id: p.category_id,
+        name: `${p.name} (Kopya)`,
+        base_price: p.base_price,
+        station: p.station || 'kitchen',
+        is_available: true
+      });
+      showToast(`"${p.name}" kopyalandı.`, 'success');
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showToast(err.message || 'Ürün kopyalanamadı.', 'error');
+      sound.warning();
+    }
+  };
+
+  const handleToggleAvailability = async (p: Product) => {
+    sound.beep();
+    try {
+      const newStatus = !(p.is_available ?? true);
+      await api.updateProduct(p.id, { is_available: newStatus });
+      showToast(`Ürün durumu güncellendi.`, 'success');
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showToast(err.message || 'Ürün durumu güncellenemedi.', 'error');
+      sound.warning();
+    }
+  };
+
   return (
-    <div className="flex-1 flex h-[calc(100vh-3.5rem)] bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none overflow-hidden font-sans transition-colors duration-200">
+    <div className="relative flex-1 flex h-[calc(100vh-3.5rem)] bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none overflow-hidden font-sans transition-colors duration-200">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`absolute top-4 right-4 z-50 p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-2xl transition-all animate-slideDown ${
+          toast.type === 'success' 
+            ? 'bg-emerald-600/95 text-white border border-emerald-500' 
+            : 'bg-rose-600/95 text-white border border-rose-500'
+        }`}>
+          {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
       {/* Left Sidebar: Categories List (Matching Adisyo Frame 030) - ~280px */}
       <div className="w-64 md:w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shadow-sm z-10">
         {/* Top Button: + Kategori Ekle */}
@@ -116,12 +184,12 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    sound.beep();
-                    alert(`Kategori Ayarları: ${cat.name}`);
+                    handleDeleteCategory(cat.id, cat.name);
                   }}
-                  className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded"
+                  className="p-1 text-slate-400 hover:text-red-500 rounded transition"
+                  title="Kategoriyi Sil"
                 >
-                  <MoreVertical className="w-3.5 h-3.5" />
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             );
@@ -165,29 +233,38 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
               key={p.id}
               className="h-36 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-sm hover:shadow-md transition relative group"
             >
-              {/* Card Top: Action Icons (♡ Favorite, 🎨 Color, ❐ Duplicate) */}
-              <div className="flex items-center justify-end gap-2 text-slate-400">
-                <button 
-                  onClick={() => alert(`${p.name} favorilere eklendi`)}
-                  className="p-1 hover:text-red-500 transition" 
-                  title="Favori"
+              {/* Card Top: Availability Status & Action Icons */}
+              <div className="flex items-center justify-between text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleToggleAvailability(p)}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-black transition cursor-pointer flex items-center gap-1 ${
+                    (p.is_available ?? true)
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-300 dark:border-slate-700 hover:bg-slate-200'
+                  }`}
+                  title="Satışa Aç / Kapat"
                 >
-                  <Heart className="w-3.5 h-3.5" />
+                  <span className={`w-1.5 h-1.5 rounded-full ${(p.is_available ?? true) ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                  <span>{(p.is_available ?? true) ? 'Satışta' : 'Pasif'}</span>
                 </button>
-                <button 
-                  onClick={() => alert(`Kart rengi değiştir: ${p.name}`)}
-                  className="p-1 hover:text-blue-500 transition" 
-                  title="Renk / İkon"
-                >
-                  <Palette className="w-3.5 h-3.5" />
-                </button>
-                <button 
-                  onClick={() => alert(`${p.name} kopyalandı`)}
-                  className="p-1 hover:text-emerald-500 transition" 
-                  title="Kopyala"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                </button>
+
+                <div className="flex items-center gap-1.5 text-slate-400">
+                  <button 
+                    onClick={() => handleDuplicateProduct(p)}
+                    className="p-1 hover:text-emerald-500 transition" 
+                    title="Kopyala"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                  <button 
+                    onClick={() => handleDeleteProduct(p.id)}
+                    className="p-1 hover:text-red-600 transition" 
+                    title="Sil"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
               {/* Card Center: Product Name & Unit */}

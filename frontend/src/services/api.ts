@@ -251,6 +251,16 @@ export const api = {
     return res.json();
   },
 
+  async updateOrderNotes(orderId: number, notes: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/orders/${orderId}/notes`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes })
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Not kaydedilemedi.');
+    return res.json();
+  },
+
   async applyDiscount(orderId: number, discountType: 'percentage' | 'fixed', value: number, reason: string, operatorName: string, managerPin?: string): Promise<any> {
     const res = await fetch(`${API_BASE}/orders/${orderId}/discount`, {
       method: 'POST',

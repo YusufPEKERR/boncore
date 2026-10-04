@@ -13,6 +13,11 @@ interface AppItem {
   icon: any;
   isInstalled: boolean;
   priceTag: string;
+  targetTab?: string;
+}
+
+interface AppStoreProps {
+  onNavigateTab?: (tab: string) => void;
 }
 
 const appsData: AppItem[] = [
@@ -23,7 +28,8 @@ const appsData: AppItem[] = [
     category: 'Restoran Operasyon',
     icon: TrendingUp,
     isInstalled: false,
-    priceTag: 'Pro Plan'
+    priceTag: 'Pro Plan',
+    targetTab: 'restaurant_statistics'
   },
   {
     id: 'report_wizard',
@@ -32,7 +38,8 @@ const appsData: AppItem[] = [
     category: 'Restoran Operasyon',
     icon: FileSpreadsheet,
     isInstalled: false,
-    priceTag: 'Pro Plan'
+    priceTag: 'Pro Plan',
+    targetTab: 'restaurant_statistics'
   },
   {
     id: 'thermal_printer',
@@ -41,7 +48,8 @@ const appsData: AppItem[] = [
     category: 'Restoran Operasyon',
     icon: Printer,
     isInstalled: true,
-    priceTag: 'Yönet'
+    priceTag: 'Yönet',
+    targetTab: 'settings'
   },
   {
     id: 'customer_display',
@@ -50,7 +58,8 @@ const appsData: AppItem[] = [
     category: 'Restoran Operasyon',
     icon: Monitor,
     isInstalled: true,
-    priceTag: 'Yönet'
+    priceTag: 'Yönet',
+    targetTab: 'pos'
   },
   {
     id: 'android_caller_id',
@@ -59,7 +68,8 @@ const appsData: AppItem[] = [
     category: 'Kurye',
     icon: Phone,
     isInstalled: true,
-    priceTag: 'Yönet'
+    priceTag: 'Yönet',
+    targetTab: 'delivery'
   },
   {
     id: 'yemeksepeti',
@@ -90,10 +100,12 @@ const appsData: AppItem[] = [
   }
 ];
 
-export const AppStore: React.FC = () => {
+export const AppStore: React.FC<AppStoreProps> = ({ onNavigateTab }) => {
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<'store' | 'installed'>('store');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [currentPlan, setCurrentPlan] = useState<string>('Standart Paket');
+  const [planToast, setPlanToast] = useState<string>('');
 
   const categories = [
     { id: 'all', label: 'Tüm Uygulamalar', count: 30 },
@@ -182,7 +194,7 @@ export const AppStore: React.FC = () => {
                 </span>
               </div>
               <div className="text-xs text-slate-600 dark:text-slate-300">
-                Mevcut Planınız: <span className="font-extrabold text-slate-900 dark:text-white">Standart Paket</span>
+                Mevcut Planınız: <span className="font-extrabold text-red-600 dark:text-red-400">{currentPlan}</span>
               </div>
 
               <div className="space-y-1 text-xs text-slate-600 dark:text-slate-400">
@@ -194,10 +206,15 @@ export const AppStore: React.FC = () => {
               </div>
 
               <button
-                onClick={() => alert('Kurumsal Üst Plan Aktifleştirildi.')}
-                className="py-2 px-5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-extrabold text-xs shadow-md transition"
+                onClick={() => {
+                  sound.cashDrawer();
+                  setCurrentPlan('BonCore Kurumsal Pro Paket');
+                  setPlanToast('Planınız başarıyla "Kurumsal Pro" olarak yükseltildi! Tüm modüller açıldı.');
+                  setTimeout(() => setPlanToast(''), 4500);
+                }}
+                className="py-2 px-5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-extrabold text-xs shadow-md transition cursor-pointer"
               >
-                Paketi Yükselt
+                {currentPlan.includes('Pro') ? 'Plan Aktif (Kurumsal Pro)' : 'Paketi Yükselt'}
               </button>
             </div>
 
@@ -247,9 +264,15 @@ export const AppStore: React.FC = () => {
                     <button
                       onClick={() => {
                         sound.beep();
-                        alert(`${app.name} modülü yapılandırıldı.`);
+                        if (app.targetTab && onNavigateTab) {
+                          onNavigateTab(app.targetTab);
+                        } else {
+                          sound.cashDrawer();
+                          setPlanToast(`${app.name} modülü başarıyla aktifleştirildi.`);
+                          setTimeout(() => setPlanToast(''), 4500);
+                        }
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs transition"
+                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs transition cursor-pointer"
                     >
                       {app.priceTag}
                     </button>
@@ -260,6 +283,14 @@ export const AppStore: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Floating Plan & App Toast */}
+      {planToast && (
+        <div className="fixed bottom-6 right-6 bg-red-600 text-white font-bold text-xs py-3 px-5 rounded-2xl shadow-2xl flex items-center gap-2 animate-bounce z-50">
+          <Check className="w-4 h-4" />
+          <span>{planToast}</span>
+        </div>
+      )}
     </div>
   );
 };

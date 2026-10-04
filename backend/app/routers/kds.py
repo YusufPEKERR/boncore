@@ -77,21 +77,38 @@ async def get_kds_orders(station: str = Query("all"), db: AsyncSession = Depends
 
     return output
 
+STATUS_MAP = {
+    "pending": "pending",
+    "bekliyor": "pending",
+    "preparing": "preparing",
+    "hazirlaniyor": "preparing",
+    "ready": "ready",
+    "hazir": "ready",
+    "hazirlandi": "ready",
+    "served": "served",
+    "teslim": "served"
+}
+
 @router.post("/item/{item_id}/progress")
-async def progress_item_status(item_id: int, status: str = Query(..., regex="^(pending|preparing|ready|served)$"), db: AsyncSession = Depends(get_db)):
+async def progress_item_status(item_id: int, status: str = Query(...), db: AsyncSession = Depends(get_db)):
     """
     Progresses status of an individual item on KDS (e.g. from preparing to ready).
+    Supports English & Turkish status strings.
     """
+    canonical_status = STATUS_MAP.get(status.lower().strip())
+    if not canonical_status:
+        raise HTTPException(status_code=400, detail=f"Geçersiz KDS durumu: {status}")
+
     stmt = select(OrderItem).where(OrderItem.id == item_id).options(selectinload(OrderItem.order))
     res = await db.execute(stmt)
     item = res.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Kalem bulunamadı.")
 
-    item.status = status
-    if status == "ready":
+    item.status = canonical_status
+    if canonical_status == "ready":
         item.ready_at = datetime.utcnow()
-    elif status == "served":
+    elif canonical_status == "served":
         item.served_at = datetime.utcnow()
 
     await db.commit()
@@ -99,7 +116,7 @@ async def progress_item_status(item_id: int, status: str = Query(..., regex="^(p
     await ws_hub.broadcast_to_channel("kds", "KDS_STATUS_CHANGED", {
         "order_id": item.order_id,
         "item_id": item.id,
-        "new_status": status
+        "new_status": canonical_status
     })
     await ws_hub.broadcast_all("ORDER_ITEM_STATUS", {
         "order_id": item.order_id,

@@ -10,6 +10,7 @@ from app.models.product import Product
 from app.schemas.all import AssignCourierRequest, CourierMutabakatRequest, OnlineOrderIngestRequest
 from app.services.stock_service import StockService
 from app.websocket_hub import ws_hub
+import uuid
 
 router = APIRouter(prefix="/delivery", tags=["Delivery & Aggregators"])
 
@@ -142,13 +143,23 @@ async def ingest_online_platform_order(payload: OnlineOrderIngestRequest, db: As
     Simulates incoming order from Yemeksepeti / Getir / Trendyol Yemek.
     Auto-accepts, creates Order, and broadcasts to Kitchen/KDS & printer.
     """
-    order_no = f"{payload.platform.upper()[:3]}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    plat = (payload.platform or payload.channel or "paket").lower()
+    order_no = f"{plat.upper()[:3]}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
     order = Order(
         order_no=order_no,
         order_type="online_delivery",
         status="open",
-        waiter_name=payload.platform.capitalize(),
-        notes=f"[{payload.platform.upper()}] {payload.notes or ''}",
+        subtotal=0.0,
+        discount_amount=0.0,
+        discount_rate=0.0,
+        treat_amount=0.0,
+        kuver_count=0,
+        kuver_total=0.0,
+        grand_total=0.0,
+        paid_total=0.0,
+        remaining_total=0.0,
+        waiter_name=plat.capitalize(),
+        notes=f"[{plat.upper()}] {payload.notes or ''}",
         created_at=datetime.utcnow()
     )
     db.add(order)
@@ -156,26 +167,37 @@ async def ingest_online_platform_order(payload: OnlineOrderIngestRequest, db: As
 
     subtotal = 0.0
     for it in payload.items:
-        p_res = await db.execute(select(Product).where(Product.id == it.product_id))
-        prod = p_res.scalar_one_or_none()
-        p_name = prod.name if prod else "Ürün"
-        station = prod.station if prod else "kitchen"
+        prod = None
+        if it.product_id:
+            p_res = await db.execute(select(Product).where(Product.id == it.product_id))
+            prod = p_res.scalar_one_or_none()
+        if not prod and (it.name or it.product_name):
+            search_name = it.name or it.product_name
+            p_res = await db.execute(select(Product).where(Product.name.ilike(f"%{search_name}%")))
+            prod = p_res.scalars().first()
+        if not prod:
+            p_res = await db.execute(select(Product).limit(1))
+            prod = p_res.scalar_one_or_none()
 
-        mod_sum = sum(m.price for m in it.selected_modifiers)
-        line_unit = it.unit_price + mod_sum
-        line_total = line_unit * it.quantity
+        actual_pid = prod.id if prod else (it.product_id or 1)
+        p_name = it.name or it.product_name or (prod.name if prod else "Ürün")
+        station = prod.station if prod else "kitchen"
+        unit_price = it.unit_price if it.unit_price > 0 else (prod.base_price if prod else 100.0)
+
+        line_unit = unit_price
+        line_total = it.total_price if it.total_price and it.total_price > 0 else (line_unit * it.quantity)
         subtotal += line_total
 
         order_item = OrderItem(
             order_id=order.id,
-            product_id=it.product_id,
+            product_id=actual_pid,
             product_name=p_name,
-            variant_name=it.variant_name,
+            variant_name=None,
             unit_price=line_unit,
             quantity=it.quantity,
             total_price=line_total,
-            selected_modifiers=[m.model_dump() for m in it.selected_modifiers],
-            negative_modifiers=it.negative_modifiers,
+            selected_modifiers=[],
+            negative_modifiers=[],
             kitchen_note=it.kitchen_note,
             course_stage=1,
             is_hold=False,
@@ -184,7 +206,8 @@ async def ingest_online_platform_order(payload: OnlineOrderIngestRequest, db: As
             created_at=datetime.utcnow()
         )
         db.add(order_item)
-        await StockService.deduct_order_ingredients(db, it.product_id, it.quantity, order_no)
+        if actual_pid:
+            await StockService.deduct_order_ingredients(db, actual_pid, it.quantity, order_no)
 
     order.subtotal = subtotal
     order.grand_total = subtotal

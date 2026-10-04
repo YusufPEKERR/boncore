@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Plus, Edit3, MoreVertical, Clock, Users, 
-  ArrowRight, Merge, RefreshCw, FileText, CheckCircle 
+  ArrowRight, Merge, RefreshCw, FileText, CheckCircle, ArrowRightLeft 
 } from 'lucide-react';
 import { Area, Table, StaffUser } from '../../types';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
-import { MoveTableModal, MergeTableModal, KuverModal } from './TableActionModals';
+import { MoveTableModal, MergeTableModal, KuverModal, TransferItemsModal } from './TableActionModals';
 
 interface FloorViewProps {
   areas: Area[];
@@ -38,8 +38,25 @@ export const FloorView: React.FC<FloorViewProps> = ({
   // Modals
   const [isMoveOpen, setIsMoveOpen] = useState<boolean>(false);
   const [isMergeOpen, setIsMergeOpen] = useState<boolean>(false);
+  const [isTransferItemsOpen, setIsTransferItemsOpen] = useState<boolean>(false);
   const [isKuverOpen, setIsKuverOpen] = useState<boolean>(false);
   const [activeActionTableId, setActiveActionTableId] = useState<number | null>(null);
+  const [currentNow, setCurrentNow] = useState<number>(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const getTableElapsedFormatted = (openedAt?: string) => {
+    if (!openedAt) return 'Yeni Açıldı';
+    const start = new Date(openedAt).getTime();
+    if (isNaN(start)) return 'Yeni Açıldı';
+    const diffSec = Math.max(0, Math.floor((currentNow - start) / 1000));
+    const mins = Math.floor(diffSec / 60);
+    const secs = diffSec % 60;
+    return `${mins} dk ${String(secs).padStart(2, '0')} sn`;
+  };
 
   useEffect(() => {
     localStorage.setItem('boncore_active_area_id', String(activeAreaId));
@@ -204,6 +221,13 @@ export const FloorView: React.FC<FloorViewProps> = ({
                           <span>Masa Birleştir</span>
                         </button>
                         <button
+                          onClick={() => { setIsTransferItemsOpen(true); setActiveActionTableId(null); }}
+                          className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                        >
+                          <ArrowRightLeft className="w-3.5 h-3.5 text-emerald-500" />
+                          <span>Ürün Aktar</span>
+                        </button>
+                        <button
                           onClick={() => { setIsKuverOpen(true); setActiveActionTableId(null); }}
                           className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
                         >
@@ -240,7 +264,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
                 <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                   {isOccupied ? (
                     <span className="font-mono text-slate-600 dark:text-slate-300">
-                      {table.duration_minutes || 56} dk 55 sn
+                      {getTableElapsedFormatted(table.opened_at)}
                     </span>
                   ) : (
                     <span className="flex items-center gap-1">
@@ -284,6 +308,15 @@ export const FloorView: React.FC<FloorViewProps> = ({
         isOpen={isKuverOpen}
         onClose={() => setIsKuverOpen(false)}
         table={selectedTableForAction}
+        operatorName={currentUser?.name || 'Garson'}
+        onSuccess={onRefreshAreas}
+      />
+
+      <TransferItemsModal
+        isOpen={isTransferItemsOpen}
+        onClose={() => setIsTransferItemsOpen(false)}
+        areas={areas}
+        sourceTable={selectedTableForAction}
         operatorName={currentUser?.name || 'Garson'}
         onSuccess={onRefreshAreas}
       />

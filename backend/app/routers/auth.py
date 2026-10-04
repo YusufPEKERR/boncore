@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.database import get_db
 from app.models.user import StaffUser
-from app.schemas.all import PinAuthRequest, StaffUserResponse
+from app.schemas.all import PinAuthRequest, StaffUserResponse, StaffUserCreate, StaffUserUpdate
 from app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["Auth & PIN"])
@@ -51,17 +51,20 @@ async def list_staff(db: AsyncSession = Depends(get_db)):
     ]
 
 @router.post("/staff")
-async def create_staff(payload: dict, db: AsyncSession = Depends(get_db)):
-    stmt = select(StaffUser).where(StaffUser.pin_code == payload.get("pin_code"))
+async def create_staff(payload: StaffUserCreate, db: AsyncSession = Depends(get_db)):
+    if not payload.name or not payload.name.strip():
+        raise HTTPException(status_code=400, detail="Personel adı boş bırakılamaz.")
+
+    stmt = select(StaffUser).where(StaffUser.pin_code == payload.pin_code)
     res = await db.execute(stmt)
     if res.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Bu PIN kodu başka bir personele atanmış!")
 
     new_user = StaffUser(
-        name=payload.get("name"),
-        role=payload.get("role", "waiter"),
-        pin_code=payload.get("pin_code", "1234"),
-        is_active=payload.get("is_active", True)
+        name=payload.name.strip(),
+        role=payload.role,
+        pin_code=payload.pin_code,
+        is_active=payload.is_active
     )
     db.add(new_user)
     await db.commit()
@@ -69,17 +72,21 @@ async def create_staff(payload: dict, db: AsyncSession = Depends(get_db)):
     return {"status": "success", "user": {"id": new_user.id, "name": new_user.name, "role": new_user.role, "pin_code": new_user.pin_code, "is_active": new_user.is_active}}
 
 @router.put("/staff/{user_id}")
-async def update_staff(user_id: int, payload: dict, db: AsyncSession = Depends(get_db)):
+async def update_staff(user_id: int, payload: StaffUserUpdate, db: AsyncSession = Depends(get_db)):
     stmt = select(StaffUser).where(StaffUser.id == user_id)
     res = await db.execute(stmt)
     user = res.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Personel bulunamadı.")
 
-    if "name" in payload: user.name = payload["name"]
-    if "role" in payload: user.role = payload["role"]
-    if "pin_code" in payload: user.pin_code = payload["pin_code"]
-    if "is_active" in payload: user.is_active = payload["is_active"]
+    if payload.name is not None and payload.name.strip():
+        user.name = payload.name.strip()
+    if payload.role is not None:
+        user.role = payload.role
+    if payload.pin_code is not None:
+        user.pin_code = payload.pin_code
+    if payload.is_active is not None:
+        user.is_active = payload.is_active
 
     await db.commit()
     return {"status": "success", "message": "Personel güncellendi."}

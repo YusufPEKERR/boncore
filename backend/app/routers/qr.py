@@ -10,6 +10,7 @@ from app.models.product import Category, Product, ModifierGroup
 from app.schemas.all import CreateOrderRequest, AddItemsRequest, WaiterCallRequest
 from app.services.stock_service import StockService
 from app.websocket_hub import ws_hub
+import uuid
 
 router = APIRouter(prefix="/qr", tags=["QR Menu & Customer Mobile"])
 
@@ -108,12 +109,21 @@ async def place_customer_table_order(table_id: int, payload: AddItemsRequest, db
 
     order = next((o for o in table.orders if o.status in ["open", "bill_requested"]), None)
     if not order:
-        order_no = f"QR-{datetime.utcnow().strftime('%Y%m%d')}-{table.id}-{int(datetime.utcnow().timestamp())%1000}"
+        order_no = f"QR-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{table.id}-{uuid.uuid4().hex[:4].upper()}"
         order = Order(
             order_no=order_no,
             table_id=table.id,
             order_type="qr_order",
             status="open",
+            subtotal=0.0,
+            discount_amount=0.0,
+            discount_rate=0.0,
+            treat_amount=0.0,
+            kuver_count=0,
+            kuver_total=0.0,
+            grand_total=0.0,
+            paid_total=0.0,
+            remaining_total=0.0,
             waiter_name="QR Masadan Sipariş",
             created_at=datetime.utcnow()
         )
@@ -131,8 +141,9 @@ async def place_customer_table_order(table_id: int, payload: AddItemsRequest, db
         p_name = prod.name if prod else "Ürün"
         station = prod.station if prod else "kitchen"
 
+        base_price = it.unit_price if it.unit_price is not None else (prod.base_price if prod else 0.0)
         mod_sum = sum(m.price for m in it.selected_modifiers)
-        line_unit = it.unit_price + mod_sum
+        line_unit = base_price + mod_sum
         line_total = line_unit * it.quantity
         added_amount += line_total
 
@@ -156,9 +167,9 @@ async def place_customer_table_order(table_id: int, payload: AddItemsRequest, db
         db.add(order_item)
         await StockService.deduct_order_ingredients(db, it.product_id, it.quantity, order.order_no)
 
-    order.subtotal += added_amount
-    order.grand_total = max(0.0, order.subtotal - order.discount_amount - order.treat_amount + order.kuver_total)
-    order.remaining_total = max(0.0, order.grand_total - order.paid_total)
+    order.subtotal = (order.subtotal or 0.0) + added_amount
+    order.grand_total = max(0.0, (order.subtotal or 0.0) - (order.discount_amount or 0.0) - (order.treat_amount or 0.0) + (order.kuver_total or 0.0))
+    order.remaining_total = max(0.0, order.grand_total - (order.paid_total or 0.0))
 
     await db.commit()
 

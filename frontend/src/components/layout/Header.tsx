@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Menu, Grid, FileText, Bell, Headphones, Lock, 
   Wifi, PhoneCall, RefreshCw, Volume2, VolumeX, 
-  Sun, Moon, AlertCircle, User as UserIcon 
+  Sun, Moon, AlertCircle, User as UserIcon, MessageSquare, X, CheckCircle2 
 } from 'lucide-react';
 import { StaffUser } from '../../types';
 import { sound } from '../../services/sound';
@@ -36,7 +36,24 @@ export const Header: React.FC<HeaderProps> = ({
   restaurantTitle = 'FATİH ÇİFTLİĞİ',
   onRefreshData
 }) => {
+  const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
+  const [supportMessage, setSupportMessage] = useState<string>('');
+  const [supportSent, setSupportSent] = useState<boolean>(false);
+
+  const handleSendSupport = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supportMessage.trim()) return;
+    sound.beep();
+    setSupportSent(true);
+    setTimeout(() => {
+      setSupportSent(false);
+      setSupportMessage('');
+      setIsSupportOpen(false);
+    }, 2500);
+  };
+
   return (
+    <>
     <header className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 md:px-4 flex items-center justify-between select-none z-30 shadow-sm transition-colors duration-200">
       {/* Left: Hamburger Menu Button + Title */}
       <div className="flex items-center gap-3">
@@ -154,7 +171,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Destek İste Pill Button */}
         <button
-          onClick={() => alert('Adisyo Canlı Destek Hattına Bağlanılıyor...')}
+          onClick={() => { sound.beep(); setIsSupportOpen(true); }}
           className="hidden xl:flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 text-[11px] font-bold transition"
         >
           <Headphones className="w-3.5 h-3.5" />
@@ -173,5 +190,72 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
       </div>
     </header>
+
+    {/* Modern Interactive Support Modal */}
+    {isSupportOpen && (
+      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
+          <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center">
+                <Headphones className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Adisyo Canlı Destek</h3>
+                <p className="text-xs text-slate-500">7/24 Kesintisiz Restoran Teknik Destek</p>
+              </div>
+            </div>
+            <button onClick={() => setIsSupportOpen(false)} className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <a href="tel:08503050505" className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex flex-col items-center text-center hover:bg-slate-100 dark:hover:bg-slate-700 transition">
+                <PhoneCall className="w-5 h-5 text-emerald-600 mb-1" />
+                <span className="text-[11px] text-slate-500">Müşteri Hizmetleri</span>
+                <span className="font-mono font-bold text-xs text-slate-900 dark:text-white">0850 305 05 05</span>
+              </a>
+              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex flex-col items-center text-center">
+                <Wifi className="w-5 h-5 text-blue-600 mb-1" />
+                <span className="text-[11px] text-slate-500">Uzak Masaüstü ID</span>
+                <span className="font-mono font-bold text-xs text-slate-900 dark:text-white">BON-849-210</span>
+              </div>
+            </div>
+
+            {supportSent ? (
+              <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-center space-y-1">
+                <CheckCircle2 className="w-6 h-6 text-emerald-600 mx-auto" />
+                <div className="font-bold text-sm text-emerald-800 dark:text-emerald-200">Destek Talebiniz Alındı!</div>
+                <div className="text-xs text-emerald-600">Teknik ekibimiz birkaç dakika içinde iletişime geçecektir.</div>
+              </div>
+            ) : (
+              <form onSubmit={handleSendSupport} className="space-y-3">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                  Hızlı Destek Talebi İletin:
+                </label>
+                <textarea
+                  rows={3}
+                  value={supportMessage}
+                  onChange={(e) => setSupportMessage(e.target.value)}
+                  placeholder="Yaşadığınız sorunu veya talebinizi kısaca açıklayınız..."
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl p-3 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                  required
+                />
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs shadow-md shadow-red-600/20 transition flex items-center justify-center gap-1.5"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Talebi Müşteri Temsilcisine İlet</span>
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 };

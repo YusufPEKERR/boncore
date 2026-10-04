@@ -18,7 +18,12 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({ areas, onBuzze
   const [menuData, setMenuData] = useState<any>(null);
   const [activeCategoryIndex, setActiveCategoryIndex] = useState<number>(0);
   const [customerCart, setCustomerCart] = useState<any[]>([]);
-  const [orderSentMessage, setOrderSentMessage] = useState<string>('');
+  const [notice, setNotice] = useState<{ message: string; isError?: boolean } | null>(null);
+
+  const showNotice = (message: string, isError = false) => {
+    setNotice({ message, isError });
+    setTimeout(() => setNotice(null), 4000);
+  };
   const [isVirtualPosOpen, setIsVirtualPosOpen] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -72,11 +77,10 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({ areas, onBuzze
       await api.placeCustomerTableOrder(selectedTableId, formattedItems);
       sound.kitchenBell();
       setCustomerCart([]);
-      setOrderSentMessage('Siparişiniz mutfağa iletildi! Afiyet olsun.');
-      setTimeout(() => setOrderSentMessage(''), 4000);
+      showNotice('Siparişiniz mutfağa iletildi! Afiyet olsun.', false);
       await loadTableQrMenu(selectedTableId);
     } catch (err: any) {
-      alert(err.message || 'Sipariş gönderilemedi.');
+      showNotice(err.message || 'Sipariş gönderilemedi.', true);
       sound.warning();
     } finally {
       setLoading(false);
@@ -88,10 +92,51 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({ areas, onBuzze
     try {
       await api.triggerWaiterCall(selectedTableId, reason);
       onBuzzerSent();
-      setOrderSentMessage(`${reason} talebiniz garson ekranına iletildi!`);
-      setTimeout(() => setOrderSentMessage(''), 3000);
+      showNotice(`${reason} talebiniz garson ekranına iletildi!`, false);
     } catch (e) {
       sound.warning();
+    }
+  };
+
+  const handleVirtualPosPayment = async () => {
+    sound.beep();
+    setLoading(true);
+    try {
+      let targetOrderId = menuData?.active_order?.order_id;
+      if (customerCart.length > 0) {
+        const formattedItems = customerCart.map(i => ({
+          product_id: i.product_id,
+          unit_price: i.price,
+          quantity: i.quantity,
+          selected_modifiers: [],
+          negative_modifiers: [],
+          kitchen_note: 'Masadan QR Sipariş'
+        }));
+        const orderRes = await api.placeCustomerTableOrder(selectedTableId, formattedItems);
+        targetOrderId = orderRes.order_id;
+        setCustomerCart([]);
+      }
+
+      if (targetOrderId) {
+        const orderDet = await api.getOrder(targetOrderId);
+        await api.settlePayment({
+          order_id: targetOrderId,
+          payments: [{ method: 'online', amount: orderDet.remaining_total || orderDet.grand_total }],
+          cashier_name: 'Online Sanal POS (3D Secure)',
+          close_table: true
+        });
+        sound.cashDrawer();
+        showNotice('Ödemeniz başarıyla alındı! E-Adisyon fişiniz oluşturuldu.', false);
+        setIsVirtualPosOpen(false);
+        await loadTableQrMenu(selectedTableId);
+      } else {
+        showNotice('Ödenecek aktif sipariş bulunamadı.', true);
+      }
+    } catch (err: any) {
+      showNotice(err.message || 'Ödeme işlemi başarısız.', true);
+      sound.warning();
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -195,9 +240,9 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({ areas, onBuzze
             </div>
 
             {/* Notification Toast */}
-            {orderSentMessage && (
-              <div className="bg-emerald-600 text-white text-xs font-bold p-2 text-center animate-fadeIn z-20">
-                {orderSentMessage}
+            {notice && (
+              <div className={`${notice.isError ? 'bg-rose-600' : 'bg-emerald-600'} text-white text-xs font-bold p-2 text-center animate-fadeIn z-20`}>
+                {notice.message}
               </div>
             )}
 
@@ -331,15 +376,11 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({ areas, onBuzze
             </div>
 
             <button
-              onClick={() => {
-                sound.cashDrawer();
-                alert('Ödemeniz başarıyla alındı! E-Adisyon fişiniz oluşturuldu.');
-                setIsVirtualPosOpen(false);
-                setCustomerCart([]);
-              }}
-              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black text-xs shadow-lg shadow-emerald-500/30"
+              onClick={handleVirtualPosPayment}
+              disabled={loading}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black text-xs shadow-lg shadow-emerald-500/30 disabled:opacity-50"
             >
-              3D SECURE İLE ÖDE & TAMAMLA
+              {loading ? 'Ödeme İşleniyor...' : '3D SECURE İLE ÖDE & TAMAMLA'}
             </button>
           </div>
         </div>

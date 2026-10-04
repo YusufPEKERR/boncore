@@ -14,6 +14,20 @@ export const DeliveryHub: React.FC = () => {
   const [callerProfile, setCallerProfile] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // New Caller Delivery Order State
+  const [isCreateOrderModalOpen, setIsCreateOrderModalOpen] = useState<boolean>(false);
+  const [orderFoodItem, setOrderFoodItem] = useState<string>('Özel Karışık Izgara & Kebap');
+  const [orderQty, setOrderQty] = useState<number>(1);
+  const [orderPrice, setOrderPrice] = useState<number>(380);
+  const [orderPaymentType, setOrderPaymentType] = useState<string>('nakit_kapida');
+  const [orderNotes, setOrderNotes] = useState<string>('Telefonla Sipariş Alındı');
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4500);
+  };
+
   useEffect(() => {
     loadData();
   }, []);
@@ -41,6 +55,40 @@ export const DeliveryHub: React.FC = () => {
       setCallerProfile(profile);
     } catch (e) {
       console.warn(e);
+    }
+  };
+
+  const handleCreateCallerOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    sound.beep();
+    setLoading(true);
+    try {
+      await api.ingestOnlineOrder({
+        platform: 'telefon',
+        channel: 'telefon',
+        customer_name: callerProfile?.customer_name || 'Kayıtlı Müşteri',
+        customer_phone: callerPhone,
+        delivery_address: callerProfile?.address || 'Moda Cad. Kadıköy / İstanbul',
+        items: [
+          {
+            product_name: orderFoodItem,
+            name: orderFoodItem,
+            quantity: orderQty,
+            unit_price: orderPrice
+          }
+        ],
+        payment_type: orderPaymentType,
+        notes: orderNotes
+      });
+      sound.kitchenBell();
+      showToast(`Sipariş başarıyla oluşturuldu ve mutfağa iletildi! (${callerProfile?.customer_name || 'Müşteri'})`, 'success');
+      setIsCreateOrderModalOpen(false);
+      await loadData();
+    } catch (err: any) {
+      showToast(err.message || 'Sipariş oluşturulamadı.', 'error');
+      sound.warning();
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -76,6 +124,7 @@ export const DeliveryHub: React.FC = () => {
         payment_type: 'online_card',
         items: [
           {
+            product_id: 1,
             name: 'BonBurger Klasik Menü',
             unit_price: 360.0,
             quantity: 2,
@@ -163,8 +212,11 @@ export const DeliveryHub: React.FC = () => {
                   <span>{callerProfile.address || 'Moda Cad. Kadıköy / İstanbul'}</span>
                 </div>
                 <button
-                  onClick={() => alert(`Masa dışı sipariş ekranına aktarıldı: ${callerProfile.customer_name}`)}
-                  className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs shadow mt-1"
+                  onClick={() => {
+                    sound.beep();
+                    setIsCreateOrderModalOpen(true);
+                  }}
+                  className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs shadow mt-1 transition cursor-pointer"
                 >
                   BU MÜŞTERİYE SİPARİŞ GİR
                 </button>
@@ -284,6 +336,122 @@ export const DeliveryHub: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Toast Notification Banner */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 text-white font-bold text-xs py-3 px-5 rounded-2xl shadow-2xl flex items-center gap-2 animate-bounce z-50 ${
+          toast.type === 'success' ? 'bg-emerald-600' : 'bg-rose-600'
+        }`}>
+          {toast.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
+      {/* Modal: Telefonla Müşteri Siparişi Oluştur */}
+      {isCreateOrderModalOpen && callerProfile && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn font-sans">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h3 className="text-base font-black text-blue-600 dark:text-blue-400">Yeni Paket Sipariş Oluştur</h3>
+              <p className="text-xs text-slate-500 font-semibold">{callerProfile.customer_name} ({callerPhone})</p>
+            </div>
+
+            <form onSubmit={handleCreateCallerOrder} className="space-y-3 text-xs font-semibold">
+              <div>
+                <label className="text-slate-500 block mb-1">Teslimat Adresi:</label>
+                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-mono text-[11px]">
+                  {callerProfile.address || 'Moda Cad. Kadıköy / İstanbul'}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-500 block mb-1">Ürün / Menü Kalemi:</label>
+                <select
+                  value={orderFoodItem}
+                  onChange={(e) => {
+                    setOrderFoodItem(e.target.value);
+                    if (e.target.value.includes('Kebap')) setOrderPrice(380);
+                    else if (e.target.value.includes('Burger')) setOrderPrice(280);
+                    else if (e.target.value.includes('Pizza')) setOrderPrice(320);
+                    else setOrderPrice(180);
+                  }}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
+                >
+                  <option value="Özel Karışık Izgara & Kebap">Özel Karışık Izgara & Kebap (₺380.00)</option>
+                  <option value="BonCore Gurme Burger Menü">BonCore Gurme Burger Menü (₺280.00)</option>
+                  <option value="Taş Fırın Dört Peynirli Pizza">Taş Fırın Dört Peynirli Pizza (₺320.00)</option>
+                  <option value="Kuzu İncik & Fırın Patates">Kuzu İncik & Fırın Patates (₺420.00)</option>
+                  <option value="Günün Çorbası & Mevsim Salatası">Günün Çorbası & Mevsim Salatası (₺180.00)</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-500 block mb-1">Porsiyon / Adet:</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={orderQty}
+                    onChange={(e) => setOrderQty(Math.max(1, Number(e.target.value)))}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 font-mono text-center"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-500 block mb-1">Birim Fiyat (₺):</label>
+                  <input
+                    type="number"
+                    value={orderPrice}
+                    onChange={(e) => setOrderPrice(Number(e.target.value))}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 font-mono text-center"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-500 block mb-1">Ödeme Yöntemi:</label>
+                <select
+                  value={orderPaymentType}
+                  onChange={(e) => setOrderPaymentType(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
+                >
+                  <option value="nakit_kapida">Kapıda Nakit Ödeme</option>
+                  <option value="pos_kapida">Kapıda Kredi Kartı (Mobil POS)</option>
+                  <option value="sodexo_kapida">Kapıda Sodexo / Multinet</option>
+                  <option value="online_odendi">Online Ödendi (Önceden Tahsil)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-slate-500 block mb-1">Sipariş & Mutfak Notu:</label>
+                <input
+                  type="text"
+                  value={orderNotes}
+                  onChange={(e) => setOrderNotes(e.target.value)}
+                  placeholder="Zil çalmasın, sos ayrı vb."
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateOrderModalOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs"
+                >
+                  İptal
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs shadow-md transition disabled:opacity-50"
+                >
+                  {loading ? 'İletiliyor...' : `Siparişi Onayla (₺${(orderPrice * orderQty).toFixed(2)})`}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

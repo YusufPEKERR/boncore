@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Layers, Search, Filter, AlertCircle, RefreshCw, CheckCircle2, X } from 'lucide-react';
 import { Category } from '../../types';
 import { sound } from '../../services/sound';
+import { api } from '../../services/api';
 
 interface MenuIntegrationOperationsProps {
   categories: Category[];
@@ -14,11 +15,32 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showWarningToast, setShowWarningToast] = useState<boolean>(true);
+  const [availableMap, setAvailableMap] = useState<Record<number, boolean>>({});
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const handleToggleProduct = async (prodId: number, currentAvailable: boolean, prodName: string) => {
+    sound.beep();
+    const newStatus = !currentAvailable;
+    setAvailableMap(prev => ({ ...prev, [prodId]: newStatus }));
+    try {
+      await api.updateProduct(prodId, { is_available: newStatus });
+      setToastMessage(`${prodName} durumu: ${newStatus ? 'Aktif' : 'Pasif'}`);
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (e) {
+      sound.warning();
+      setAvailableMap(prev => ({ ...prev, [prodId]: currentAvailable }));
+    }
+  };
 
   const allProducts = categories.flatMap(c => c.products || []);
 
   const filteredProducts = allProducts.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = !searchQuery.trim() || p.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const isAvail = availableMap[p.id] !== undefined ? availableMap[p.id] : (p.is_available ?? true);
+    
+    if (statusFilter === 'active' && !isAvail) return false;
+    if (statusFilter === 'passive' && isAvail) return false;
+    
     return matchesSearch;
   });
 
@@ -34,7 +56,24 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Search Bar */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+            <Search className="w-3.5 h-3.5 text-slate-400 mr-2" />
+            <input
+              type="text"
+              placeholder="Ürün ara..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-transparent text-slate-800 dark:text-white font-semibold focus:outline-none w-32 sm:w-48"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-slate-600">
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
           <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold">
             <span className="px-2 text-slate-500">Ürün Durumu:</span>
             <select
@@ -42,7 +81,7 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
               onChange={(e) => setStatusFilter(e.target.value)}
               className="bg-transparent text-slate-800 dark:text-white font-semibold focus:outline-none"
             >
-              <option value="all">Aktif, Pasif</option>
+              <option value="all">Tümü (Aktif & Pasif)</option>
               <option value="active">Sadece Aktif</option>
               <option value="passive">Sadece Pasif</option>
             </select>
@@ -54,7 +93,7 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
               onChange={(e) => setSelectedBrand(e.target.value)}
               className="bg-[#c0392b] text-white px-3 py-1.5 rounded-lg font-bold focus:outline-none"
             >
-              <option value="all">Marka Seç (Tümü)</option>
+              <option value="all">Kanal Seç (Tümü)</option>
               <option value="yemeksepeti">Yemeksepeti</option>
               <option value="getir">Getir Yemek</option>
               <option value="trendyol">Trendyol Yemek</option>
@@ -74,29 +113,44 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
         </div>
 
         <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
-          {filteredProducts.slice(0, 15).map((p) => (
-            <div key={p.id} className="grid grid-cols-12 p-4 items-center text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-              <div className="col-span-5 font-bold text-slate-900 dark:text-white uppercase">
-                {p.name}
+          {filteredProducts.slice(0, 15).map((p) => {
+            const isAvail = availableMap[p.id] !== undefined ? availableMap[p.id] : (p.is_available ?? true);
+            return (
+              <div key={p.id} className="grid grid-cols-12 p-4 items-center text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                <div className="col-span-5 font-bold text-slate-900 dark:text-white uppercase">
+                  {p.name}
+                </div>
+                <div className="col-span-3 flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 font-extrabold text-[10px]">
+                    Yemeksepeti & Getir
+                  </span>
+                </div>
+                <div className="col-span-2 font-mono font-bold text-slate-800 dark:text-slate-200">
+                  ₺{p.base_price.toFixed(2)}
+                </div>
+                <div className="col-span-2 flex justify-end">
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isAvail}
+                      onChange={() => handleToggleProduct(p.id, isAvail, p.name)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
               </div>
-              <div className="col-span-3 flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 font-extrabold text-[10px]">
-                  Yemeksepeti & Getir
-                </span>
-              </div>
-              <div className="col-span-2 font-mono font-bold text-slate-800 dark:text-slate-200">
-                ₺{p.base_price.toFixed(2)}
-              </div>
-              <div className="col-span-2 flex justify-end">
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" defaultChecked className="sr-only peer" />
-                  <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-                </label>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
+
+      {toastMessage && (
+        <div className="fixed top-20 right-6 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-xs font-bold animate-fadeIn">
+          <CheckCircle2 className="w-4 h-4" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       {/* Floating Red Warning Toast (Matching Frame 010) */}
       {showWarningToast && (

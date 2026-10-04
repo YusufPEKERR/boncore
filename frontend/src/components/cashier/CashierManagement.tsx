@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Receipt, DollarSign, ArrowUpRight, ArrowDownLeft, 
-  FileText, CheckCircle2, ShieldCheck, Printer, RefreshCw 
+  FileText, CheckCircle2, AlertTriangle, ShieldCheck, Printer, RefreshCw 
 } from 'lucide-react';
 import { StaffUser } from '../../types';
 import { api } from '../../services/api';
@@ -17,6 +17,12 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
   const [xReport, setXReport] = useState<any>(null);
   const [zReportData, setZReportData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
 
   // New Expense Form State
   const [expenseCategory, setExpenseCategory] = useState<string>('Tedarikçi');
@@ -62,9 +68,10 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
       );
       setExpenseAmount('');
       setExpenseDescription('');
+      showToast('Masraf kaydı başarıyla eklendi.', 'success');
       await loadData();
     } catch (err: any) {
-      alert(err.message || 'Masraf eklenemedi.');
+      showToast(err.message || 'Masraf eklenemedi.', 'error');
       sound.warning();
     }
   };
@@ -76,15 +83,28 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
       const res = await api.closeZReport(currentUser?.name || 'Müdür', '9999');
       setZReportData(res);
       sound.cashDrawer();
+      showToast('Z-Raporu başarıyla oluşturuldu ve kasa kapatıldı.', 'success');
       await loadData();
     } catch (err: any) {
-      alert(err.message || 'Z Raporu alınamadı.');
+      showToast(err.message || 'Z Raporu alınamadı.', 'error');
       sound.warning();
     }
   };
 
   return (
     <div className="flex-1 overflow-y-auto p-6 bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 space-y-6 select-none transition-colors duration-200">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-lg transition-all animate-slideDown ${
+          toast.type === 'success' 
+            ? 'bg-emerald-600/95 text-white border border-emerald-500' 
+            : 'bg-rose-600/95 text-white border border-rose-500'
+        }`}>
+          {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
       {/* Top Header */}
       <div className="flex items-center justify-between">
         <div>
