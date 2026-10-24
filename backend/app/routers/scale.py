@@ -1,12 +1,24 @@
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
 import asyncio
+import os
 from app.database import get_db
 from app.services import scale_service
 
 router = APIRouter(prefix="/scale", tags=["Hardware & CAS Scale Integration"])
+
+@router.get("/download-agent")
+async def download_agent():
+    """
+    Downloads the BonCore Hardware Bridge Agent zip package for cashier PC.
+    """
+    zip_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "boncore-agent.zip")
+    if os.path.exists(zip_path):
+        return FileResponse(zip_path, media_type="application/zip", filename="boncore-hardware-agent.zip")
+    return {"error": "Ajan paketi bulunamadi."}
 
 class ScaleConfigSchema(BaseModel):
     enabled: Optional[bool] = True

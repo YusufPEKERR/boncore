@@ -3,10 +3,11 @@ import {
   Settings, Save, CheckCircle2, Percent, DollarSign, 
   Receipt, Plus, Trash2, Edit3, ShieldAlert, Sparkles, Building2, 
   Coins, HelpCircle, Utensils, Tag, CreditCard, Check, X, AlertCircle, 
-  Scale, RefreshCw, Wifi, WifiOff, Activity 
+  Scale, RefreshCw, Wifi, WifiOff, Activity, Laptop, Download 
 } from 'lucide-react';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
+import { localHardware } from '../../services/localHardware';
 import { PaymentMethodConfig } from '../../types';
 
 export const defaultPaymentMethods: PaymentMethodConfig[] = [
@@ -70,6 +71,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     timeout: 2.5,
     
   });
+  const [agentInfo, setAgentInfo] = useState<{ isOnline: boolean; version?: string; localIp?: string }>({ isOnline: false });
   const [scaleTesting, setScaleTesting] = useState<boolean>(false);
   const [scaleTestResult, setScaleTestResult] = useState<{ success: boolean; message?: string; error?: string; latency_ms?: number } | null>(null);
   const [scaleWeightReading, setScaleWeightReading] = useState<boolean>(false);
@@ -400,7 +402,13 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => { sound.beep(); setActiveSubTab(tab.id); }}
+              onClick={() => {
+                sound.beep();
+                setActiveSubTab(tab.id);
+                if (tab.id === 'scale') {
+                  localHardware.checkAgentStatus().then(setAgentInfo);
+                }
+              }}
               className={`py-3.5 text-xs font-bold whitespace-nowrap transition border-b-2 cursor-pointer ${
                 activeSubTab === tab.id
                   ? 'border-red-600 text-red-600 font-black'
@@ -961,6 +969,62 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
           {/* 6. CAS CL-3000 Terazi Ayarları & Canlı Test Paneli */}
           {activeSubTab === 'scale' && (
             <div className="space-y-6 text-xs font-semibold">
+              {/* BonCore Yerel Donanım Ajanı Durumu & İndirme Kartı */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border-2 border-slate-200 dark:border-slate-700 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black shadow-md shrink-0 ${
+                    agentInfo.isOnline
+                      ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                      : 'bg-slate-700 text-slate-300'
+                  }`}>
+                    <Laptop className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-black text-slate-900 dark:text-white">BonCore Yerel Donanım Ajanı</span>
+                      {agentInfo.isOnline ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-500/30">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                          🟢 AKTİF VE BAĞLI (v{agentInfo.version})
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-500/30">
+                          ⚪ AJAN KAPALI (Uzak PC)
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {agentInfo.isOnline
+                        ? `Kasa Bilgisayarı IP: ${agentInfo.localIp} • Dükkanınızdaki CAS terazisine yerel ağdan tam hızda erişiliyor.`
+                        : "Bulut veya uzak bir bilgisayardan girdiğinizde, dükkanınızdaki teraziden tartım alabilmek için bu bilgisayarda BonCore Ajanı'nın açık olması gerekir."}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      sound.beep();
+                      const status = await localHardware.checkAgentStatus();
+                      setAgentInfo(status);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-bold text-xs cursor-pointer transition"
+                  >
+                    Yenile
+                  </button>
+
+                  <a
+                    href="/api/scale/download-agent"
+                    download="boncore-hardware-agent.zip"
+                    className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-xs shadow-md shadow-red-600/30 transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Ajanı İndir (.ZIP)</span>
+                  </a>
+                </div>
+              </div>
+
               {/* Bilgilendirme Kartı */}
               <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/30 flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/30 shrink-0">
@@ -1099,11 +1163,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                           sound.beep();
                           setScaleTesting(true);
                           setScaleTestResult(null);
-                          const res = await api.testScaleConnection({
-                            ip_address: scaleConfig.ip_address,
-                            port: scaleConfig.port,
-                            timeout: scaleConfig.timeout
-                          });
+                          const res = await localHardware.testConnection(scaleConfig.ip_address, scaleConfig.port);
                           setScaleTestResult(res);
                         } catch (err: any) {
                           setScaleTestResult({ success: false, error: err.message || 'Ağ bağlantısı kurulamadı' });
@@ -1124,7 +1184,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                         try {
                           sound.beep();
                           setScaleWeightReading(true);
-                          const res = await api.getScaleWeight(scaleConfig.ip_address, scaleConfig.port);
+                          const res = await localHardware.getWeight(scaleConfig.ip_address, scaleConfig.port);
                           if (res.success && res.weight !== undefined) {
                             setScaleLiveWeight(res);
                             sound.beep();

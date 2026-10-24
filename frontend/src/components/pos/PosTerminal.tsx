@@ -8,6 +8,7 @@ import {
 import { Category, Product, OrderItem, Table, Order, StaffUser } from '../../types';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
+import { localHardware } from '../../services/localHardware';
 import { useWebSocket } from '../../services/websocket';
 import { ProductModifierModal } from './ProductModifierModal';
 
@@ -240,7 +241,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     try {
       setScaleReading(true);
       setScaleStatus(null);
-      const res = await api.getScaleWeight();
+      const res = await localHardware.getWeight();
       if (res.success && res.weight !== undefined && res.weight > 0) {
         sound.beep();
         const cleanKg = Number(Number(res.weight).toFixed(3));
