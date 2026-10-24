@@ -106,10 +106,61 @@ export const localHardware = {
     return await api.updateTerminal(terminalId, payload);
   },
 
-  /**
+    /**
    * Kasayı listeden kaldırır
    */
   async deleteTerminal(terminalId: string) {
     return await api.deleteTerminal(terminalId);
+  },
+
+  /**
+   * Kullanıcının bu tarayıcıda seçtiği yazıcı listesini getirir.
+   */
+  getSelectedPrinters(): string[] {
+    try {
+      const saved = localStorage.getItem('boncore_selected_printers');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  /**
+   * Seçilen yazıcıları tarayıcı hafızasına kaydeder.
+   */
+  setSelectedPrinters(printers: string[]): void {
+    try {
+      localStorage.setItem('boncore_selected_printers', JSON.stringify(printers));
+    } catch {}
+  },
+
+  /**
+   * Seçili veya belirtilen yazıcılara adisyon / fiş yazdırır.
+   */
+  async printReceipt(payload: {
+    terminalId?: string;
+    printers?: string[];
+    document?: any;
+    rawText?: string;
+    docType?: string;
+  }): Promise<{
+    success: boolean;
+    error?: string;
+    message?: string;
+    results?: Array<{ printer: string; success: boolean }>;
+    terminal_id?: string;
+    terminal_name?: string;
+  }> {
+    const printersToUse = (payload.printers && payload.printers.length > 0)
+      ? payload.printers
+      : this.getSelectedPrinters();
+
+    return await api.printReceipt({
+      terminal_id: payload.terminalId,
+      printers: printersToUse,
+      document: payload.document,
+      raw_text: payload.rawText,
+      doc_type: payload.docType || 'adisyon'
+    });
   }
 };

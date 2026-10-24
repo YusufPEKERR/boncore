@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
+import { localHardware } from '../../services/localHardware';
 
 interface FiscalModalProps {
   isOpen: boolean;
@@ -12,8 +13,26 @@ interface FiscalModalProps {
   orderId: number | null;
 }
 
-export const printThermalReceipt = (doc: any) => {
+export const printThermalReceipt = async (doc: any) => {
   if (!doc) return;
+
+  // 1. Kasa bilgisayarinda secili termal yazicilar varsa dogrudan ajan uzerinden yazdir
+  const selectedPrinters = localHardware.getSelectedPrinters();
+  if (selectedPrinters && selectedPrinters.length > 0) {
+    try {
+      const res = await localHardware.printReceipt({
+        printers: selectedPrinters,
+        document: doc
+      });
+      if (res && res.success) {
+        return;
+      }
+    } catch (e) {
+      console.warn('Fiziksel termal yazdirma hatasi, tarayici onizlemesine geciliyor:', e);
+    }
+  }
+
+  // 2. Ajan veya secili yazici yoksa tarayici uzerinden yazdir (Fallback)
   try {
     let iframe = document.getElementById('boncore-thermal-print-frame') as HTMLIFrameElement | null;
     if (!iframe) {

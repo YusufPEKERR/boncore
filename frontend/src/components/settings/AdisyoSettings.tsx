@@ -3,7 +3,7 @@ import {
   Settings, Save, CheckCircle2, Percent, DollarSign, 
   Receipt, Plus, Trash2, Edit3, ShieldAlert, Sparkles, Building2, 
   Coins, HelpCircle, Utensils, Tag, CreditCard, Check, X, AlertCircle, 
-  Scale, RefreshCw, Wifi, WifiOff, Activity, Laptop, Download, Monitor, Star, CheckSquare 
+  Scale, RefreshCw, Wifi, WifiOff, Activity, Laptop, Download, Monitor, Star, CheckSquare, Printer 
 } from 'lucide-react';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
@@ -95,6 +95,42 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [scaleWeightReading, setScaleWeightReading] = useState<boolean>(false);
   const [scaleLiveWeight, setScaleLiveWeight] = useState<{ weight: number; is_stable?: boolean; raw?: string; simulated?: boolean; message?: string } | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [selectedPrinters, setSelectedPrinters] = useState<string[]>(() => localHardware.getSelectedPrinters());
+  const [printerTestStatus, setPrinterTestStatus] = useState<{ loading: boolean; message?: string; success?: boolean } | null>(null);
+  const [customPrinterInput, setCustomPrinterInput] = useState<string>('');
+
+  const handleTogglePrinter = (pName: string) => {
+    sound.beep();
+    setSelectedPrinters(prev => {
+      const updated = prev.includes(pName)
+        ? prev.filter(p => p !== pName)
+        : [...prev, pName];
+      localHardware.setSelectedPrinters(updated);
+      return updated;
+    });
+  };
+
+  const handleTestPrint = async () => {
+    if (selectedPrinters.length === 0) {
+      alert('Lutfen en az bir yazici secin.');
+      return;
+    }
+    sound.beep();
+    setPrinterTestStatus({ loading: true });
+    try {
+      const res = await localHardware.printReceipt({
+        printers: selectedPrinters,
+        rawText: '================================\n        BONCORE POS TEST        \n================================\nTarih: ' + new Date().toLocaleDateString('tr-TR') + ' ' + new Date().toLocaleTimeString('tr-TR') + '\nYazici Testi Basarili!\n\nSecili Yazicilar:\n' + selectedPrinters.map(p => ' - ' + p).join('\n') + '\n================================\n\n\n\n'
+      });
+      if (res.success) {
+        setPrinterTestStatus({ loading: false, success: true, message: res.message || 'Secili yazicilara test fisi basariyla gonderildi!' });
+      } else {
+        setPrinterTestStatus({ loading: false, success: false, message: res.error || 'Yazdirma istegi tamamlanamadi.' });
+      }
+    } catch (e: any) {
+      setPrinterTestStatus({ loading: false, success: false, message: e.message || 'Hata olustu' });
+    }
+  };
 
   // Terazi ve çoklu kasaları periyodik olarak güncelle
   const fetchTerminalsData = async () => {
@@ -1283,7 +1319,142 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
 
               {/* Bilgilendirme Kartı */}
               <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/30 flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/30 shrink-0">
+                              {/* TERMAL YAZICI VE OTOMATIK CIKTI YONETIMI (COKLU SECIM) */}
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black shadow-md shadow-blue-600/30 shrink-0">
+                      <Printer className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                        <span>Fiziksel Termal Yazicilar (Dogrudan Cikti)</span>
+                        {selectedPrinters.length > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                            {selectedPrinters.length} Yazici Secili
+                          </span>
+                        )}
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        Kasa bilgisayarinizda tanimli tum yazicilar (USB/Ag) ajan tarafindan taranir. Birden fazla yazici secerek fisin ayni anda birden cok noktadan (kasa, mutfak, bar) cikmasini saglayabilirsiniz.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={handleTestPrint}
+                      disabled={printerTestStatus?.loading || selectedPrinters.length === 0}
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black text-xs shadow-md shadow-blue-600/30 flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer whitespace-nowrap"
+                    >
+                      <Printer className="w-4 h-4" />
+                      <span>{printerTestStatus?.loading ? 'Yazdiriliyor...' : 'Secili Yazicilara Test Fisi Yazdir'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Test Durum Bildirimi */}
+                {printerTestStatus && (
+                  <div className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${
+                    printerTestStatus.success 
+                      ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-500/40 text-emerald-800 dark:text-emerald-300' 
+                      : 'bg-rose-50 dark:bg-rose-950/30 border-rose-500/40 text-rose-800 dark:text-rose-300'
+                  }`}>
+                    {printerTestStatus.success ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" /> : <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />}
+                    <span>{printerTestStatus.message}</span>
+                  </div>
+                )}
+
+                {/* Bulunan Yazicilar Listesi */}
+                <div>
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-2">
+                    Kasa Bilgisayarinda Kesfedilen Yazicilar (Coklu Secim):
+                  </label>
+
+                  {(() => {
+                    const discovered = Array.from(new Set(
+                      terminalsList.flatMap(t => t.printers || [])
+                    ));
+
+                    if (discovered.length === 0) {
+                      return (
+                        <div className="p-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-center text-slate-500 dark:text-slate-400">
+                          <Printer className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                          <p className="text-xs font-bold">Ajan henuz bilgisayarinizdaki yazicilari bildirmedi veya ajan kapali.</p>
+                          <p className="text-[11px] mt-1">Bilgisayarda BonCore Ajanini baslatin veya asagidaki kutudan yazici adinizi manuel ekleyin.</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                        {discovered.map((prName) => {
+                          const isSelected = selectedPrinters.includes(prName);
+                          return (
+                            <div
+                              key={prName}
+                              onClick={() => handleTogglePrinter(prName)}
+                              className={`p-3 rounded-xl border-2 transition cursor-pointer flex items-center justify-between gap-3 select-none ${
+                                isSelected
+                                  ? 'border-blue-600 bg-blue-500/10 text-blue-900 dark:text-blue-200 shadow-sm'
+                                  : 'border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition shrink-0 ${
+                                  isSelected 
+                                    ? 'bg-blue-600 border-blue-600 text-white' 
+                                    : 'border-slate-400 bg-white dark:bg-slate-800'
+                                }`}>
+                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                </div>
+                                <span className="text-xs font-bold truncate" title={prName}>
+                                  {prName}
+                                </span>
+                              </div>
+                              <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
+                                Termal / RAW
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Manuel Yazici Ekleme */}
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Listede gorunmeyen veya ozel bir yazici eklemek icin:
+                  </span>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <input
+                      type="text"
+                      value={customPrinterInput}
+                      onChange={(e) => setCustomPrinterInput(e.target.value)}
+                      placeholder="Orn: POS-80 veya EPSON TM-T20"
+                      className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white w-full sm:w-56"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const trimmed = customPrinterInput.trim();
+                        if (trimmed && !selectedPrinters.includes(trimmed)) {
+                          handleTogglePrinter(trimmed);
+                          setCustomPrinterInput('');
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition whitespace-nowrap cursor-pointer"
+                    >
+                      Ekle & Sec
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+<div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/30 shrink-0">
                   <Scale className="w-5 h-5" />
                 </div>
                 <div>

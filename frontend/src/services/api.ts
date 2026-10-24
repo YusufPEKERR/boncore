@@ -841,10 +841,36 @@ export const api = {
     return res.json();
   },
 
-  async deleteTerminal(terminalId: string): Promise<any> {
+    async deleteTerminal(terminalId: string): Promise<any> {
     const res = await fetch(`${API_BASE}/scale/terminals/${encodeURIComponent(terminalId)}`, {
       method: 'DELETE'
     });
     return res.json();
+  },
+
+  async printReceipt(payload: {
+    terminal_id?: string;
+    printers?: string[];
+    raw_text?: string;
+    doc_type?: string;
+    document?: any;
+  }): Promise<{
+    success: boolean;
+    error?: string;
+    message?: string;
+    results?: Array<{ printer: string; success: boolean }>;
+    terminal_id?: string;
+    terminal_name?: string;
+  }> {
+    try {
+      const res = await fetch(`${API_BASE}/scale/print`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, error: e.message || 'Yazdırma isteği gönderilemedi.' };
+    }
   }
 };

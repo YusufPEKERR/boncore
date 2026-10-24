@@ -107,21 +107,78 @@ def is_windows_autostart():
     except Exception:
         return False
 
-# --- YEREL YAZICILARI LİSTELE ---
+# --- YEREL YAZICILARI LİSTELE VE TERMAL BASKI ---
 def get_windows_printers():
     printers = []
+    # 1. win32print (Hızlı ve doğrudan)
     try:
-        cmd = 'powershell -Command "Get-Printer | Select-Object Name, PortName"'
-        out = subprocess.check_output(cmd, shell=True, text=True, errors="ignore")
-        for line in out.splitlines():
-            line = line.strip()
-            if line and not line.startswith("Name") and not line.startswith("----"):
-                parts = line.split(maxsplit=1)
-                name = parts[0] if parts else line
+        import win32print
+        for p in win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS):
+            name = p[2]
+            if name and name not in printers:
                 printers.append(name)
+        if printers:
+            return printers
     except Exception:
         pass
-    return printers[:6]
+
+    # 2. PowerShell fallback
+    try:
+        cmd = ["powershell", "-NoProfile", "-Command", "(Get-Printer).Name"]
+        out = subprocess.check_output(cmd, text=True, errors="ignore")
+        for line in out.splitlines():
+            line = line.strip()
+            if line and line not in printers:
+                printers.append(line)
+    except Exception:
+        pass
+    return printers
+
+def print_slip_to_printer(printer_name: str, raw_text: str) -> bool:
+    """
+    Termal yazıcıya doğrudan ESC/POS formatında fiş basar ve otomatik kağıt keser.
+    """
+    tr_map = str.maketrans("çÇğĞıİöÖşŞüÜ", "cCgGiIoOsSuU")
+    clean_text = raw_text.translate(tr_map)
+
+    # ESC/POS init + metin + kağıt besleme & kesme (GS V B 0)
+    esc_init = b"\x1b\x40"
+    esc_cut = b"\n\n\n\n\x1d\x56\x42\x00"
+    raw_data = esc_init + clean_text.encode("latin-1", errors="replace") + esc_cut
+
+    # 1. win32print RAW Spooler (Sessiz, doğrudan porta basar)
+    try:
+        import win32print
+        hPrinter = win32print.OpenPrinter(printer_name)
+        try:
+            hJob = win32print.StartDocPrinter(hPrinter, 1, ("BonCore Adisyon", None, "RAW"))
+            try:
+                win32print.StartPagePrinter(hPrinter)
+                win32print.WritePrinter(hPrinter, raw_data)
+                win32print.EndPagePrinter(hPrinter)
+            finally:
+                win32print.EndDocPrinter(hPrinter)
+        finally:
+            win32print.ClosePrinter(hPrinter)
+        return True
+    except Exception as e:
+        print(f"win32print error on {printer_name}:", e)
+
+    # 2. Notepad /p fallback
+    try:
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, suffix=".txt") as tf:
+            tf.write(clean_text)
+            temp_path = tf.name
+        subprocess.run(["notepad.exe", "/p", temp_path], timeout=5)
+        try:
+            os.remove(temp_path)
+        except Exception:
+            pass
+        return True
+    except Exception as e:
+        print(f"Fallback print error on {printer_name}:", e)
+        return False
 
 # --- CAS TERAZİ PARSER & NETWORK ---
 def parse_cas_cl3000(raw_str: str):
@@ -745,6 +802,26 @@ class BonCoreHardwareDesktopApp:
                             "req_id": req_id,
                             "success": ok,
                             "message": "CAS CL-3000 terazisine bağlandı." if ok else "Teraziye ulaşılamadı."
+                        }
+                        self.session.post(
+                            f"{server_url}/api/scale/agent/report",
+                            json=res,
+                            timeout=5.0
+                        )
+
+                    elif action == "print_receipt":
+                        target_printers = poll_data.get("printers", [])
+                        raw_text = poll_data.get("raw_text", "")
+                        results = []
+                        for pr_name in target_printers:
+                            ok = print_slip_to_printer(pr_name, raw_text)
+                            results.append({"printer": pr_name, "success": ok})
+                        ok_count = len([r for r in results if r["success"]])
+                        res = {
+                            "req_id": req_id,
+                            "success": ok_count > 0,
+                            "results": results,
+                            "message": f"{ok_count}/{len(target_printers)} yazıcıdan çıktı alındı." if target_printers else "Yazıcı listesi boş."
                         }
                         self.session.post(
                             f"{server_url}/api/scale/agent/report",

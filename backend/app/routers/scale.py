@@ -393,6 +393,128 @@ async def test_connection(payload: ScaleTestSchema):
         int(payload.port),
         float(payload.timeout)
     )
+class PrintRequestSchema(BaseModel):
+    terminal_id: Optional[str] = None
+    printers: Optional[list] = []
+    raw_text: Optional[str] = None
+    doc_type: Optional[str] = "adisyon"
+    document: Optional[Dict[str, Any]] = None
+
+def build_receipt_text(doc: Dict[str, Any]) -> str:
+    company = doc.get("company_title") or "BONCORE RESTORAN"
+    table = doc.get("table_name") or "Hızlı Satış"
+    waiter = doc.get("waiter_name") or "-"
+    cashier = doc.get("cashier_name") or "-"
+    date_str = doc.get("date") or time.strftime("%d.%m.%Y")
+    time_str = doc.get("time") or time.strftime("%H:%M")
+    doc_no = doc.get("doc_no") or f"BON-{int(time.time())%100000}"
+
+    lines = []
+    lines.append("================================")
+    lines.append(f"{company.center(32)}")
+    lines.append("       E-ADISYON FISI           ")
+    lines.append("================================")
+    lines.append(f"Masa: {table:<12} Tarih: {date_str}")
+    lines.append(f"Belge: {doc_no:<11} Saat:  {time_str}")
+    lines.append(f"Kasiyer: {cashier:<10} Garson: {waiter}")
+    lines.append("--------------------------------")
+    lines.append("URUN             ADET      TUTAR")
+    lines.append("--------------------------------")
+
+    items = doc.get("items") or []
+    for it in items:
+        pname = it.get("product_name") or "Urun"
+        if it.get("variant"):
+            pname += f" ({it['variant']})"
+        pname = pname[:16]
+        qty = it.get("quantity", 1)
+        qty_str = f"{qty:.3f}" if isinstance(qty, float) and not qty.is_integer() else str(int(qty))
+        t_price = float(it.get("total_price") or 0.0)
+        lines.append(f"{pname:<16} {qty_str:>4} {t_price:>9.2f} TL")
+
+    lines.append("--------------------------------")
+    subtotal = float(doc.get("subtotal") or 0.0)
+    grand_total = float(doc.get("grand_total") or subtotal)
+    discount = float(doc.get("discount") or 0.0)
+
+    if discount > 0:
+        lines.append(f"Ara Toplam:           {subtotal:>9.2f} TL")
+        lines.append(f"Indirim:             -{discount:>9.2f} TL")
+    lines.append(f"GENEL TOPLAM:         {grand_total:>9.2f} TL")
+
+    payments = doc.get("payments") or []
+    for p in payments:
+        plabel = p.get("label") or p.get("method") or "Odeme"
+        pamount = float(p.get("amount") or 0.0)
+        lines.append(f"Odeme ({plabel}):      {pamount:>9.2f} TL")
+
+    lines.append("================================")
+    lines.append("    AFIYET OLSUN / TESEKKURLER  ")
+    lines.append("================================")
+    lines.append("\n\n\n")
+    return "\n".join(lines)
+
+@router.post("/print")
+async def print_receipt(payload: PrintRequestSchema):
+    """
+    Relays a receipt print job to one or multiple physical Windows thermal printers via the cashier PC agent.
+    """
+    terminals = load_terminals()
+    now = time.time()
+
+    # Hedef kasayı belirle
+    target_term = None
+    if payload.terminal_id and payload.terminal_id in terminals:
+        target_term = terminals[payload.terminal_id]
+    else:
+        online_terms = [t for t in terminals.values() if (now - t.get("last_seen", 0)) < 15.0]
+        if online_terms:
+            target_term = next((t for t in online_terms if t.get("is_default")), online_terms[0])
+
+    if not target_term or (now - target_term.get("last_seen", 0)) >= 15.0:
+        return {
+            "success": False,
+            "error": "Yazıcıya ulaşılamadı. Kasa bilgisayarında BonCore Ajanı'nın açık olduğundan emin olun."
+        }
+
+    raw_text = payload.raw_text
+    if not raw_text and payload.document:
+        raw_text = build_receipt_text(payload.document)
+    elif not raw_text:
+        raw_text = "BONCORE TEST YAZDIRMA\n--------------------\nTarih: " + time.strftime("%d.%m.%Y %H:%M") + "\nYazici testi basarili!\n\n\n\n"
+
+    target_printers = payload.printers
+    if not target_printers:
+        target_printers = target_term.get("printers", [])[:1]
+
+    if not target_printers:
+        return {
+            "success": False,
+            "error": "Seçili yazıcı bulunamadı veya kasa bilgisayarında tanımlı yazıcı yok."
+        }
+
+    req_id = str(uuid.uuid4())
+    PENDING_COMMANDS[req_id] = {
+        "terminal_id": target_term["id"],
+        "action": "print_receipt",
+        "printers": target_printers,
+        "raw_text": raw_text,
+        "created_at": time.time()
+    }
+
+    for _ in range(40):
+        await asyncio.sleep(0.1)
+        if req_id in COMPLETED_RESULTS:
+            res = COMPLETED_RESULTS.pop(req_id)
+            res["terminal_id"] = target_term["id"]
+            res["terminal_name"] = target_term["name"]
+            return res
+
+    return {
+        "success": False,
+        "error": "Yazdırma zaman aşımına uğradı. Yazıcının açık ve kağıdı olduğunu kontrol edin."
+    }
+
     return result
 
 @router.get("/weight")
@@ -464,5 +586,127 @@ async def get_current_weight(
             "success": False,
             "error": "Terazi entegrasyonu sistem ayarlarından devre dışı bırakılmış."
         }
+
+class PrintRequestSchema(BaseModel):
+    terminal_id: Optional[str] = None
+    printers: Optional[list] = []
+    raw_text: Optional[str] = None
+    doc_type: Optional[str] = "adisyon"
+    document: Optional[Dict[str, Any]] = None
+
+def build_receipt_text(doc: Dict[str, Any]) -> str:
+    company = doc.get("company_title") or "BONCORE RESTORAN"
+    table = doc.get("table_name") or "Hızlı Satış"
+    waiter = doc.get("waiter_name") or "-"
+    cashier = doc.get("cashier_name") or "-"
+    date_str = doc.get("date") or time.strftime("%d.%m.%Y")
+    time_str = doc.get("time") or time.strftime("%H:%M")
+    doc_no = doc.get("doc_no") or f"BON-{int(time.time())%100000}"
+
+    lines = []
+    lines.append("================================")
+    lines.append(f"{company.center(32)}")
+    lines.append("       E-ADISYON FISI           ")
+    lines.append("================================")
+    lines.append(f"Masa: {table:<12} Tarih: {date_str}")
+    lines.append(f"Belge: {doc_no:<11} Saat:  {time_str}")
+    lines.append(f"Kasiyer: {cashier:<10} Garson: {waiter}")
+    lines.append("--------------------------------")
+    lines.append("URUN             ADET      TUTAR")
+    lines.append("--------------------------------")
+
+    items = doc.get("items") or []
+    for it in items:
+        pname = it.get("product_name") or "Urun"
+        if it.get("variant"):
+            pname += f" ({it['variant']})"
+        pname = pname[:16]
+        qty = it.get("quantity", 1)
+        qty_str = f"{qty:.3f}" if isinstance(qty, float) and not qty.is_integer() else str(int(qty))
+        t_price = float(it.get("total_price") or 0.0)
+        lines.append(f"{pname:<16} {qty_str:>4} {t_price:>9.2f} TL")
+
+    lines.append("--------------------------------")
+    subtotal = float(doc.get("subtotal") or 0.0)
+    grand_total = float(doc.get("grand_total") or subtotal)
+    discount = float(doc.get("discount") or 0.0)
+
+    if discount > 0:
+        lines.append(f"Ara Toplam:           {subtotal:>9.2f} TL")
+        lines.append(f"Indirim:             -{discount:>9.2f} TL")
+    lines.append(f"GENEL TOPLAM:         {grand_total:>9.2f} TL")
+
+    payments = doc.get("payments") or []
+    for p in payments:
+        plabel = p.get("label") or p.get("method") or "Odeme"
+        pamount = float(p.get("amount") or 0.0)
+        lines.append(f"Odeme ({plabel}):      {pamount:>9.2f} TL")
+
+    lines.append("================================")
+    lines.append("    AFIYET OLSUN / TESEKKURLER  ")
+    lines.append("================================")
+    lines.append("\n\n\n")
+    return "\n".join(lines)
+
+@router.post("/print")
+async def print_receipt(payload: PrintRequestSchema):
+    """
+    Relays a receipt print job to one or multiple physical Windows thermal printers via the cashier PC agent.
+    """
+    terminals = load_terminals()
+    now = time.time()
+
+    # Hedef kasayı belirle
+    target_term = None
+    if payload.terminal_id and payload.terminal_id in terminals:
+        target_term = terminals[payload.terminal_id]
+    else:
+        online_terms = [t for t in terminals.values() if (now - t.get("last_seen", 0)) < 15.0]
+        if online_terms:
+            target_term = next((t for t in online_terms if t.get("is_default")), online_terms[0])
+
+    if not target_term or (now - target_term.get("last_seen", 0)) >= 15.0:
+        return {
+            "success": False,
+            "error": "Yazıcıya ulaşılamadı. Kasa bilgisayarında BonCore Ajanı'nın açık olduğundan emin olun."
+        }
+
+    raw_text = payload.raw_text
+    if not raw_text and payload.document:
+        raw_text = build_receipt_text(payload.document)
+    elif not raw_text:
+        raw_text = "BONCORE TEST YAZDIRMA\n--------------------\nTarih: " + time.strftime("%d.%m.%Y %H:%M") + "\nYazici testi basarili!\n\n\n\n"
+
+    target_printers = payload.printers
+    if not target_printers:
+        target_printers = target_term.get("printers", [])[:1]
+
+    if not target_printers:
+        return {
+            "success": False,
+            "error": "Seçili yazıcı bulunamadı veya kasa bilgisayarında tanımlı yazıcı yok."
+        }
+
+    req_id = str(uuid.uuid4())
+    PENDING_COMMANDS[req_id] = {
+        "terminal_id": target_term["id"],
+        "action": "print_receipt",
+        "printers": target_printers,
+        "raw_text": raw_text,
+        "created_at": time.time()
+    }
+
+    for _ in range(40):
+        await asyncio.sleep(0.1)
+        if req_id in COMPLETED_RESULTS:
+            res = COMPLETED_RESULTS.pop(req_id)
+            res["terminal_id"] = target_term["id"]
+            res["terminal_name"] = target_term["name"]
+            return res
+
+    return {
+        "success": False,
+        "error": "Yazdırma zaman aşımına uğradı. Yazıcının açık ve kağıdı olduğunu kontrol edin."
+    }
 
     return result

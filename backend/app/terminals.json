@@ -1,0 +1,15 @@
+{
+  "kasa-1": {
+    "id": "kasa-1",
+    "name": "Kasa 1 - Ana Giris",
+    "local_ip": "192.168.1.100",
+    "version": "1.2.0",
+    "scale_connected": false,
+    "scale_ip": "192.168.1.150",
+    "scale_port": 2004,
+    "last_weight": 0.0,
+    "printers": [],
+    "last_seen": 1792879498.2185843,
+    "is_default": true
+  }
+}
