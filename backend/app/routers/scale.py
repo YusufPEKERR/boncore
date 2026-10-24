@@ -10,6 +10,7 @@ import time
 import uuid
 import zipfile
 import io
+import re
 from app.database import get_db
 from app.services import scale_service
 
@@ -24,6 +25,26 @@ AGENT_STATE = {
 }
 PENDING_COMMANDS: Dict[str, Any] = {}
 COMPLETED_RESULTS: Dict[str, Any] = {}
+
+def get_public_server_url(request: Request) -> str:
+    # 1. Read cloudflared.log if running via tunnel
+    try:
+        log_path = os.path.join(r"C:\Users\Administrator\Documents\BonCore", "cloudflared.log")
+        if os.path.exists(log_path):
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                matches = re.findall(r'https://[a-zA-Z0-9-]+\.trycloudflare\.com', f.read())
+                if matches:
+                    return matches[-1]
+    except Exception:
+        pass
+
+    # 2. Check X-Forwarded headers from reverse proxy
+    fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    fwd_proto = request.headers.get("x-forwarded-proto") or "https"
+    if fwd_host and "localhost" not in fwd_host and "127.0.0.1" not in fwd_host:
+        return f"{fwd_proto}://{fwd_host}"
+
+    return str(request.base_url).rstrip("/")
 
 class AgentHeartbeatSchema(BaseModel):
     local_ip: Optional[str] = "127.0.0.1"
@@ -62,11 +83,7 @@ async def download_agent(request: Request):
     """
     Downloads the BonCore Hardware Bridge Agent zip package with auto-configured server_url.
     """
-    server_base = str(request.base_url).rstrip("/")
-    fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
-    fwd_proto = request.headers.get("x-forwarded-proto") or "https"
-    if fwd_host and "localhost" not in fwd_host and "127.0.0.1" not in fwd_host:
-        server_base = f"{fwd_proto}://{fwd_host}"
+    server_base = get_public_server_url(request)
 
     mem_zip = io.BytesIO()
     with zipfile.ZipFile(mem_zip, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -87,13 +104,6 @@ async def download_agent(request: Request):
             "scale_default_port": 2004
         }, indent=2)
         zf.writestr("config.json", config_content)
-
-    mem_zip.seek(0)
-    return StreamingResponse(
-        mem_zip,
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=boncore-hardware-agent.zip"}
-    )
 
     mem_zip.seek(0)
     return StreamingResponse(
@@ -179,7 +189,6 @@ async def test_connection(payload: ScaleTestSchema):
     Tests TCP connection directly to the CAS CL-3000 Ethernet scale.
     If agent is online, delegates ping to the cashier PC agent.
     """
-    # Check if agent is online
     is_agent_online = (time.time() - AGENT_STATE["last_seen"]) < 8.0
     if is_agent_online:
         req_id = str(uuid.uuid4())
@@ -197,7 +206,6 @@ async def test_connection(payload: ScaleTestSchema):
                 res["bridge"] = f"BonCore Ajanı (Kasa IP: {AGENT_STATE['local_ip']})"
                 return res
 
-    # Otherwise direct socket test from current machine
     result = await asyncio.to_thread(
         scale_service.test_tcp_connectivity,
         payload.ip_address.strip(),
@@ -221,7 +229,6 @@ async def get_current_weight(
     target_port = int(port or cfg.get("port") or 2004)
     timeout = float(cfg.get("timeout") or 2.5)
 
-    # 1. If BonCore Hardware Agent is online, delegate to the agent on the user's LAN
     is_agent_online = (time.time() - AGENT_STATE["last_seen"]) < 8.0
     if is_agent_online:
         req_id = str(uuid.uuid4())
@@ -232,7 +239,6 @@ async def get_current_weight(
             "timeout": timeout,
             "created_at": time.time()
         }
-        # Wait up to 3.5 seconds
         for _ in range(35):
             await asyncio.sleep(0.1)
             if req_id in COMPLETED_RESULTS:
@@ -246,7 +252,6 @@ async def get_current_weight(
             "error": f"Kasa bilgisayarındaki ajan teraziye bağlanamadı ({target_ip}:{target_port}). Terazinin açık ve ağ kablosunun takılı olduğundan emin olun."
         }
 
-    # 2. Direct physical socket query if no agent
     result = await asyncio.to_thread(
         scale_service.sync_read_cas_cl3000,
         target_ip,

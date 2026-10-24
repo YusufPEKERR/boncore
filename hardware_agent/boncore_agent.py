@@ -29,7 +29,7 @@ CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.j
 
 # Default Config
 CONFIG = {
-    "server_url": "https://bailey-shell-census-house.trycloudflare.com",
+    "server_url": "https://contributing-sustained-cure-posting.trycloudflare.com",
     "scale_default_ip": "192.168.1.150",
     "scale_default_port": 2004
 }
@@ -194,21 +194,19 @@ def test_local_connection(ip: str, port: int = 2004, timeout: float = 2.0):
 
 # --- BULUT SUNUCU ILE RELAY DONGUSU ---
 def cloud_relay_worker():
-    """
-    Buluttaki BonCore sunucusuna periyodik heartbeat atar ve tartım emirlerini dinler.
-    Bu sayede web tarayıcısının Mixed-Content / CORS kısıtlamaları tamamen aşılır!
-    """
     local_ip = get_local_ip()
     server_url = CONFIG.get("server_url", "").rstrip("/")
     if not server_url:
-        server_url = "https://bailey-shell-census-house.trycloudflare.com"
+        server_url = "https://contributing-sustained-cure-posting.trycloudflare.com"
 
     last_hb = 0
+    connected_once = False
+
     while True:
         try:
             now = time.time()
-            # 1. Heartbeat (Her 2.5 saniyede bir)
-            if now - last_hb > 2.5:
+            # 1. Heartbeat (Her 2 saniyede bir)
+            if now - last_hb > 2.0:
                 hb_payload = json.dumps({
                     "local_ip": local_ip,
                     "version": AGENT_VERSION,
@@ -221,10 +219,17 @@ def cloud_relay_worker():
                 )
                 try:
                     with urllib.request.urlopen(req, timeout=3.0) as resp:
-                        pass
+                        if not connected_once:
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] >>> BULUT SUNUCUSUNA BAGLANDI! <<<")
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] Sitede yesil isik yandi: AKTIF VE BAGLI")
+                            connected_once = True
                     last_hb = now
-                except Exception:
-                    pass
+                except urllib.error.URLError as err:
+                    if connected_once or last_hb == 0:
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] Sunucuya baglanilamiyor ({server_url}): {err.reason}. Tekrar deneniyor...")
+                        connected_once = False
+                    time.sleep(2.0)
+                    continue
 
             # 2. Poll (Emir Dinleme)
             poll_req = urllib.request.Request(f"{server_url}/api/scale/agent/poll")
@@ -237,13 +242,13 @@ def cloud_relay_worker():
                     target_port = int(poll_data.get("port", CONFIG.get("scale_default_port", 2004)))
                     timeout = float(poll_data.get("timeout", 2.5))
 
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Buluttan istek geldi: {action} (IP: {target_ip}:{target_port})...")
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Siteden tartim istegi alindi (Terazi: {target_ip}:{target_port})...")
 
                     if action == "read_weight":
                         res = read_cas_from_local_network(target_ip, target_port, timeout)
                         res["req_id"] = req_id
                         if res.get("success"):
-                            print(f"[{datetime.now().strftime('%H:%M:%S')}] OK: CAS Teraziden {res['weight']} Kg okundu -> Buluta iletiliyor!")
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] OK: Teraziden {res['weight']} Kg okundu -> Siteye aktarildi!")
                         else:
                             print(f"[{datetime.now().strftime('%H:%M:%S')}] UYARI: {res.get('error')}")
 
@@ -333,7 +338,7 @@ class LocalHttpHandler(BaseHTTPRequestHandler):
 def main():
     load_config()
     local_ip = get_local_ip()
-    server_url = CONFIG.get("server_url", "https://bailey-shell-census-house.trycloudflare.com")
+    server_url = CONFIG.get("server_url", "https://contributing-sustained-cure-posting.trycloudflare.com")
 
     # Start Cloud Relay Worker in background thread
     t = threading.Thread(target=cloud_relay_worker, daemon=True)
@@ -344,11 +349,10 @@ def main():
     print("=" * 66)
     print(f"  * Kasa Bilgisayari IP'si : {local_ip}")
     print(f"  * Yerel HTTP Dinleme    : http://127.0.0.1:{AGENT_PORT}")
-    print(f"  * Bulut Sunucu           : {server_url}")
-    print("  * Bulut Baglanti Durumu  : AKTIF (Bulut ile haberlesiyor)")
+    print(f"  * Baglanilan Sunucu     : {server_url}")
     print("  * Desteklenen Terazi    : CAS CL-3000 / CL-5000 (Ethernet TCP/IP)")
     print("-" * 66)
-    print("  Web sitenizde 'AJAN AKTIF VE BAGLI' yesil rozeti yandi!")
+    print("  Sunucu ile iletisim kuruluyor...")
     print("  (Kapatmak icin CTRL+C tusuna basabilirsiniz)")
     print("=" * 66)
     print()
@@ -361,7 +365,6 @@ def main():
         print("\nBonCore Donanim Ajani durduruldu.")
         sys.exit(0)
     except Exception as e:
-        # If port 9099 was busy, keep running the cloud relay thread
         while True:
             time.sleep(1)
 
