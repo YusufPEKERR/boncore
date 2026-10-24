@@ -32,6 +32,8 @@ CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.j
 # Varsayılan Konfigürasyon
 DEFAULT_CONFIG = {
     "server_url": "http://77.67.29.77",
+    "terminal_id": "",
+    "terminal_name": "Kasa 1",
     "scale_default_ip": "192.168.1.150",
     "scale_default_port": 2004,
     "auto_start": True,
@@ -47,6 +49,10 @@ def load_config():
                 cfg.update(json.load(f))
         except Exception:
             pass
+    if not cfg.get("terminal_id"):
+        import uuid
+        cfg["terminal_id"] = f"kasa_{uuid.uuid4().hex[:6]}"
+        save_config(cfg)
     return cfg
 
 def save_config(cfg):
@@ -338,19 +344,20 @@ class BonCoreHardwareDesktopApp:
         title_box = tk.Frame(header, bg="#1e293b")
         title_box.pack(side="left")
 
-        lbl_title = tk.Label(
+        t_name = self.cfg.get("terminal_name", "Kasa 1")
+        self.lbl_title = tk.Label(
             title_box, 
-            text="BonCore Donanım Köprüsü", 
+            text=f"BonCore Donanım Köprüsü • {t_name}", 
             font=("Segoe UI", 13, "bold"), 
             fg="#f8fafc", 
             bg="#1e293b"
         )
-        lbl_title.pack(anchor="w")
+        self.lbl_title.pack(anchor="w")
 
         local_ip = get_local_ip()
         self.lbl_sub = tk.Label(
             title_box, 
-            text=f"Kasa Bilgisayarı IP: {local_ip} • v{AGENT_VERSION}", 
+            text=f"Kasa IP: {local_ip} • ID: {self.cfg.get('terminal_id', 'kasa-1')} • v{AGENT_VERSION}", 
             font=("Segoe UI", 9), 
             fg="#94a3b8", 
             bg="#1e293b"
@@ -398,6 +405,19 @@ class BonCoreHardwareDesktopApp:
         btn_save_url = tk.Button(f_srv, text="Kaydet", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#0284c7", activebackground="#0369a1", relief="flat", padx=8, command=self.save_server_url)
         btn_save_url.grid(row=0, column=2)
         f_srv.columnconfigure(1, weight=1)
+
+        # Kasa İsmi Ayarı
+        f_kasa = tk.Frame(card_server, bg="#1e293b")
+        f_kasa.pack(fill="x", pady=(8, 0))
+
+        tk.Label(f_kasa, text="Kasa / İstasyon Adı:", font=("Segoe UI", 9), fg="#94a3b8", bg="#1e293b").grid(row=0, column=0, sticky="w")
+        self.ent_terminal_name = tk.Entry(f_kasa, font=("Segoe UI", 9, "bold"), fg="#38bdf8", bg="#0f172a", relief="flat", insertbackground="white")
+        self.ent_terminal_name.insert(0, self.cfg.get("terminal_name", "Kasa 1"))
+        self.ent_terminal_name.grid(row=0, column=1, sticky="ew", padx=8)
+
+        btn_save_kasa = tk.Button(f_kasa, text="İsmi Güncelle", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#8b5cf6", activebackground="#7c3aed", relief="flat", padx=8, command=self.save_terminal_name)
+        btn_save_kasa.grid(row=0, column=2)
+        f_kasa.columnconfigure(1, weight=1)
 
         self.lbl_server_status = tk.Label(
             card_server,
@@ -557,6 +577,14 @@ class BonCoreHardwareDesktopApp:
             save_config(self.cfg)
             messagebox.showinfo("Başarılı", "Sunucu adresi kaydedildi. Yeni bağlantı deneniyor...")
 
+    def save_terminal_name(self):
+        new_name = self.ent_terminal_name.get().strip()
+        if new_name:
+            self.cfg["terminal_name"] = new_name
+            save_config(self.cfg)
+            self.lbl_title.config(text=f"BonCore Donanım Köprüsü • {new_name}")
+            messagebox.showinfo("Başarılı", f"Kasa ismi kaydedildi: {new_name}")
+
     def save_scale_params(self):
         ip = self.ent_scale_ip.get().strip()
         port = int(self.ent_scale_port.get().strip() or "2004")
@@ -642,9 +670,16 @@ class BonCoreHardwareDesktopApp:
                 # 1. Heartbeat - her 4 saniyede bir gönderilir (her döngüde değil!)
                 if now - last_heartbeat_time >= 4.0:
                     hb_payload = {
+                        "terminal_id": self.cfg.get("terminal_id", "kasa-1"),
+                        "terminal_name": self.cfg.get("terminal_name", "Kasa 1"),
                         "local_ip": local_ip,
                         "version": AGENT_VERSION,
-                        "agent_name": "BonCore Hardware Agent Desktop"
+                        "agent_name": self.cfg.get("terminal_name", "Kasa 1"),
+                        "scale_connected": self.scale_connected,
+                        "scale_ip": self.cfg.get("scale_default_ip", "192.168.1.150"),
+                        "scale_port": int(self.cfg.get("scale_default_port", 2004)),
+                        "last_weight": self.last_weight,
+                        "printers": self.printers_list
                     }
                     hb_resp = self.session.post(
                         f"{server_url}/api/scale/agent/heartbeat",
@@ -655,8 +690,9 @@ class BonCoreHardwareDesktopApp:
                     last_heartbeat_time = now
 
                 # 2. Poll - Emir Dinleme (Reused Keep-Alive TCP Socket)
+                t_id = self.cfg.get("terminal_id", "kasa-1")
                 poll_resp = self.session.get(
-                    f"{server_url}/api/scale/agent/poll",
+                    f"{server_url}/api/scale/agent/poll?terminal_id={t_id}",
                     timeout=5.0
                 )
                 poll_resp.raise_for_status()

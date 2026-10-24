@@ -774,7 +774,7 @@ export const api = {
     return res.json();
   },
 
-  async getScaleWeight(ip?: string, port?: number): Promise<{
+  async getScaleWeight(ip?: string, port?: number, terminalId?: string): Promise<{
     success: boolean;
     weight: number;
     unit?: string;
@@ -788,18 +788,63 @@ export const api = {
     const q = new URLSearchParams();
     if (ip) q.append('ip', ip);
     if (port) q.append('port', String(port));
+    if (terminalId) q.append('terminal_id', terminalId);
     const res = await fetch(`${API_BASE}/scale/weight?${q.toString()}`, {
       headers: getAuthHeaders(false)
     });
     return res.json();
   },
 
-  async getAgentStatus(): Promise<{ isOnline: boolean; localIp?: string; version?: string }> {
+  async getAgentStatus(terminalId?: string): Promise<{
+    isOnline: boolean;
+    localIp?: string;
+    version?: string;
+    terminalId?: string;
+    terminalName?: string;
+    activeTerminalsCount?: number;
+  }> {
     try {
-      const res = await fetch(`${API_BASE}/scale/agent/status`);
+      const q = terminalId ? `?terminal_id=${encodeURIComponent(terminalId)}` : '';
+      const res = await fetch(`${API_BASE}/scale/agent/status${q}`);
       return res.json();
     } catch {
       return { isOnline: false };
     }
+  },
+
+  async getTerminals(): Promise<{
+    terminals: Array<{
+      id: string;
+      name: string;
+      local_ip: string;
+      version: string;
+      is_online: boolean;
+      last_seen_seconds_ago: number;
+      scale_connected: boolean;
+      scale_ip: string;
+      scale_port: number;
+      last_weight: number;
+      printers: string[];
+      is_default: boolean;
+    }>;
+  }> {
+    const res = await fetch(`${API_BASE}/scale/terminals`);
+    return res.json();
+  },
+
+  async updateTerminal(terminalId: string, payload: { name?: string; is_default?: boolean }): Promise<any> {
+    const res = await fetch(`${API_BASE}/scale/terminals/${encodeURIComponent(terminalId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  },
+
+  async deleteTerminal(terminalId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/scale/terminals/${encodeURIComponent(terminalId)}`, {
+      method: 'DELETE'
+    });
+    return res.json();
   }
 };

@@ -60,6 +60,23 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   // CAS CL-3000 Terazi State
   const [scaleReading, setScaleReading] = useState<boolean>(false);
   const [scaleStatus, setScaleStatus] = useState<{ is_stable?: boolean; simulated?: boolean; message?: string } | null>(null);
+  // Çoklu Kasa & Terazi İstasyonu State'i
+  const [scaleTerminals, setScaleTerminals] = useState<Array<{ id: string; name: string; is_online: boolean; is_default: boolean }>>([]);
+  const [selectedTerminalId, setSelectedTerminalId] = useState<string>(() => localStorage.getItem('boncore_pos_terminal_id') || '');
+
+  useEffect(() => {
+    localHardware.getTerminals().then(res => {
+      if (res?.terminals && res.terminals.length > 0) {
+        setScaleTerminals(res.terminals);
+        const saved = localStorage.getItem('boncore_pos_terminal_id');
+        if (!saved || !res.terminals.some(t => t.id === saved)) {
+          const def = res.terminals.find(t => t.is_default) || res.terminals[0];
+          setSelectedTerminalId(def.id);
+          localStorage.setItem('boncore_pos_terminal_id', def.id);
+        }
+      }
+    }).catch(() => {});
+  }, []);
 
   // Quick Action Modals
   const [isFastPayModalOpen, setIsFastPayModalOpen] = useState<boolean>(false);
@@ -241,7 +258,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     try {
       setScaleReading(true);
       setScaleStatus(null);
-      const res = await localHardware.getWeight();
+      const res = await localHardware.getWeight(undefined, undefined, selectedTerminalId || undefined);
       if (res.success && res.weight !== undefined && res.weight > 0) {
         sound.beep();
         const cleanKg = Number(Number(res.weight).toFixed(3));
@@ -1357,11 +1374,27 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   <Scale className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-xs font-black text-emerald-950 dark:text-emerald-100">CAS CL-3000 (Ethernet)</span>
                     <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
                       CANLI AĞ
                     </span>
+                    {scaleTerminals.length > 1 && (
+                      <select
+                        value={selectedTerminalId}
+                        onChange={(e) => {
+                          setSelectedTerminalId(e.target.value);
+                          localStorage.setItem('boncore_pos_terminal_id', e.target.value);
+                        }}
+                        className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-emerald-500/50 rounded-md text-[11px] font-bold text-emerald-800 dark:text-emerald-200 outline-none"
+                      >
+                        {scaleTerminals.map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.is_online ? '🟢' : '⚪'} {t.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                   <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold truncate mt-0.5">
                     {scaleStatus?.message || "Eti terazinin kefesine koyup butona basın"}

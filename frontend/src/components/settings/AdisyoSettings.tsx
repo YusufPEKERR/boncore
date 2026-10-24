@@ -3,7 +3,7 @@ import {
   Settings, Save, CheckCircle2, Percent, DollarSign, 
   Receipt, Plus, Trash2, Edit3, ShieldAlert, Sparkles, Building2, 
   Coins, HelpCircle, Utensils, Tag, CreditCard, Check, X, AlertCircle, 
-  Scale, RefreshCw, Wifi, WifiOff, Activity, Laptop, Download 
+  Scale, RefreshCw, Wifi, WifiOff, Activity, Laptop, Download, Monitor, Star, CheckSquare 
 } from 'lucide-react';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
@@ -72,19 +72,48 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     
   });
   const [agentInfo, setAgentInfo] = useState<{ isOnline: boolean; version?: string; localIp?: string }>({ isOnline: false });
+  // Çoklu Kasa & Terminal Yönetimi
+  const [terminalsList, setTerminalsList] = useState<Array<{
+    id: string;
+    name: string;
+    local_ip: string;
+    version: string;
+    is_online: boolean;
+    last_seen_seconds_ago: number;
+    scale_connected: boolean;
+    scale_ip: string;
+    scale_port: number;
+    last_weight: number;
+    printers: string[];
+    is_default: boolean;
+  }>>([]);
+  const [newTerminalName, setNewTerminalName] = useState<string>('Kasa 2 - Paket Servis');
+  const [editingTerminalId, setEditingTerminalId] = useState<string | null>(null);
+  const [editingTerminalName, setEditingTerminalName] = useState<string>('');
   const [scaleTesting, setScaleTesting] = useState<boolean>(false);
   const [scaleTestResult, setScaleTestResult] = useState<{ success: boolean; message?: string; error?: string; latency_ms?: number } | null>(null);
   const [scaleWeightReading, setScaleWeightReading] = useState<boolean>(false);
   const [scaleLiveWeight, setScaleLiveWeight] = useState<{ weight: number; is_stable?: boolean; raw?: string; simulated?: boolean; message?: string } | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Terazi sekmesindeyken her 2 saniyede bir ajan durumunu kontrol et
+  // Terazi ve çoklu kasaları periyodik olarak güncelle
+  const fetchTerminalsData = async () => {
+    try {
+      const res = await localHardware.getTerminals();
+      if (res?.terminals) setTerminalsList(res.terminals);
+    } catch (e) {
+      console.warn('Terminals fetch error:', e);
+    }
+  };
+
   useEffect(() => {
     if (activeSubTab === 'scale') {
       localHardware.checkAgentStatus().then(setAgentInfo);
+      fetchTerminalsData();
       const interval = setInterval(() => {
         localHardware.checkAgentStatus().then(setAgentInfo);
-      }, 2000);
+        fetchTerminalsData();
+      }, 3000);
       return () => clearInterval(interval);
     }
   }, [activeSubTab]);
@@ -1033,6 +1062,222 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                     <Download className="w-4 h-4" />
                     <span>Kurulum Paketini İndir (.ZIP)</span>
                   </a>
+                </div>
+              </div>
+
+              {/* ÇOKLU KASA VE TERAZİ İSTASYONLARI YÖNETİMİ */}
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black shadow-md shadow-purple-600/30 shrink-0">
+                      <Monitor className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                        <span>Tanımlı Kasalar ve Teraziler (Çoklu Kasa Yönetimi)</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
+                          {terminalsList.length} Kasa Kayıtlı
+                        </span>
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        Müşteriniz her kasaya özel isim verebilir (örn. "Kasa 1 - Giriş", "Kasa 2 - Manav"). POS ekranında hangi kasanın terazisinden tartım alınacağını seçebilirsiniz.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Kasa Kartları Listesi */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {terminalsList.map((term) => (
+                    <div
+                      key={term.id}
+                      className={`p-4 rounded-xl border-2 transition relative flex flex-col justify-between gap-3 ${
+                        term.is_online
+                          ? 'border-emerald-500/40 bg-emerald-500/5 dark:bg-emerald-950/20'
+                          : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            {editingTerminalId === term.id ? (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  value={editingTerminalName}
+                                  onChange={(e) => setEditingTerminalName(e.target.value)}
+                                  className="px-2 py-1 bg-white dark:bg-slate-800 border border-purple-500 rounded-lg text-xs font-bold text-slate-900 dark:text-white w-40"
+                                  autoFocus
+                                />
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (editingTerminalName.trim()) {
+                                      await localHardware.updateTerminal(term.id, { name: editingTerminalName.trim() });
+                                      setEditingTerminalId(null);
+                                      fetchTerminalsData();
+                                    }
+                                  }}
+                                  className="p-1 rounded-md bg-purple-600 text-white hover:bg-purple-700"
+                                  title="Kaydet"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingTerminalId(null)}
+                                  className="p-1 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
+                                  title="İptal"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-black text-slate-900 dark:text-white">
+                                  {term.name}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingTerminalId(term.id);
+                                    setEditingTerminalName(term.name);
+                                  }}
+                                  className="p-1 rounded text-slate-400 hover:text-purple-600 dark:hover:text-purple-400"
+                                  title="Kasa Adını Değiştir"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
+
+                            {term.is_default && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-500/30">
+                                <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                                Varsayılan
+                              </span>
+                            )}
+                          </div>
+
+                          {term.is_online ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-500/30">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                              ÇEVRİMİÇİ
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400">
+                              ÇEVRİMDAŞI
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Kasa Detayları */}
+                        <div className="mt-2 space-y-1 text-[11px] text-slate-600 dark:text-slate-400 font-medium">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-400">Kasa Bilgisayarı IP:</span>
+                            <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{term.local_ip}</span>
+                            <span className="text-slate-400 text-[10px]">• v{term.version}</span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-400">Bağlı Terazi:</span>
+                            {term.scale_connected ? (
+                              <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                                🟢 CAS CL-3000 ({term.scale_ip}:{term.scale_port})
+                              </span>
+                            ) : (
+                              <span className="text-rose-500 dark:text-rose-400 font-bold">
+                                🔴 Terazi Bağlantısı Yok ({term.scale_ip})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Aksiyon Butonları */}
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            sound.beep();
+                            setScaleWeightReading(true);
+                            const res = await localHardware.getWeight(term.scale_ip, term.scale_port, term.id);
+                            setScaleLiveWeight(res);
+                            setScaleWeightReading(false);
+                          }}
+                          disabled={!term.is_online}
+                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold flex items-center gap-1 transition"
+                        >
+                          <Scale className="w-3.5 h-3.5" />
+                          <span>Bu Kasadan Tartım Al</span>
+                        </button>
+
+                        <div className="flex items-center gap-1">
+                          {!term.is_default && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                sound.beep();
+                                await localHardware.updateTerminal(term.id, { is_default: true });
+                                fetchTerminalsData();
+                              }}
+                              className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold"
+                              title="Bu kasayı varsayılan yap"
+                            >
+                              Varsayılan Yap
+                            </button>
+                          )}
+
+                          {terminalsList.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (window.confirm(`${term.name} kasasını silmek istediğinize emin misiniz?`)) {
+                                  await localHardware.deleteTerminal(term.id);
+                                  fetchTerminalsData();
+                                }
+                              }}
+                              className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                              title="Kasayı Sil"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Yeni Kasa Kurulum Paketi İndirme Alanı */}
+                <div className="p-4 rounded-xl bg-purple-500/5 dark:bg-purple-950/20 border border-purple-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <span className="text-xs font-black text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
+                      <Plus className="w-4 h-4 text-purple-600" />
+                      Yeni Bir Kasa / Bilgisayar Ekle
+                    </span>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Yeni kasanız için bir isim belirleyip indirin. İndirilen paketi diğer bilgisayarda çalıştırdığınızda otomatik bu isimle kaydolur.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <input
+                      type="text"
+                      value={newTerminalName}
+                      onChange={(e) => setNewTerminalName(e.target.value)}
+                      placeholder="Örn: Kasa 2 - Paket"
+                      className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white w-full sm:w-48"
+                    />
+                    <a
+                      href={`/api/scale/download-agent?terminal_name=${encodeURIComponent(newTerminalName)}`}
+                      download={`boncore-hardware-agent-${newTerminalName}.zip`}
+                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-black text-xs shadow-md shadow-purple-600/30 transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Bu Kasa İçin İndir (.ZIP)</span>
+                    </a>
+                  </div>
                 </div>
               </div>
 

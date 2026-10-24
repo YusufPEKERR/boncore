@@ -68,10 +68,9 @@ export const localHardware = {
    * Terazi ağırlığını okur:
    * Sunucu Bulut Rölesi veya Kasa Ajanı üzerinden CAS CL-3000'i sorgular.
    */
-  async getWeight(ip?: string, port?: number): Promise<ScaleReadResult> {
+  async getWeight(ip?: string, port?: number, terminalId?: string): Promise<ScaleReadResult> {
     try {
-      // Backend API'si eğer kasa bilgisayarında ajan açıksa otomatik olarak o ajana yönlendirir!
-      const backendRes = await api.getScaleWeight(ip, port);
+      const backendRes = await api.getScaleWeight(ip, port, terminalId);
       return backendRes;
     } catch (err: any) {
       return {
@@ -85,10 +84,32 @@ export const localHardware = {
   /**
    * Terazi bağlantısını test eder
    */
-  async testConnection(ip?: string, port?: number): Promise<any> {
+  async testConnection(ip?: string, port?: number, terminalId?: string): Promise<any> {
     return await api.testScaleConnection({
       ip_address: ip || '192.168.1.150',
-      port: port || 2004
-    });
+      port: port || 2004,
+      terminal_id: terminalId
+    } as any);
+  },
+
+  /**
+   * Tanımlı tüm kasaları ve anlık durumlarını getirir
+   */
+  async getTerminals() {
+    return await api.getTerminals();
+  },
+
+  /**
+   * Kasa ismini veya varsayılan durumunu günceller
+   */
+  async updateTerminal(terminalId: string, payload: { name?: string; is_default?: boolean }) {
+    return await api.updateTerminal(terminalId, payload);
+  },
+
+  /**
+   * Kasayı listeden kaldırır
+   */
+  async deleteTerminal(terminalId: string) {
+    return await api.deleteTerminal(terminalId);
   }
 };

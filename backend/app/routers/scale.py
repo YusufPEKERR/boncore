@@ -16,11 +16,29 @@ from app.services import scale_service
 router = APIRouter(prefix="/scale", tags=["Hardware & CAS Scale Integration"])
 
 # In-memory agent state & command relay queues
+TERMINALS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "terminals.json")
+
+def load_terminals() -> Dict[str, Any]:
+    if os.path.exists(TERMINALS_FILE):
+        try:
+            with open(TERMINALS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_terminals(data: Dict[str, Any]):
+    try:
+        with open(TERMINALS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print("Error saving terminals:", e)
+
 AGENT_STATE = {
     "last_seen": 0.0,
     "local_ip": "127.0.0.1",
-    "version": "1.0.0",
-    "agent_name": "BonCore Hardware Agent"
+    "version": "1.2.0",
+    "agent_name": "Kasa 1"
 }
 PENDING_COMMANDS: Dict[str, Any] = {}
 COMPLETED_RESULTS: Dict[str, Any] = {}
@@ -36,9 +54,20 @@ def get_public_server_url(request: Request) -> str:
     return "http://77.67.29.77"
 
 class AgentHeartbeatSchema(BaseModel):
+    terminal_id: Optional[str] = "kasa-1"
+    terminal_name: Optional[str] = "Kasa 1"
     local_ip: Optional[str] = "127.0.0.1"
-    version: Optional[str] = "1.0.0"
+    version: Optional[str] = "1.2.0"
     agent_name: Optional[str] = "BonCore Hardware Agent"
+    scale_connected: Optional[bool] = False
+    scale_ip: Optional[str] = "192.168.1.150"
+    scale_port: Optional[int] = 2004
+    last_weight: Optional[float] = 0.0
+    printers: Optional[list] = []
+
+class TerminalUpdateSchema(BaseModel):
+    name: Optional[str] = None
+    is_default: Optional[bool] = None
 
 class AgentReportSchema(BaseModel):
     req_id: str
@@ -66,13 +95,22 @@ class ScaleTestSchema(BaseModel):
     ip_address: str
     port: int = 2004
     timeout: float = 2.0
+    terminal_id: Optional[str] = None
 
 @router.get("/download-agent")
-async def download_agent(request: Request):
+async def download_agent(
+    request: Request,
+    terminal_name: Optional[str] = Query(None),
+    terminal_id: Optional[str] = Query(None),
+    scale_ip: Optional[str] = Query(None),
+    scale_port: Optional[int] = Query(None)
+):
     """
-    Downloads the BonCore Hardware Bridge Agent zip package with auto-configured server_url.
+    Downloads the BonCore Hardware Bridge Agent zip package with auto-configured server_url and Kasa name.
     """
     server_base = get_public_server_url(request)
+    kasa_name = (terminal_name or "Kasa 1").strip()
+    kasa_id = (terminal_id or f"kasa_{uuid.uuid4().hex[:6]}").strip()
 
     mem_zip = io.BytesIO()
     with zipfile.ZipFile(mem_zip, mode="w", compression=zipfile.ZIP_STORED) as zf:
@@ -103,9 +141,14 @@ async def download_agent(request: Request):
 
         config_content = json.dumps({
             "server_url": server_base,
-            "scale_default_ip": "192.168.1.150",
-            "scale_default_port": 2004
-        }, indent=2)
+            "terminal_id": kasa_id,
+            "terminal_name": kasa_name,
+            "scale_default_ip": (scale_ip or "192.168.1.150").strip(),
+            "scale_default_port": int(scale_port or 2004),
+            "auto_start": True,
+            "minimize_to_tray": True,
+            "show_notifications": True
+        }, indent=2, ensure_ascii=False)
         zf.writestr("config.json", config_content)
 
     mem_zip.seek(0)
@@ -114,49 +157,170 @@ async def download_agent(request: Request):
         content=data,
         media_type="application/zip",
         headers={
-            "Content-Disposition": "attachment; filename=boncore-hardware-agent.zip",
+            "Content-Disposition": f"attachment; filename=boncore-hardware-agent-{kasa_name}.zip",
             "Content-Length": str(len(data))
         }
     )
 
+@router.get("/terminals")
+async def get_terminals():
+    """
+    Returns list of all registered Kasalar (Terminals) with real-time status.
+    """
+    terminals = load_terminals()
+    now = time.time()
+    result = []
+
+    for t_id, t in terminals.items():
+        diff = now - t.get("last_seen", 0)
+        is_online = diff < 15.0
+        result.append({
+            "id": t_id,
+            "name": t.get("name", "Kasa"),
+            "local_ip": t.get("local_ip", "-"),
+            "version": t.get("version", "1.2.0"),
+            "is_online": is_online,
+            "last_seen_seconds_ago": round(diff, 1) if t.get("last_seen", 0) > 0 else 999,
+            "scale_connected": t.get("scale_connected", False) if is_online else False,
+            "scale_ip": t.get("scale_ip", "192.168.1.150"),
+            "scale_port": t.get("scale_port", 2004),
+            "last_weight": t.get("last_weight", 0.0),
+            "printers": t.get("printers", []),
+            "is_default": t.get("is_default", False)
+        })
+
+    # Varsayılan önce, sonra isme göre sırala
+    result.sort(key=lambda x: (not x["is_default"], x["name"]))
+    return {"terminals": result}
+
+@router.put("/terminals/{terminal_id}")
+async def update_terminal(terminal_id: str, payload: TerminalUpdateSchema):
+    """
+    Updates terminal name or default status from Admin panel.
+    """
+    terminals = load_terminals()
+    if terminal_id not in terminals:
+        terminals[terminal_id] = {
+            "id": terminal_id,
+            "name": payload.name or "Yeni Kasa",
+            "last_seen": 0,
+            "is_default": False
+        }
+
+    if payload.name:
+        terminals[terminal_id]["name"] = payload.name.strip()
+
+    if payload.is_default is not None:
+        for tid in terminals:
+            terminals[tid]["is_default"] = (tid == terminal_id and payload.is_default)
+
+    save_terminals(terminals)
+    return {"success": True, "terminal": terminals[terminal_id]}
+
+@router.delete("/terminals/{terminal_id}")
+async def delete_terminal(terminal_id: str):
+    """
+    Removes a terminal from the registry.
+    """
+    terminals = load_terminals()
+    if terminal_id in terminals:
+        del terminals[terminal_id]
+        save_terminals(terminals)
+        return {"success": True, "message": "Kasa silindi."}
+    return {"success": False, "message": "Kasa bulunamadı."}
+
 @router.post("/agent/heartbeat")
 async def agent_heartbeat(payload: AgentHeartbeatSchema):
     """
-    Agent calls this every 2 seconds to announce its presence.
+    Agent calls this every 4 seconds to announce its presence.
+    Updates or registers the specific Kasa / Terminal.
     """
-    AGENT_STATE["last_seen"] = time.time()
-    if payload.local_ip:
-        AGENT_STATE["local_ip"] = payload.local_ip
-    if payload.version:
-        AGENT_STATE["version"] = payload.version
-    return {"status": "ok", "server_time": time.time()}
+    terminals = load_terminals()
+    t_id = (payload.terminal_id or "kasa-1").strip()
+    now = time.time()
+
+    existing = terminals.get(t_id, {})
+    current_name = existing.get("name") or payload.terminal_name or "Kasa 1"
+
+    terminals[t_id] = {
+        "id": t_id,
+        "name": current_name,
+        "local_ip": payload.local_ip or "127.0.0.1",
+        "version": payload.version or "1.2.0",
+        "scale_connected": bool(payload.scale_connected),
+        "scale_ip": payload.scale_ip or "192.168.1.150",
+        "scale_port": payload.scale_port or 2004,
+        "last_weight": payload.last_weight or 0.0,
+        "printers": payload.printers or [],
+        "last_seen": now,
+        "is_default": existing.get("is_default", len(terminals) == 0)
+    }
+    save_terminals(terminals)
+
+    AGENT_STATE["last_seen"] = now
+    AGENT_STATE["local_ip"] = payload.local_ip
+    AGENT_STATE["version"] = payload.version
+    AGENT_STATE["agent_name"] = current_name
+
+    return {
+        "status": "ok",
+        "terminal_id": t_id,
+        "terminal_name": current_name,
+        "server_time": now
+    }
 
 @router.get("/agent/status")
-async def get_agent_status():
+async def get_agent_status(terminal_id: Optional[str] = Query(None)):
     """
-    Frontend checks if the agent is actively running.
+    Frontend checks if any or a specific Kasa agent is actively running.
     """
-    diff = time.time() - AGENT_STATE["last_seen"]
-    is_online = diff < 15.0
+    terminals = load_terminals()
+    now = time.time()
+
+    if terminal_id and terminal_id in terminals:
+        t = terminals[terminal_id]
+        diff = now - t.get("last_seen", 0)
+        is_online = diff < 15.0
+        return {
+            "isOnline": is_online,
+            "terminalId": t["id"],
+            "terminalName": t.get("name", "Kasa"),
+            "localIp": t.get("local_ip") if is_online else None,
+            "version": t.get("version") if is_online else None,
+            "scaleConnected": t.get("scale_connected", False) if is_online else False,
+            "last_seen_seconds_ago": round(diff, 1) if t.get("last_seen", 0) > 0 else 999
+        }
+
+    # Genel kontrol: Herhangi bir online kasa var mı?
+    online_terms = [t for t in terminals.values() if (now - t.get("last_seen", 0)) < 15.0]
+    is_online = len(online_terms) > 0
+    active_t = next((t for t in online_terms if t.get("is_default")), online_terms[0]) if online_terms else None
+
+    diff = now - AGENT_STATE["last_seen"]
     return {
-        "isOnline": is_online,
-        "localIp": AGENT_STATE["local_ip"] if is_online else None,
-        "version": AGENT_STATE["version"] if is_online else None,
+        "isOnline": is_online or (diff < 15.0),
+        "terminalId": active_t["id"] if active_t else None,
+        "terminalName": active_t["name"] if active_t else AGENT_STATE.get("agent_name"),
+        "localIp": active_t["local_ip"] if active_t else AGENT_STATE.get("local_ip"),
+        "version": active_t["version"] if active_t else AGENT_STATE.get("version"),
+        "activeTerminalsCount": len(online_terms),
         "last_seen_seconds_ago": round(diff, 1) if AGENT_STATE["last_seen"] > 0 else 999
     }
 
 @router.get("/agent/poll")
-async def agent_poll():
+async def agent_poll(terminal_id: Optional[str] = Query(None)):
     """
-    Agent polls this endpoint every 300ms to receive commands (e.g. read weight).
+    Agent polls this endpoint every 1s to receive commands for its specific Kasa.
     """
     now = time.time()
     for req_id, cmd in list(PENDING_COMMANDS.items()):
-        if now - cmd.get("created_at", 0) < 10.0:
-            del PENDING_COMMANDS[req_id]
-            return {"has_command": True, "req_id": req_id, **cmd}
-        else:
-            del PENDING_COMMANDS[req_id]
+        cmd_target = cmd.get("terminal_id")
+        if cmd_target is None or cmd_target == terminal_id:
+            if now - cmd.get("created_at", 0) < 10.0:
+                del PENDING_COMMANDS[req_id]
+                return {"has_command": True, "req_id": req_id, **cmd}
+            else:
+                del PENDING_COMMANDS[req_id]
     return {"has_command": False}
 
 @router.post("/agent/report")
@@ -193,13 +357,23 @@ async def update_config(payload: ScaleConfigSchema, db: AsyncSession = Depends(g
 @router.post("/test")
 async def test_connection(payload: ScaleTestSchema):
     """
-    Tests TCP connection directly to the CAS CL-3000 Ethernet scale.
-    If agent is online, delegates ping to the cashier PC agent.
+    Tests TCP connection directly or relays through a specific Kasa agent.
     """
-    is_agent_online = (time.time() - AGENT_STATE["last_seen"]) < 8.0
-    if is_agent_online:
+    terminals = load_terminals()
+    now = time.time()
+
+    target_term = None
+    if payload.terminal_id and payload.terminal_id in terminals:
+        target_term = terminals[payload.terminal_id]
+    else:
+        online_terms = [t for t in terminals.values() if (now - t.get("last_seen", 0)) < 15.0]
+        if online_terms:
+            target_term = next((t for t in online_terms if t.get("is_default")), online_terms[0])
+
+    if target_term and (now - target_term.get("last_seen", 0)) < 15.0:
         req_id = str(uuid.uuid4())
         PENDING_COMMANDS[req_id] = {
+            "terminal_id": target_term["id"],
             "action": "test_connection",
             "ip": payload.ip_address.strip(),
             "port": int(payload.port),
@@ -210,7 +384,7 @@ async def test_connection(payload: ScaleTestSchema):
             await asyncio.sleep(0.1)
             if req_id in COMPLETED_RESULTS:
                 res = COMPLETED_RESULTS.pop(req_id)
-                res["bridge"] = f"BonCore Ajanı (Kasa IP: {AGENT_STATE['local_ip']})"
+                res["bridge"] = f"{target_term['name']} (IP: {target_term.get('local_ip', '-')})"
                 return res
 
     result = await asyncio.to_thread(
@@ -225,21 +399,33 @@ async def test_connection(payload: ScaleTestSchema):
 async def get_current_weight(
     ip: Optional[str] = None,
     port: Optional[int] = None,
+    terminal_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Reads live weight directly from the CAS CL-3000 scale over Ethernet TCP/IP.
-    If BonCore agent is online, relays request to the cashier PC's agent.
+    Reads live weight from CAS CL-3000 scale.
+    Routes to specified terminal_id or active default Kasa.
     """
     cfg = await scale_service.get_scale_config(db)
-    target_ip = (ip or cfg.get("ip_address") or "192.168.1.150").strip()
-    target_port = int(port or cfg.get("port") or 2004)
-    timeout = float(cfg.get("timeout") or 2.5)
+    terminals = load_terminals()
+    now = time.time()
 
-    is_agent_online = (time.time() - AGENT_STATE["last_seen"]) < 8.0
-    if is_agent_online:
+    target_term = None
+    if terminal_id and terminal_id in terminals:
+        target_term = terminals[terminal_id]
+    else:
+        online_terms = [t for t in terminals.values() if (now - t.get("last_seen", 0)) < 15.0]
+        if online_terms:
+            target_term = next((t for t in online_terms if t.get("is_default")), online_terms[0])
+
+    if target_term and (now - target_term.get("last_seen", 0)) < 15.0:
         req_id = str(uuid.uuid4())
+        target_ip = (ip or target_term.get("scale_ip") or cfg.get("ip_address") or "192.168.1.150").strip()
+        target_port = int(port or target_term.get("scale_port") or cfg.get("port") or 2004)
+        timeout = float(cfg.get("timeout") or 2.5)
+
         PENDING_COMMANDS[req_id] = {
+            "terminal_id": target_term["id"],
             "action": "read_weight",
             "ip": target_ip,
             "port": target_port,
@@ -250,14 +436,21 @@ async def get_current_weight(
             await asyncio.sleep(0.1)
             if req_id in COMPLETED_RESULTS:
                 res = COMPLETED_RESULTS.pop(req_id)
-                res["bridge"] = f"BonCore Ajanı (Kasa IP: {AGENT_STATE['local_ip']})"
+                res["terminal_id"] = target_term["id"]
+                res["terminal_name"] = target_term["name"]
+                res["bridge"] = f"{target_term['name']} (IP: {target_term.get('local_ip', '-')})"
                 return res
 
         return {
             "success": False,
             "weight": 0.0,
-            "error": f"Kasa bilgisayarındaki ajan teraziye bağlanamadı ({target_ip}:{target_port}). Terazinin açık ve ağ kablosunun takılı olduğundan emin olun."
+            "error": f"{target_term['name']} bilgisayarındaki ajan teraziye bağlanamadı ({target_ip}:{target_port}). Terazinin açık ve ağ kablosunun takılı olduğundan emin olun."
         }
+
+    # Ajan yoksa doğrudan sunucu üzerinden soket dene
+    target_ip = (ip or cfg.get("ip_address") or "192.168.1.150").strip()
+    target_port = int(port or cfg.get("port") or 2004)
+    timeout = float(cfg.get("timeout") or 2.5)
 
     result = await asyncio.to_thread(
         scale_service.sync_read_cas_cl3000,
