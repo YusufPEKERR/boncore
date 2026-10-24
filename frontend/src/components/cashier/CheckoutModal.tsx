@@ -250,8 +250,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Perform Settlement with chosen payment method
   const handleProcessPayment = async (method: string = selectedMethod, shouldPrint: boolean = false, shouldCloseTable: boolean = true) => {
-    const amountToPay = parseFloat(payAmount);
-    if (isNaN(amountToPay) || amountToPay <= 0) {
+    const parsedAmount = parseFloat(payAmount);
+    const amountToPay = isNaN(parsedAmount) ? 0 : parsedAmount;
+    if (amountToPay <= 0 && !shouldCloseTable && order.remaining_total > 0.05) {
       showNotice('Lütfen geçerli bir ödeme tutarı giriniz.', true);
       return;
     }
@@ -260,13 +261,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     sound.beep();
 
     try {
+      const effectiveAmount = amountToPay > 0 ? amountToPay : (order.remaining_total > 0 ? order.remaining_total : 0);
       const res = await api.settlePayment({
         order_id: order.id,
-        payments: [{
+        payments: effectiveAmount > 0 ? [{
           method,
-          amount: amountToPay,
+          amount: effectiveAmount,
           tip: tipAmount
-        }],
+        }] : [],
         rounding: 0,
         cashier_name: cashierName,
         close_table: shouldCloseTable
@@ -322,63 +324,72 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-[#f4f5f7] text-[#212529] flex flex-col select-none font-sans overflow-hidden animate-fadeIn">
       {/* ================= TOP HEADER BAR ================= */}
-      <header className="bg-white border-b border-gray-200/90 px-6 py-3 flex items-center justify-between shadow-xs">
-        {/* Left: Table & Waiter info */}
-        <div>
-          <h1 className="text-[15px] font-bold text-[#212529] tracking-tight leading-tight">
-            Masa Adı: <span className="font-extrabold">{tableName}</span>
-          </h1>
-          <div className="text-[13px] text-gray-500 font-medium leading-tight">
-            Garson: {waiterName}
+      <header className="bg-white border-b border-gray-200/90 px-3 sm:px-6 py-2.5 sm:py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs shrink-0">
+        {/* Left: Table & Waiter info + Mobile Close button */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-sm sm:text-[15px] font-bold text-[#212529] tracking-tight leading-tight">
+              Masa Adı: <span className="font-extrabold">{tableName}</span>
+            </h1>
+            <div className="text-xs sm:text-[13px] text-gray-500 font-medium leading-tight">
+              Garson: {waiterName}
+            </div>
           </div>
+          <button
+            onClick={onClose}
+            className="sm:hidden px-2.5 py-1.5 rounded-lg bg-red-50 text-[#d32f2f] text-xs font-bold flex items-center gap-1"
+          >
+            <X className="w-4 h-4" />
+            <span>Kapat</span>
+          </button>
         </div>
 
         {/* Right Action Buttons */}
-        <div className="flex items-center gap-6 text-[#d32f2f] text-[13px] font-semibold">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-5 text-[#d32f2f] text-xs sm:text-[13px] font-semibold">
           {/* Kaydet */}
           <button 
             onClick={() => handleProcessPayment(selectedMethod, false, false)}
-            className="flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95"
+            className="flex items-center gap-1 px-2.5 py-1.5 sm:p-0 rounded-lg bg-red-50/70 sm:bg-transparent hover:text-red-700 transition cursor-pointer active:scale-95"
             title="Masayı kapatmadan tahsilatı kaydeder"
           >
-            <Save className="w-4 h-4 text-[#d32f2f]" />
+            <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#d32f2f]" />
             <span>Kaydet</span>
           </button>
 
           {/* Öde ve Kapat */}
           <button 
             onClick={() => handleProcessPayment(selectedMethod, false, true)}
-            className="flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95"
+            className="flex items-center gap-1 px-2.5 py-1.5 sm:p-0 rounded-lg bg-red-50/70 sm:bg-transparent hover:text-red-700 transition cursor-pointer active:scale-95"
             title="Ödemeyi alır ve masayı kapatır"
           >
-            <Save className="w-4 h-4 text-[#d32f2f]" />
+            <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#d32f2f]" />
             <span>Öde ve Kapat</span>
           </button>
 
           {/* Öde ve Yazdır */}
           <button 
             onClick={() => handleProcessPayment(selectedMethod, true, false)}
-            className="flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95"
+            className="flex items-center gap-1 px-2.5 py-1.5 sm:p-0 rounded-lg bg-red-50/70 sm:bg-transparent hover:text-red-700 transition cursor-pointer active:scale-95"
             title="Ödemeyi alır, fiş yazdırır, masayı kapatmaz"
           >
-            <Printer className="w-4 h-4 text-[#d32f2f]" />
+            <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#d32f2f]" />
             <span>Öde ve Yazdır</span>
           </button>
 
           {/* Öde, Yazdır ve Kapat */}
           <button 
             onClick={() => handleProcessPayment(selectedMethod, true, true)}
-            className="flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95"
+            className="flex items-center gap-1 px-2.5 py-1.5 sm:p-0 rounded-lg bg-[#d32f2f] text-white sm:bg-transparent sm:text-[#d32f2f] hover:text-red-700 transition cursor-pointer active:scale-95"
             title="Ödemeyi alır, fiş yazdırır ve masayı kapatır"
           >
-            <Printer className="w-4 h-4 text-[#d32f2f]" />
+            <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white sm:text-[#d32f2f]" />
             <span>Öde, Yazdır ve Kapat</span>
           </button>
 
           {/* Ödeme Ekranını Kapat */}
           <button 
             onClick={onClose}
-            className="flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95 ml-2"
+            className="hidden sm:flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95 ml-2"
           >
             <X className="w-4 h-4 text-[#d32f2f]" />
             <span>Ödeme Ekranını Kapat</span>
@@ -388,16 +399,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       {/* ================= STATUS NOTIFICATION TOAST ================= */}
       {statusNotice && (
-        <div className={`${isNoticeError ? 'bg-rose-600' : 'bg-emerald-600'} text-white text-xs font-bold py-1.5 px-4 text-center shadow-sm animate-slideDown`}>
+        <div className={`${isNoticeError ? 'bg-rose-600' : 'bg-emerald-600'} text-white text-xs font-bold py-1.5 px-4 text-center shadow-sm animate-slideDown shrink-0`}>
           {statusNotice}
         </div>
       )}
 
       {/* ================= MAIN THREE-COLUMN CONTAINER ================= */}
-      <main className="flex-1 p-4 md:p-6 overflow-hidden grid grid-cols-1 md:grid-cols-12 gap-5">
+      <main className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto md:overflow-hidden grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-5">
         
         {/* ================= COLUMN 1: PARÇALI ÖDE (Left: 4 cols) ================= */}
-        <section className="md:col-span-4 bg-white rounded-2xl border border-gray-200 shadow-xs p-4 flex flex-col justify-between overflow-hidden">
+        <section className="md:col-span-4 bg-white rounded-2xl border border-gray-200 shadow-xs p-4 flex flex-col justify-between max-h-80 md:max-h-none overflow-hidden">
           <div className="flex flex-col flex-1 overflow-hidden">
             {/* Header: PARÇALI ÖDE and Selected Total */}
             <div className="flex items-center justify-between pb-3 border-b border-gray-100">
@@ -410,7 +421,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
 
             {/* Filter Pill: Ödenmemiş Olanlar */}
-            <div className="flex justify-center my-3">
+            <div className="flex justify-center my-2.5">
               <span className="bg-[#e9ecef] text-[#495057] px-5 py-1 rounded-full text-xs font-semibold shadow-2xs">
                 Ödenmemiş Olanlar
               </span>
@@ -436,7 +447,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     {/* Top Row: Qty - Name and Price + Hand icon */}
                     <div className="flex items-center justify-between">
                       <span className="text-[13px] font-bold text-[#212529] truncate pr-2">
-                        {it.quantity} - (ADET) {it.product_name.toUpperCase()}
+                        {Number.isInteger(Number(it.quantity)) ? `${it.quantity} Adet` : `${Number(Number(it.quantity).toFixed(3))} Kg (${Math.round(Number(it.quantity) * 1000)} gr)`} - {it.product_name.toUpperCase()}
                         {it.variant_name && <span className="text-gray-500 text-xs ml-1 font-normal">({it.variant_name})</span>}
                       </span>
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -691,13 +702,30 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </button>
                 </div>
 
-                {/* Info pill about selected method */}
-                <div className="bg-gray-50 border border-gray-200/80 rounded-xl p-3 text-center text-xs text-gray-600 font-medium">
-                  Seçili Yöntem: <span className="font-bold text-[#d32f2f]">
-                    {selectedMethod === 'cash' ? 'Nakit' : selectedMethod === 'credit_card' ? 'Kredi Kartı' : 'Açık Hesap'}
-                  </span>
-                  <div className="text-[11px] text-gray-500 mt-0.5">
-                    Tahsil etmek için üstteki <strong className="text-gray-700">Öde ve Kapat</strong> veya <strong className="text-gray-700">Öde, Yazdır ve Kapat</strong> butonuna basınız.
+                {/* Info pill about selected method + Direct Action Buttons */}
+                <div className="bg-gray-50 border border-gray-200/80 rounded-xl p-3 text-center text-xs text-gray-600 font-medium space-y-2.5">
+                  <div>
+                    Seçili Yöntem: <span className="font-bold text-[#d32f2f]">
+                      {selectedMethod === 'cash' ? 'Nakit' : selectedMethod === 'credit_card' ? 'Kredi Kartı' : 'Açık Hesap'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    <button
+                      onClick={() => handleProcessPayment(selectedMethod, true, true)}
+                      disabled={loading}
+                      className="w-full py-3 px-3 rounded-xl bg-[#27ae60] hover:bg-[#219653] text-white font-extrabold text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                    >
+                      <Printer className="w-4 h-4" />
+                      <span>ÖDE, YAZDIR VE KAPAT (₺{payAmount})</span>
+                    </button>
+                    <button
+                      onClick={() => handleProcessPayment(selectedMethod, false, true)}
+                      disabled={loading}
+                      className="w-full py-2.5 px-3 rounded-xl bg-[#d32f2f] hover:bg-red-700 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>ÖDE VE KAPAT (Fişsiz)</span>
+                    </button>
                   </div>
                 </div>
               </div>

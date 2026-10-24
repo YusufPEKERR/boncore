@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Layers, Users, BarChart2, ArrowLeftRight, TrendingUp, 
-  CreditCard, PieChart, RefreshCw, Clock, ChevronRight 
+  CreditCard, PieChart, RefreshCw, Clock, ChevronRight, Utensils, Wallet 
 } from 'lucide-react';
 import { Area } from '../../types';
 import { sound } from '../../services/sound';
@@ -10,28 +10,55 @@ import { api } from '../../services/api';
 interface AdisyoDashboardProps {
   areas: Area[];
   onNavigateToTables: () => void;
+  onNavigateTab?: (tab: string) => void;
 }
 
-export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavigateToTables }) => {
+export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavigateToTables, onNavigateTab }) => {
   const [stats, setStats] = useState<any>(null);
   const [expensesTotal, setExpensesTotal] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // Live Real-Time Date & Clock State
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  const lastDayRef = useRef<number>(new Date().getDate());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      setCurrentTime(now);
+      // Auto-refresh when crossing midnight into a new business day
+      if (now.getDate() !== lastDayRef.current) {
+        lastDayRef.current = now.getDate();
+        loadDashboardData();
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const turkishDaysFull = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
+  const turkishMonthsFull = [
+    'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
+  ];
+
+  const liveFullDateStr = `${currentTime.getDate()} ${turkishMonthsFull[currentTime.getMonth()]} ${currentTime.getFullYear()}, ${turkishDaysFull[currentTime.getDay()]}`;
+  const liveTimeStr = currentTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
   useEffect(() => {
     loadDashboardData();
-  }, []);
+  }, [areas]);
 
   const loadDashboardData = async () => {
     setLoading(true);
     try {
       const [statsData, expData] = await Promise.all([
-        api.getRestaurantStatistics(),
+        api.getRestaurantStatistics('all'),
         api.getExpenses()
       ]);
       setStats(statsData);
       if (Array.isArray(expData)) {
         const totalExp = expData
-          .filter(e => e.expense_type === 'out')
+          .filter(e => e.expense_type === 'out' || e.type === 'out')
           .reduce((sum, e) => sum + (e.amount || 0), 0);
         setExpensesTotal(totalExp);
       }
@@ -53,11 +80,81 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
     .reduce((sum, t) => sum + (t.active_order?.grand_total || 0), 0);
 
   // Live KPI values
-  const liveTurnover = stats?.total_turnover !== undefined ? stats.total_turnover : 0;
-  const liveGuestCount = allTables.reduce((sum, t) => sum + (t.kuver_count || 0), 0) || stats?.total_orders || 0;
+  const liveTurnover = stats?.total_turnover ?? 0;
+  const activeTableCount = allTables.filter(t => t.status !== 'empty').length;
+
+  // Dynamic Hourly Chart Data from real backend statistics
+  const hourlyPoints: { hour: string; turnover: number; orders: number }[] =
+    Array.isArray(stats?.chart_data?.hourly_sales) && stats.chart_data.hourly_sales.length > 0
+      ? stats.chart_data.hourly_sales
+      : [
+          { hour: '09:00', turnover: 0, orders: 0 },
+          { hour: '11:00', turnover: 0, orders: 0 },
+          { hour: '13:00', turnover: 0, orders: 0 },
+          { hour: '15:00', turnover: 0, orders: 0 },
+          { hour: '17:00', turnover: 0, orders: 0 },
+          { hour: '19:00', turnover: 0, orders: 0 },
+          { hour: '21:00', turnover: 0, orders: 0 },
+          { hour: '23:00', turnover: 0, orders: 0 }
+        ];
+
+  const maxHourTurnover = Math.max(1000, ...hourlyPoints.map(p => p.turnover || 0));
+  const yAxisSteps = [1, 0.83, 0.66, 0.5, 0.33, 0.16, 0].map(r => Math.round(maxHourTurnover * r));
+
+  const svgCoords = hourlyPoints.map((pt, idx) => {
+    const x = hourlyPoints.length > 1 ? Math.round((idx / (hourlyPoints.length - 1)) * 1000) : 500;
+    const y = Math.round(190 - ((pt.turnover || 0) / maxHourTurnover) * 165);
+    return { x, y, ...pt };
+  });
+
+  const linePath = svgCoords.length > 0
+    ? svgCoords.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x} ${pt.y}`).join(' ')
+    : 'M 0 190 L 1000 190';
+  const areaPath = `${linePath} L 1000 200 L 0 200 Z`;
+  const peakPoint = svgCoords.reduce((best, cur) => (cur.turnover >= best.turnover ? cur : best), svgCoords[0] || { x: 500, y: 190, turnover: 0, hour: '' });
 
   return (
     <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 space-y-6 select-none animate-fadeIn transition-colors duration-200">
+      {/* Live Operational Day & Time Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 flex items-center justify-center font-bold">
+            <Clock className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-black text-slate-900 dark:text-white">
+                {liveFullDateStr}
+              </h2>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-[10px] font-black text-emerald-700 dark:text-emerald-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>Canlı Çalışma Günü</span>
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Tüm cirolar, saatlik satışlar ve masa istatistikleri canlı Türkiye saatine (UTC+3) göre anlık güncellenir.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 sm:border-l sm:pl-4 border-slate-200 dark:border-slate-800">
+          <div className="text-right">
+            <div className="text-[10px] uppercase font-bold text-slate-400">Canlı Sistem Saati</div>
+            <div className="font-mono text-base font-black text-slate-900 dark:text-white tracking-wider">
+              {liveTimeStr}
+            </div>
+          </div>
+          <button
+            onClick={() => { sound.beep(); loadDashboardData(); }}
+            disabled={loading}
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer"
+            title="Verileri Yenile"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-red-600' : ''}`} />
+          </button>
+        </div>
+      </div>
+
       {/* 4 Top KPI Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* 1. Bugünkü toplam satış tutarı */}
@@ -66,25 +163,25 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
             <Layers className="w-6 h-6" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold truncate">Bugünkü toplam satış tutarı</div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold truncate">Toplam satış tutarı (Ciro)</div>
             <div className="text-xl font-black text-slate-900 dark:text-white font-mono tracking-tight">
               ₺{liveTurnover.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            <div className="text-[10px] text-slate-400 mt-0.5 font-medium">Gün sonu net cirosu</div>
+            <div className="text-[10px] text-slate-400 mt-0.5 font-medium">{stats?.total_orders ?? 0} Adet Adisyon</div>
           </div>
         </div>
 
-        {/* 2. Bugün ağırlanan misafir sayısı */}
+        {/* 2. Bugünkü adisyon sayısı */}
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm flex items-center gap-4 hover:shadow transition">
           <div className="w-12 h-12 rounded-xl bg-sky-500 text-white flex items-center justify-center flex-shrink-0 shadow-md shadow-sky-500/20">
             <Users className="w-6 h-6" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold truncate">Bugün ağırlanan misafir sayısı</div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold truncate">Toplam adisyon sayısı</div>
             <div className="text-xl font-black text-slate-900 dark:text-white font-mono tracking-tight">
-              {liveGuestCount}
+              {stats?.total_orders ?? 0}
             </div>
-            <div className="text-[10px] text-slate-400 mt-0.5 font-medium">Kişi kuveri</div>
+            <div className="text-[10px] text-slate-400 mt-0.5 font-medium">{activeTableCount} Aktif Masa</div>
           </div>
         </div>
 
@@ -97,7 +194,7 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
             <BarChart2 className="w-6 h-6" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold truncate">Bugün açık sipariş toplamı</div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold truncate">Açık masa sipariş toplamı</div>
             <div className="text-xl font-black text-slate-900 dark:text-white font-mono tracking-tight">
               ₺{totalOpenOrders.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
@@ -123,24 +220,99 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
         </div>
       </div>
 
-      {/* Main Chart: Günlük Satış Miktarları (Matching Frame 005) */}
-      <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-sm space-y-3">
-        <h3 className="text-xs font-bold text-slate-700">Günlük Satış Miktarları</h3>
+      {/* Quick Action Shortcuts */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+        <button
+          onClick={() => { sound.beep(); onNavigateTab ? onNavigateTab('tables') : onNavigateToTables(); }}
+          className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
+            <Utensils className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Masalar / Salon</div>
+            <div className="text-[10px] text-slate-400">Canlı Kat Planı</div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => { sound.beep(); onNavigateTab?.('cashier'); }}
+          className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-sky-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-sky-50 dark:bg-sky-950/60 text-sky-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
+            <Wallet className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Kasa & Ödemeler</div>
+            <div className="text-[10px] text-slate-400">Tahsilat & Çekmece</div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => { sound.beep(); onNavigateTab?.('kds'); }}
+          className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-amber-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
+            <Clock className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Mutfak (KDS)</div>
+            <div className="text-[10px] text-slate-400">Sipariş Ekranı</div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => { sound.beep(); onNavigateTab?.('product_sales_report'); }}
+          className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-purple-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
+            <TrendingUp className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Ürün Satış Raporu</div>
+            <div className="text-[10px] text-purple-600 font-bold">Porsiyon & Ciro</div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => { sound.beep(); onNavigateTab?.('day_end_report'); }}
+          className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-red-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-red-50 dark:bg-red-950/60 text-red-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
+            <BarChart2 className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Gün Sonu (Z)</div>
+            <div className="text-[10px] text-red-600 font-bold">Mali Kapanış</div>
+          </div>
+        </button>
+      </div>
+
+      {/* Main Chart: Günlük Satış Miktarları (Real Hourly Breakdown) */}
+      <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300">Saatlik Satış Dağılımı (Canlı Veritabanı Akışı)</h3>
+          <button
+            onClick={() => { sound.beep(); loadDashboardData(); }}
+            className="text-[11px] font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Yenile</span>
+          </button>
+        </div>
         
         {/* Visual SVG Curve Chart */}
         <div className="w-full h-56 relative pt-4 pb-2">
           {/* Grid lines & values */}
           <div className="absolute inset-0 flex flex-col justify-between text-[10px] text-slate-400 pointer-events-none pr-4">
-            <div className="border-b border-slate-100 flex justify-between"><span>12000.00</span></div>
-            <div className="border-b border-slate-100 flex justify-between"><span>10000.00</span></div>
-            <div className="border-b border-slate-100 flex justify-between"><span>8000.00</span></div>
-            <div className="border-b border-slate-100 flex justify-between"><span>6000.00</span></div>
-            <div className="border-b border-slate-100 flex justify-between"><span>4000.00</span></div>
-            <div className="border-b border-slate-100 flex justify-between"><span>2000.00</span></div>
-            <div className="border-b border-slate-200 flex justify-between"><span>0.00</span></div>
+            {yAxisSteps.map((val, i) => (
+              <div key={i} className="border-b border-slate-100 dark:border-slate-800 flex justify-between">
+                <span>₺{val.toLocaleString('tr-TR')}</span>
+              </div>
+            ))}
           </div>
 
-          {/* Smooth Curve SVG */}
+          {/* Dynamic SVG from real hourly_sales */}
           <svg className="w-full h-full overflow-visible" viewBox="0 0 1000 200" preserveAspectRatio="none">
             <defs>
               <linearGradient id="curveGradient" x1="0" y1="0" x2="0" y2="1">
@@ -148,37 +320,37 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
                 <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
               </linearGradient>
             </defs>
-            <path
-              d="M 0 190 L 450 190 Q 500 20 520 20 Q 540 20 570 190 L 1000 190 L 1000 200 L 0 200 Z"
-              fill="url(#curveGradient)"
-            />
-            <path
-              d="M 0 190 L 450 190 Q 500 20 520 20 Q 540 20 570 190 L 1000 190"
-              fill="none"
-              stroke="#10b981"
-              strokeWidth="3.5"
-            />
-            <circle cx="520" cy="20" r="6" fill="#10b981" stroke="#ffffff" strokeWidth="2.5" />
+            <path d={areaPath} fill="url(#curveGradient)" />
+            <path d={linePath} fill="none" stroke="#10b981" strokeWidth="3.5" />
+            {svgCoords.map((pt, i) =>
+              pt.turnover > 0 ? (
+                <circle
+                  key={i}
+                  cx={pt.x}
+                  cy={pt.y}
+                  r={pt.hour === peakPoint.hour ? 6 : 4}
+                  fill="#10b981"
+                  stroke="#ffffff"
+                  strokeWidth="2"
+                />
+              ) : null
+            )}
           </svg>
         </div>
 
         {/* X Axis Time Labels */}
-        <div className="flex justify-between text-[10px] text-slate-400 font-mono pt-1">
-          <span>00:00</span>
-          <span>02:00</span>
-          <span>04:00</span>
-          <span>06:00</span>
-          <span>08:00</span>
-          <span>10:00</span>
-          <span className="font-bold text-emerald-600">12:00</span>
-          <span>14:00</span>
-          <span>16:00</span>
-          <span>18:00</span>
-          <span>20:00</span>
-          <span>22:00</span>
-          <span>24:00</span>
+        <div className="flex justify-between text-[10px] text-slate-400 font-mono pt-1 overflow-x-auto">
+          {hourlyPoints.map((pt, i) => (
+            <span
+              key={i}
+              className={pt.turnover > 0 && pt.hour === peakPoint.hour ? 'font-bold text-emerald-600 dark:text-emerald-400' : ''}
+            >
+              {pt.hour}
+            </span>
+          ))}
         </div>
       </div>
+
 
       {/* Bottom Grid: Bugün Yapılan Ödemeler (Left) + Masa Yoğunluğu (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

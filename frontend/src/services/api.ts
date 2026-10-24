@@ -3,8 +3,62 @@ import { offlineDb, saveAreasToOfflineCache, saveCategoriesToOfflineCache, queue
 
 const API_BASE = '/api';
 
+export function getAuthHeaders(includeJson: boolean = true): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (includeJson) {
+    headers['Content-Type'] = 'application/json';
+  }
+  try {
+    const token = localStorage.getItem('boncore_token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  } catch {}
+  return headers;
+}
+
 export const api = {
-  // Auth & PIN
+  // Auth (Username & Password + Token)
+  async login(username: string, password: string, remember: boolean = false): Promise<{ access_token: string; expires_at: number; user: StaffUser }> {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, remember })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Kullanıcı adı veya parola hatalı.');
+    }
+    const data = await res.json();
+    if (data.access_token) {
+      localStorage.setItem('boncore_token', data.access_token);
+    }
+    return data;
+  },
+
+  async getMe(): Promise<StaffUser> {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) {
+      throw new Error('Oturum doğrulanamadı.');
+    }
+    return res.json();
+  },
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/auth/change-password`, {
+      method: 'POST',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Parola güncellenemedi.');
+    }
+    return res.json();
+  },
+
   async loginWithPin(pin: string): Promise<StaffUser> {
     const res = await fetch(`${API_BASE}/auth/login-pin`, {
       method: 'POST',
@@ -15,11 +69,17 @@ export const api = {
       const err = await res.json();
       throw new Error(err.detail || 'Giriş başarısız.');
     }
-    return res.json();
+    const data = await res.json();
+    if (data.access_token) {
+      localStorage.setItem('boncore_token', data.access_token);
+    }
+    return data;
   },
 
   async getStaffList(): Promise<StaffUser[]> {
-    const res = await fetch(`${API_BASE}/auth/staff`);
+    const res = await fetch(`${API_BASE}/auth/staff`, {
+      headers: getAuthHeaders(false)
+    });
     return res.json();
   },
 
@@ -367,12 +427,59 @@ export const api = {
 
   // Inventory & Recipes
   async getIngredients(): Promise<Ingredient[]> {
-    const res = await fetch(`${API_BASE}/inventory/ingredients`);
+    const res = await fetch(`${API_BASE}/inventory/ingredients`, {
+      headers: getAuthHeaders(false)
+    });
+    return res.json();
+  },
+
+  async createIngredient(payload: Partial<Ingredient>): Promise<any> {
+    const res = await fetch(`${API_BASE}/inventory/ingredients`, {
+      method: 'POST',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Stok kalemi eklenemedi.');
+    return res.json();
+  },
+
+  async updateIngredient(id: number, payload: Partial<Ingredient>): Promise<any> {
+    const res = await fetch(`${API_BASE}/inventory/ingredients/${id}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Stok kalemi güncellenemedi.');
+    return res.json();
+  },
+
+  async deleteIngredient(id: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/inventory/ingredients/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Stok kalemi silinemedi.');
     return res.json();
   },
 
   async getRecipes(): Promise<ProductRecipe[]> {
     const res = await fetch(`${API_BASE}/inventory/recipes`);
+    return res.json();
+  },
+
+  async getProductRecipe(productId: number): Promise<ProductRecipe> {
+    const res = await fetch(`${API_BASE}/inventory/recipes/${productId}`);
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Reçete alınamadı.');
+    return res.json();
+  },
+
+  async updateProductRecipe(productId: number, items: Array<{ ingredient_id: number; amount: number; waste_percentage?: number }>): Promise<ProductRecipe> {
+    const res = await fetch(`${API_BASE}/inventory/recipes/${productId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items })
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Reçete güncellenemedi.');
     return res.json();
   },
 
@@ -422,6 +529,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ delivery_order_id: deliveryOrderId, courier_id: courierId })
     });
+    return res.json();
+  },
+
+  async completeDelivery(deliveryOrderId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/delivery/complete-delivery/${deliveryOrderId}`, {
+      method: 'POST'
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Teslimat tamamlanamadı.');
     return res.json();
   },
 
@@ -504,13 +619,17 @@ export const api = {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || 'Geçersiz PIN Kodu!');
     }
-    return res.json();
+    const data = await res.json();
+    if (data.access_token) {
+      localStorage.setItem('boncore_token', data.access_token);
+    }
+    return data;
   },
 
   async createStaff(payload: any): Promise<any> {
     const res = await fetch(`${API_BASE}/auth/staff`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(true),
       body: JSON.stringify(payload)
     });
     if (!res.ok) throw new Error((await res.json()).detail || 'Personel oluşturulamadı.');
@@ -520,7 +639,7 @@ export const api = {
   async updateStaff(userId: number, payload: any): Promise<any> {
     const res = await fetch(`${API_BASE}/auth/staff/${userId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(true),
       body: JSON.stringify(payload)
     });
     if (!res.ok) throw new Error((await res.json()).detail || 'Personel güncellenemedi.');
@@ -528,8 +647,11 @@ export const api = {
   },
 
   async deleteStaff(userId: number): Promise<any> {
-    const res = await fetch(`${API_BASE}/auth/staff/${userId}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Personel silinemedi.');
+    const res = await fetch(`${API_BASE}/auth/staff/${userId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(false)
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Personel silinemedi.');
     return res.json();
   },
 
@@ -572,8 +694,58 @@ export const api = {
   },
 
   // Analytics & Statistics API
-  async getRestaurantStatistics(): Promise<any> {
-    const res = await fetch(`${API_BASE}/orders/analytics/statistics`);
+  async getRestaurantStatistics(dateRange: string = 'all'): Promise<any> {
+    const res = await fetch(`${API_BASE}/orders/analytics/statistics?date_range=${encodeURIComponent(dateRange)}`);
+    return res.json();
+  },
+
+  // Product Sales Report API
+  async getProductSalesReport(params?: {
+    dateRange?: string;
+    startDate?: string;
+    endDate?: string;
+    categoryId?: number;
+    station?: string;
+    search?: string;
+  }): Promise<any> {
+    const q = new URLSearchParams();
+    if (params?.dateRange) q.append('date_range', params.dateRange);
+    if (params?.startDate) q.append('start_date', params.startDate);
+    if (params?.endDate) q.append('end_date', params.endDate);
+    if (params?.categoryId) q.append('category_id', String(params.categoryId));
+    if (params?.station) q.append('station', params.station);
+    if (params?.search) q.append('search', params.search);
+    const res = await fetch(`${API_BASE}/orders/reports/product-sales?${q.toString()}`);
+    return res.json();
+  },
+
+  // Day-End (Z) Report API
+  async getDayEndReport(dateStr?: string, registerId?: number): Promise<any> {
+    const q = new URLSearchParams();
+    if (dateStr) q.append('date_str', dateStr);
+    if (registerId) q.append('register_id', String(registerId));
+    const res = await fetch(`${API_BASE}/cashier/reports/day-end?${q.toString()}`);
+    return res.json();
+  },
+
+  async getZReportHistory(): Promise<any> {
+    const res = await fetch(`${API_BASE}/cashier/reports/z-history`);
+    return res.json();
+  },
+
+  async closeDayEndRegister(closedBy: string = 'Yönetici'): Promise<any> {
+    const res = await fetch(`${API_BASE}/cashier/z-report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ closed_by: closedBy })
+    });
+    return res.json();
+  },
+
+  // Live System Time API
+  async getServerTime(): Promise<any> {
+    const res = await fetch(`${API_BASE}/settings/time`);
     return res.json();
   }
 };
+

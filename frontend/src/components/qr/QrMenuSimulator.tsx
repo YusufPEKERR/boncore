@@ -6,6 +6,7 @@ import {
 import { Area, Table, Category, Product } from '../../types';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
+import { useWebSocket } from '../../services/websocket';
 
 interface QrMenuSimulatorProps {
   areas: Area[];
@@ -32,6 +33,14 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({ areas, onBuzze
       loadTableQrMenu(selectedTableId);
     }
   }, [selectedTableId]);
+
+  useWebSocket('all', (type) => {
+    if (type === 'MENU_UPDATED' || type === 'ORDER_CREATED' || type === 'ORDER_UPDATED' || type === 'ORDER_PAID') {
+      if (selectedTableId) {
+        loadTableQrMenu(selectedTableId);
+      }
+    }
+  });
 
   const loadTableQrMenu = async (tableId: number) => {
     try {
@@ -145,19 +154,19 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({ areas, onBuzze
   const selectedTable = allTables.find(t => t.id === selectedTableId);
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 space-y-6 select-none transition-colors duration-200">
+    <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 space-y-6 select-none transition-colors duration-200">
       {/* Top Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white">QR Kod Dijital Menü & Masadan Sipariş</h1>
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">QR Kod Dijital Menü & Masadan Sipariş</h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Müşteri Telefon Simülatörü, Garson Çağırma ve Masada Sanal POS Ödeme</p>
         </div>
       </div>
 
       {/* Main Grid: QR Generator Card (Left 4 cols) + Mobile Device Simulator (Right 8 cols) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start">
         {/* Left: Table QR Code Card & Selection (4 cols) */}
-        <div className="lg:col-span-4 p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl space-y-4">
+        <div className="lg:col-span-4 p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl space-y-4">
           <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
             <QrCode className="w-5 h-5 text-blue-500" />
             <span>Masa Seç & QR Kod Kartı</span>
@@ -179,7 +188,7 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({ areas, onBuzze
           </div>
 
           {/* Printable QR Code Card Template */}
-          <div className="p-6 bg-slate-50 dark:bg-white text-slate-950 rounded-3xl shadow-2xl text-center space-y-3 border border-slate-200 dark:border-slate-300">
+          <div className="p-5 sm:p-6 bg-slate-50 dark:bg-white text-slate-950 rounded-3xl shadow-2xl text-center space-y-3 border border-slate-200 dark:border-slate-300">
             <div className="text-xs uppercase font-extrabold tracking-widest text-slate-600">
               BONCORE RESTAURANT & LOUNGE
             </div>
@@ -209,7 +218,7 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({ areas, onBuzze
 
         {/* Right: Interactive Customer Smartphone Simulator Frame (8 cols) */}
         <div className="lg:col-span-8 flex justify-center">
-          <div className="w-[375px] h-[720px] bg-slate-950 rounded-[45px] border-[8px] border-slate-800 shadow-[0_0_50px_rgba(0,0,0,0.8)] flex flex-col overflow-hidden relative">
+          <div className="w-full max-w-[375px] h-[680px] sm:h-[720px] bg-slate-950 rounded-[40px] sm:rounded-[45px] border-[6px] sm:border-[8px] border-slate-800 shadow-[0_0_50px_rgba(0,0,0,0.8)] flex flex-col overflow-hidden relative">
             {/* Phone Notch */}
             <div className="h-6 bg-slate-950 flex items-center justify-center pt-1 z-20">
               <div className="w-24 h-4 bg-slate-800 rounded-full" />

@@ -4,7 +4,7 @@ import {
   ChefHat, Activity, Users, FileText, ShoppingBag, Gift, 
   ChevronDown, ChevronRight, Grid, DollarSign, Tag, UsersRound, 
   Percent, ShieldCheck, Warehouse, ArrowDownRight, Trash2, Sliders, User, 
-  BarChart3, Store, Award 
+  BarChart3, Store, Award, LogOut 
 } from 'lucide-react';
 import { StaffUser } from '../../types';
 import { sound } from '../../services/sound';
@@ -18,6 +18,7 @@ interface AdisyoSidebarProps {
   restaurantTitle?: string;
   onOpenQrallModal: () => void;
   onOpenOkcModal?: () => void;
+  onLogout?: () => void;
 }
 
 export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
@@ -26,9 +27,10 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
   activeTab,
   setActiveTab,
   currentUser,
-  restaurantTitle = 'FATİH ÇİFTLİĞİ - 37799',
+  restaurantTitle = 'BONCORE RESTORAN',
   onOpenQrallModal,
-  onOpenOkcModal
+  onOpenOkcModal,
+  onLogout
 }) => {
   const [isIntegrationsOpen, setIsIntegrationsOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem('boncore_menu_integrations_open');
@@ -45,7 +47,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
   const [isOperationsOpen, setIsOperationsOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem('boncore_menu_operations_open');
     if (saved !== null) return saved === 'true';
-    return ['cashier'].includes(activeTab);
+    return ['cashier', 'audit'].includes(activeTab);
   });
 
   const [isUsersOpen, setIsUsersOpen] = useState<boolean>(() => {
@@ -57,7 +59,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
   const [isReportsOpen, setIsReportsOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem('boncore_menu_reports_open');
     if (saved !== null) return saved === 'true';
-    return ['restaurant_statistics'].includes(activeTab);
+    return ['restaurant_statistics', 'product_sales_report', 'day_end_report'].includes(activeTab);
   });
 
   useEffect(() => {
@@ -98,16 +100,16 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
 
       {/* Slide-out Sidebar Drawer */}
       <div className="relative w-72 max-w-[85vw] bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 h-full shadow-2xl flex flex-col z-10 border-r border-slate-200 dark:border-slate-800 transition-colors duration-200">
-        {/* Brand Header (Frame 010 / Frame 190) */}
+        {/* Brand Header */}
         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#c0392b] flex items-center justify-center text-white font-black text-base shadow-sm">
-              <span className="font-serif">a</span>
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-600 to-orange-500 flex items-center justify-center text-white font-black text-base shadow-sm shadow-rose-500/20">
+              <span>B</span>
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-base text-slate-900 dark:text-white tracking-tight">Adisyo</span>
-                <span className="text-[9px] font-bold text-slate-400">3.0</span>
+                <span className="font-extrabold text-base text-slate-900 dark:text-white tracking-tight">BonCore <span className="text-rose-600 dark:text-rose-400">POS</span></span>
+                <span className="text-[9px] font-bold text-slate-400 bg-slate-200/70 dark:bg-slate-800 px-1.5 py-0.2 rounded">v2.0</span>
               </div>
               <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide truncate max-w-[170px]">
                 {restaurantTitle}
@@ -116,7 +118,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
           </div>
           <button 
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-800 transition"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -173,18 +175,19 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
 
           {/* Dijital Menü (QR) */}
           <button
-            onClick={() => {
-              onClose();
-              onOpenQrallModal();
-            }}
-            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            onClick={() => handleNavClick('qr')}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
+              activeTab === 'qr'
+                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
           >
             <div className="flex items-center gap-3">
               <Smartphone className="w-4 h-4 text-slate-500" />
-              <span>Dijital Menü</span>
+              <span>Dijital Menü (QR)</span>
             </div>
             <span className="bg-red-600 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-md">
-              Yepyeni
+              Canlı
             </span>
           </button>
 
@@ -274,10 +277,23 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             }`}
           >
             <ChefHat className="w-4 h-4 text-slate-500" />
-            <span>Mutfak</span>
+            <span>Mutfak (KDS)</span>
           </button>
 
-          {/* İşlemler (Stok / Kasa / Masraf) Dropdown */}
+          {/* Paket Servis & Kurye */}
+          <button
+            onClick={() => handleNavClick('delivery')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
+              activeTab === 'delivery'
+                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <ShoppingBag className="w-4 h-4 text-slate-500" />
+            <span>Paket Servis & Kurye</span>
+          </button>
+
+          {/* İşlemler (Stok / Kasa / Masraf / Denetim) Dropdown */}
           <div>
             <button
               onClick={() => setIsOperationsOpen(!isOperationsOpen)}
@@ -309,6 +325,14 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                   className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
                 >
                   Zayi / Fire İşlemleri
+                </button>
+                <button
+                  onClick={() => handleNavClick('audit')}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                    activeTab === 'audit' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  Denetim İzi (Audit Log)
                 </button>
               </div>
             )}
@@ -373,14 +397,18 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                   Restaurant İstatistikleri
                 </button>
                 <button
-                  onClick={() => handleNavClick('restaurant_statistics')}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                  onClick={() => handleNavClick('product_sales_report')}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                    activeTab === 'product_sales_report' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
                 >
                   Ürün Satış Raporu
                 </button>
                 <button
-                  onClick={() => handleNavClick('restaurant_statistics')}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                  onClick={() => handleNavClick('day_end_report')}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                    activeTab === 'day_end_report' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
                 >
                   Gün Sonu Raporu (Z)
                 </button>
@@ -419,25 +447,46 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
           </button>
         </div>
 
-        {/* Bottom Adisyo Promo Badge (Frame 190 / 220) */}
-        <div className="p-3 m-3 bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/40 rounded-2xl text-[11px] text-amber-900 dark:text-amber-200 space-y-2">
-          <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-300">
-            <Gift className="w-4 h-4 text-amber-600" />
-            <span>Planınızı Yükseltin</span>
-          </div>
-          <p className="text-[10px] text-amber-800/90 dark:text-amber-300/80 leading-tight">
-            Daha fazla özellik için üst plana geçin.
-          </p>
-          <button
-            onClick={() => {
-              onClose();
-              if (onOpenOkcModal) onOpenOkcModal();
-              else onOpenQrallModal();
-            }}
-            className="w-full py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-[10px] shadow-sm transition"
-          >
-            Yükselt
-          </button>
+        {/* Bottom User Profile & Logout Card */}
+        <div className="p-3 m-3 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs space-y-2.5">
+          {currentUser && (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-rose-500 to-orange-500 text-white font-black text-xs flex items-center justify-center flex-shrink-0 shadow-sm">
+                  {currentUser.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="font-extrabold text-slate-900 dark:text-white truncate text-xs">
+                    {currentUser.name}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                    @{currentUser.username || 'personel'}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => handleNavClick('profile')}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition cursor-pointer"
+                title="Profil Ayarları"
+              >
+                <Settings className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {onLogout && (
+            <button
+              onClick={() => {
+                sound.beep();
+                onClose();
+                onLogout();
+              }}
+              className="w-full py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/50 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Güvenli Çıkış Yap</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Grid, FileText, ChefHat, Wallet, Menu } from 'lucide-react';
 import { Header } from './components/layout/Header';
 import { AdisyoSidebar } from './components/layout/AdisyoSidebar';
 import { AdisyoDashboard } from './components/dashboard/AdisyoDashboard';
@@ -26,6 +27,8 @@ import { TableAreaDefinitions } from './components/tables/TableAreaDefinitions';
 import { RightsManagement } from './components/permissions/RightsManagement';
 import { UsersManagement } from './components/users/UsersManagement';
 import { RestaurantStatistics } from './components/reports/RestaurantStatistics';
+import { ProductSalesReport } from './components/reports/ProductSalesReport';
+import { DayEndReport } from './components/reports/DayEndReport';
 import { AppStore } from './components/appstore/AppStore';
 import { MenuIntegrationOperations } from './components/integrations/MenuIntegrationOperations';
 
@@ -42,7 +45,7 @@ export const App: React.FC = () => {
 
   const VALID_TABS = [
     'dashboard', 'tables', 'pos', 'kds', 'product_definition', 'table_definition',
-    'integration_menu', 'users', 'rights', 'restaurant_statistics', 'app_store',
+    'integration_menu', 'users', 'rights', 'restaurant_statistics', 'product_sales_report', 'day_end_report', 'app_store',
     'settings', 'profile', 'cashier', 'delivery', 'inventory', 'qr', 'audit'
   ];
 
@@ -59,24 +62,46 @@ export const App: React.FC = () => {
     return 'tables';
   };
 
-  // Authentication State
+  // Authentication State (Require valid token or explicit login)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    const token = localStorage.getItem('boncore_token');
     const cached = localStorage.getItem('boncore_auth');
-    return cached !== null ? cached === 'true' : true;
+    return Boolean(token && cached === 'true');
   });
   const [currentUser, setCurrentUser] = useState<StaffUser | null>(() => {
     const cached = localStorage.getItem('boncore_user');
     if (cached) {
       try { return JSON.parse(cached); } catch {}
     }
-    return {
-      id: 1,
-      name: '37799 - fatih',
-      role: 'manager',
-      is_active: true
-    };
+    return null;
   });
   const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
+  const [restaurantTitle, setRestaurantTitle] = useState<string>('BONCORE RESTORAN');
+
+  // Verify token on startup if authenticated
+  useEffect(() => {
+    const token = localStorage.getItem('boncore_token');
+    if (!token) {
+      setIsAuthenticated(false);
+      return;
+    }
+    api.getMe()
+      .then((user) => {
+        if (user) {
+          setCurrentUser(user);
+          setIsAuthenticated(true);
+          localStorage.setItem('boncore_user', JSON.stringify(user));
+        }
+      })
+      .catch(() => {
+        // Token expired or invalid
+        localStorage.removeItem('boncore_token');
+        localStorage.removeItem('boncore_auth');
+        localStorage.removeItem('boncore_user');
+        setIsAuthenticated(false);
+        setCurrentUser(null);
+      });
+  }, []);
 
   // Navigation (persistent across F5 reload via hash and localStorage)
   const [activeTab, setActiveTab] = useState<string>(getInitialTab);
@@ -125,16 +150,14 @@ export const App: React.FC = () => {
   const [isBuzzerListOpen, setIsBuzzerListOpen] = useState<boolean>(false);
 
   // Live Toast Notifications
-  const [toasts, setToasts] = useState<{ id: number; message: string; type?: string }[]>([
-    { id: 1, message: '✓ Bağlantı başarılı...', type: 'success' }
-  ]);
+  const [toasts, setToasts] = useState<{ id: number; message: string; type?: string }[]>([]);
 
   const addToast = (message: string, type = 'info') => {
     const id = Date.now();
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4500);
+    }, 3000);
   };
 
   // Auto-sync offline transactions when network is online or on application start
@@ -157,6 +180,17 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('online', runOfflineSync);
   }, []);
 
+  const loadCategories = async () => {
+    try {
+      const catsData = await api.getCategories();
+      if (catsData && Array.isArray(catsData)) {
+        setCategories(catsData);
+      }
+    } catch (e) {
+      console.warn('Failed to refresh categories', e);
+    }
+  };
+
   // Real-time WebSocket connection
   const { isConnected } = useWebSocket('all', (type, data) => {
     if (type === 'WAITER_CALL_ALERT') {
@@ -166,10 +200,17 @@ export const App: React.FC = () => {
       addToast(`🍽️ ${data.message}`, 'success');
       loadAreas();
     } else if (type === 'ONLINE_ORDER_INCOMING') {
-      addToast(`🛵 ${data.platform.toUpperCase()}: Yeni Sipariş (₺${data.total})`, 'info');
+      addToast(`🛵 ${(data.platform || 'ONLINE').toUpperCase()}: Yeni Sipariş (₺${data.total})`, 'info');
       loadAreas();
+    } else if (type === 'MENU_UPDATED') {
+      loadCategories();
+    } else if (type === 'SETTINGS_UPDATED') {
+      if (data && data.restaurant_name) {
+        setRestaurantTitle(String(data.restaurant_name));
+      }
     } else if (type === 'ORDER_CREATED' || type === 'ORDER_UPDATED' || type === 'ORDER_PAID' || type === 'TABLE_MOVED' || type === 'TABLE_MERGED') {
       loadAreas();
+      loadCategories();
     }
   });
 
@@ -216,13 +257,18 @@ export const App: React.FC = () => {
       setLoadingAreas(false);
     }
 
+    await loadCategories();
+
     try {
-      const catsData = await api.getCategories();
-      if (catsData && Array.isArray(catsData)) {
-        setCategories(catsData);
+      const settingsData = await api.getSettings();
+      if (settingsData && settingsData.restaurant_name) {
+        const cleanTitle = String(settingsData.restaurant_name).includes('FATİH ÇİFTLİĞİ')
+          ? 'BONCORE RESTORAN'
+          : String(settingsData.restaurant_name);
+        setRestaurantTitle(cleanTitle);
       }
     } catch (e) {
-      console.warn('Initial categories load error', e);
+      // Ignore settings load error on startup
     }
   };
 
@@ -268,26 +314,32 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleLoginSuccess = (user: StaffUser) => {
+  const handleLoginSuccess = (user: StaffUser, token?: string) => {
     setCurrentUser(user);
     setIsAuthenticated(true);
     localStorage.setItem('boncore_auth', 'true');
     localStorage.setItem('boncore_user', JSON.stringify(user));
-    addToast(`Giriş yapıldı: ${user.name}`, 'success');
+    if (token) {
+      localStorage.setItem('boncore_token', token);
+    }
+    loadInitialData();
+    loadStaffUsers();
+    addToast(`Hoş geldiniz, ${user.name}!`, 'success');
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
     setCurrentUser(null);
+    localStorage.removeItem('boncore_token');
     localStorage.removeItem('boncore_auth');
     localStorage.removeItem('boncore_user');
     localStorage.removeItem('boncore_selected_table');
-    addToast('Oturum kapatıldı.', 'info');
+    addToast('Oturum güvenli bir şekilde kapatıldı.', 'info');
   };
 
-  // If not authenticated, render full Adisyo Login page
+  // If not authenticated, render full BonCore POS Login page
   if (!isAuthenticated) {
-    return <AdisyoLogin onLoginSuccess={handleLoginSuccess} staffList={staffUsers} />;
+    return <AdisyoLogin onLoginSuccess={handleLoginSuccess} />;
   }
 
   // Count active buzzer calls
@@ -295,20 +347,21 @@ export const App: React.FC = () => {
   const callingTables = allTables.filter(t => t.waiter_call_reason || t.status === 'waiter_call' || t.status === 'bill_requested');
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans transition-colors duration-200">
-      {/* Top Header (Adisyo 3.0 Bar) */}
+    <div className="h-[100dvh] w-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans transition-colors duration-200">
+      {/* Top Header (BonCore POS v2.0 Bar) */}
       <Header
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenSidebar={() => setIsSidebarOpen(true)}
         currentUser={currentUser}
         onOpenPinModal={() => setIsPinModalOpen(true)}
+        onLogout={handleLogout}
         isConnected={isConnected}
         buzzerCount={callingTables.length}
         onOpenBuzzerList={() => setIsBuzzerListOpen(true)}
         theme={theme}
         onToggleTheme={toggleTheme}
-        restaurantTitle="FATİH ÇİFTLİĞİ"
+        restaurantTitle={restaurantTitle}
         onRefreshData={loadAreas}
       />
 
@@ -319,17 +372,19 @@ export const App: React.FC = () => {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         currentUser={currentUser}
-        restaurantTitle="FATİH ÇİFTLİĞİ - 37799"
+        restaurantTitle={restaurantTitle}
         onOpenQrallModal={() => setIsQrallModalOpen(true)}
         onOpenOkcModal={() => setIsOkcModalOpen(true)}
+        onLogout={handleLogout}
       />
 
       {/* Main View Area */}
-      <main className="flex-1 flex overflow-hidden relative">
+      <main className="flex-1 flex overflow-hidden relative min-h-0">
         {activeTab === 'dashboard' && (
           <AdisyoDashboard
             areas={areas}
             onNavigateToTables={() => setActiveTab('tables')}
+            onNavigateTab={(tab) => setActiveTab(tab)}
           />
         )}
 
@@ -376,6 +431,7 @@ export const App: React.FC = () => {
         {activeTab === 'integration_menu' && (
           <MenuIntegrationOperations
             categories={categories}
+            onRefreshData={loadCategories}
           />
         )}
 
@@ -388,17 +444,30 @@ export const App: React.FC = () => {
 
         {activeTab === 'rights' && <RightsManagement />}
 
-        {activeTab === 'restaurant_statistics' && <RestaurantStatistics />}
+        {activeTab === 'restaurant_statistics' && <RestaurantStatistics onNavigateTab={(tab) => setActiveTab(tab)} />}
+
+        {activeTab === 'product_sales_report' && <ProductSalesReport />}
+
+        {activeTab === 'day_end_report' && <DayEndReport />}
 
         {activeTab === 'app_store' && <AppStore onNavigateTab={setActiveTab} />}
 
-        {activeTab === 'settings' && <AdisyoSettings />}
+        {activeTab === 'settings' && (
+          <AdisyoSettings
+            onSettingsUpdated={(name) => setRestaurantTitle(name)}
+          />
+        )}
 
-        {activeTab === 'profile' && <AdisyoProfile currentUser={currentUser} />}
+        {activeTab === 'profile' && (
+          <AdisyoProfile
+            currentUser={currentUser}
+            onUserUpdated={(u) => setCurrentUser(u)}
+          />
+        )}
 
-        {activeTab === 'cashier' && <CashierManagement currentUser={currentUser} />}
+        {activeTab === 'cashier' && <CashierManagement currentUser={currentUser} onNavigateTab={(tab) => setActiveTab(tab)} />}
 
-        {activeTab === 'delivery' && <DeliveryHub />}
+        {activeTab === 'delivery' && <DeliveryHub categories={categories} />}
 
         {activeTab === 'inventory' && <InventoryManagement />}
 
@@ -412,15 +481,71 @@ export const App: React.FC = () => {
         {activeTab === 'audit' && <AuditLogViewer />}
       </main>
 
-      {/* Bottom-right Toast Badge (Frame 040 / Frame 220: ✓ Bağlantı başarılı...) */}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+      {/* Mobile Bottom Navigation Bar (Visible on phones < md) */}
+      <nav className="md:hidden h-14 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 grid grid-cols-5 items-center px-1 shrink-0 z-30 select-none">
+        <button
+          onClick={() => { sound.beep(); setActiveTab('tables'); }}
+          className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
+            activeTab === 'tables'
+              ? 'text-rose-600 dark:text-rose-400 font-black'
+              : 'text-slate-500 dark:text-slate-400 font-semibold'
+          }`}
+        >
+          <Grid className="w-4 h-4 mb-0.5" />
+          <span className="text-[10px]">Masalar</span>
+        </button>
+        <button
+          onClick={() => { sound.beep(); setActiveTab('pos'); }}
+          className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
+            activeTab === 'pos'
+              ? 'text-rose-600 dark:text-rose-400 font-black'
+              : 'text-slate-500 dark:text-slate-400 font-semibold'
+          }`}
+        >
+          <FileText className="w-4 h-4 mb-0.5" />
+          <span className="text-[10px]">POS Sipariş</span>
+        </button>
+        <button
+          onClick={() => { sound.beep(); setActiveTab('kds'); }}
+          className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
+            activeTab === 'kds'
+              ? 'text-rose-600 dark:text-rose-400 font-black'
+              : 'text-slate-500 dark:text-slate-400 font-semibold'
+          }`}
+        >
+          <ChefHat className="w-4 h-4 mb-0.5" />
+          <span className="text-[10px]">Mutfak</span>
+        </button>
+        <button
+          onClick={() => { sound.beep(); setActiveTab('cashier'); }}
+          className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
+            activeTab === 'cashier'
+              ? 'text-rose-600 dark:text-rose-400 font-black'
+              : 'text-slate-500 dark:text-slate-400 font-semibold'
+          }`}
+        >
+          <Wallet className="w-4 h-4 mb-0.5" />
+          <span className="text-[10px]">Kasa</span>
+        </button>
+        <button
+          onClick={() => { sound.beep(); setIsSidebarOpen(true); }}
+          className="flex flex-col items-center justify-center py-1 rounded-xl text-slate-500 dark:text-slate-400 font-semibold transition cursor-pointer"
+        >
+          <Menu className="w-4 h-4 mb-0.5" />
+          <span className="text-[10px]">Menü</span>
+        </button>
+      </nav>
+
+      {/* Toast Notifications (Top-right on mobile, bottom-right on desktop, tap to dismiss) */}
+      <div className="fixed top-16 md:top-auto md:bottom-4 right-3 md:right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`px-4 py-2.5 rounded-2xl shadow-2xl border text-xs font-black flex items-center gap-2 pointer-events-auto transition-all animate-fadeIn ${
+            onClick={() => setToasts(prev => prev.filter(item => item.id !== t.id))}
+            className={`px-3.5 py-2 rounded-2xl shadow-xl border text-xs font-black flex items-center gap-2 pointer-events-auto cursor-pointer transition-all animate-fadeIn ${
               t.type === 'warning'
                 ? 'bg-purple-900 border-purple-400 text-purple-100'
-                : t.type === 'success' || t.message.includes('Bağlantı')
+                : t.type === 'success'
                 ? 'bg-[#107c41] border-emerald-500 text-white'
                 : 'bg-slate-900 border-slate-700 text-white'
             }`}

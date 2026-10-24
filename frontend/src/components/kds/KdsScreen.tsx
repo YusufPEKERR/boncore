@@ -92,19 +92,27 @@ export const KdsScreen: React.FC = () => {
     });
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-3.5rem)] bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none overflow-hidden font-sans">
+    <div className="flex-1 flex flex-col h-full min-h-0 bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none overflow-hidden font-sans">
       {/* Top Toolbar */}
-      <div className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-4">
+      <div className="min-h-14 py-2 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 flex flex-wrap items-center justify-between gap-2 shadow-sm shrink-0">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full lg:w-auto justify-between lg:justify-start">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <h1 className="text-base font-extrabold text-slate-900 dark:text-white">Mutfak Ekranı (KDS)</h1>
+            <h1 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">Mutfak Ekranı (KDS)</h1>
           </div>
 
+          <button
+            onClick={() => { sound.beep(); loadKdsOrders(); }}
+            className="lg:hidden p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+            title="Yenile"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+
           {/* Station Selector Dropdown / Pills */}
-          <div className="hidden lg:flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold gap-1">
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold gap-1 overflow-x-auto max-w-full no-scrollbar">
             {[
-              { id: 'all', label: 'Tüm İstasyonlar' },
+              { id: 'all', label: 'Tümü' },
               { id: 'kitchen', label: 'Mutfak' },
               { id: 'grill', label: 'Izgara' },
               { id: 'bar', label: 'Bar' },
@@ -113,7 +121,7 @@ export const KdsScreen: React.FC = () => {
               <button
                 key={st.id}
                 onClick={() => { sound.beep(); setStation(st.id); }}
-                className={`px-2.5 py-1 rounded-lg transition ${
+                className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap shrink-0 ${
                   station === st.id
                     ? 'bg-red-600 text-white shadow-sm'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -125,41 +133,41 @@ export const KdsScreen: React.FC = () => {
           </div>
 
           {/* Quick Filter Buttons */}
-          <div className="hidden sm:flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-400">
+          <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-bold text-slate-600 dark:text-slate-400 overflow-x-auto max-w-full no-scrollbar">
             <button 
               onClick={() => { sound.beep(); setSortAZ(!sortAZ); }}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-1 transition ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 transition whitespace-nowrap shrink-0 ${
                 sortAZ 
                   ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900' 
                   : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200'
               }`}
             >
               <ArrowUpDown className="w-3 h-3" />
-              <span>A-Z Sırala {sortAZ && '✓'}</span>
+              <span>A-Z {sortAZ && '✓'}</span>
             </button>
             <button 
               onClick={() => { sound.beep(); setStageFilter('preparing'); }}
-              className={`px-3 py-1.5 rounded-lg transition ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
                 stageFilter === 'preparing' 
                   ? 'bg-[#2c3e50] text-white shadow-sm' 
                   : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200'
               }`}
             >
-              Hazırlanıyor Aşaması
+              Hazırlanıyor
             </button>
             <button 
               onClick={() => { sound.beep(); setStageFilter('ready'); }}
-              className={`px-3 py-1.5 rounded-lg transition ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
                 stageFilter === 'ready' 
                   ? 'bg-[#27ae60] text-white shadow-sm' 
                   : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200'
               }`}
             >
-              Hazırlanan Siparişler
+              Hazır
             </button>
             <button 
               onClick={() => { sound.beep(); setStageFilter('all'); }}
-              className={`px-3 py-1.5 rounded-lg transition ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
                 stageFilter === 'all' 
                   ? 'bg-slate-700 text-white shadow-sm' 
                   : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200'
@@ -170,7 +178,7 @@ export const KdsScreen: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="hidden lg:flex items-center gap-2">
           <button
             onClick={() => { sound.beep(); loadKdsOrders(); }}
             className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
@@ -182,13 +190,13 @@ export const KdsScreen: React.FC = () => {
       </div>
 
       {/* Order Cards Grid */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden p-6 flex gap-5 bg-slate-100 dark:bg-slate-950">
+      <div className="flex-1 overflow-y-auto md:overflow-x-auto md:overflow-y-hidden p-3 sm:p-6 flex flex-col md:flex-row gap-4 sm:gap-5 bg-slate-100 dark:bg-slate-950">
         {processedOrders.map((o) => {
           const isAllReady = o.items.every((it: any) => it.status === 'ready' || it.status === 'served');
           return (
             <div
               key={o.order_id}
-              className={`w-80 md:w-96 flex-shrink-0 bg-white dark:bg-slate-900 border rounded-2xl shadow-sm flex flex-col justify-between overflow-hidden transition-all ${
+              className={`w-full md:w-80 lg:w-96 flex-shrink-0 bg-white dark:bg-slate-900 border rounded-2xl shadow-sm flex flex-col justify-between overflow-hidden transition-all ${
                 isAllReady 
                   ? 'border-emerald-400 dark:border-emerald-600/60 ring-2 ring-emerald-500/20' 
                   : 'border-slate-200 dark:border-slate-800'
@@ -249,7 +257,7 @@ export const KdsScreen: React.FC = () => {
                     >
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-bold text-slate-900 dark:text-white">
-                          <span className="font-black mr-1.5">{it.quantity}x</span>
+                          <span className="font-black mr-1.5">{Number.isInteger(Number(it.quantity)) ? `${it.quantity}x` : `${Number(Number(it.quantity).toFixed(3))} Kg`}</span>
                           <span className="uppercase">{it.product_name}</span>
                         </div>
                         {it.variant_name && (

@@ -1,10 +1,13 @@
 import os
 from pydantic import BaseModel
 
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_DEFAULT_DB_PATH = os.path.join(_BACKEND_DIR, "boncore.db").replace("\\", "/")
+
 class Settings(BaseModel):
-    APP_NAME: str = "BonCore Adisyo & Simpra POS Engine"
+    APP_NAME: str = "BonCore POS & Restoran Yönetim Sistemi"
     API_V1_STR: str = "/api"
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./boncore.db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{_DEFAULT_DB_PATH}")
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     CORS_ORIGINS: list[str] = ["*"]
     DEFAULT_KUVER_PRICE: float = 35.0

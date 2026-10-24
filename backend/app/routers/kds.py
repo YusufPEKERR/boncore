@@ -118,13 +118,21 @@ async def progress_item_status(item_id: int, status: str = Query(...), db: Async
         "item_id": item.id,
         "new_status": canonical_status
     })
+    await ws_hub.broadcast_to_channel("pos", "KDS_STATUS_CHANGED", {
+        "order_id": item.order_id,
+        "item_id": item.id,
+        "new_status": canonical_status
+    })
     await ws_hub.broadcast_all("ORDER_ITEM_STATUS", {
         "order_id": item.order_id,
         "item_id": item.id,
-        "status": status
+        "status": canonical_status
+    })
+    await ws_hub.broadcast_all("ORDER_UPDATED", {
+        "order_id": item.order_id
     })
 
-    return {"status": "success", "item_id": item.id, "new_status": status}
+    return {"status": "success", "item_id": item.id, "new_status": canonical_status}
 
 @router.post("/order/{order_id}/ready-all")
 async def mark_all_order_items_ready(order_id: int, db: AsyncSession = Depends(get_db)):
@@ -145,6 +153,8 @@ async def mark_all_order_items_ready(order_id: int, db: AsyncSession = Depends(g
         "order_id": order_id,
         "message": f"Sipariş hazır! Garson çağrısı yapıldı."
     })
+    await ws_hub.broadcast_to_channel("pos", "KDS_ORDER_READY_ALL", {"order_id": order_id})
     await ws_hub.broadcast_to_channel("kds", "KDS_ORDER_READY_ALL", {"order_id": order_id})
+    await ws_hub.broadcast_all("ORDER_UPDATED", {"order_id": order_id})
 
     return {"status": "success", "message": "Tüm ürünler hazır olarak işaretlendi."}

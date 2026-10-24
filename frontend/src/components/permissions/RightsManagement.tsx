@@ -161,23 +161,23 @@ export const RightsManagement: React.FC = () => {
   }, {} as Record<string, PermissionItem[]>);
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none animate-fadeIn font-sans transition-colors duration-200">
+    <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none animate-fadeIn font-sans transition-colors duration-200">
       <div className="max-w-6xl mx-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden space-y-4">
         {/* Header (Matching Frame 110) */}
-        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+        <div className="p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 text-white flex items-center justify-center shadow-md shadow-orange-500/20">
-              <Shield className="w-6 h-6" />
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 text-white flex items-center justify-center shadow-md shadow-orange-500/20 shrink-0">
+              <Shield className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
-              <h2 className="text-lg font-black text-slate-900 dark:text-white">Yetki / İzin Ekranı</h2>
+              <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">Yetki / İzin Ekranı</h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">Kullanıcılarınızın yetkilerini/izinlerini buradan güncelleyebilirsiniz.</p>
             </div>
           </div>
 
           <button
             onClick={handleSave}
-            className="px-6 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-md transition flex items-center gap-2"
+            className="px-5 sm:px-6 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-md transition flex items-center gap-2 shrink-0"
           >
             <Save className="w-4 h-4" />
             <span>Kaydet</span>
@@ -185,7 +185,7 @@ export const RightsManagement: React.FC = () => {
         </div>
 
         {/* Search Input */}
-        <div className="px-6">
+        <div className="px-4 sm:px-6">
           <div className="relative max-w-md">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -199,58 +199,60 @@ export const RightsManagement: React.FC = () => {
         </div>
 
         {savedSuccess && (
-          <div className="mx-6 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn">
+          <div className="mx-4 sm:mx-6 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn">
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
             <span>Personel yetkileri ve kilit erişimleri başarıyla güncellendi.</span>
           </div>
         )}
 
         {/* Permissions Table by Group */}
-        <div className="p-6 pt-0 space-y-6">
-          {Object.entries(grouped).map(([groupTitle, perms]) => (
-            <div key={groupTitle} className="space-y-2">
-              {/* Group Header with Role Columns */}
-              <div className="grid grid-cols-12 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-extrabold text-slate-700 dark:text-slate-300">
-                <div className="col-span-6 font-black uppercase text-slate-900 dark:text-white">{groupTitle}</div>
-                {roles.map(r => (
-                  <div key={r.key} className="col-span-1 text-center text-[11px] truncate">
-                    {r.label}
-                  </div>
-                ))}
-              </div>
-
-              {/* Permission Rows */}
-              <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                {perms.map((p) => (
-                  <div key={p.id} className="grid grid-cols-12 py-3 px-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition items-center text-xs">
-                    <div className="col-span-6 pr-4">
-                      <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                        <HelpCircle className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                        <span>{p.title}</span>
-                      </div>
-                      <div className="text-[10px] text-slate-400 mt-0.5 leading-snug">
-                        {p.description}
-                      </div>
+        <div className="p-4 sm:p-6 pt-0 space-y-6 overflow-x-auto">
+          <div className="min-w-[680px] space-y-6">
+            {Object.entries(grouped).map(([groupTitle, perms]) => (
+              <div key={groupTitle} className="space-y-2">
+                {/* Group Header with Role Columns */}
+                <div className="grid grid-cols-12 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-extrabold text-slate-700 dark:text-slate-300">
+                  <div className="col-span-6 font-black uppercase text-slate-900 dark:text-white">{groupTitle}</div>
+                  {roles.map(r => (
+                    <div key={r.key} className="col-span-1 text-center text-[11px] truncate">
+                      {r.label}
                     </div>
+                  ))}
+                </div>
 
-                    {roles.map(r => {
-                      const isChecked = p.roles[r.key as keyof typeof p.roles];
-                      return (
-                        <div key={r.key} className="col-span-1 flex justify-center">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => handleToggle(p.id, r.key)}
-                            className="w-4 h-4 rounded text-red-600 focus:ring-red-500 cursor-pointer accent-red-600"
-                          />
+                {/* Permission Rows */}
+                <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                  {perms.map((p) => (
+                    <div key={p.id} className="grid grid-cols-12 py-3 px-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition items-center text-xs">
+                      <div className="col-span-6 pr-4">
+                        <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <HelpCircle className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                          <span>{p.title}</span>
                         </div>
-                      );
-                    })}
-                  </div>
-                ))}
+                        <div className="text-[10px] text-slate-400 mt-0.5 leading-snug">
+                          {p.description}
+                        </div>
+                      </div>
+
+                      {roles.map(r => {
+                        const isChecked = p.roles[r.key as keyof typeof p.roles];
+                        return (
+                          <div key={r.key} className="col-span-1 flex justify-center">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => handleToggle(p.id, r.key)}
+                              className="w-4 h-4 rounded text-red-600 focus:ring-red-500 cursor-pointer accent-red-600"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     </div>

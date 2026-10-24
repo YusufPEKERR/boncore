@@ -1,9 +1,12 @@
 export interface StaffUser {
   id: number;
   name: string;
+  username?: string;
   role: 'waiter' | 'cashier' | 'chef' | 'manager' | 'kitchen';
   pin_code?: string;
   is_active: boolean;
+  last_login_at?: string;
+  created_at?: string;
 }
 
 export interface Area {
@@ -161,6 +164,7 @@ export interface Order {
   treat_reason?: string;
   kuver_count: number;
   kuver_total: number;
+  service_charge?: number;
   grand_total: number;
   paid_total: number;
   remaining_total: number;
@@ -174,12 +178,20 @@ export interface Order {
 
 export interface Ingredient {
   id: number;
+  product_code?: string;
+  category?: string;
+  category_name?: string;
   name: string;
+  kitchen_group?: string;
+  revenue_center?: string;
   unit: string;
   cost_per_unit: number;
   current_stock: number;
   min_stock_alert: number;
+  critical_display?: string;
+  total_value?: number;
   warehouse_id: number;
+  is_out_of_stock?: boolean;
   is_critical: boolean;
 }
 

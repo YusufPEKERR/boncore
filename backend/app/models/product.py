@@ -76,12 +76,17 @@ class Ingredient(Base):
     __tablename__ = "ingredients"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False) # Dana Kıyma, Kaşar Peyniri, Domates, Kahve Çekirdeği
-    unit = Column(String(20), default="gr") # gr, ml, adet, kg
-    cost_per_unit = Column(Float, default=0.0) # Birim maliyet
-    current_stock = Column(Float, default=1000.0) # Toplam stok
-    min_stock_alert = Column(Float, default=200.0) # Kritik stok eşiği
+    product_code = Column(String(50), default="", nullable=True) # Ürün Kodu
+    category_name = Column(String(100), default="DİĞER", nullable=True) # Kategori (MANAV, KURU GIDA, ÇİFTLİK KUZU vb.)
+    name = Column(String(150), nullable=False) # Ürün Adı
+    kitchen_group = Column(String(100), default="MUTFAK", nullable=True) # Mutfak Grubu (MUTFAK, BAR, DEPO, DİĞER)
+    revenue_center = Column(String(100), default="Ana Kanal", nullable=True) # Gelir Merkezi
+    unit = Column(String(30), default="Adet") # Adet, Kg, Litre, Gram, Koli, Paket, Porsiyon
+    cost_per_unit = Column(Float, default=0.0) # Birim Tutarı(₺)
+    current_stock = Column(Float, default=0.0) # Stok Miktarı
+    min_stock_alert = Column(Float, default=0.0) # Kritik Stok Miktarı (0 veya None ise '-')
     warehouse_id = Column(Integer, default=1) # 1: Ana Depo, 2: Mutfak, 3: Bar
+
 
 class Recipe(Base):
     __tablename__ = "recipes"

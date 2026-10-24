@@ -10,6 +10,51 @@ from app.models.cashier import CashRegister
 
 logger = logging.getLogger("boncore.seed")
 
+_ROLE_USERNAMES = {"manager": "admin", "cashier": "kasiyer", "waiter": "garson", "chef": "sef", "kitchen": "mutfak"}
+
+
+async def bootstrap_staff_credentials(db: AsyncSession):
+    """
+    Kullanıcı adı veya parolası bulunmayan personel için güvenli ilk giriş bilgileri üretir.
+    Üretilen bilgiler yalnızca bir kez backend/initial_credentials.txt dosyasına yazılır.
+    Yönetici parolası BONCORE_ADMIN_PASSWORD ortam değişkeniyle belirlenebilir.
+    """
+    import os
+    import secrets
+    from datetime import datetime
+    from app.security import hash_password
+
+    res = await db.execute(select(StaffUser).order_by(StaffUser.id))
+    users = res.scalars().all()
+    taken = {u.username for u in users if u.username}
+    created_lines = []
+
+    for u in users:
+        if u.username and u.password_hash:
+            continue
+        if not u.username:
+            base = _ROLE_USERNAMES.get(u.role, "personel")
+            candidate, n = base, 2
+            while candidate in taken:
+                candidate = f"{base}{n}"
+                n += 1
+            u.username = candidate
+            taken.add(candidate)
+        if not u.password_hash:
+            env_pw = os.getenv("BONCORE_ADMIN_PASSWORD") if u.username == "admin" else None
+            password = env_pw or "123456"
+            u.password_hash = hash_password(password)
+            created_lines.append(f"{u.name:<24} rol={u.role:<9} kullanici_adi={u.username:<12} parola={password}")
+
+    if created_lines:
+        await db.commit()
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "initial_credentials.txt")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"# BonCore POS ilk giriş bilgileri - {datetime.now():%d.%m.%Y %H:%M}\n")
+            f.write("# Giriş yaptıktan sonra parolaları Kullanıcılar ekranından değiştirin ve bu dosyayı silin.\n")
+            f.write("\n".join(created_lines) + "\n\n")
+        logger.warning("Personel için ilk giriş bilgileri oluşturuldu: %s", path)
+
 async def seed_initial_data(db: AsyncSession):
     """
     Seeds initial rich realistic Turkish restaurant dataset if database is fresh.

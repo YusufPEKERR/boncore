@@ -31,30 +31,73 @@ async def get_areas_with_tables(db: AsyncSession = Depends(get_db)):
     areas = result.scalars().all()
 
     output = []
+    needs_commit = False
+
     for area in areas:
         tables_data = []
         for table in area.tables:
-            # Active open order
             active_order = None
-            if table.orders:
-                for o in sorted(table.orders, key=lambda x: x.id, reverse=True):
-                    if o.status in ["open", "bill_requested"]:
-                        active_order = {
-                            "id": o.id,
-                            "order_no": o.order_no,
-                            "status": o.status,
-                            "grand_total": o.grand_total,
-                            "subtotal": o.subtotal,
-                            "discount_amount": o.discount_amount,
-                            "kuver_count": o.kuver_count,
-                            "waiter_name": o.waiter_name,
-                            "items_count": len([i for i in o.items if not i.is_voided]),
-                            "created_at": o.created_at.isoformat() if o.created_at else None,
-                        }
-                        break
+
+            # Eğer masa "empty" durumundaysa ve current_order_id yoksa, arkada asılı kalmış
+            # eski "open" veya "bill_requested" siparişlerin masayı tekrar dolu göstermesini engelle!
+            if table.status == "empty" and table.current_order_id is None:
+                if table.orders:
+                    for o in table.orders:
+                        if o.status in ["open", "bill_requested"]:
+                            o.status = "paid" if (o.paid_total or 0) > 0 else "cancelled"
+                            o.remaining_total = 0.0
+                            o.closed_at = datetime.utcnow()
+                            needs_commit = True
+            elif table.orders:
+                # Masanın açık siparişlerini kontrol et
+                open_orders = [
+                    o for o in sorted(table.orders, key=lambda x: x.id, reverse=True)
+                    if o.status in ["open", "bill_requested"]
+                ]
+                chosen_order = None
+                for o in open_orders:
+                    valid_items = [i for i in (o.items or []) if not i.is_voided]
+                    # Eğer kalem kalmamış ve tutar 0 ise ya da kalan tutar 0 ve ödeme alınmışsa bu adisyon kapanmıştır
+                    if (len(valid_items) == 0 and (o.grand_total or 0) <= 0.01) or (
+                        (o.remaining_total or 0) <= 0.01 and (o.paid_total or 0) > 0
+                    ):
+                        o.status = "paid" if (o.paid_total or 0) > 0 else "cancelled"
+                        o.remaining_total = 0.0
+                        o.closed_at = datetime.utcnow()
+                        needs_commit = True
+                        continue
+
+                    if chosen_order is None:
+                        chosen_order = o
+                    else:
+                        # Aynı masada birden fazla açık sipariş oluşmuşsa eski mükerrer olanı kapat
+                        o.status = "paid" if (o.paid_total or 0) > 0 else "cancelled"
+                        o.remaining_total = 0.0
+                        o.closed_at = datetime.utcnow()
+                        needs_commit = True
+
+                if chosen_order:
+                    if table.current_order_id != chosen_order.id:
+                        table.current_order_id = chosen_order.id
+                        needs_commit = True
+                    active_order = {
+                        "id": chosen_order.id,
+                        "order_no": chosen_order.order_no,
+                        "status": chosen_order.status,
+                        "grand_total": chosen_order.grand_total,
+                        "remaining_total": chosen_order.remaining_total,
+                        "subtotal": chosen_order.subtotal,
+                        "discount_amount": chosen_order.discount_amount,
+                        "kuver_count": chosen_order.kuver_count,
+                        "waiter_name": chosen_order.waiter_name,
+                        "items_count": len([i for i in chosen_order.items if not i.is_voided]),
+                        "created_at": chosen_order.created_at.isoformat() if chosen_order.created_at else None,
+                    }
 
             # Eğer aktif açık sipariş yoksa ve rezerve değilse masa kesinlikle BOŞ'tur
             if not active_order and table.status not in ["reserved"]:
+                if table.status != "empty" or table.current_order_id is not None:
+                    needs_commit = True
                 table.status = "empty"
                 table.opened_at = None
                 table.kuver_count = 0
@@ -96,6 +139,9 @@ async def get_areas_with_tables(db: AsyncSession = Depends(get_db)):
             "order_index": area.order_index,
             "tables": tables_data
         })
+
+    if needs_commit:
+        await db.commit()
 
     return output
 
@@ -194,12 +240,15 @@ async def merge_tables(payload: TableMergeRequest, db: AsyncSession = Depends(ge
         item.order_id = target_order.id
 
     # Recalculate target order totals
-    target_order.subtotal += src_order.subtotal
-    target_order.discount_amount += src_order.discount_amount
-    target_order.kuver_count += src_order.kuver_count
-    target_order.kuver_total += src_order.kuver_total
-    target_order.grand_total += src_order.grand_total
-    target_order.remaining_total += src_order.grand_total
+    target_order.subtotal = (target_order.subtotal or 0.0) + (src_order.subtotal or 0.0)
+    target_order.discount_amount = (target_order.discount_amount or 0.0) + (src_order.discount_amount or 0.0)
+    target_order.treat_amount = (target_order.treat_amount or 0.0) + (src_order.treat_amount or 0.0)
+    target_order.kuver_count = (target_order.kuver_count or 0) + (src_order.kuver_count or 0)
+    target_order.kuver_total = (target_order.kuver_total or 0.0) + (src_order.kuver_total or 0.0)
+    target_order.service_charge = (target_order.service_charge or 0.0) + (src_order.service_charge or 0.0)
+    target_order.paid_total = (target_order.paid_total or 0.0) + (src_order.paid_total or 0.0)
+    target_order.grand_total = (target_order.grand_total or 0.0) + (src_order.grand_total or 0.0)
+    target_order.remaining_total = max(0.0, target_order.grand_total - target_order.paid_total)
 
     # Cancel/Close source order
     src_order.status = "cancelled"
@@ -260,6 +309,7 @@ async def transfer_items_between_tables(payload: TableItemTransferRequest, db: A
             treat_amount=0.0,
             kuver_count=0,
             kuver_total=0.0,
+            service_charge=0.0,
             grand_total=0.0,
             paid_total=0.0,
             remaining_total=0.0,
@@ -284,11 +334,11 @@ async def transfer_items_between_tables(payload: TableItemTransferRequest, db: A
 
     # Recalculate totals
     src_order.subtotal = max(0.0, (src_order.subtotal or 0.0) - transferred_amount)
-    src_order.grand_total = max(0.0, src_order.subtotal - (src_order.discount_amount or 0.0) - (src_order.treat_amount or 0.0) + (src_order.kuver_total or 0.0))
+    src_order.grand_total = max(0.0, src_order.subtotal - (src_order.discount_amount or 0.0) - (src_order.treat_amount or 0.0) + (src_order.kuver_total or 0.0) + (src_order.service_charge or 0.0))
     src_order.remaining_total = max(0.0, src_order.grand_total - (src_order.paid_total or 0.0))
 
     target_order.subtotal = (target_order.subtotal or 0.0) + transferred_amount
-    target_order.grand_total = max(0.0, target_order.subtotal - (target_order.discount_amount or 0.0) - (target_order.treat_amount or 0.0) + (target_order.kuver_total or 0.0))
+    target_order.grand_total = max(0.0, target_order.subtotal - (target_order.discount_amount or 0.0) - (target_order.treat_amount or 0.0) + (target_order.kuver_total or 0.0) + (target_order.service_charge or 0.0))
     target_order.remaining_total = max(0.0, target_order.grand_total - (target_order.paid_total or 0.0))
 
     # If src_order has no amount left, release source table
@@ -351,7 +401,7 @@ async def update_table_kuver(table_id: int, payload: TableKuverRequest, db: Asyn
     if active_order:
         active_order.kuver_count = payload.kuver_count if kuver_enabled else 0
         active_order.kuver_total = (payload.kuver_count * kuver_unit_price) if kuver_enabled else 0.0
-        active_order.grand_total = max(0.0, (active_order.subtotal or 0.0) - (active_order.discount_amount or 0.0) - (active_order.treat_amount or 0.0) + (active_order.kuver_total or 0.0))
+        active_order.grand_total = max(0.0, (active_order.subtotal or 0.0) - (active_order.discount_amount or 0.0) - (active_order.treat_amount or 0.0) + (active_order.kuver_total or 0.0) + (active_order.service_charge or 0.0))
         active_order.remaining_total = max(0.0, active_order.grand_total - (active_order.paid_total or 0.0))
 
     await db.commit()
@@ -386,6 +436,7 @@ async def trigger_waiter_call(table_id: int, payload: WaiterCallRequest, db: Asy
     return {"status": "success", "message": f"{payload.reason} talebiniz garsona iletildi!"}
 
 @router.post("/{table_id}/clear-call")
+@router.post("/{table_id}/clear-waiter-call")
 async def clear_waiter_call(table_id: int, db: AsyncSession = Depends(get_db)):
     """
     Waiter acknowledges and clears the buzzer call.
@@ -395,7 +446,7 @@ async def clear_waiter_call(table_id: int, db: AsyncSession = Depends(get_db)):
     table = res.scalar_one_or_none()
     if table:
         table.waiter_call_reason = None
-        if table.status == "waiter_call":
+        if table.status in ("waiter_call", "bill_requested"):
             table.status = "occupied" if table.current_order_id else "empty"
         await db.commit()
         await ws_hub.broadcast_all("WAITER_CALL_CLEARED", {"table_id": table_id})

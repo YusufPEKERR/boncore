@@ -6,15 +6,17 @@ import { api } from '../../services/api';
 
 interface MenuIntegrationOperationsProps {
   categories: Category[];
+  onRefreshData?: () => void;
 }
 
 export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps> = ({
-  categories
+  categories,
+  onRefreshData
 }) => {
   const [selectedBrand, setSelectedBrand] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [showWarningToast, setShowWarningToast] = useState<boolean>(true);
+  const [showWarningToast, setShowWarningToast] = useState<boolean>(false);
   const [availableMap, setAvailableMap] = useState<Record<number, boolean>>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -24,7 +26,8 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
     setAvailableMap(prev => ({ ...prev, [prodId]: newStatus }));
     try {
       await api.updateProduct(prodId, { is_available: newStatus });
-      setToastMessage(`${prodName} durumu: ${newStatus ? 'Aktif' : 'Pasif'}`);
+      if (onRefreshData) onRefreshData();
+      setToastMessage(`${prodName} durumu: ${newStatus ? 'Aktif (Satışta)' : 'Pasif (Tükendi)'}`);
       setTimeout(() => setToastMessage(null), 3000);
     } catch (e) {
       sound.warning();
@@ -32,10 +35,10 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
     }
   };
 
-  const allProducts = categories.flatMap(c => c.products || []);
+  const allProducts = categories.flatMap(c => (c.products || []).map(p => ({ ...p, categoryName: c.name })));
 
   const filteredProducts = allProducts.filter(p => {
-    const matchesSearch = !searchQuery.trim() || p.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = !searchQuery.trim() || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.categoryName.toLowerCase().includes(searchQuery.toLowerCase());
     const isAvail = availableMap[p.id] !== undefined ? availableMap[p.id] : (p.is_available ?? true);
     
     if (statusFilter === 'active' && !isAvail) return false;
@@ -44,14 +47,22 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
     return matchesSearch;
   });
 
+  const brandLabelMap: Record<string, string> = {
+    all: 'Yemeksepeti • Getir • Trendyol',
+    yemeksepeti: 'Yemeksepeti',
+    getir: 'Getir Yemek',
+    trendyol: 'Trendyol Yemek',
+    migros: 'Migros Yemek'
+  };
+
   return (
     <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none animate-fadeIn font-sans transition-colors duration-200 space-y-6">
       {/* Top Header Bar */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-black text-slate-900 dark:text-white">Entegrasyon Menü İşlemleri</h2>
+          <h2 className="text-lg font-black text-slate-900 dark:text-white">Entegrasyon Menü İşlemleri ({filteredProducts.length} Ürün)</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Burada, yalnızca ürün durum değişikliğini destekleyen entegratörlere yönelik işlem yapılabilmektedir.
+            Ürünlerin POS, QR Menü ve online yemek platformlarındaki satış durumunu tek tıkla açıp kapatabilirsiniz.
           </p>
         </div>
 
@@ -62,7 +73,7 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
             <Search className="w-3.5 h-3.5 text-slate-400 mr-2" />
             <input
               type="text"
-              placeholder="Ürün ara..."
+              placeholder="Ürün veya kategori ara..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-transparent text-slate-800 dark:text-white font-semibold focus:outline-none w-32 sm:w-48"
@@ -104,44 +115,52 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
       </div>
 
       {/* Integration Products Table */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
-        <div className="grid grid-cols-12 bg-slate-50 dark:bg-slate-800/60 p-4 border-b border-slate-200 dark:border-slate-800 text-xs font-black text-slate-700 dark:text-slate-300 uppercase">
-          <div className="col-span-5">Ürün Adı</div>
-          <div className="col-span-3">Entegrasyon</div>
-          <div className="col-span-2">Fiyat</div>
-          <div className="col-span-2 text-right">Satışa Açık/Kapalı</div>
-        </div>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-x-auto">
+        <div className="min-w-[540px]">
+          <div className="grid grid-cols-12 bg-slate-50 dark:bg-slate-800/60 p-4 border-b border-slate-200 dark:border-slate-800 text-xs font-black text-slate-700 dark:text-slate-300 uppercase">
+            <div className="col-span-5">Ürün Adı & Kategori</div>
+            <div className="col-span-3">Entegrasyon Kanalı</div>
+            <div className="col-span-2">Fiyat</div>
+            <div className="col-span-2 text-right">Satışa Açık/Kapalı</div>
+          </div>
 
-        <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
-          {filteredProducts.slice(0, 15).map((p) => {
-            const isAvail = availableMap[p.id] !== undefined ? availableMap[p.id] : (p.is_available ?? true);
-            return (
-              <div key={p.id} className="grid grid-cols-12 p-4 items-center text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                <div className="col-span-5 font-bold text-slate-900 dark:text-white uppercase">
-                  {p.name}
+          <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
+            {filteredProducts.map((p) => {
+              const isAvail = availableMap[p.id] !== undefined ? availableMap[p.id] : (p.is_available ?? true);
+              return (
+                <div key={p.id} className="grid grid-cols-12 p-4 items-center text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                  <div className="col-span-5">
+                    <div className="font-bold text-slate-900 dark:text-white uppercase">{p.name}</div>
+                    <div className="text-[10px] text-slate-400 font-semibold">{p.categoryName}</div>
+                  </div>
+                  <div className="col-span-3 flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 font-extrabold text-[10px]">
+                      {brandLabelMap[selectedBrand] || 'Tüm Kanallar'}
+                    </span>
+                  </div>
+                  <div className="col-span-2 font-mono font-bold text-slate-800 dark:text-slate-200">
+                    ₺{p.base_price.toFixed(2)}
+                  </div>
+                  <div className="col-span-2 flex justify-end">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isAvail}
+                        onChange={() => handleToggleProduct(p.id, isAvail, p.name)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                    </label>
+                  </div>
                 </div>
-                <div className="col-span-3 flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 font-extrabold text-[10px]">
-                    Yemeksepeti & Getir
-                  </span>
-                </div>
-                <div className="col-span-2 font-mono font-bold text-slate-800 dark:text-slate-200">
-                  ₺{p.base_price.toFixed(2)}
-                </div>
-                <div className="col-span-2 flex justify-end">
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isAvail}
-                      onChange={() => handleToggleProduct(p.id, isAvail, p.name)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-                  </label>
-                </div>
+              );
+            })}
+            {filteredProducts.length === 0 && (
+              <div className="p-8 text-center text-slate-400 text-xs font-semibold">
+                Filtreye uygun ürün bulunamadı.
               </div>
-            );
-          })}
+            )}
+          </div>
         </div>
       </div>
 
@@ -152,7 +171,6 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
         </div>
       )}
 
-      {/* Floating Red Warning Toast (Matching Frame 010) */}
       {showWarningToast && (
         <div className="fixed bottom-4 right-4 z-50 bg-[#e74c3c] text-white p-3.5 rounded-2xl shadow-xl flex items-center gap-3 text-xs font-bold animate-fadeIn max-w-md">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />

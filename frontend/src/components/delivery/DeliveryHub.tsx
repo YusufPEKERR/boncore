@@ -3,22 +3,34 @@ import {
   Bike, PhoneCall, MapPin, CheckCircle, Clock, 
   RefreshCw, DollarSign, UserCheck, AlertCircle 
 } from 'lucide-react';
-import { Courier, DeliveryOrder } from '../../types';
+import { Category, Courier, DeliveryOrder, Product } from '../../types';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
+import { useWebSocket } from '../../services/websocket';
 
-export const DeliveryHub: React.FC = () => {
+interface DeliveryHubProps {
+  categories?: Category[];
+}
+
+export const DeliveryHub: React.FC<DeliveryHubProps> = ({ categories = [] }) => {
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [deliveries, setDeliveries] = useState<DeliveryOrder[]>([]);
   const [callerPhone, setCallerPhone] = useState<string>('0532 111 22 33');
   const [callerProfile, setCallerProfile] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [selectedCourierByDelivery, setSelectedCourierByDelivery] = useState<Record<number, number>>({});
+
+  // Flatten real products from categories
+  const realProducts: Product[] = categories.flatMap(c => (c.products || []).filter(p => p.is_available !== false));
 
   // New Caller Delivery Order State
   const [isCreateOrderModalOpen, setIsCreateOrderModalOpen] = useState<boolean>(false);
-  const [orderFoodItem, setOrderFoodItem] = useState<string>('Özel Karışık Izgara & Kebap');
+  const [customerNameInput, setCustomerNameInput] = useState<string>('');
+  const [customerAddressInput, setCustomerAddressInput] = useState<string>('');
+  const [selectedProductId, setSelectedProductId] = useState<number>(realProducts[0]?.id || 1);
+  const [orderFoodItem, setOrderFoodItem] = useState<string>(realProducts[0]?.name || 'Kuzu Şiş');
   const [orderQty, setOrderQty] = useState<number>(1);
-  const [orderPrice, setOrderPrice] = useState<number>(380);
+  const [orderPrice, setOrderPrice] = useState<number>(realProducts[0]?.base_price || 380);
   const [orderPaymentType, setOrderPaymentType] = useState<string>('nakit_kapida');
   const [orderNotes, setOrderNotes] = useState<string>('Telefonla Sipariş Alındı');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -29,8 +41,27 @@ export const DeliveryHub: React.FC = () => {
   };
 
   useEffect(() => {
+    if (realProducts.length > 0 && !realProducts.some(p => p.id === selectedProductId)) {
+      setSelectedProductId(realProducts[0].id);
+      setOrderFoodItem(realProducts[0].name);
+      setOrderPrice(realProducts[0].base_price);
+    }
+  }, [categories]);
+
+  useEffect(() => {
     loadData();
   }, []);
+
+  useWebSocket('all', (type) => {
+    if (
+      type === 'ONLINE_ORDER_INCOMING' ||
+      type === 'ORDER_CREATED' ||
+      type === 'ORDER_UPDATED' ||
+      type === 'ORDER_PAID'
+    ) {
+      loadData();
+    }
+  });
 
   const loadData = async () => {
     setLoading(true);
@@ -53,6 +84,8 @@ export const DeliveryHub: React.FC = () => {
     try {
       const profile = await api.simulateCallerId(callerPhone);
       setCallerProfile(profile);
+      setCustomerNameInput(profile?.customer_name || profile?.name || 'Müşteri');
+      setCustomerAddressInput(profile?.address || (profile?.addresses && profile.addresses[0]) || 'Moda Cad. Kadıköy / İstanbul');
     } catch (e) {
       console.warn(e);
     }
@@ -66,22 +99,24 @@ export const DeliveryHub: React.FC = () => {
       await api.ingestOnlineOrder({
         platform: 'telefon',
         channel: 'telefon',
-        customer_name: callerProfile?.customer_name || 'Kayıtlı Müşteri',
+        customer_name: customerNameInput.trim() || callerProfile?.customer_name || 'Kayıtlı Müşteri',
         customer_phone: callerPhone,
-        delivery_address: callerProfile?.address || 'Moda Cad. Kadıköy / İstanbul',
+        delivery_address: customerAddressInput.trim() || callerProfile?.address || 'Moda Cad. Kadıköy / İstanbul',
         items: [
           {
+            product_id: selectedProductId,
             product_name: orderFoodItem,
             name: orderFoodItem,
             quantity: orderQty,
-            unit_price: orderPrice
+            unit_price: orderPrice,
+            total_price: orderPrice * orderQty
           }
         ],
         payment_type: orderPaymentType,
         notes: orderNotes
       });
       sound.kitchenBell();
-      showToast(`Sipariş başarıyla oluşturuldu ve mutfağa iletildi! (${callerProfile?.customer_name || 'Müşteri'})`, 'success');
+      showToast(`Sipariş başarıyla oluşturuldu ve mutfağa iletildi! (${customerNameInput || callerProfile?.customer_name || 'Müşteri'})`, 'success');
       setIsCreateOrderModalOpen(false);
       await loadData();
     } catch (err: any) {
@@ -96,17 +131,31 @@ export const DeliveryHub: React.FC = () => {
     sound.beep();
     try {
       await api.assignCourier(deliveryId, courierId);
+      showToast('Sipariş kuryeye zimmetlendi ve yola çıktı.', 'success');
       await loadData();
     } catch (e) {
       sound.warning();
     }
   };
 
+  const handleCompleteDelivery = async (deliveryId: number) => {
+    sound.cashDrawer();
+    try {
+      await api.completeDelivery(deliveryId);
+      showToast('Paket teslim edildi ve tahsilatı kasaya/kuryeye işlendi.', 'success');
+      await loadData();
+    } catch (err: any) {
+      showToast(err.message || 'Teslimat tamamlanamadı.', 'error');
+      sound.warning();
+    }
+  };
+
   const handleCourierSettlement = async (courier: Courier) => {
-    if (!confirm(`${courier.name} için gün sonu nakit (${courier.cash_collected}₺) mutabakatı kapatılacak. Onaylıyor musunuz?`)) return;
+    if (!confirm(`${courier.name} için gün sonu nakit (₺${courier.cash_collected.toFixed(2)}) ve POS fişi (₺${courier.card_slips_collected.toFixed(2)}) mutabakatı kapatılacak. Onaylıyor musunuz?`)) return;
     sound.cashDrawer();
     try {
       await api.settleCourier(courier.id, courier.cash_collected, courier.card_slips_collected);
+      showToast(`${courier.name} kasa mutabakatı başarıyla kapatıldı.`, 'success');
       await loadData();
     } catch (e) {
       sound.warning();
@@ -115,6 +164,10 @@ export const DeliveryHub: React.FC = () => {
 
   const handleSimulateOnlineOrder = async (platformName: string) => {
     sound.beep();
+    const chosenProduct = realProducts.length > 0
+      ? realProducts[Math.floor(Math.random() * realProducts.length)]
+      : { id: 1, name: 'Izgara Köfte', base_price: 360.0 };
+    const qty = 2;
     try {
       await api.ingestOnlineOrder({
         platform: platformName,
@@ -124,16 +177,17 @@ export const DeliveryHub: React.FC = () => {
         payment_type: 'online_card',
         items: [
           {
-            product_id: 1,
-            name: 'BonBurger Klasik Menü',
-            unit_price: 360.0,
-            quantity: 2,
-            total_price: 720.0,
+            product_id: chosenProduct.id,
+            name: chosenProduct.name,
+            unit_price: chosenProduct.base_price,
+            quantity: qty,
+            total_price: chosenProduct.base_price * qty,
             kitchen_note: 'Kapıda temassız teslimat rica ederim.'
           }
         ],
         notes: `${platformName.toUpperCase()} Entegrasyon Siparişi`
       });
+      showToast(`${platformName.toUpperCase()} siparişi alındı: ${qty}x ${chosenProduct.name}`, 'success');
       await loadData();
     } catch (e) {
       sound.warning();
@@ -149,17 +203,17 @@ export const DeliveryHub: React.FC = () => {
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Caller ID Müşteri Tanıma, Yemeksepeti / Getir / Trendyol Entegratörü</p>
         </div>
 
-        {/* Mock Aggregator Triggers */}
-        <div className="flex items-center gap-2">
+        {/* Aggregator Triggers using real menu items */}
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => handleSimulateOnlineOrder('yemeksepeti')}
-            className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs shadow-md transition"
+            className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs shadow-md transition cursor-pointer"
           >
             + Yemeksepeti Siparişi Gönder
           </button>
           <button
             onClick={() => handleSimulateOnlineOrder('getir')}
-            className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs shadow-md transition"
+            className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs shadow-md transition cursor-pointer"
           >
             + Getir Yemek Siparişi Gönder
           </button>
@@ -192,9 +246,9 @@ export const DeliveryHub: React.FC = () => {
                 />
                 <button
                   onClick={handleSimulateIncomingCall}
-                  className="px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow"
+                  className="px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow cursor-pointer"
                 >
-                  Ara
+                  Sorgula
                 </button>
               </div>
             </div>
@@ -202,15 +256,20 @@ export const DeliveryHub: React.FC = () => {
             {callerProfile && (
               <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-500/30 text-xs space-y-2">
                 <div className="flex items-center justify-between font-bold text-slate-900 dark:text-white">
-                  <span>{callerProfile.customer_name || 'Müşteri'}</span>
+                  <span>{callerProfile.customer_name || callerProfile.name || 'Müşteri'}</span>
                   <span className="text-emerald-600 dark:text-emerald-400 font-mono">
-                    {callerProfile.past_orders_count || 3} Geçmiş Sipariş
+                    {callerProfile.past_orders_count ?? 0} Geçmiş Sipariş
                   </span>
                 </div>
                 <div className="text-slate-600 dark:text-slate-300 flex items-start gap-1">
                   <MapPin className="w-3.5 h-3.5 flex-shrink-0 text-slate-400 mt-0.5" />
                   <span>{callerProfile.address || 'Moda Cad. Kadıköy / İstanbul'}</span>
                 </div>
+                {callerProfile.favorite_items && callerProfile.favorite_items.length > 0 && (
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Son Tercihler: <span className="font-bold text-slate-700 dark:text-slate-200">{callerProfile.favorite_items.join(', ')}</span>
+                  </div>
+                )}
                 <button
                   onClick={() => {
                     sound.beep();
@@ -232,7 +291,7 @@ export const DeliveryHub: React.FC = () => {
               <Bike className="w-5 h-5 text-emerald-500" />
               <span>Kurye Filosu & Kasa Mutabakatı</span>
             </h3>
-            <button onClick={() => loadData()} className="p-1 text-slate-400 hover:text-slate-900 dark:hover:text-white">
+            <button onClick={() => loadData()} className="p-1 text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer">
               <RefreshCw className="w-4 h-4" />
             </button>
           </div>
@@ -259,15 +318,16 @@ export const DeliveryHub: React.FC = () => {
                   <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                     Telefon / Plaka: <span className="text-slate-800 dark:text-slate-200 font-bold">{c.phone} {c.vehicle_plate ? `(${c.vehicle_plate})` : ''}</span>
                   </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Zimmet Nakit: <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">₺{c.cash_collected.toFixed(2)}</span>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    <span>Zimmet Nakit: <strong className="font-mono text-emerald-600 dark:text-emerald-400">₺{c.cash_collected.toFixed(2)}</strong></span>
+                    <span>POS Fişi: <strong className="font-mono text-blue-600 dark:text-blue-400">₺{c.card_slips_collected.toFixed(2)}</strong></span>
                   </div>
                 </div>
 
                 <button
                   onClick={() => handleCourierSettlement(c)}
-                  disabled={c.cash_collected === 0}
-                  className="mt-3 w-full py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-40 text-slate-800 dark:text-slate-200 text-[11px] font-bold transition"
+                  disabled={c.cash_collected === 0 && c.card_slips_collected === 0}
+                  className="mt-3 w-full py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-40 text-slate-800 dark:text-slate-200 text-[11px] font-bold transition cursor-pointer"
                 >
                   Kurye Kasa Mutabakatı Kapat
                 </button>
@@ -294,37 +354,66 @@ export const DeliveryHub: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-medium">
-              {deliveries.map((d) => (
-                <tr key={d.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                  <td className="py-3 px-4">
-                    <span className="px-2 py-0.5 rounded bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 font-bold font-mono uppercase text-[10px]">
-                      {d.platform}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
-                    {d.customer_name}
-                    <div className="text-[10px] text-slate-500 font-normal">{d.customer_phone}</div>
-                  </td>
-                  <td className="py-3 px-4 text-slate-600 dark:text-slate-300 max-w-xs truncate">{d.delivery_address}</td>
-                  <td className="py-3 px-4 font-mono font-black text-emerald-600 dark:text-emerald-400">₺{d.grand_total.toFixed(2)}</td>
-                  <td className="py-3 px-4 text-slate-700 dark:text-slate-300">{d.courier_name || '-'}</td>
-                  <td className="py-3 px-4">
-                    <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold text-[10px]">
-                      {d.courier_status === 'on_the_way' ? 'Yolda' : d.courier_status === 'assigned' ? 'Kuryede' : 'Bekliyor'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    {d.courier_status === 'unassigned' && couriers.length > 0 && (
-                      <button
-                        onClick={() => handleAssignCourier(d.id, couriers[0].id)}
-                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px]"
-                      >
-                        Kuryeye Zimmetle
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {deliveries.map((d) => {
+                const chosenCourierId = selectedCourierByDelivery[d.id] || couriers[0]?.id || 1;
+                return (
+                  <tr key={d.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                    <td className="py-3 px-4">
+                      <span className="px-2 py-0.5 rounded bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 font-bold font-mono uppercase text-[10px]">
+                        {d.platform}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
+                      {d.customer_name}
+                      <div className="text-[10px] text-slate-500 font-normal">{d.customer_phone}</div>
+                    </td>
+                    <td className="py-3 px-4 text-slate-600 dark:text-slate-300 max-w-xs truncate">{d.delivery_address}</td>
+                    <td className="py-3 px-4 font-mono font-black text-emerald-600 dark:text-emerald-400">₺{d.grand_total.toFixed(2)}</td>
+                    <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
+                      {d.courier_status === 'unassigned' && couriers.length > 0 ? (
+                        <select
+                          value={chosenCourierId}
+                          onChange={(e) => setSelectedCourierByDelivery(prev => ({ ...prev, [d.id]: Number(e.target.value) }))}
+                          className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-[11px] font-bold"
+                        >
+                          {couriers.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="font-bold">{d.courier_name || '-'}</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+                        d.courier_status === 'on_the_way' || d.courier_status === 'assigned'
+                          ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                          : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                      }`}>
+                        {d.courier_status === 'on_the_way' ? 'Yolda' : d.courier_status === 'assigned' ? 'Kuryede' : 'Hazırlanıyor'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 flex items-center gap-2">
+                      {d.courier_status === 'unassigned' && couriers.length > 0 && (
+                        <button
+                          onClick={() => handleAssignCourier(d.id, chosenCourierId)}
+                          className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] cursor-pointer"
+                        >
+                          Kuryeye Zimmetle
+                        </button>
+                      )}
+                      {(d.courier_status === 'on_the_way' || d.courier_status === 'assigned') && (
+                        <button
+                          onClick={() => handleCompleteDelivery(d.id)}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                        >
+                          ✓ Teslim Edildi
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
               {deliveries.length === 0 && (
                 <tr>
                   <td colSpan={7} className="text-center py-6 text-slate-400 dark:text-slate-500">
@@ -353,35 +442,55 @@ export const DeliveryHub: React.FC = () => {
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
             <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
               <h3 className="text-base font-black text-blue-600 dark:text-blue-400">Yeni Paket Sipariş Oluştur</h3>
-              <p className="text-xs text-slate-500 font-semibold">{callerProfile.customer_name} ({callerPhone})</p>
+              <p className="text-xs text-slate-500 font-semibold">Telefon: {callerPhone}</p>
             </div>
 
             <form onSubmit={handleCreateCallerOrder} className="space-y-3 text-xs font-semibold">
               <div>
-                <label className="text-slate-500 block mb-1">Teslimat Adresi:</label>
-                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-mono text-[11px]">
-                  {callerProfile.address || 'Moda Cad. Kadıköy / İstanbul'}
-                </div>
+                <label className="text-slate-500 block mb-1">Müşteri Adı Soyadı:</label>
+                <input
+                  type="text"
+                  value={customerNameInput}
+                  onChange={(e) => setCustomerNameInput(e.target.value)}
+                  required
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-bold"
+                />
               </div>
 
               <div>
-                <label className="text-slate-500 block mb-1">Ürün / Menü Kalemi:</label>
-                <select
-                  value={orderFoodItem}
-                  onChange={(e) => {
-                    setOrderFoodItem(e.target.value);
-                    if (e.target.value.includes('Kebap')) setOrderPrice(380);
-                    else if (e.target.value.includes('Burger')) setOrderPrice(280);
-                    else if (e.target.value.includes('Pizza')) setOrderPrice(320);
-                    else setOrderPrice(180);
-                  }}
+                <label className="text-slate-500 block mb-1">Teslimat Adresi:</label>
+                <input
+                  type="text"
+                  value={customerAddressInput}
+                  onChange={(e) => setCustomerAddressInput(e.target.value)}
+                  required
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-500 block mb-1">Menüden Ürün Seçin:</label>
+                <select
+                  value={selectedProductId}
+                  onChange={(e) => {
+                    const pid = Number(e.target.value);
+                    setSelectedProductId(pid);
+                    const found = realProducts.find(p => p.id === pid);
+                    if (found) {
+                      setOrderFoodItem(found.name);
+                      setOrderPrice(found.base_price);
+                    }
+                  }}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-bold"
                 >
-                  <option value="Özel Karışık Izgara & Kebap">Özel Karışık Izgara & Kebap (₺380.00)</option>
-                  <option value="BonCore Gurme Burger Menü">BonCore Gurme Burger Menü (₺280.00)</option>
-                  <option value="Taş Fırın Dört Peynirli Pizza">Taş Fırın Dört Peynirli Pizza (₺320.00)</option>
-                  <option value="Kuzu İncik & Fırın Patates">Kuzu İncik & Fırın Patates (₺420.00)</option>
-                  <option value="Günün Çorbası & Mevsim Salatası">Günün Çorbası & Mevsim Salatası (₺180.00)</option>
+                  {realProducts.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} (₺{p.base_price.toFixed(2)})
+                    </option>
+                  ))}
+                  {realProducts.length === 0 && (
+                    <option value={1}>Kuzu Şiş (₺380.00)</option>
+                  )}
                 </select>
               </div>
 
@@ -400,6 +509,7 @@ export const DeliveryHub: React.FC = () => {
                   <label className="text-slate-500 block mb-1">Birim Fiyat (₺):</label>
                   <input
                     type="number"
+                    step="0.01"
                     value={orderPrice}
                     onChange={(e) => setOrderPrice(Number(e.target.value))}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 font-mono text-center"
@@ -436,14 +546,14 @@ export const DeliveryHub: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsCreateOrderModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs"
+                  className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs cursor-pointer"
                 >
                   İptal
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs shadow-md transition disabled:opacity-50"
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs shadow-md transition disabled:opacity-50 cursor-pointer"
                 >
                   {loading ? 'İletiliyor...' : `Siparişi Onayla (₺${(orderPrice * orderQty).toFixed(2)})`}
                 </button>

@@ -22,58 +22,51 @@ interface ExtendedStaffUser extends StaffUser {
 const initialStaff: ExtendedStaffUser[] = [
   {
     id: 1,
-    name: '37799 - Fatih Demir',
+    name: 'Restoran Yöneticisi',
+    username: 'admin',
     role: 'manager',
-    pin_code: '1234',
-    email: 'fatih@fatihciftligi.com',
+    pin_code: '0000',
+    email: 'admin@boncorepos.com',
     phone: '+90 532 111 22 33',
     is_active: true,
-    last_login: 'Bugün 13:42',
-    created_at: '01.01.2024'
+    last_login: 'Aktif Oturum',
+    created_at: '01.01.2025'
   },
   {
     id: 2,
-    name: 'Mehmet Abi',
-    role: 'waiter',
+    name: 'Kasa Sorumlusu',
+    username: 'kasiyer',
+    role: 'cashier',
     pin_code: '1111',
-    email: 'mehmet@fatihciftligi.com',
-    phone: '+90 533 222 33 44',
+    email: 'kasiyer@boncorepos.com',
+    phone: '+90 535 333 44 55',
     is_active: true,
-    last_login: 'Bugün 13:30',
-    created_at: '15.02.2024'
+    last_login: 'Bugün',
+    created_at: '01.01.2025'
   },
   {
     id: 3,
-    name: 'Ayşe Yılmaz',
-    role: 'cashier',
+    name: 'Salon Garsonu',
+    username: 'garson',
+    role: 'waiter',
     pin_code: '2222',
-    email: 'ayse@fatihciftligi.com',
-    phone: '+90 535 333 44 55',
+    email: 'garson@boncorepos.com',
+    phone: '+90 533 222 33 44',
     is_active: true,
-    last_login: 'Bugün 12:15',
-    created_at: '10.03.2024'
+    last_login: 'Bugün',
+    created_at: '01.01.2025'
   },
   {
     id: 4,
-    name: 'Ahmet Usta',
-    role: 'kitchen',
+    name: 'Mutfak Şefi',
+    username: 'sef',
+    role: 'chef',
     pin_code: '3333',
-    email: 'ahmet@fatihciftligi.com',
+    email: 'mutfak@boncorepos.com',
     phone: '+90 536 444 55 66',
     is_active: true,
-    last_login: 'Bugün 11:00',
-    created_at: '01.04.2024'
-  },
-  {
-    id: 5,
-    name: 'Caner Kurye',
-    role: 'waiter',
-    pin_code: '4444',
-    email: 'caner@fatihciftligi.com',
-    phone: '+90 537 555 66 77',
-    is_active: true,
-    last_login: 'Dün 20:45',
-    created_at: '20.05.2024'
+    last_login: 'Bugün',
+    created_at: '01.01.2025'
   }
 ];
 
@@ -101,9 +94,11 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
 
   // Form State
   const [formName, setFormName] = useState<string>('');
+  const [formUsername, setFormUsername] = useState<string>('');
+  const [formPassword, setFormPassword] = useState<string>('');
   const [formEmail, setFormEmail] = useState<string>('');
   const [formPhone, setFormPhone] = useState<string>('');
-  const [formRole, setFormRole] = useState<'waiter' | 'kitchen' | 'courier' | 'cashier' | 'manager' | 'call_center' | 'technical'>('manager');
+  const [formRole, setFormRole] = useState<'waiter' | 'kitchen' | 'chef' | 'courier' | 'cashier' | 'manager' | 'call_center' | 'technical'>('manager');
   const [formPin, setFormPin] = useState<string>('1234');
   const [formActive, setFormActive] = useState<boolean>(true);
 
@@ -130,10 +125,10 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
 
   const roleOptions = [
     { id: 'waiter', label: 'Garson' },
-    { id: 'kitchen', label: 'Mutfak' },
+    { id: 'kitchen', label: 'Mutfak / Şef' },
     { id: 'courier', label: 'Kurye' },
-    { id: 'cashier', label: 'Kasa' },
-    { id: 'manager', label: 'Müdür' },
+    { id: 'cashier', label: 'Kasa / Kasiyer' },
+    { id: 'manager', label: 'Müdür / Yönetici' },
     { id: 'call_center', label: 'Çağrı Merkezi', isUpgrade: true },
     { id: 'technical', label: 'Teknik', subtext: '( Yazıcı kullanımı için gerekli olup, kullanıcı limitinize dahil değildir )' }
   ];
@@ -141,6 +136,8 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
   const handleOpenAdd = () => {
     setEditingUser(null);
     setFormName('');
+    setFormUsername('');
+    setFormPassword('123456');
     setFormEmail('');
     setFormPhone('');
     setFormRole('waiter');
@@ -153,6 +150,8 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
   const handleOpenEdit = (u: ExtendedStaffUser) => {
     setEditingUser(u);
     setFormName(u.name);
+    setFormUsername(u.username || '');
+    setFormPassword('');
     setFormEmail(u.email || '');
     setFormPhone(u.phone || '');
     setFormRole((u.role as any) || 'manager');
@@ -169,14 +168,18 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
       if (editingUser) {
         await api.updateStaff(editingUser.id, {
           name: formName,
+          username: formUsername.trim() || undefined,
+          password: formPassword.trim() || undefined,
           role: formRole,
           pin_code: formPin,
           is_active: formActive
         });
-        showToast('Kullanıcı başarıyla güncellendi.', 'success');
+        showToast('Kullanıcı bilgileri ve giriş yetkileri başarıyla güncellendi.', 'success');
       } else {
         await api.createStaff({
           name: formName,
+          username: formUsername.trim() || undefined,
+          password: formPassword.trim() || '123456',
           role: formRole,
           pin_code: formPin,
           is_active: formActive
@@ -244,7 +247,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none animate-fadeIn font-sans transition-colors duration-200 space-y-6">
+    <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none animate-fadeIn font-sans transition-colors duration-200 space-y-4 sm:space-y-6">
       {/* Toast Notification */}
       {toast && (
         <div className={`p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-lg transition-all animate-slideDown ${
@@ -261,7 +264,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-black text-slate-900 dark:text-white">Kullanıcılar & Personel Yönetimi</h1>
+            <h1 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">Kullanıcılar & Personel Yönetimi</h1>
             <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono text-xs font-bold">
               {users.length} Kullanıcı
             </span>
@@ -281,8 +284,8 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 shadow-sm">
-        <div className="relative flex-1 max-w-md">
+      <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 shadow-sm">
+        <div className="relative flex-1 min-w-[180px] max-w-md">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
@@ -310,89 +313,99 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
       </div>
 
       {/* Users Table */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
-        <div className="grid grid-cols-12 bg-slate-50 dark:bg-slate-800/60 p-4 border-b border-slate-200 dark:border-slate-800 text-xs font-black text-slate-700 dark:text-slate-300 uppercase">
-          <div className="col-span-4">Personel / Kullanıcı</div>
-          <div className="col-span-2">Rol</div>
-          <div className="col-span-2">Hızlı PIN</div>
-          <div className="col-span-2">Son Giriş</div>
-          <div className="col-span-2 text-right">İşlemler</div>
-        </div>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-x-auto">
+        <div className="min-w-[640px]">
+          <div className="grid grid-cols-12 bg-slate-50 dark:bg-slate-800/60 p-4 border-b border-slate-200 dark:border-slate-800 text-xs font-black text-slate-700 dark:text-slate-300 uppercase">
+            <div className="col-span-4">Personel / Kullanıcı Adı</div>
+            <div className="col-span-2">Rol</div>
+            <div className="col-span-2">Hızlı PIN</div>
+            <div className="col-span-2">Son Giriş</div>
+            <div className="col-span-2 text-right">İşlemler</div>
+          </div>
 
-        <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
-          {filteredUsers.map((u) => {
-            const isPinVisible = showPins[u.id];
-            return (
-              <div key={u.id} className="grid grid-cols-12 p-4 items-center text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                {/* User Info */}
-                <div className="col-span-4 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white font-black text-sm flex items-center justify-center border border-slate-200 dark:border-slate-700 flex-shrink-0">
-                    {u.name.charAt(0)}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-black text-sm text-slate-900 dark:text-white truncate">
-                      {u.name}
+          <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
+            {filteredUsers.map((u) => {
+              const isPinVisible = showPins[u.id];
+              const lastLoginDisplay = u.last_login_at
+                ? new Date(u.last_login_at).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                : (u.last_login || 'Henüz giriş yok');
+              return (
+                <div key={u.id} className="grid grid-cols-12 p-4 items-center text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                  {/* User Info */}
+                  <div className="col-span-4 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500/15 to-orange-500/15 text-rose-600 dark:text-rose-400 font-black text-sm flex items-center justify-center border border-rose-500/20 flex-shrink-0">
+                      {u.name.charAt(0).toUpperCase()}
                     </div>
-                    <div className="text-[11px] text-slate-400 truncate">
-                      {u.email || u.phone}
+                    <div className="min-w-0">
+                      <div className="font-black text-sm text-slate-900 dark:text-white truncate flex items-center gap-2">
+                        <span>{u.name}</span>
+                        {u.username && (
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                            @{u.username}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-400 truncate">
+                        {u.email || u.phone || 'Aktif Personel Hesabı'}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Role Badge */}
-                <div className="col-span-2">
-                  {getRoleBadge(u.role)}
-                </div>
+                  {/* Role Badge */}
+                  <div className="col-span-2">
+                    {getRoleBadge(u.role)}
+                  </div>
 
-                {/* Quick PIN */}
-                <div className="col-span-2 flex items-center gap-2">
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg">
-                    {isPinVisible ? u.pin_code : '● ● ● ●'}
-                  </span>
-                  <button
-                    onClick={() => togglePinVisibility(u.id)}
-                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded"
-                    title={isPinVisible ? 'Gizle' : 'Göster'}
-                  >
-                    {isPinVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
+                  {/* Quick PIN */}
+                  <div className="col-span-2 flex items-center gap-2">
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg">
+                      {isPinVisible ? u.pin_code : '● ● ● ●'}
+                    </span>
+                    <button
+                      onClick={() => togglePinVisibility(u.id)}
+                      className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
+                      title={isPinVisible ? 'Gizle' : 'Göster'}
+                    >
+                      {isPinVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
 
-                {/* Last Login */}
-                <div className="col-span-2 text-slate-500 font-medium">
-                  {u.last_login}
-                </div>
+                  {/* Last Login */}
+                  <div className="col-span-2 text-slate-500 font-medium">
+                    {lastLoginDisplay}
+                  </div>
 
-                {/* Actions */}
-                <div className="col-span-2 flex items-center justify-end gap-1.5">
-                  <button
-                    onClick={() => handleOpenEdit(u)}
-                    className="p-2 text-slate-500 hover:text-blue-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                    title="Düzenle"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteUser(u.id)}
-                    className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                    title="Sil"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {/* Actions */}
+                  <div className="col-span-2 flex items-center justify-end gap-1.5">
+                    <button
+                      onClick={() => handleOpenEdit(u)}
+                      className="p-2 text-slate-500 hover:text-blue-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                      title="Düzenle"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteUser(u.id)}
+                      className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                      title="Sil"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
+              );
+            })}
+
+            {filteredUsers.length === 0 && (
+              <div className="p-8 text-center text-slate-400 text-xs font-semibold">
+                Arama kriterlerine uygun kullanıcı bulunamadı.
               </div>
-            );
-          })}
-
-          {filteredUsers.length === 0 && (
-            <div className="p-8 text-center text-slate-400 text-xs font-semibold">
-              Arama kriterlerine uygun kullanıcı bulunamadı.
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
-      {/* 1-to-1 Adisyo 3.0 "Kullanıcı Güncelle / Ekle" Modalı (Matching User Screenshot) */}
+      {/* BonCore POS "Kullanıcı Güncelle / Ekle" Modalı */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 select-none animate-fadeIn font-sans">
           {/* Backdrop */}
@@ -411,28 +424,27 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   {editingUser 
-                    ? 'Güncellemek istediğiniz kullanıcının bilgilerini giriniz' 
-                    : 'Eklemek istediğiniz kullanıcının bilgilerini giriniz'}
+                    ? 'Personelin giriş bilgilerini, parolasını ve görev yetkisini güncelleyin' 
+                    : 'Sisteme giriş yapacak yeni personelin bilgilerini giriniz'}
                 </p>
               </div>
 
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition"
+                className="p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Form Body */}
-            <form onSubmit={handleSaveUser} className="p-6 pt-2 space-y-5 text-xs">
-              {/* Field 1: Görev Seçiniz* (Adisyo Custom Dropdown Matching Screenshot) */}
+            <form onSubmit={handleSaveUser} className="p-6 pt-2 space-y-4 text-xs">
+              {/* Field 1: Görev Seçiniz* */}
               <div className="relative">
                 <label className="text-[11px] font-bold text-red-600 block mb-1">
-                  Görev Seçiniz*
+                  Görev / Yetki Grubu Seçiniz*
                 </label>
 
-                {/* Selected Trigger Box */}
                 <div
                   onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
                   className="w-full pb-2 border-b-2 border-red-600 flex items-center justify-between cursor-pointer font-bold text-sm text-slate-900 dark:text-white"
@@ -445,7 +457,6 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                   )}
                 </div>
 
-                {/* Open Dropdown Menu (Matching Screenshot) */}
                 {isRoleDropdownOpen && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl py-1 z-30 divide-y divide-slate-100 dark:divide-slate-700 animate-fadeIn">
                     {roleOptions.map((opt) => {
@@ -475,7 +486,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
 
                           {opt.isUpgrade && (
                             <span className="bg-[#c0392b] text-white text-[9px] font-black px-1.5 py-0.5 rounded">
-                              Yükselt
+                              Pro
                             </span>
                           )}
                         </div>
@@ -494,16 +505,44 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                   type="text"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="Örn: Fatih Demir"
+                  placeholder="Örn: Ahmet Yılmaz"
                   required
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500"
                 />
               </div>
 
+              {/* Field 2.5: Kullanıcı Adı & Giriş Parolası */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                    Kullanıcı Adı (Giriş)*
+                  </label>
+                  <input
+                    type="text"
+                    value={formUsername}
+                    onChange={(e) => setFormUsername(e.target.value.toLowerCase().replace(/\s+/g, ''))}
+                    placeholder="Örn: garson2"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:border-red-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                    {editingUser ? 'Yeni Parola (Opsiyonel)' : 'Giriş Parolası*'}
+                  </label>
+                  <input
+                    type="password"
+                    value={formPassword}
+                    onChange={(e) => setFormPassword(e.target.value)}
+                    placeholder={editingUser ? 'Değiştirmek için yazın...' : 'En az 4 karakter'}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-red-500"
+                  />
+                </div>
+              </div>
+
               {/* Field 3: PIN Kodu* */}
               <div>
                 <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                  4 Haneli PIN Kodu*
+                  4 Haneli Hızlı Geçiş PIN Kodu*
                 </label>
                 <input
                   type="text"
@@ -516,11 +555,6 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                 />
               </div>
 
-              {/* Subtext info under PIN (Exact verbatim text from screenshot) */}
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                Birden fazla kullanıcının tek bir ekranı kullandığı durumlarda, kullanıcılar arasında hızlıca geçiş yapmak için kullanılır. Mail ve şifre ile giriş yapma zorunluluğu ortadan kalkar.
-              </p>
-
               {/* Optional Contact Fields */}
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <div>
@@ -531,7 +565,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                     type="email"
                     value={formEmail}
                     onChange={(e) => setFormEmail(e.target.value)}
-                    placeholder="personel@fatihciftligi.com"
+                    placeholder="personel@boncorepos.com"
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500"
                   />
                 </div>
@@ -549,13 +583,13 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                 </div>
               </div>
 
-              {/* Bottom Actions (Matching Adisyo Screenshot: [Sil] text button + [Güncelle] red button) */}
+              {/* Bottom Actions */}
               <div className="flex items-center justify-end gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                 {editingUser && (
                   <button
                     type="button"
                     onClick={() => handleDeleteUser(editingUser.id)}
-                    className="text-red-600 hover:text-red-700 font-bold text-xs transition mr-auto"
+                    className="text-red-600 hover:text-red-700 font-bold text-xs transition mr-auto cursor-pointer"
                   >
                     Sil
                   </button>
@@ -564,14 +598,14 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-white font-bold text-xs"
+                  className="px-4 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-white font-bold text-xs cursor-pointer"
                 >
                   İptal
                 </button>
 
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-md transition active:scale-95"
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 text-white font-black text-xs shadow-md transition active:scale-95 cursor-pointer"
                 >
                   {editingUser ? 'Güncelle' : 'Kaydet'}
                 </button>

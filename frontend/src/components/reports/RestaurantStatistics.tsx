@@ -5,16 +5,33 @@ import {
   CreditCard, Wallet, Receipt, Percent, Clock, Truck, Phone,
   ShoppingBag, Store, QrCode, Search, CheckCircle2, AlertCircle,
   Coffee, UtensilsCrossed, ArrowDownRight, Sparkles, RotateCcw,
-  FileText, XCircle, Gift, ChevronDown, Check, RefreshCw
+  FileText, XCircle, Gift, ChevronDown, Check, RefreshCw,
+  Package, Layers, Plus, Edit3, Trash2, X, Save
 } from 'lucide-react';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
+import { Ingredient } from '../../types';
 
-export const RestaurantStatistics: React.FC = () => {
+import { useWebSocket } from '../../services/websocket';
+
+const DATE_RANGE_MAP: Record<string, string> = {
+  'Tüm Zamanlar (Canlı)': 'all',
+  'Bugün (Canlı)': 'today',
+  'Dün': 'yesterday',
+  'Bu Hafta (Son 7 Gün)': 'week',
+  'Bu Ay (Son 30 Gün)': 'month'
+};
+
+interface RestaurantStatisticsProps {
+  onNavigateTab?: (tab: string) => void;
+}
+
+export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNavigateTab }) => {
   const [activeTab, setActiveTab] = useState<string>('summary');
-  const [dateRange, setDateRange] = useState<string>('Bugün (Canlı)');
+  const [dateRange, setDateRange] = useState<string>('Tüm Zamanlar (Canlı)');
   const [showDateMenu, setShowDateMenu] = useState<boolean>(false);
   const [stats, setStats] = useState<any>(null);
+  const [stockItems, setStockItems] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshToast, setRefreshToast] = useState<string | null>(null);
 
@@ -24,8 +41,28 @@ export const RestaurantStatistics: React.FC = () => {
   const [waiterSort, setWaiterSort] = useState<'sales' | 'orders' | 'tips' | 'kuver'>('sales');
   const [complimentaryFilter, setComplimentaryFilter] = useState<'all' | 'treats' | 'voids' | 'discounts'>('all');
 
+  // Stock Status Report filters & modal states
+  const [stockSearch, setStockSearch] = useState<string>('');
+  const [stockCategoryFilter, setStockCategoryFilter] = useState<string>('ALL');
+  const [stockKitchenFilter, setStockKitchenFilter] = useState<string>('ALL');
+  const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'in_stock' | 'out_of_stock' | 'critical'>('all');
+  const [showStockModal, setShowStockModal] = useState<boolean>(false);
+  const [editingStockItem, setEditingStockItem] = useState<Ingredient | null>(null);
+  const [stockForm, setStockForm] = useState({
+    product_code: '',
+    category_name: 'MANAV',
+    name: '',
+    kitchen_group: 'MUTFAK',
+    revenue_center: 'Ana Kanal',
+    current_stock: '0',
+    min_stock_alert: '-',
+    unit: 'Kg',
+    cost_per_unit: '0'
+  });
+
   const tabs = [
     { id: 'summary', label: 'Özet' },
+    { id: 'stock_report', label: 'Stok Durum Raporu' },
     { id: 'daily_turnover', label: 'Günlük Ciro Verileri' },
     { id: 'chart_data', label: 'Grafik Verileri' },
     { id: 'delivery', label: 'Paket Siparişler' },
@@ -34,23 +71,20 @@ export const RestaurantStatistics: React.FC = () => {
     { id: 'complimentary', label: 'Ödenmez / İkram Bazlı Satışlar' }
   ];
 
-  const dateOptions = [
-    'Bugün (Canlı)',
-    'Dün',
-    'Bu Hafta (Pzt - Paz)',
-    'Bu Ay (Eylül 2026)',
-    'Son 30 Gün'
-  ];
+  const dateOptions = Object.keys(DATE_RANGE_MAP);
 
-  useEffect(() => {
-    loadStatistics();
-  }, []);
-
-  const loadStatistics = async () => {
+  const loadStatistics = async (selectedLabel: string = dateRange) => {
     setLoading(true);
     try {
-      const data = await api.getRestaurantStatistics();
+      const apiRange = DATE_RANGE_MAP[selectedLabel] || 'all';
+      const [data, ingData] = await Promise.all([
+        api.getRestaurantStatistics(apiRange),
+        api.getIngredients()
+      ]);
       setStats(data);
+      if (Array.isArray(ingData)) {
+        setStockItems(ingData);
+      }
     } catch (e) {
       console.warn('Failed to load restaurant statistics:', e);
     } finally {
@@ -58,134 +92,76 @@ export const RestaurantStatistics: React.FC = () => {
     }
   };
 
-  // Safe fallback and defaults from live or mock
-  const totalTurnover = stats?.total_turnover || 43950.00;
-  const totalOrders = stats?.total_orders || 101;
-  const avgTicket = stats?.average_ticket || (totalOrders > 0 ? totalTurnover / totalOrders : 0);
-  const totalDiscounts = (stats?.total_discounts || 0) + (stats?.total_treats || 0);
+  useEffect(() => {
+    loadStatistics(dateRange);
+  }, [dateRange]);
+
+  useWebSocket('all', (type) => {
+    if (
+      type === 'ORDER_CREATED' ||
+      type === 'ORDER_UPDATED' ||
+      type === 'ORDER_PAID' ||
+      type === 'ONLINE_ORDER_INCOMING' ||
+      type === 'Z_REPORT_GENERATED' ||
+      type === 'MENU_UPDATED'
+    ) {
+      loadStatistics(dateRange);
+    }
+  });
+
+  // 100% Real Data Bindings (Zero Fake Fallbacks)
+  const totalTurnover = stats?.total_turnover ?? 0;
+  const totalOrders = stats?.total_orders ?? 0;
+  const avgTicket = stats?.average_ticket ?? (totalOrders > 0 ? totalTurnover / totalOrders : 0);
+  const totalDiscounts = (stats?.total_discounts ?? 0) + (stats?.total_treats ?? 0);
 
   const dailyData = stats?.daily_turnover || {
-    gross_sales: 46250.00,
-    net_sales: totalTurnover,
-    total_discounts: 1100.00,
-    total_treats: 1200.00,
+    gross_sales: 0,
+    net_sales: 0,
+    total_discounts: 0,
+    total_treats: 0,
     payment_breakdown: {
-      cash: { name: 'Nakit', amount: 12450.00, count: 32, percent: 28.3, color: '#10b981' },
-      credit_card: { name: 'Kredi Kartı', amount: 26800.00, count: 58, percent: 61.0, color: '#3b82f6' },
-      sodexo: { name: 'Sodexo / Multinet', amount: 3100.00, count: 7, percent: 7.1, color: '#8b5cf6' },
-      open_account: { name: 'Açık Hesap (Cari)', amount: 1200.00, count: 3, percent: 2.7, color: '#f59e0b' },
-      online: { name: 'Online Tahsilat', amount: 400.00, count: 1, percent: 0.9, color: '#ec4899' }
+      cash: { name: 'Nakit', amount: 0, count: 0, percent: 0, color: '#10b981' },
+      credit_card: { name: 'Kredi Kartı', amount: 0, count: 0, percent: 0, color: '#3b82f6' },
+      sodexo: { name: 'Sodexo / Multinet', amount: 0, count: 0, percent: 0, color: '#8b5cf6' },
+      open_account: { name: 'Açık Hesap (Cari)', amount: 0, count: 0, percent: 0, color: '#f59e0b' },
+      online: { name: 'Online Tahsilat', amount: 0, count: 0, percent: 0, color: '#ec4899' }
     },
     vat_summary: {
-      vat_1: { rate: '%1', base: 5274.00, tax: 52.74 },
-      vat_10: { rate: '%10', base: 31644.00, tax: 3164.40 },
-      vat_20: { rate: '%20', base: 7032.00, tax: 1406.40 }
+      vat_1: { rate: '%1', base: 0, tax: 0 },
+      vat_10: { rate: '%10', base: 0, tax: 0 },
+      vat_20: { rate: '%20', base: 0, tax: 0 }
     },
-    hourly_breakdown: [
-      { time_range: '08:00 - 10:00', orders_count: 5, turnover: 1250.00, avg_ticket: 250.00, percent: 2.8 },
-      { time_range: '10:00 - 12:00', orders_count: 14, turnover: 4800.00, avg_ticket: 342.86, percent: 10.9 },
-      { time_range: '12:00 - 14:00', orders_count: 36, turnover: 15400.00, avg_ticket: 427.78, percent: 35.0 },
-      { time_range: '14:00 - 16:00', orders_count: 11, turnover: 3900.00, avg_ticket: 354.55, percent: 8.9 },
-      { time_range: '16:00 - 18:00', orders_count: 8, turnover: 2950.00, avg_ticket: 368.75, percent: 6.7 },
-      { time_range: '18:00 - 20:00', orders_count: 22, turnover: 11800.00, avg_ticket: 536.36, percent: 26.8 },
-      { time_range: '20:00 - 22:00', orders_count: 4, turnover: 3450.00, avg_ticket: 862.50, percent: 7.9 },
-      { time_range: '22:00 - 00:00', orders_count: 1, turnover: 400.00, avg_ticket: 400.00, percent: 1.0 }
-    ],
-    recent_bills: [
-      { id: 1, order_no: 'ORD-48651', table_name: 'Salon 1', waiter: 'Ahmet Garson', time: '14:25', grand_total: 840.00, status: 'Ödendi', payment_method: 'Kredi Kartı' },
-      { id: 2, order_no: 'ORD-48648', table_name: 'Bahçe 2', waiter: 'Ayşe Kasiyer', time: '14:18', grand_total: 420.00, status: 'Ödendi', payment_method: 'Nakit' },
-      { id: 3, order_no: 'ORD-48630', table_name: 'Teras 4', waiter: '37799 - fatih', time: '14:10', grand_total: 1250.00, status: 'Ödendi', payment_method: 'Kredi Kartı' },
-      { id: 4, order_no: 'ORD-48615', table_name: 'VIP 1', waiter: 'Ahmet Garson', time: '13:55', grand_total: 3100.00, status: 'Ödendi', payment_method: 'Kredi Kartı' },
-      { id: 5, order_no: 'ORD-48602', table_name: 'Paket #102', waiter: 'Can Kurtaran', time: '13:42', grand_total: 680.00, status: 'Ödendi', payment_method: 'Nakit' }
-    ]
+    hourly_breakdown: [],
+    recent_bills: []
   };
 
   const chartData = stats?.chart_data || {
-    hourly_sales: [
-      { hour: '09:00', turnover: 450.00, orders: 2 },
-      { hour: '10:00', turnover: 1200.00, orders: 4 },
-      { hour: '11:00', turnover: 2600.00, orders: 8 },
-      { hour: '12:00', turnover: 6800.00, orders: 17 },
-      { hour: '13:00', turnover: 8600.00, orders: 19 },
-      { hour: '14:00', turnover: 3900.00, orders: 9 },
-      { hour: '15:00', turnover: 2100.00, orders: 6 },
-      { hour: '16:00', turnover: 1800.00, orders: 5 },
-      { hour: '17:00', turnover: 2400.00, orders: 7 },
-      { hour: '18:00', turnover: 5200.00, orders: 12 },
-      { hour: '19:00', turnover: 7900.00, orders: 16 },
-      { hour: '20:00', turnover: 5600.00, orders: 11 },
-      { hour: '21:00', turnover: 3100.00, orders: 6 },
-      { hour: '22:00', turnover: 1200.00, orders: 3 }
-    ],
-    weekly_trend: [
-      { day: 'Pazartesi', turnover: 32400.00, orders: 78 },
-      { day: 'Salı', turnover: 35600.00, orders: 84 },
-      { day: 'Çarşamba', turnover: 38900.00, orders: 92 },
-      { day: 'Perşembe', turnover: 41200.00, orders: 96 },
-      { day: 'Cuma', turnover: 54300.00, orders: 126 },
-      { day: 'Cumartesi', turnover: 62800.00, orders: 148 },
-      { day: 'Pazar', turnover: 48900.00, orders: 114 }
-    ],
-    category_sales: [
-      { category: 'Ana Yemek & Izgara', turnover: 19800.00, count: 48, percent: 45.1, color: '#ef4444' },
-      { category: 'Burger & Dürüm', turnover: 9600.00, count: 28, percent: 21.8, color: '#f97316' },
-      { category: 'Pizzalar & Taş Fırın', turnover: 6400.00, count: 18, percent: 14.6, color: '#eab308' },
-      { category: 'Tatlılar & Pastane', turnover: 4800.00, count: 24, percent: 10.9, color: '#ec4899' },
-      { category: 'Sıcak & Soğuk İçecekler', turnover: 3350.00, count: 52, percent: 7.6, color: '#3b82f6' }
-    ],
-    payment_distribution: [
-      { name: 'Kredi Kartı / POS', amount: 26800.00, percent: 61.0, color: '#3b82f6' },
-      { name: 'Nakit', amount: 12450.00, percent: 28.3, color: '#10b981' },
-      { name: 'Sodexo / Multinet', amount: 3100.00, percent: 7.1, color: '#8b5cf6' },
-      { name: 'Açık Hesap (Cari)', amount: 1200.00, percent: 2.7, color: '#f59e0b' },
-      { name: 'Online Ödeme', amount: 400.00, percent: 0.9, color: '#ec4899' }
-    ]
+    hourly_sales: [],
+    weekly_trend: [],
+    category_sales: [],
+    payment_distribution: []
   };
 
   const deliveryData = stats?.delivery || {
-    total_turnover: 10980.00,
-    total_orders: 22,
-    avg_ticket: 499.09,
-    on_the_way: 2,
-    delivered: 19,
-    cancelled: 1,
-    platforms: [
-      { name: 'Telefon / Restoran', orders: 8, turnover: 3840.00, share: 35.0, badge: 'bg-slate-700' },
-      { name: 'Yemeksepeti', orders: 6, turnover: 2980.00, share: 27.2, badge: 'bg-rose-600' },
-      { name: 'Getir Yemek', orders: 4, turnover: 2150.00, share: 19.6, badge: 'bg-purple-600' },
-      { name: 'Trendyol Yemek', orders: 3, turnover: 1490.00, share: 13.6, badge: 'bg-orange-500' },
-      { name: 'Migros Yemek', orders: 1, turnover: 520.00, share: 4.6, badge: 'bg-amber-600' }
-    ],
-    couriers: [
-      { id: 1, name: 'Burak Demir (Motor 1)', phone: '0535 111 22 33', plate: '34 POS 01', deliveries_count: 14, cash_collected: 840.00, card_collected: 1460.00, avg_time: '22 dk', status: 'Dağıtımda' },
-      { id: 2, name: 'Can Kurtaran (Motor 2)', phone: '0536 222 33 44', plate: '34 POS 02', deliveries_count: 8, cash_collected: 680.00, card_collected: 820.00, avg_time: '18 dk', status: 'Müsait' }
-    ],
-    orders: [
-      { id: 101, order_no: 'PKT-9041', platform: 'Yemeksepeti', customer: 'Ali Vural', phone: '0532 *** 4512', address: 'Bağdat Cad. No:114 D:5', courier: 'Burak Demir', amount: 420.00, status: 'Yolda', time: '14:15', payment: 'Online Ödeme' },
-      { id: 102, order_no: 'PKT-9042', platform: 'Telefon', customer: 'Selin Aydın', phone: '0544 *** 8920', address: 'Atatürk Mah. Lale Sok. 8/2', courier: 'Can Kurtaran', amount: 680.00, status: 'Teslim Edildi', time: '13:50', payment: 'Kapıda Nakit' },
-      { id: 103, order_no: 'PKT-9043', platform: 'Getir Yemek', customer: 'Murat Kaya', phone: '0533 *** 1234', address: 'Moda Cad. No:44', courier: 'Burak Demir', amount: 340.00, status: 'Teslim Edildi', time: '13:30', payment: 'Online Ödeme' },
-      { id: 104, order_no: 'PKT-9044', platform: 'Trendyol', customer: 'Ece Çetin', phone: '0555 *** 6789', address: 'Caddebostan İskele Sok. 12', courier: 'Burak Demir', amount: 510.00, status: 'Yolda', time: '14:20', payment: 'Online Ödeme' },
-      { id: 105, order_no: 'PKT-9045', platform: 'Migros', customer: 'Hakan Koç', phone: '0530 *** 9988', address: 'Fenerbahçe Mah. Kalamış Cad.', courier: 'Can Kurtaran', amount: 290.00, status: 'Teslim Edildi', time: '13:10', payment: 'Online Ödeme' }
-    ]
+    total_turnover: 0,
+    total_orders: 0,
+    avg_ticket: 0,
+    on_the_way: 0,
+    delivered: 0,
+    cancelled: 0,
+    platforms: [],
+    couriers: [],
+    orders: []
   };
 
-  const channelData = stats?.channels?.channels || [
-    { id: 'dine_in', name: 'Salon / Masa', description: 'Masa içi servis & kuver', orders: 62, turnover: 28400.00, share: 64.6, avg_ticket: 458.06, kuver: 148, avg_stay: '48 dk', color: 'emerald' },
-    { id: 'delivery', name: 'Paket Servis (Kurye)', description: 'Telefon & Entegrasyonlar', orders: 22, turnover: 9800.00, share: 22.3, avg_ticket: 445.45, kuver: 22, avg_stay: '28 dk', color: 'rose' },
-    { id: 'takeaway', name: 'Gel-Al (Tezgah)', description: 'Müşteri teslimatları', orders: 12, turnover: 3600.00, share: 8.2, avg_ticket: 300.00, kuver: 12, avg_stay: '8 dk', color: 'amber' },
-    { id: 'qr_order', name: 'Masadan QR Sipariş', description: 'Temassız dijital menü', orders: 5, turnover: 2150.00, share: 4.9, avg_ticket: 430.00, kuver: 8, avg_stay: '35 dk', color: 'blue' }
-  ];
+  const channelData = stats?.channels?.channels || [];
 
-  const waiterList = stats?.waiters && stats.waiters.length > 0 ? stats.waiters : [
-    { waiter_name: '37799 - fatih', orders_count: 42, total_sales: 18450.00, total_kuver: 84, total_tip: 450.00, share: 42.0, badge: 'Günün Yıldızı', avg_bill: 439.28 },
-    { waiter_name: 'Ahmet Garson', orders_count: 28, total_sales: 14200.00, total_kuver: 56, total_tip: 320.00, share: 32.3, badge: 'En Yüksek Ciro', avg_bill: 507.14 },
-    { waiter_name: 'Ayşe Kasiyer', orders_count: 19, total_sales: 7900.00, total_kuver: 38, total_tip: 190.00, share: 18.0, badge: 'Hızlı Servis', avg_bill: 415.78 },
-    { waiter_name: 'Kemal Müdür', orders_count: 12, total_sales: 3400.00, total_kuver: 24, total_tip: 120.00, share: 7.7, badge: 'Misafir Favorisi', avg_bill: 283.33 }
-  ];
+  const waiterList = Array.isArray(stats?.waiters) ? stats.waiters : [];
 
   // Filter & sort waiters
   const filteredWaiters = waiterList
-    .filter((w: any) => w.waiter_name.toLowerCase().includes(waiterSearch.toLowerCase()))
+    .filter((w: any) => (w.waiter_name || '').toLowerCase().includes(waiterSearch.toLowerCase()))
     .sort((a: any, b: any) => {
       if (waiterSort === 'orders') return b.orders_count - a.orders_count;
       if (waiterSort === 'tips') return (b.total_tip || 0) - (a.total_tip || 0);
@@ -194,26 +170,220 @@ export const RestaurantStatistics: React.FC = () => {
     });
 
   const complimentaryData = stats?.complimentary || {
-    total_treats: 680.00,
-    total_voids: 760.00,
-    total_discounts: 300.00,
-    loss_rate_percent: 3.9,
-    treat_items: [
-      { id: 201, order_no: 'ORD-48651', table_name: 'Salon 1', product_name: 'Özel Hatay Künefesi', quantity: 1, amount: 250.00, reason: 'Müşteri Memnuniyeti', staff: 'Kemal Müdür', time: '14:15' },
-      { id: 202, order_no: 'ORD-48618', table_name: 'Bahçe 3', product_name: 'Caffe Latte', quantity: 2, amount: 220.00, reason: 'Daimi Misafir İkramı', staff: 'Ahmet Garson', time: '13:30' },
-      { id: 203, order_no: 'ORD-36101', table_name: 'Teras 2', product_name: 'San Sebastian Cheesecake', quantity: 1, amount: 210.00, reason: 'Doğum Günü Kutlaması', staff: 'Ayşe Kasiyer', time: '12:45' }
-    ],
-    void_items: [
-      { id: 301, order_no: 'ORD-48601', table_name: 'Salon 4', product_name: 'Smoked Passion Mezcalita', quantity: 1, amount: 420.00, reason: 'Müşteri İptal Etti (Gecikti)', staff: '37799 - fatih', approved_by: 'Kemal Müdür', time: '14:05' },
-      { id: 302, order_no: 'ORD-35990', table_name: 'Bahçe 1', product_name: 'Dana & Kuzu Izgara Köfte', quantity: 1, amount: 340.00, reason: 'Hatalı Masa Seçimi (Yeniden Açıldı)', staff: 'Ahmet Garson', approved_by: 'Kemal Müdür', time: '13:15' }
-    ],
-    discount_orders: [
-      { id: 401, order_no: 'ORD-48651', table_name: 'Salon 1', amount: 180.00, rate: 10.0, reason: 'Personel / Kurumsal İndirimi', staff: 'Kemal Müdür', time: '14:25' },
-      { id: 402, order_no: 'ORD-36101', table_name: 'Teras 2', amount: 120.00, rate: 5.0, reason: 'Sadakat Kartı Puanı', staff: 'Ayşe Kasiyer', time: '13:00' }
-    ]
+    total_treats: 0,
+    total_voids: 0,
+    total_discounts: 0,
+    loss_rate_percent: 0,
+    treat_items: [],
+    void_items: [],
+    discount_orders: []
+  };
+
+
+  // Stock Status Report derived metrics & filters
+  const stockCategories = Array.from(
+    new Set(stockItems.map((it) => (it.category_name || it.category || 'DİĞER').trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b, 'tr'));
+
+  const stockKitchenGroups = Array.from(
+    new Set(stockItems.map((it) => (it.kitchen_group || 'MUTFAK').trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b, 'tr'));
+
+  const categorySummaryList = stockCategories.map((cat) => {
+    const itemsInCat = stockItems.filter((it) => (it.category_name || it.category || 'DİĞER').trim() === cat);
+    const totalVal = itemsInCat.reduce((sum, it) => sum + (it.total_value ?? (it.current_stock * it.cost_per_unit)), 0);
+    return {
+      category: cat,
+      count: itemsInCat.length,
+      totalValue: totalVal
+    };
+  });
+
+  const filteredStockItems = stockItems.filter((it) => {
+    const cat = (it.category_name || it.category || 'DİĞER').trim();
+    const kg = (it.kitchen_group || 'MUTFAK').trim();
+    const q = stockSearch.trim().toLowerCase();
+
+    if (stockCategoryFilter !== 'ALL' && cat !== stockCategoryFilter) return false;
+    if (stockKitchenFilter !== 'ALL' && kg !== stockKitchenFilter) return false;
+
+    const isOut = (it.current_stock || 0) <= 0;
+    const isCrit = isOut || ((it.min_stock_alert || 0) > 0 && (it.current_stock || 0) <= (it.min_stock_alert || 0));
+
+    if (stockStatusFilter === 'in_stock' && isOut) return false;
+    if (stockStatusFilter === 'out_of_stock' && !isOut) return false;
+    if (stockStatusFilter === 'critical' && !isCrit) return false;
+
+    if (q) {
+      const hay = `${it.product_code || ''} ${cat} ${it.name || ''} ${kg} ${it.revenue_center || ''} ${it.unit || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const totalInventoryValue = stockItems.reduce(
+    (sum, it) => sum + (it.total_value ?? ((it.current_stock || 0) * (it.cost_per_unit || 0))),
+    0
+  );
+  const filteredInventoryValue = filteredStockItems.reduce(
+    (sum, it) => sum + (it.total_value ?? ((it.current_stock || 0) * (it.cost_per_unit || 0))),
+    0
+  );
+  const outOfStockCount = stockItems.filter((it) => (it.current_stock || 0) <= 0).length;
+  const criticalAlertCount = stockItems.filter(
+    (it) => (it.min_stock_alert || 0) > 0 && (it.current_stock || 0) <= (it.min_stock_alert || 0)
+  ).length;
+
+  const handleOpenAddStock = () => {
+    sound.beep();
+    setEditingStockItem(null);
+    setStockForm({
+      product_code: '',
+      category_name: stockCategoryFilter !== 'ALL' ? stockCategoryFilter : 'MANAV',
+      name: '',
+      kitchen_group: 'MUTFAK',
+      revenue_center: 'Ana Kanal',
+      current_stock: '0',
+      min_stock_alert: '-',
+      unit: 'Kg',
+      cost_per_unit: '0'
+    });
+    setShowStockModal(true);
+  };
+
+  const handleOpenEditStock = (item: Ingredient) => {
+    sound.beep();
+    setEditingStockItem(item);
+    setStockForm({
+      product_code: item.product_code || '',
+      category_name: (item.category_name || item.category || 'DİĞER').trim(),
+      name: item.name || '',
+      kitchen_group: (item.kitchen_group || 'MUTFAK').trim(),
+      revenue_center: (item.revenue_center || 'Ana Kanal').trim(),
+      current_stock: String(item.current_stock ?? 0),
+      min_stock_alert: item.min_stock_alert && item.min_stock_alert > 0 ? String(item.min_stock_alert) : '-',
+      unit: item.unit || 'Kg',
+      cost_per_unit: String(item.cost_per_unit ?? 0)
+    });
+    setShowStockModal(true);
+  };
+
+  const handleSaveStockItem = async () => {
+    if (!stockForm.name.trim()) {
+      sound.warning();
+      setRefreshToast('⚠ Ürün adı zorunludur.');
+      setTimeout(() => setRefreshToast(null), 3000);
+      return;
+    }
+    try {
+      const payload: any = {
+        product_code: stockForm.product_code.trim(),
+        category_name: stockForm.category_name.trim() || 'DİĞER',
+        name: stockForm.name.trim(),
+        kitchen_group: stockForm.kitchen_group.trim() || 'MUTFAK',
+        revenue_center: stockForm.revenue_center.trim() || 'Ana Kanal',
+        current_stock: parseFloat(stockForm.current_stock.replace(',', '.')) || 0,
+        min_stock_alert:
+          stockForm.min_stock_alert.trim() === '-' || stockForm.min_stock_alert.trim() === ''
+            ? 0
+            : parseFloat(stockForm.min_stock_alert.replace(',', '.')) || 0,
+        unit: stockForm.unit.trim() || 'Adet',
+        cost_per_unit: parseFloat(stockForm.cost_per_unit.replace(',', '.')) || 0
+      };
+      if (editingStockItem) {
+        await api.updateIngredient(editingStockItem.id, payload);
+        setRefreshToast(`✓ "${payload.name}" stok kartı güncellendi.`);
+      } else {
+        await api.createIngredient(payload);
+        setRefreshToast(`✓ "${payload.name}" stok raporuna eklendi.`);
+      }
+      sound.cashDrawer();
+      setShowStockModal(false);
+      await loadStatistics(dateRange);
+      setTimeout(() => setRefreshToast(null), 3500);
+    } catch (err: any) {
+      sound.warning();
+      setRefreshToast('⚠ ' + (err.message || 'Stok kaydedilemedi.'));
+      setTimeout(() => setRefreshToast(null), 3500);
+    }
+  };
+
+  const handleDeleteStockItem = async (item: Ingredient) => {
+    if (!window.confirm(`"${item.name}" stok kalemini silmek istediğinize emin misiniz?`)) return;
+    try {
+      await api.deleteIngredient(item.id);
+      sound.beep();
+      setRefreshToast(`✓ "${item.name}" stok listesinden silindi.`);
+      await loadStatistics(dateRange);
+      setTimeout(() => setRefreshToast(null), 3500);
+    } catch (err: any) {
+      sound.warning();
+      setRefreshToast('⚠ ' + (err.message || 'Silinemedi.'));
+      setTimeout(() => setRefreshToast(null), 3500);
+    }
+  };
+
+  const exportStockReportToExcel = () => {
+    sound.beep();
+    try {
+      const header = [
+        'Ürün Kodu',
+        'Kategori',
+        'Ürün Adı',
+        'Mutfak Grubu',
+        'Gelir Merkezi',
+        'Stok Miktarı',
+        'Kritik Stok Miktarı',
+        'Stok Birimi',
+        'Birim Tutarı(₺)',
+        'Toplam Tutar(₺)'
+      ];
+      const csvRows: string[] = [header.join(',')];
+
+      filteredStockItems.forEach((it) => {
+        const code = (it.product_code || '').replace(/"/g, '""');
+        const cat = (it.category_name || it.category || 'DİĞER').replace(/"/g, '""');
+        const name = (it.name || '').includes(',')
+          ? `"${(it.name || '').replace(/"/g, '""')}"`
+          : (it.name || '');
+        const kg = (it.kitchen_group || 'MUTFAK').replace(/"/g, '""');
+        const rev = (it.revenue_center || 'Ana Kanal').replace(/"/g, '""');
+        const stock = Number(it.current_stock || 0);
+        const crit =
+          it.critical_display ||
+          (it.min_stock_alert && it.min_stock_alert > 0 ? String(it.min_stock_alert) : '-');
+        const unit = (it.unit || 'Adet').replace(/"/g, '""');
+        const unitPrice = Number(it.cost_per_unit || 0);
+        const totalVal = Number((it.total_value ?? stock * unitPrice).toFixed(2));
+
+        csvRows.push([code, cat, name, kg, rev, stock, crit, unit, unitPrice, totalVal].join(','));
+      });
+
+      const csvContent = '\uFEFF' + csvRows.join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Stok_Durum_Raporu_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      sound.cashDrawer();
+      setRefreshToast('✓ Stok Durum Raporu (Excel/CSV) indirildi.');
+      setTimeout(() => setRefreshToast(null), 3500);
+    } catch (err: any) {
+      sound.warning();
+      setRefreshToast('⚠ Dışa aktarma hatası: ' + (err.message || 'Hata oluştu.'));
+      setTimeout(() => setRefreshToast(null), 3500);
+    }
   };
 
   const exportToExcel = () => {
+    if (activeTab === 'stock_report') {
+      exportStockReportToExcel();
+      return;
+    }
     sound.beep();
     try {
       const rows: string[] = [];
@@ -285,30 +455,52 @@ export const RestaurantStatistics: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex h-[calc(100vh-3.5rem)] bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none overflow-hidden font-sans transition-colors duration-200">
+    <div className="flex-1 flex flex-col md:flex-row h-[calc(100dvh-3.5rem)] bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none overflow-hidden font-sans transition-colors duration-200">
       {/* Left Sidebar Submenu */}
-      <div className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shadow-sm shrink-0">
-        <div className="p-4 border-b border-slate-100 dark:border-slate-800 text-xs font-black uppercase tracking-wider text-slate-400">
+      <div className="w-full md:w-64 bg-white dark:bg-slate-900 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 flex flex-col shadow-sm shrink-0">
+        <div className="hidden md:block p-4 border-b border-slate-100 dark:border-slate-800 text-xs font-black uppercase tracking-wider text-slate-400">
           Restaurant İstatistikleri
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        <div className="flex md:flex-col overflow-x-auto md:overflow-y-auto p-2 gap-1.5 md:space-y-1 no-scrollbar">
           {tabs.map((t) => (
             <button
               key={t.id}
               onClick={() => { sound.beep(); setActiveTab(t.id); }}
-              className={`w-full p-3 rounded-xl text-left text-xs font-bold transition flex items-center justify-between cursor-pointer relative ${
+              className={`shrink-0 md:w-full px-3.5 py-2.5 md:p-3 rounded-xl text-left text-xs font-bold transition flex items-center justify-between gap-2 cursor-pointer relative whitespace-nowrap ${
                 activeTab === t.id
-                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-950 dark:text-white font-black'
+                  ? 'bg-red-50 md:bg-slate-100 dark:bg-slate-800 text-red-600 md:text-slate-950 dark:text-white font-black'
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
               }`}
             >
               <span>{t.label}</span>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              <ChevronRight className="hidden md:block w-3.5 h-3.5 text-slate-400" />
               {activeTab === t.id && (
-                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-7 bg-red-600 rounded-l-full" />
+                <div className="hidden md:block absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-7 bg-red-600 rounded-l-full" />
               )}
             </button>
           ))}
+
+          {onNavigateTab && (
+            <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-800 space-y-1">
+              <div className="text-[10px] uppercase font-bold text-slate-400 px-3 py-1">
+                Özel Raporlar
+              </div>
+              <button
+                onClick={() => { sound.beep(); onNavigateTab('product_sales_report'); }}
+                className="shrink-0 md:w-full px-3.5 py-2 md:p-2.5 rounded-xl text-left text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 transition flex items-center justify-between cursor-pointer"
+              >
+                <span>Ürün Satış Raporu</span>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+              <button
+                onClick={() => { sound.beep(); onNavigateTab('day_end_report'); }}
+                className="shrink-0 md:w-full px-3.5 py-2 md:p-2.5 rounded-xl text-left text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 transition flex items-center justify-between cursor-pointer"
+              >
+                <span>Gün Sonu Raporu (Z)</span>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -492,7 +684,7 @@ export const RestaurantStatistics: React.FC = () => {
                   <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
                     <div className="col-span-4">Personel Adı</div>
                     <div className="col-span-2 text-center">Sipariş Sayısı</div>
-                    <div className="col-span-2 text-center">Kuver (Kişi)</div>
+                    <div className="col-span-2 text-center">Ort. Adisyon</div>
                     <div className="col-span-2 text-right">Bahşiş / Tip</div>
                     <div className="col-span-2 text-right">Toplam Satış</div>
                   </div>
@@ -513,7 +705,7 @@ export const RestaurantStatistics: React.FC = () => {
                         </div>
                       </div>
                       <div className="col-span-2 text-center font-mono">{w.orders_count || 0}</div>
-                      <div className="col-span-2 text-center font-mono">{w.total_kuver || 0}</div>
+                      <div className="col-span-2 text-center font-mono">₺{((w.total_sales || 0) / Math.max(1, w.orders_count || 0)).toFixed(2)}</div>
                       <div className="col-span-2 text-right font-mono text-emerald-600">₺{(w.total_tip || 0).toFixed(2)}</div>
                       <div className="col-span-2 text-right font-mono font-black text-slate-900 dark:text-white">
                         ₺{(w.total_sales || 0).toFixed(2)}
@@ -1190,16 +1382,15 @@ export const RestaurantStatistics: React.FC = () => {
 
                 <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
                   <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
-                    <div className="col-span-4">Satış Kanalı</div>
+                    <div className="col-span-6">Satış Kanalı</div>
                     <div className="col-span-2 text-center">Sipariş Sayısı</div>
-                    <div className="col-span-2 text-center">Kuver / Kişi</div>
                     <div className="col-span-2 text-right">Ortalama Masa Sepeti</div>
                     <div className="col-span-2 text-right">Kanal Cirosu</div>
                   </div>
 
                   {channelData.map((ch: any) => (
                     <div key={ch.id} className="grid grid-cols-12 p-4 items-center font-semibold hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                      <div className="col-span-4 flex items-center gap-3">
+                      <div className="col-span-6 flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
                           {ch.id === 'dine_in' && <Store className="w-4 h-4 text-emerald-600" />}
                           {ch.id === 'delivery' && <Truck className="w-4 h-4 text-rose-600" />}
@@ -1212,7 +1403,6 @@ export const RestaurantStatistics: React.FC = () => {
                         </div>
                       </div>
                       <div className="col-span-2 text-center font-mono font-bold">{ch.orders} Adet</div>
-                      <div className="col-span-2 text-center font-mono font-bold">{ch.kuver} Kişi</div>
                       <div className="col-span-2 text-right font-mono font-bold text-slate-600 dark:text-slate-400">
                         ₺{ch.avg_ticket.toFixed(2)}
                       </div>
@@ -1300,16 +1490,6 @@ export const RestaurantStatistics: React.FC = () => {
                     Sipariş Adedi
                   </button>
                   <button
-                    onClick={() => setWaiterSort('kuver')}
-                    className={`px-3 py-1.5 rounded-xl transition cursor-pointer shrink-0 ${
-                      waiterSort === 'kuver'
-                        ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                    }`}
-                  >
-                    Kuver (Kişi)
-                  </button>
-                  <button
                     onClick={() => setWaiterSort('tips')}
                     className={`px-3 py-1.5 rounded-xl transition cursor-pointer shrink-0 ${
                       waiterSort === 'tips'
@@ -1336,8 +1516,7 @@ export const RestaurantStatistics: React.FC = () => {
                   <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
                     <div className="col-span-4">Personel Adı & Rozet</div>
                     <div className="col-span-1 text-center">Sipariş</div>
-                    <div className="col-span-1 text-center">Kuver</div>
-                    <div className="col-span-2 text-right">Kuver Başı Tutar</div>
+                    <div className="col-span-3 text-right">Ort. Adisyon Tutarı</div>
                     <div className="col-span-2 text-right">Bahşiş (Tip)</div>
                     <div className="col-span-2 text-right">Toplam Satış</div>
                   </div>
@@ -1364,9 +1543,8 @@ export const RestaurantStatistics: React.FC = () => {
                         </div>
                       </div>
                       <div className="col-span-1 text-center font-mono font-bold">{w.orders_count}</div>
-                      <div className="col-span-1 text-center font-mono font-bold">{w.total_kuver}</div>
-                      <div className="col-span-2 text-right font-mono text-slate-500">
-                        ₺{w.total_kuver > 0 ? (w.total_sales / w.total_kuver).toFixed(2) : (w.total_sales / Math.max(1, w.orders_count)).toFixed(2)}
+                      <div className="col-span-3 text-right font-mono text-slate-500">
+                        ₺{((w.total_sales || 0) / Math.max(1, w.orders_count || 0)).toFixed(2)}
                       </div>
                       <div className="col-span-2 text-right font-mono font-bold text-emerald-600">
                         ₺{(w.total_tip || 0).toFixed(2)}
@@ -1577,8 +1755,539 @@ export const RestaurantStatistics: React.FC = () => {
               )}
             </div>
           )}
+
+          {/* TAB: STOK DURUM RAPORU (Excel Uyumlu Tam Stok ve Kategori Raporu) */}
+          {activeTab === 'stock_report' && (
+            <div className="space-y-6 animate-fadeIn">
+              {/* Top KPI Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Toplam Stok Kalemi</div>
+                    <div className="text-2xl font-black text-slate-900 dark:text-white mt-1 font-mono">
+                      {stockItems.length} <span className="text-xs font-bold text-slate-400">Ürün</span>
+                    </div>
+                    <div className="text-[11px] font-bold text-emerald-600 mt-1">
+                      {stockCategories.length} Aktif Kategori
+                    </div>
+                  </div>
+                  <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 flex items-center justify-center">
+                    <Package className="w-6 h-6 text-blue-600" />
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Toplam Envanter Tutarı</div>
+                    <div className="text-2xl font-black text-emerald-600 mt-1 font-mono">
+                      ₺{totalInventoryValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-[11px] font-bold text-slate-400 mt-1">
+                      Filtreli: ₺{filteredInventoryValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 flex items-center justify-center">
+                    <DollarSign className="w-6 h-6 text-emerald-600" />
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Stokta Mevcut Olanlar</div>
+                    <div className="text-2xl font-black text-slate-900 dark:text-white mt-1 font-mono">
+                      {stockItems.length - outOfStockCount} <span className="text-xs font-bold text-slate-400">Kalem</span>
+                    </div>
+                    <div className="text-[11px] font-bold text-blue-600 mt-1">
+                      Stok miktarı &gt; 0 olan ürünler
+                    </div>
+                  </div>
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 flex items-center justify-center">
+                    <Layers className="w-6 h-6 text-indigo-600" />
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tükenen (0) / Kritik Stok</div>
+                    <div className="text-2xl font-black text-rose-600 mt-1 font-mono">
+                      {outOfStockCount} <span className="text-xs font-bold text-slate-400">Tükenen</span>
+                    </div>
+                    <div className="text-[11px] font-bold text-amber-600 mt-1">
+                      {criticalAlertCount} Kritik Eşik Uyarısı
+                    </div>
+                  </div>
+                  <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/60 flex items-center justify-center">
+                    <AlertCircle className="w-6 h-6 text-rose-600" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Category Summary Horizontal Selector */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-red-600" />
+                    <span>Kategorilere Göre Stok Dağılımı ({stockCategories.length} Kategori)</span>
+                  </div>
+                  {stockCategoryFilter !== 'ALL' && (
+                    <button
+                      onClick={() => { sound.beep(); setStockCategoryFilter('ALL'); }}
+                      className="text-xs font-bold text-red-600 hover:underline cursor-pointer"
+                    >
+                      Filtreyi Temizle (Tümünü Göster)
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 overflow-x-auto pb-1.5 no-scrollbar">
+                  <button
+                    onClick={() => { sound.beep(); setStockCategoryFilter('ALL'); }}
+                    className={`shrink-0 px-3.5 py-2 rounded-xl border text-left transition cursor-pointer ${
+                      stockCategoryFilter === 'ALL'
+                        ? 'bg-red-600 border-red-600 text-white shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="text-xs font-black">TÜM KATEGORİLER ({stockItems.length})</div>
+                    <div className={`text-[10px] font-mono font-bold mt-0.5 ${stockCategoryFilter === 'ALL' ? 'text-red-100' : 'text-slate-400'}`}>
+                      ₺{totalInventoryValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  </button>
+
+                  {categorySummaryList.map((c) => {
+                    const active = stockCategoryFilter === c.category;
+                    return (
+                      <button
+                        key={c.category}
+                        onClick={() => { sound.beep(); setStockCategoryFilter(active ? 'ALL' : c.category); }}
+                        className={`shrink-0 px-3.5 py-2 rounded-xl border text-left transition cursor-pointer ${
+                          active
+                            ? 'bg-red-600 border-red-600 text-white shadow-sm'
+                            : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <div className="text-xs font-black flex items-center gap-1.5">
+                          <span>{c.category}</span>
+                          <span className={`px-1.5 py-0.2 rounded-md text-[10px] ${active ? 'bg-red-700 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
+                            {c.count}
+                          </span>
+                        </div>
+                        <div className={`text-[10px] font-mono font-bold mt-0.5 ${active ? 'text-red-100' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                          ₺{c.totalValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Filter & Search Bar */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+                  {/* Search */}
+                  <div className="relative flex-1 min-w-[220px]">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={stockSearch}
+                      onChange={(e) => setStockSearch(e.target.value)}
+                      placeholder="Ürün adı, kategori, mutfak grubu veya ürün kodu ara..."
+                      className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-red-500"
+                    />
+                    {stockSearch && (
+                      <button
+                        onClick={() => setStockSearch('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Category Select */}
+                  <select
+                    value={stockCategoryFilter}
+                    onChange={(e) => { sound.beep(); setStockCategoryFilter(e.target.value); }}
+                    className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:border-red-500 cursor-pointer"
+                  >
+                    <option value="ALL">Tüm Kategoriler ({stockCategories.length})</option>
+                    {stockCategories.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+
+                  {/* Kitchen Group Select */}
+                  <select
+                    value={stockKitchenFilter}
+                    onChange={(e) => { sound.beep(); setStockKitchenFilter(e.target.value); }}
+                    className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:border-red-500 cursor-pointer"
+                  >
+                    <option value="ALL">Tüm Mutfak Grupları ({stockKitchenGroups.length})</option>
+                    {stockKitchenGroups.map((kg) => (
+                      <option key={kg} value={kg}>{kg}</option>
+                    ))}
+                  </select>
+
+                  {/* Status Pills */}
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                    {[
+                      { id: 'all', label: 'Tümü' },
+                      { id: 'in_stock', label: 'Stokta Olan' },
+                      { id: 'out_of_stock', label: 'Tükenen (0)' },
+                      { id: 'critical', label: 'Kritik' }
+                    ].map((st) => (
+                      <button
+                        key={st.id}
+                        onClick={() => { sound.beep(); setStockStatusFilter(st.id as any); }}
+                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer whitespace-nowrap ${
+                          stockStatusFilter === st.id
+                            ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-black'
+                            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                        }`}
+                      >
+                        {st.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={handleOpenAddStock}
+                    className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-black flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Yeni Stok Ekle</span>
+                  </button>
+                  <button
+                    onClick={exportStockReportToExcel}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Excel (CSV) İndir</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Full 10-Column Stock Status Report Table (Excel Format) */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                      <Package className="w-4 h-4 text-red-600" />
+                      <span>Stok Durum Raporu Tablosu</span>
+                      <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-mono">
+                        {filteredStockItems.length} / {stockItems.length} Kalem
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Tüm ürün ve hammaddelerin kategori, mutfak grubu, stok miktarı, birim fiyatı ve toplam envanter tutarı dökümü
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[11px] font-bold text-slate-400 mr-2">Listelenen Toplam Tutar:</span>
+                    <span className="text-sm font-black font-mono text-emerald-600">
+                      ₺{filteredInventoryValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-[1050px]">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800 text-[11px] font-black text-slate-500 uppercase tracking-wider">
+                        <th className="py-3 px-3">Ürün Kodu</th>
+                        <th className="py-3 px-3">Kategori</th>
+                        <th className="py-3 px-3">Ürün Adı</th>
+                        <th className="py-3 px-3">Mutfak Grubu</th>
+                        <th className="py-3 px-3">Gelir Merkezi</th>
+                        <th className="py-3 px-3 text-right">Stok Miktarı</th>
+                        <th className="py-3 px-3 text-center">Kritik Stok Miktarı</th>
+                        <th className="py-3 px-3 text-center">Stok Birimi</th>
+                        <th className="py-3 px-3 text-right">Birim Tutarı(₺)</th>
+                        <th className="py-3 px-3 text-right">Toplam Tutar(₺)</th>
+                        <th className="py-3 px-3 text-center">İşlem</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                      {filteredStockItems.map((it) => {
+                        const cat = (it.category_name || it.category || 'DİĞER').trim();
+                        const kg = (it.kitchen_group || 'MUTFAK').trim();
+                        const rev = (it.revenue_center || 'Ana Kanal').trim();
+                        const stock = Number(it.current_stock || 0);
+                        const unitPrice = Number(it.cost_per_unit || 0);
+                        const totalVal = Number((it.total_value ?? stock * unitPrice).toFixed(2));
+                        const critDisplay =
+                          it.critical_display ||
+                          (it.min_stock_alert && it.min_stock_alert > 0 ? String(it.min_stock_alert) : '-');
+                        const isOut = stock <= 0;
+                        const isCritAlert = (it.min_stock_alert || 0) > 0 && stock <= (it.min_stock_alert || 0);
+
+                        return (
+                          <tr
+                            key={it.id}
+                            className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 transition ${
+                              isOut ? 'bg-rose-50/30 dark:bg-rose-950/10' : ''
+                            }`}
+                          >
+                            <td className="py-2.5 px-3 font-mono text-[11px] text-slate-400">
+                              {it.product_code || '-'}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                                {cat}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-white">
+                              {it.name}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300 font-semibold text-[11px]">
+                              {kg}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-500 text-[11px]">
+                              {rev}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-black">
+                              <span
+                                className={`px-2 py-0.5 rounded-md ${
+                                  isOut
+                                    ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                                    : isCritAlert
+                                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400'
+                                    : 'text-slate-900 dark:text-white'
+                                }`}
+                              >
+                                {stock.toLocaleString('tr-TR', { maximumFractionDigits: 3 })}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono text-slate-500">
+                              {critDisplay}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[11px]">
+                                {it.unit}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-700 dark:text-slate-300">
+                              ₺{unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-black text-emerald-600 dark:text-emerald-400">
+                              ₺{totalVal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  onClick={() => handleOpenEditStock(it)}
+                                  title="Stok Düzenle"
+                                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-blue-50 dark:bg-slate-800 dark:hover:bg-blue-950/50 text-slate-600 hover:text-blue-600 transition cursor-pointer"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteStockItem(it)}
+                                  title="Stok Kalemini Sil"
+                                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/50 text-slate-600 hover:text-rose-600 transition cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {filteredStockItems.length === 0 && (
+                        <tr>
+                          <td colSpan={11} className="py-12 text-center text-slate-400 font-bold">
+                            Arama veya filtre kriterlerine uygun stok kalemi bulunamadı.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    {filteredStockItems.length > 0 && (
+                      <tfoot>
+                        <tr className="bg-slate-50 dark:bg-slate-800/80 border-t-2 border-slate-200 dark:border-slate-700 font-black text-xs">
+                          <td colSpan={5} className="py-3.5 px-3 text-slate-700 dark:text-slate-200">
+                            GENEL TOPLAM ({filteredStockItems.length} Stok Kalemi)
+                          </td>
+                          <td className="py-3.5 px-3 text-right font-mono text-slate-900 dark:text-white">
+                            {filteredStockItems
+                              .reduce((s, i) => s + Number(i.current_stock || 0), 0)
+                              .toLocaleString('tr-TR', { maximumFractionDigits: 3 })}
+                          </td>
+                          <td colSpan={3} className="py-3.5 px-3 text-right text-slate-500">
+                            Toplam Envanter Değeri:
+                          </td>
+                          <td className="py-3.5 px-3 text-right font-mono text-sm text-emerald-600 dark:text-emerald-400">
+                            ₺{filteredInventoryValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td />
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Add / Edit Stock Item Modal */}
+      {showStockModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-fadeIn">
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                <Package className="w-4 h-4 text-red-600" />
+                <span>{editingStockItem ? 'Stok Kalemini Düzenle' : 'Yeni Stok Kalemi Ekle'}</span>
+              </h3>
+              <button
+                onClick={() => setShowStockModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Ürün Kodu</label>
+                  <input
+                    type="text"
+                    value={stockForm.product_code}
+                    onChange={(e) => setStockForm({ ...stockForm, product_code: e.target.value })}
+                    placeholder="Örn: STK-001 (Opsiyonel)"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Kategori *</label>
+                  <input
+                    type="text"
+                    list="stock-categories-list"
+                    value={stockForm.category_name}
+                    onChange={(e) => setStockForm({ ...stockForm, category_name: e.target.value })}
+                    placeholder="Örn: MANAV, ÇİFTLİK KUZU, KAHVALTI"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white"
+                  />
+                  <datalist id="stock-categories-list">
+                    {stockCategories.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Ürün / Stok Adı *</label>
+                <input
+                  type="text"
+                  value={stockForm.name}
+                  onChange={(e) => setStockForm({ ...stockForm, name: e.target.value })}
+                  placeholder="Örn: BİBER ÇARLİSTON STOK"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Mutfak Grubu</label>
+                  <input
+                    type="text"
+                    list="stock-kitchen-list"
+                    value={stockForm.kitchen_group}
+                    onChange={(e) => setStockForm({ ...stockForm, kitchen_group: e.target.value })}
+                    placeholder="Örn: MUTFAK, MANAV, İÇECEK"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white"
+                  />
+                  <datalist id="stock-kitchen-list">
+                    {stockKitchenGroups.map((k) => (
+                      <option key={k} value={k} />
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Gelir Merkezi</label>
+                  <input
+                    type="text"
+                    value={stockForm.revenue_center}
+                    onChange={(e) => setStockForm({ ...stockForm, revenue_center: e.target.value })}
+                    placeholder="Ana Kanal"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Stok Miktarı</label>
+                  <input
+                    type="text"
+                    value={stockForm.current_stock}
+                    onChange={(e) => setStockForm({ ...stockForm, current_stock: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono font-bold text-slate-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Kritik Stok</label>
+                  <input
+                    type="text"
+                    value={stockForm.min_stock_alert}
+                    onChange={(e) => setStockForm({ ...stockForm, min_stock_alert: e.target.value })}
+                    placeholder="- veya sayı"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono font-bold text-slate-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Stok Birimi</label>
+                  <select
+                    value={stockForm.unit}
+                    onChange={(e) => setStockForm({ ...stockForm, unit: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white"
+                  >
+                    <option value="Kg">Kg</option>
+                    <option value="ADET">ADET</option>
+                    <option value="Adet">Adet</option>
+                    <option value="LİTRE">LİTRE</option>
+                    <option value="GR">GR</option>
+                    <option value="Tam">Tam</option>
+                    <option value="Yarım">Yarım</option>
+                    <option value="PORSİYON">PORSİYON</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Birim Tutarı (₺)</label>
+                  <input
+                    type="text"
+                    value={stockForm.cost_per_unit}
+                    onChange={(e) => setStockForm({ ...stockForm, cost_per_unit: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono font-bold text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setShowStockModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer"
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleSaveStockItem}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Kaydet</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -14,15 +14,16 @@ class ReportService:
         """
         Generates in-day X-Report (Ara Kasa Denetim Raporu).
         """
-        now = datetime.datetime.now()
-        today_start = datetime.datetime(now.year, now.month, now.day, 0, 0, 0)
+        from app.services.time_service import get_day_bounds_utc, get_local_now
+        local_now = get_local_now()
+        start_utc, end_utc = get_day_bounds_utc()
 
         # Total payments by method
         pay_stmt = select(
             Payment.payment_method,
             func.sum(Payment.amount).label("total_amount"),
             func.count(Payment.id).label("count")
-        ).where(Payment.created_at >= today_start).group_by(Payment.payment_method)
+        ).where(Payment.created_at >= start_utc, Payment.created_at < end_utc).group_by(Payment.payment_method)
 
         pay_res = await db.execute(pay_stmt)
         payment_breakdown = {}
@@ -39,7 +40,7 @@ class ReportService:
         exp_stmt = select(
             CashExpense.expense_type,
             func.sum(CashExpense.amount).label("total_amount")
-        ).where(CashExpense.created_at >= today_start).group_by(CashExpense.expense_type)
+        ).where(CashExpense.created_at >= start_utc, CashExpense.created_at < end_utc).group_by(CashExpense.expense_type)
         exp_res = await db.execute(exp_stmt)
         total_expenses = 0.0
         for row in exp_res.all():
@@ -51,7 +52,7 @@ class ReportService:
             func.sum(Order.discount_amount),
             func.sum(Order.treat_amount),
             func.count(Order.id)
-        ).where(Order.created_at >= today_start, Order.status == "paid")
+        ).where(Order.created_at >= start_utc, Order.created_at < end_utc, Order.status == "paid")
         disc_res = await db.execute(disc_stmt)
         disc_row = disc_res.first()
         total_discounts = float(disc_row[0] or 0.0) if disc_row else 0.0
@@ -61,7 +62,7 @@ class ReportService:
         # Voids count
         void_stmt = select(func.count(AuditLog.id)).where(
             AuditLog.action_type == "VOID_ITEM",
-            AuditLog.timestamp >= today_start
+            AuditLog.timestamp >= start_utc, AuditLog.timestamp < end_utc
         )
         void_res = await db.execute(void_stmt)
         void_count = void_res.scalar_one_or_none() or 0
@@ -69,7 +70,7 @@ class ReportService:
         return {
             "report_type": "X_REPORT",
             "title": "ARA KASA DENETIM RAPORU (X-RAPORU)",
-            "date": now.strftime("%d.%m.%Y %H:%M:%S"),
+            "date": local_now.strftime("%d.%m.%Y %H:%M:%S"),
             "cashier_name": cashier_name,
             "total_orders": total_orders,
             "total_revenue": total_revenue,
@@ -92,7 +93,7 @@ class ReportService:
         Generates official Day-End Z-Report and closes the active cash register.
         """
         x_data = await ReportService.generate_x_report(db, cashier_name)
-        now = datetime.datetime.now()
+        now = datetime.datetime.utcnow()
         z_no = f"Z-{now.strftime('%Y%m%d')}-{register_id:04d}"
 
         # Update CashRegister in DB

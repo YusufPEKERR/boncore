@@ -96,6 +96,16 @@ export async function syncOfflineQueue(): Promise<{ syncedOrders: number; synced
             })
           });
           if (res.ok) {
+            const data = await res.json();
+            const serverOrderId = data.order_id || data.id;
+            if (serverOrderId && ord.id && ord.id !== serverOrderId) {
+              const linkedPayments = await offlineDb.offlinePaymentsQueue.where('order_id').equals(ord.id).toArray();
+              for (const lp of linkedPayments) {
+                if (lp.id) {
+                  await offlineDb.offlinePaymentsQueue.update(lp.id, { order_id: serverOrderId });
+                }
+              }
+            }
             await offlineDb.offlineOrdersQueue.delete(ord.id);
             syncedOrders++;
           }

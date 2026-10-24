@@ -6,12 +6,14 @@ import {
 import { StaffUser } from '../../types';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
+import { useWebSocket } from '../../services/websocket';
 
 interface CashierManagementProps {
   currentUser: StaffUser | null;
+  onNavigateTab?: (tab: string) => void;
 }
 
-export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUser }) => {
+export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUser, onNavigateTab }) => {
   const [register, setRegister] = useState<any>(null);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [xReport, setXReport] = useState<any>(null);
@@ -33,6 +35,12 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
   useEffect(() => {
     loadData();
   }, []);
+
+  useWebSocket('all', (type) => {
+    if (type === 'ORDER_PAID' || type === 'ORDER_UPDATED' || type === 'ORDER_CREATED') {
+      loadData();
+    }
+  });
 
   const loadData = async () => {
     setLoading(true);
@@ -119,9 +127,18 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
           >
             <RefreshCw className="w-4 h-4" />
           </button>
+          {onNavigateTab && (
+            <button
+              onClick={() => { sound.beep(); onNavigateTab('day_end_report'); }}
+              className="px-3.5 py-2.5 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 font-extrabold text-xs shadow-xs transition flex items-center gap-2 cursor-pointer"
+            >
+              <FileText className="w-4 h-4 text-red-600" />
+              <span>DETAYLI GÜN SONU RAPORU</span>
+            </button>
+          )}
           <button
             onClick={handleCloseZReport}
-            className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-extrabold text-xs shadow-lg shadow-red-500/25 transition flex items-center gap-2"
+            className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-extrabold text-xs shadow-lg shadow-red-500/25 transition flex items-center gap-2 cursor-pointer"
           >
             <ShieldCheck className="w-4 h-4" />
             <span>GÜN SONU Z-RAPORU AL</span>
@@ -238,15 +255,27 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
           <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">Bugünkü Masraflar</h4>
             <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-              {expenses.map((e) => (
-                <div key={e.id} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between text-xs">
-                  <div>
-                    <div className="font-bold text-slate-900 dark:text-white">{e.category}</div>
-                    <div className="text-[10px] text-slate-500 dark:text-slate-400">{e.description} • {e.created_at}</div>
+              {expenses.map((e) => {
+                const isCashIn = e.expense_type === 'in' || e.type === 'in';
+                return (
+                  <div key={e.id} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between text-xs">
+                    <div>
+                      <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <span>{e.category}</span>
+                        {isCashIn && (
+                          <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.2 rounded font-bold">
+                            Avans Girişi
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">{e.description} • {e.created_at}</div>
+                    </div>
+                    <span className={`font-mono font-black ${isCashIn ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                      {isCashIn ? '+' : '-'}₺{e.amount.toFixed(2)}
+                    </span>
                   </div>
-                  <span className="font-mono font-black text-amber-600 dark:text-amber-400">-₺{e.amount.toFixed(2)}</span>
-                </div>
-              ))}
+                );
+              })}
               {expenses.length === 0 && (
                 <div className="text-center py-4 text-xs text-slate-400 dark:text-slate-500">Bugün henüz masraf girişi yapılmadı.</div>
               )}

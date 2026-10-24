@@ -2,20 +2,33 @@ from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
-# --- Auth & PIN ---
+# --- Auth ---
 class PinAuthRequest(BaseModel):
     pin_code: str = Field(..., min_length=4, max_length=10)
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=2, max_length=50)
+    password: str = Field(..., min_length=1, max_length=128)
+    remember: bool = False
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=6, max_length=128)
 
 class StaffUserResponse(BaseModel):
     id: int
     name: str
     role: str
     is_active: bool
+    username: Optional[str] = None
+    access_token: Optional[str] = None
 
 class StaffUserCreate(BaseModel):
     name: str = Field(..., min_length=2, description="Personel adı")
+    username: Optional[str] = Field(None, min_length=2, max_length=50, description="Giriş kullanıcı adı")
+    password: Optional[str] = Field("123456", min_length=4, max_length=128, description="Giriş parolası")
     role: str = Field("waiter", description="Personel rolü")
-    pin_code: str = Field("1234", min_length=4, max_length=10, description="4 haneli PIN kodu")
+    pin_code: str = Field("1234", min_length=4, max_length=10, description="Yönetici onayları için PIN")
     is_active: bool = True
 
     @model_validator(mode="before")
@@ -28,8 +41,10 @@ class StaffUserCreate(BaseModel):
 
 class StaffUserUpdate(BaseModel):
     name: Optional[str] = None
+    username: Optional[str] = Field(None, min_length=2, max_length=50)
+    password: Optional[str] = Field(None, min_length=4, max_length=128)
     role: Optional[str] = None
-    pin_code: Optional[str] = None
+    pin_code: Optional[str] = Field(None, min_length=4, max_length=10)
     is_active: Optional[bool] = None
 
 # --- Table & Floor ---
@@ -137,7 +152,7 @@ class OrderItemInput(BaseModel):
     product_id: int
     variant_name: Optional[str] = None
     unit_price: Optional[float] = None
-    quantity: int = 1
+    quantity: float = 1.0
     selected_modifiers: List[SelectedModifier] = []
     negative_modifiers: List[str] = [] # ["Soğansız", "Buzsuz"]
     kitchen_note: Optional[str] = None
@@ -151,6 +166,7 @@ class CreateOrderRequest(BaseModel):
     waiter_name: str = "Garson"
     notes: Optional[str] = None
     kuver_count: Optional[int] = 0
+    service_charge: Optional[float] = 0.0
 
 class AddItemsRequest(BaseModel):
     items: List[OrderItemInput]
@@ -288,7 +304,7 @@ class OnlineOrderItem(BaseModel):
     name: Optional[str] = None
     product_name: Optional[str] = None
     unit_price: float = 0.0
-    quantity: int = 1
+    quantity: float = 1.0
     total_price: Optional[float] = None
     kitchen_note: Optional[str] = None
 

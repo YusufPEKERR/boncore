@@ -19,6 +19,7 @@ class Order(Base):
     treat_reason = Column(String(100), nullable=True)
     kuver_count = Column(Integer, default=0)
     kuver_total = Column(Float, default=0.0)
+    service_charge = Column(Float, default=0.0)
     tax_total = Column(Float, default=0.0)
     grand_total = Column(Float, default=0.0)
     paid_total = Column(Float, default=0.0)
@@ -42,7 +43,7 @@ class OrderItem(Base):
     product_name = Column(String(150), nullable=False)
     variant_name = Column(String(100), nullable=True)
     unit_price = Column(Float, nullable=False)
-    quantity = Column(Integer, default=1)
+    quantity = Column(Float, default=1.0)
     total_price = Column(Float, nullable=False)
     selected_modifiers = Column(JSON, default=list) # [{"group": "Sos", "name": "Acı Sos", "price": 15}]
     negative_modifiers = Column(JSON, default=list) # ["Soğansız", "Buzsuz", "Tuzsuz"]

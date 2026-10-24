@@ -52,3 +52,9 @@ Thumbs.db
 # Vite cache
 .vite/
 .vite-temp/
+
+# Binaries & Secrets
+*.exe
+cloudflared.exe
+backend/.auth_secret
+

@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Plus, Edit3, MoreVertical, Clock, Users, 
+  Plus, Edit3, MoreVertical, Clock, 
   ArrowRight, Merge, RefreshCw, FileText, CheckCircle, ArrowRightLeft 
 } from 'lucide-react';
 import { Area, Table, StaffUser } from '../../types';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
-import { MoveTableModal, MergeTableModal, KuverModal, TransferItemsModal } from './TableActionModals';
+import { MoveTableModal, MergeTableModal, TransferItemsModal } from './TableActionModals';
 
 interface FloorViewProps {
   areas: Area[];
@@ -39,7 +39,6 @@ export const FloorView: React.FC<FloorViewProps> = ({
   const [isMoveOpen, setIsMoveOpen] = useState<boolean>(false);
   const [isMergeOpen, setIsMergeOpen] = useState<boolean>(false);
   const [isTransferItemsOpen, setIsTransferItemsOpen] = useState<boolean>(false);
-  const [isKuverOpen, setIsKuverOpen] = useState<boolean>(false);
   const [activeActionTableId, setActiveActionTableId] = useState<number | null>(null);
   const [currentNow, setCurrentNow] = useState<number>(Date.now());
 
@@ -84,10 +83,10 @@ export const FloorView: React.FC<FloorViewProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-3.5rem)] bg-slate-50 dark:bg-slate-950 select-none overflow-hidden transition-colors duration-200">
+    <div className="flex-1 flex flex-col h-full min-h-0 bg-slate-50 dark:bg-slate-950 select-none overflow-hidden transition-colors duration-200">
       {/* Area Horizontal Tabs Bar (Matching Adisyo Frame 105) */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 flex items-center justify-between z-10 shadow-sm overflow-x-auto">
-        <div className="flex items-center gap-1 overflow-x-auto py-1">
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-4 flex items-center justify-between z-10 shadow-sm overflow-x-auto shrink-0">
+        <div className="flex items-center gap-1 overflow-x-auto py-1 no-scrollbar">
           {/* AREA TABS */}
           {areas.map((area) => {
             const isAreaActive = activeAreaId === area.id;
@@ -98,7 +97,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
               <button
                 key={area.id}
                 onClick={() => { sound.beep(); setActiveAreaId(area.id); }}
-                className={`py-3 px-3.5 text-xs font-bold transition-all whitespace-nowrap flex items-center gap-2 border-b-2 ${
+                className={`py-2.5 sm:py-3 px-2.5 sm:px-3.5 text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 sm:gap-2 border-b-2 shrink-0 ${
                   isAreaActive
                     ? 'border-[#2c3e50] dark:border-blue-500 text-slate-900 dark:text-white font-extrabold'
                     : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -117,7 +116,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
           })}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0 pl-1">
           <button
             onClick={() => { sound.beep(); onRefreshAreas(); }}
             className={`p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition ${loading ? 'animate-spin' : ''}`}
@@ -129,7 +128,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
       </div>
 
       {/* Tables Grid Canvas (Matching Adisyo Frame 105) */}
-      <div className="flex-1 overflow-y-auto p-5 md:p-6 bg-slate-50 dark:bg-slate-950">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 bg-slate-50 dark:bg-slate-950">
         {loading && displayedTables.length === 0 && (
           <div className="h-64 flex flex-col items-center justify-center text-slate-400 gap-3 animate-fadeIn">
             <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
@@ -154,7 +153,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5 sm:gap-4">
           {displayedTables.map((table) => {
             const isOccupied = table.status === 'occupied' || !!table.active_order;
             const isBillRequested = table.status === 'bill_requested';
@@ -166,7 +165,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
               <div
                 key={table.id}
                 onClick={() => handleTableClick(table)}
-                className={`h-40 rounded-2xl p-4 flex flex-col justify-between cursor-pointer transition-all duration-150 pos-touch-card relative border shadow-sm hover:shadow-md ${
+                className={`h-32 sm:h-40 rounded-2xl p-3 sm:p-4 flex flex-col justify-between cursor-pointer transition-all duration-150 pos-touch-card relative border shadow-sm hover:shadow-md ${
                   hasBuzzer
                     ? 'bg-purple-50 dark:bg-purple-950/50 border-purple-400 text-purple-900 dark:text-purple-100 animate-pulse'
                     : isBillRequested
@@ -227,13 +226,6 @@ export const FloorView: React.FC<FloorViewProps> = ({
                           <ArrowRightLeft className="w-3.5 h-3.5 text-emerald-500" />
                           <span>Ürün Aktar</span>
                         </button>
-                        <button
-                          onClick={() => { setIsKuverOpen(true); setActiveActionTableId(null); }}
-                          className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
-                        >
-                          <Users className="w-3.5 h-3.5 text-indigo-500" />
-                          <span>Kişi / Kuver</span>
-                        </button>
                       </div>
                     )}
                   </div>
@@ -260,24 +252,15 @@ export const FloorView: React.FC<FloorViewProps> = ({
                   )}
                 </div>
 
-                {/* Card Bottom: Elapsed Timer or Seats (Matching Frame 105: 56 dk 55 sn) */}
+                {/* Card Bottom: Elapsed Timer */}
                 <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                   {isOccupied ? (
                     <span className="font-mono text-slate-600 dark:text-slate-300">
                       {getTableElapsedFormatted(table.opened_at)}
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1">
-                      <Users className="w-3 h-3 text-slate-400" />
-                      <span>{table.seats} Kişilik</span>
-                    </span>
+                    <span className="text-[10px] text-slate-400">{currentArea?.name}</span>
                   )}
-
-                  {table.kuver_count ? (
-                    <span className="text-[10px] font-bold text-slate-500">
-                      {table.kuver_count} Misafir
-                    </span>
-                  ) : null}
                 </div>
               </div>
             );
@@ -300,14 +283,6 @@ export const FloorView: React.FC<FloorViewProps> = ({
         onClose={() => setIsMergeOpen(false)}
         areas={areas}
         sourceTable={selectedTableForAction}
-        operatorName={currentUser?.name || 'Garson'}
-        onSuccess={onRefreshAreas}
-      />
-
-      <KuverModal
-        isOpen={isKuverOpen}
-        onClose={() => setIsKuverOpen(false)}
-        table={selectedTableForAction}
         operatorName={currentUser?.name || 'Garson'}
         onSuccess={onRefreshAreas}
       />

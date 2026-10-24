@@ -27,14 +27,18 @@ interface DiscountDefinition {
 }
 
 const defaultDiscounts: DiscountDefinition[] = [
-  { id: 1, name: '%10 Misafir Sadakat İndirimi', type: 'percent', value: 10, is_active: true, requires_auth: false },
+  { id: 1, name: '%10 Sadakat İndirimi', type: 'percent', value: 10, is_active: true, requires_auth: false },
   { id: 2, name: '%15 Personel İndirimi', type: 'percent', value: 15, is_active: true, requires_auth: false },
   { id: 3, name: '%20 VIP Müşteri İndirimi', type: 'percent', value: 20, is_active: true, requires_auth: true },
   { id: 4, name: '%50 Yönetici / İkram İndirimi', type: 'percent', value: 50, is_active: true, requires_auth: true },
   { id: 5, name: '₺50 Sabit İndirim', type: 'fixed', value: 50, is_active: true, requires_auth: false }
 ];
 
-export const AdisyoSettings: React.FC = () => {
+interface AdisyoSettingsProps {
+  onSettingsUpdated?: (restaurantName: string) => void;
+}
+
+export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdated }) => {
   const [activeSubTab, setActiveSubTab] = useState<string>(() => {
     const saved = localStorage.getItem('boncore_settings_subtab');
     const valid = ['parameters', 'discounts', 'payments', 'currency', 'address'];
@@ -89,7 +93,7 @@ export const AdisyoSettings: React.FC = () => {
   const [gbpRate, setGbpRate] = useState<number>(45.80);
 
   // --- 6. Adres & Firma Bilgileri ---
-  const [restaurantName, setRestaurantName] = useState<string>('FATİH ÇİFTLİĞİ RESTORAN');
+  const [restaurantName, setRestaurantName] = useState<string>('BONCORE RESTORAN');
   const [taxOffice, setTaxOffice] = useState<string>('Kadıköy Vergi Dairesi');
   const [taxNumber, setTaxNumber] = useState<string>('3779901422');
   const [city, setCity] = useState<string>('İstanbul');
@@ -244,10 +248,10 @@ export const AdisyoSettings: React.FC = () => {
     sound.beep();
 
     const payload = {
-      is_kuver_enabled: isKuverEnabled,
-      kuver_price: kuverPrice,
+      is_kuver_enabled: false,
+      kuver_price: 0,
       kuver_title: kuverTitle,
-      auto_kuver_on_table_open: autoKuverOnTableOpen,
+      auto_kuver_on_table_open: false,
       is_service_charge_enabled: isServiceChargeEnabled,
       service_charge_rate: serviceChargeRate,
       service_charge_type: serviceChargeType,
@@ -282,6 +286,9 @@ export const AdisyoSettings: React.FC = () => {
     // Save to SQLite Database
     try {
       await api.updateSettings(payload);
+      if (onSettingsUpdated && restaurantName) {
+        onSettingsUpdated(restaurantName);
+      }
     } catch (err) {
       console.warn('Settings database update failed:', err);
     }
@@ -290,7 +297,7 @@ export const AdisyoSettings: React.FC = () => {
     setTimeout(() => setSavedMessage(false), 3000);
   };
 
-  const handleAddDiscount = (e: React.FormEvent) => {
+  const handleAddDiscount = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDiscName.trim()) return;
     sound.beep();
@@ -307,17 +314,27 @@ export const AdisyoSettings: React.FC = () => {
     localStorage.setItem('boncore_discounts', JSON.stringify(updated));
     setNewDiscName('');
     setIsDiscountModalOpen(false);
+    try {
+      await api.updateSettings({ discounts: updated });
+    } catch (err) {
+      console.warn('Could not auto-save new discount:', err);
+    }
   };
 
-  const handleDeleteDiscount = (id: number) => {
+  const handleDeleteDiscount = async (id: number) => {
     sound.beep();
     const updated = discounts.filter(d => d.id !== id);
     setDiscounts(updated);
     localStorage.setItem('boncore_discounts', JSON.stringify(updated));
+    try {
+      await api.updateSettings({ discounts: updated });
+    } catch (err) {
+      console.warn('Could not auto-save deleted discount:', err);
+    }
   };
 
   const tabs = [
-    { id: 'parameters', label: 'Kuver, Garsoniye & KDV' },
+    { id: 'parameters', label: 'Garsoniye & KDV' },
     { id: 'discounts', label: 'İndirim & İkram Tanımları' },
     { id: 'payments', label: 'Ödeme Tipleri' },
     { id: 'currency', label: 'Döviz Ayarları' },
@@ -335,7 +352,7 @@ export const AdisyoSettings: React.FC = () => {
             </div>
             <div>
               <h2 className="text-lg font-black text-slate-900 dark:text-white">Restaurant Tanımlamaları</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Kuver, garsoniye, KDV oranları, indirimler ve şirket ayarlarınızı buradan yapılandırın.</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Garsoniye, KDV oranları, indirimler ve şirket ayarlarınızı buradan yapılandırın.</p>
             </div>
           </div>
 
@@ -378,7 +395,7 @@ export const AdisyoSettings: React.FC = () => {
           {activeSubTab === 'parameters' && (
             <div className="space-y-8 text-xs">
               {/* 1. Kuver Ayarları Kartı */}
-              <div className="p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-4">
+              <div className="hidden p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
                   <div className="flex items-center gap-2">
                     <Utensils className="w-4 h-4 text-amber-500" />

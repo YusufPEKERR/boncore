@@ -57,7 +57,8 @@ async def get_escpos_thermal_slip(order_id: int, db: AsyncSession = Depends(get_
     """
     stmt = select(Order).where(Order.id == order_id).options(
         selectinload(Order.items),
-        selectinload(Order.table)
+        selectinload(Order.table),
+        selectinload(Order.payments)
     )
     res = await db.execute(stmt)
     order = res.scalar_one_or_none()

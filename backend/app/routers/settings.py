@@ -102,3 +102,12 @@ async def update_settings(payload: Dict[str, Any], db: AsyncSession = Depends(ge
     await ws_hub.broadcast_all("SETTINGS_UPDATED", payload)
     await ws_hub.broadcast_all("ORDER_UPDATED", {})
     return {"status": "success", "message": "Ayarlar veritabanına başarıyla kaydedildi."}
+
+
+@router.get("/time")
+async def get_current_system_time():
+    """
+    Returns live system time, local Turkey date, day name, and timezone.
+    """
+    from app.services.time_service import get_live_time_info
+    return get_live_time_info()
