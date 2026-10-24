@@ -1,55 +1,37 @@
 @echo off
 chcp 65001 >nul
-title BonCore Donanım Köprüsü Otomatik Kurulum
+title BonCore Donanim Koprusu Kurulumu
 color 0A
 
 echo ================================================================
-echo         BONCORE DONANIM KÖPRÜSÜ - OTOMATİK KURULUM
+echo         BONCORE DONANIM KOPRUSU - OTOMATIK KURULUM
 echo ================================================================
 echo.
-echo Bu kurulum:
-echo  1. Uygulamayı güvenli sistem klasörünüze yükler.
-echo  2. Masaüstünüze "BonCore Donanım Köprüsü" kısayolu ekler.
-echo  3. Bilgisayarınız her açıldığında arka planda otomatik başlatır.
-echo.
-echo Lütfen bekleyiniz, kuruluyor...
+echo Kurulum yapiliyor, lutfen bekleyiniz...
 echo.
 
-set TARGET_DIR=%LocalAppData%\BonCoreAgent
+set "TARGET_DIR=%LocalAppData%\BonCoreAgent"
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
 
-:: Halihazırda çalışan eski sürüm varsa kapat
 taskkill /F /IM BonCoreAgent.exe >nul 2>&1
-timeout /t 1 >nul
+ping 127.0.0.1 -n 2 >nul
 
-copy /Y "%~dp0BonCoreAgent.exe" "%TARGET_DIR%\" >nul
-copy /Y "%~dp0config.json" "%TARGET_DIR%\" >nul
+copy /Y "%~dp0BonCoreAgent.exe" "%TARGET_DIR%\BonCoreAgent.exe" >nul
+copy /Y "%~dp0config.json" "%TARGET_DIR%\config.json" >nul
 
-:: Windows Açılışına Otomatik Ekle (Registry)
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "BonCoreAgent" /t REG_SZ /d "\"%TARGET_DIR%\BonCoreAgent.exe\"" /f >nul
 
-:: Masaüstüne Kısayol Oluştur (VBScript ile)
-set VBS_SCRIPT=%TEMP%\create_boncore_shortcut.vbs
-echo Set oWS = WScript.CreateObject("WScript.Shell") > "%VBS_SCRIPT%"
-echo sLinkFile = oWS.SpecialFolders("Desktop") ^& "\BonCore Donanım Köprüsü.lnk" >> "%VBS_SCRIPT%"
-echo Set oLink = oWS.CreateShortcut(sLinkFile) >> "%VBS_SCRIPT%"
-echo oLink.TargetPath = "%TARGET_DIR%\BonCoreAgent.exe" >> "%VBS_SCRIPT%"
-echo oLink.WorkingDirectory = "%TARGET_DIR%" >> "%VBS_SCRIPT%"
-echo oLink.Description = "BonCore POS Donanım Köprüsü" >> "%VBS_SCRIPT%"
-echo oLink.Save >> "%VBS_SCRIPT%"
-cscript //nologo "%VBS_SCRIPT%"
-del "%VBS_SCRIPT%" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath('Desktop'), 'BonCore Donanim Koprusu.lnk')); $s.TargetPath = '%TARGET_DIR%\BonCoreAgent.exe'; $s.WorkingDirectory = '%TARGET_DIR%'; $s.Save()" >nul 2>&1
 
-:: Uygulamayı Şimdi Başlat
 start "" "%TARGET_DIR%\BonCoreAgent.exe"
 
+echo.
 echo ================================================================
-echo  ✅ KURULUM BAŞARIYLA TAMAMLANDI!
+echo  [OK] KURULUM BASARIYLA TAMAMLANDI!
 echo ================================================================
 echo.
-echo  • Uygulama saatin yanındaki simgeler alanına yerleşti.
-echo  • Bilgisayarınızı yeniden başlatsanız dahi otomatik açılacaktır.
-echo  • POS web ekranınız artık dükkandaki teraziyi doğrudan görecektir.
+echo  - Uygulama arka planda ve saatin yaninda calismaya basladi.
+echo  - Bilgisayar her acildiginda otomatik baslayacaktir.
 echo.
-timeout /t 3 >nul
+ping 127.0.0.1 -n 4 >nul
 exit

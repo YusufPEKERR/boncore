@@ -87,17 +87,19 @@ async def download_agent(request: Request):
             with open(exe_path, "rb") as f:
                 zf.writestr("BonCoreAgent.exe", f.read())
         if os.path.exists(kurulum_path):
-            with open(kurulum_path, "r", encoding="utf-8") as f:
-                zf.writestr("Kurulum.bat", f.read())
+            with open(kurulum_path, "rb") as f:
+                c = f.read().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+                zf.writestr("Kurulum.bat", c)
         if os.path.exists(agent_py_path):
-            with open(agent_py_path, "r", encoding="utf-8") as f:
+            with open(agent_py_path, "rb") as f:
                 zf.writestr("boncore_agent.py", f.read())
         if os.path.exists(desktop_py_path):
-            with open(desktop_py_path, "r", encoding="utf-8") as f:
+            with open(desktop_py_path, "rb") as f:
                 zf.writestr("desktop_app.py", f.read())
         if os.path.exists(run_bat_path):
-            with open(run_bat_path, "r", encoding="utf-8") as f:
-                zf.writestr("run_agent.bat", f.read())
+            with open(run_bat_path, "rb") as f:
+                c = f.read().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+                zf.writestr("run_agent.bat", c)
 
         config_content = json.dumps({
             "server_url": server_base,
