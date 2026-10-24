@@ -78,6 +78,17 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [scaleLiveWeight, setScaleLiveWeight] = useState<{ weight: number; is_stable?: boolean; raw?: string; simulated?: boolean; message?: string } | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // Terazi sekmesindeyken her 2 saniyede bir ajan durumunu kontrol et
+  useEffect(() => {
+    if (activeSubTab === 'scale') {
+      localHardware.checkAgentStatus().then(setAgentInfo);
+      const interval = setInterval(() => {
+        localHardware.checkAgentStatus().then(setAgentInfo);
+      }, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [activeSubTab]);
+
   // --- 1. Kuver Parametreleri ---
   const [isKuverEnabled, setIsKuverEnabled] = useState<boolean>(true);
   const [kuverPrice, setKuverPrice] = useState<number>(35.00);

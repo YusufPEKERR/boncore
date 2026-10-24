@@ -792,5 +792,14 @@ export const api = {
       headers: getAuthHeaders(false)
     });
     return res.json();
+  },
+
+  async getAgentStatus(): Promise<{ isOnline: boolean; localIp?: string; version?: string }> {
+    try {
+      const res = await fetch(`${API_BASE}/scale/agent/status`);
+      return res.json();
+    } catch {
+      return { isOnline: false };
+    }
   }
 };

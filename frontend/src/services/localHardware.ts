@@ -9,7 +9,7 @@
 import { api } from './api';
 
 const LOCAL_AGENT_URL = 'http://127.0.0.1:9099';
-const TIMEOUT_MS = 3000;
+const TIMEOUT_MS = 4000;
 
 export interface ScaleReadResult {
   success: boolean;
@@ -28,11 +28,27 @@ export interface ScaleReadResult {
 export const localHardware = {
   /**
    * Kasa bilgisayarında BonCore Donanım Ajanının çalışıp çalışmadığını kontrol eder.
+   * Tarayıcı HTTPS kısıtlamalarını aşmak için önce Sunucu Bulut Rölesini kontrol eder.
    */
   async checkAgentStatus(): Promise<{ isOnline: boolean; version?: string; localIp?: string }> {
+    // 1. Bulut Sunucu Rölesi üzerinden kontrol et (HTTPS ile %100 uyumlu, Mixed-Content engeline takılmaz!)
+    try {
+      const cloudStatus = await api.getAgentStatus();
+      if (cloudStatus && cloudStatus.isOnline) {
+        return {
+          isOnline: true,
+          version: cloudStatus.version,
+          localIp: cloudStatus.localIp
+        };
+      }
+    } catch {
+      // cloud relay check failed, try direct
+    }
+
+    // 2. Doğrudan yerel HTTP soketini dene (Eğer sayfa localhost üzerindeyse)
     try {
       const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 1200);
+      const id = setTimeout(() => controller.abort(), 1000);
       const res = await fetch(`${LOCAL_AGENT_URL}/health`, {
         signal: controller.signal
       });
@@ -42,48 +58,26 @@ export const localHardware = {
         return { isOnline: true, version: data.version, localIp: data.local_pc_ip };
       }
     } catch {
-      // Yerel ajan çalışmıyor
+      // Yerel ajan doğrudan ulaşılamıyor
     }
+
     return { isOnline: false };
   },
 
   /**
    * Terazi ağırlığını okur:
-   * 1. Önce kullanıcının kendi bilgisayarındaki yerel ajana (127.0.0.1:9099) sorar (aynı yerel ağ).
-   * 2. Ajan çalışmıyorsa ana sunucunun backend'ine (/api/scale/weight) sorar.
+   * Sunucu Bulut Rölesi veya Kasa Ajanı üzerinden CAS CL-3000'i sorgular.
    */
-  async getWeight(ip: string = '192.168.1.150', port: number = 2004): Promise<ScaleReadResult> {
-    // 1. Yerel Donanım Ajanını dene (Kullanıcı bilgisayarındaki ağ)
+  async getWeight(ip?: string, port?: number): Promise<ScaleReadResult> {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-      const localRes = await fetch(`${LOCAL_AGENT_URL}/scale/weight?ip=${encodeURIComponent(ip)}&port=${port}`, {
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      if (localRes.ok) {
-        const data = await localRes.json();
-        return {
-          ...data,
-          bridge: 'Yerel Donanım Ajanı (Dükkan Ağı)'
-        };
-      }
-    } catch {
-      // Yerel ajan yanıt vermedi veya kapalı, ana backend'e yönel
-    }
-
-    // 2. Ana Backend Fallback (Aynı sunucuda veya yerel kurulumda çalışırken)
-    try {
+      // Backend API'si eğer kasa bilgisayarında ajan açıksa otomatik olarak o ajana yönlendirir!
       const backendRes = await api.getScaleWeight(ip, port);
-      return {
-        ...backendRes,
-        bridge: 'BonCore Bulut / Ana Sunucu'
-      };
+      return backendRes;
     } catch (err: any) {
       return {
         success: false,
         weight: 0.0,
-        error: `Teraziye ulaşılamadı. Uzak bağlantı kullanıyorsanız lütfen masaüstünüzdeki BonCore Ajanı'nı başlatınız. (${err.message || 'Zaman aşımı'})`
+        error: `Teraziye ulaşılamadı. Lütfen kasa bilgisayarınızda BonCore Ajanı'nın açık olduğunu kontrol edin. (${err.message || 'Zaman aşımı'})`
       };
     }
   },
@@ -91,25 +85,10 @@ export const localHardware = {
   /**
    * Terazi bağlantısını test eder
    */
-  async testConnection(ip: string = '192.168.1.150', port: number = 2004): Promise<any> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-      const res = await fetch(`${LOCAL_AGENT_URL}/scale/test?ip=${encodeURIComponent(ip)}&port=${port}`, {
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        const data = await res.json();
-        return {
-          ...data,
-          bridge: 'Yerel Donanım Ajanı'
-        };
-      }
-    } catch {
-      // fallback
-    }
-
-    return await api.testScaleConnection({ ip_address: ip, port });
+  async testConnection(ip?: string, port?: number): Promise<any> {
+    return await api.testScaleConnection({
+      ip_address: ip || '192.168.1.150',
+      port: port || 2004
+    });
   }
 };
