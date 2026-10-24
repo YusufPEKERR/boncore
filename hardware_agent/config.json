@@ -1,1 +1,5 @@
-{" server_url\:\https://bailey-shell-census-house.trycloudflare.com\,\scale_default_ip\:\192.168.1.150\,\scale_default_port\:2004}
+{
+  "server_url": "https://interference-frame-made-dialog.trycloudflare.com",
+  "scale_default_ip": "192.168.1.150",
+  "scale_default_port": 2004
+}
