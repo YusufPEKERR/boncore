@@ -1006,8 +1006,8 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                     </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                       {agentInfo.isOnline
-                        ? `Kasa Bilgisayarı IP: ${agentInfo.localIp} • Dükkanınızdaki CAS terazisine yerel ağdan tam hızda erişiliyor.`
-                        : "Bulut veya uzak bir bilgisayardan girdiğinizde, dükkanınızdaki teraziden tartım alabilmek için bu bilgisayarda BonCore Ajanı'nın açık olması gerekir."}
+                        ? `Kasa Bilgisayarı IP: ${agentInfo.localIp} • Dükkanınızdaki CAS terazisi ve termal yazıcılar bağlı ve hazır.`
+                        : "Tek tıkla kur ve unut: İndirilen paketteki 'Kurulum.bat' dosyasını çalıştırın. Masaüstünüze kurulur, Windows açılışına eklenir ve saatin yanında (Tray) sessizce çalışır."}
                     </p>
                   </div>
                 </div>
@@ -1031,7 +1031,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                     className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-xs shadow-md shadow-red-600/30 transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                   >
                     <Download className="w-4 h-4" />
-                    <span>Ajanı İndir (.ZIP)</span>
+                    <span>Kurulum Paketini İndir (.ZIP)</span>
                   </a>
                 </div>
               </div>

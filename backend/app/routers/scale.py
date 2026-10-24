@@ -88,12 +88,24 @@ async def download_agent(request: Request):
     mem_zip = io.BytesIO()
     with zipfile.ZipFile(mem_zip, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         root_agent_dir = r"C:\Users\Administrator\Documents\BonCore\hardware_agent"
+        exe_path = os.path.join(root_agent_dir, "BonCoreAgent.exe")
+        kurulum_path = os.path.join(root_agent_dir, "Kurulum.bat")
         agent_py_path = os.path.join(root_agent_dir, "boncore_agent.py")
+        desktop_py_path = os.path.join(root_agent_dir, "desktop_app.py")
         run_bat_path = os.path.join(root_agent_dir, "run_agent.bat")
 
+        if os.path.exists(exe_path):
+            with open(exe_path, "rb") as f:
+                zf.writestr("BonCoreAgent.exe", f.read())
+        if os.path.exists(kurulum_path):
+            with open(kurulum_path, "r", encoding="utf-8") as f:
+                zf.writestr("Kurulum.bat", f.read())
         if os.path.exists(agent_py_path):
             with open(agent_py_path, "r", encoding="utf-8") as f:
                 zf.writestr("boncore_agent.py", f.read())
+        if os.path.exists(desktop_py_path):
+            with open(desktop_py_path, "r", encoding="utf-8") as f:
+                zf.writestr("desktop_app.py", f.read())
         if os.path.exists(run_bat_path):
             with open(run_bat_path, "r", encoding="utf-8") as f:
                 zf.writestr("run_agent.bat", f.read())
