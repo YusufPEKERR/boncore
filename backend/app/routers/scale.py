@@ -63,26 +63,37 @@ async def download_agent(request: Request):
     Downloads the BonCore Hardware Bridge Agent zip package with auto-configured server_url.
     """
     server_base = str(request.base_url).rstrip("/")
-    # Build in-memory zip containing agent scripts and config.json
+    fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    fwd_proto = request.headers.get("x-forwarded-proto") or "https"
+    if fwd_host and "localhost" not in fwd_host and "127.0.0.1" not in fwd_host:
+        server_base = f"{fwd_proto}://{fwd_host}"
+
     mem_zip = io.BytesIO()
     with zipfile.ZipFile(mem_zip, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        agent_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "hardware_agent")
-        agent_py_path = os.path.join(agent_dir, "boncore_agent.py")
-        run_bat_path = os.path.join(agent_dir, "run_agent.bat")
-        
+        root_agent_dir = r"C:\Users\Administrator\Documents\BonCore\hardware_agent"
+        agent_py_path = os.path.join(root_agent_dir, "boncore_agent.py")
+        run_bat_path = os.path.join(root_agent_dir, "run_agent.bat")
+
         if os.path.exists(agent_py_path):
             with open(agent_py_path, "r", encoding="utf-8") as f:
                 zf.writestr("boncore_agent.py", f.read())
         if os.path.exists(run_bat_path):
             with open(run_bat_path, "r", encoding="utf-8") as f:
                 zf.writestr("run_agent.bat", f.read())
-        
+
         config_content = json.dumps({
             "server_url": server_base,
             "scale_default_ip": "192.168.1.150",
             "scale_default_port": 2004
         }, indent=2)
         zf.writestr("config.json", config_content)
+
+    mem_zip.seek(0)
+    return StreamingResponse(
+        mem_zip,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=boncore-hardware-agent.zip"}
+    )
 
     mem_zip.seek(0)
     return StreamingResponse(
