@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
@@ -27,24 +26,14 @@ PENDING_COMMANDS: Dict[str, Any] = {}
 COMPLETED_RESULTS: Dict[str, Any] = {}
 
 def get_public_server_url(request: Request) -> str:
-    # 1. Read cloudflared.log if running via tunnel
-    try:
-        log_path = os.path.join(r"C:\Users\Administrator\Documents\BonCore", "cloudflared.log")
-        if os.path.exists(log_path):
-            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
-                matches = re.findall(r'https://[a-zA-Z0-9-]+\.trycloudflare\.com', f.read())
-                if matches:
-                    return matches[-1]
-    except Exception:
-        pass
-
-    # 2. Check X-Forwarded headers from reverse proxy
+    # 1. Check if client is accessing via domain or external IP
     fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
-    fwd_proto = request.headers.get("x-forwarded-proto") or "https"
+    fwd_proto = request.headers.get("x-forwarded-proto") or ("https" if request.url.scheme == "https" else "http")
     if fwd_host and "localhost" not in fwd_host and "127.0.0.1" not in fwd_host:
         return f"{fwd_proto}://{fwd_host}"
 
-    return str(request.base_url).rstrip("/")
+    # 2. Permanent static public IP of this server
+    return "http://77.67.29.77"
 
 class AgentHeartbeatSchema(BaseModel):
     local_ip: Optional[str] = "127.0.0.1"
@@ -86,7 +75,7 @@ async def download_agent(request: Request):
     server_base = get_public_server_url(request)
 
     mem_zip = io.BytesIO()
-    with zipfile.ZipFile(mem_zip, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(mem_zip, mode="w", compression=zipfile.ZIP_STORED) as zf:
         root_agent_dir = r"C:\Users\Administrator\Documents\BonCore\hardware_agent"
         exe_path = os.path.join(root_agent_dir, "BonCoreAgent.exe")
         kurulum_path = os.path.join(root_agent_dir, "Kurulum.bat")
@@ -118,10 +107,14 @@ async def download_agent(request: Request):
         zf.writestr("config.json", config_content)
 
     mem_zip.seek(0)
-    return StreamingResponse(
-        mem_zip,
+    data = mem_zip.getvalue()
+    return Response(
+        content=data,
         media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=boncore-hardware-agent.zip"}
+        headers={
+            "Content-Disposition": "attachment; filename=boncore-hardware-agent.zip",
+            "Content-Length": str(len(data))
+        }
     )
 
 @router.post("/agent/heartbeat")
