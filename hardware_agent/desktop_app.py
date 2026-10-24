@@ -17,6 +17,7 @@ import winreg
 from datetime import datetime
 import urllib.request
 import urllib.error
+import requests
 
 # GUI & Tray
 import tkinter as tk
@@ -251,6 +252,14 @@ class BonCoreHardwareDesktopApp:
         self.scale_connected = False
         self.last_weight = 0.000
         self.printers_list = []
+
+        # Dayanıklı Bağlantı & Debounce Sayaçları (Sürekli kopma-bağlanma bildirimini engeller)
+        self.session = requests.Session()
+        self.session.headers.update({"User-Agent": f"BonCoreAgent/{AGENT_VERSION}"})
+        self.server_fail_count = 0
+        self.server_success_count = 0
+        self.scale_fail_count = 0
+        self.scale_success_count = 0
 
         # Önceki durumlar (Bildirim tetiklemek için)
         self.prev_server_ok = None
@@ -570,27 +579,39 @@ class BonCoreHardwareDesktopApp:
     def device_monitor_loop(self):
         while self.is_running:
             # 1. Yazıcıları tara (her 10 sn)
-            printers = get_windows_printers()
-            self.printers_list = printers
-            p_text = "\n".join([f"• {p} (Hazır)" for p in printers]) if printers else "Tanımlı yerel yazıcı bulunamadı."
-            self.root.after(0, lambda t=p_text: self.lbl_printers.config(text=t))
+            try:
+                printers = get_windows_printers()
+                self.printers_list = printers
+                p_text = "\n".join([f"• {p} (Hazır)" for p in printers]) if printers else "Tanımlı yerel yazıcı bulunamadı."
+                self.root.after(0, lambda t=p_text: self.lbl_printers.config(text=t))
+            except Exception:
+                pass
 
-            # 2. Terazi ping testi (her 3 sn)
+            # 2. Terazi ping testi (Debounce ile kararlı kontrol)
             scale_ip = self.cfg.get("scale_default_ip", "192.168.1.150")
             scale_port = int(self.cfg.get("scale_default_port", 2004))
-            scale_ok = ping_scale_tcp(scale_ip, scale_port, timeout=1.5)
-            self.scale_connected = scale_ok
+            scale_ok = ping_scale_tcp(scale_ip, scale_port, timeout=2.0)
 
-            # Bağlantı durumu değişti mi? -> Bildirim Gönder
-            if self.prev_scale_ok is not None and self.prev_scale_ok != scale_ok:
-                if scale_ok:
-                    self.show_toast("✅ Terazi Bağlandı", f"CAS CL-3000 terazisine bağlandı ({scale_ip}:{scale_port}).")
-                else:
-                    self.show_toast("⚠️ Terazi Bağlantısı Kesildi!", f"CAS CL-3000 terazisine ulaşılamıyor ({scale_ip}:{scale_port}). Ağ kablosunu kontrol ediniz.")
-            self.prev_scale_ok = scale_ok
+            if scale_ok:
+                self.scale_fail_count = 0
+                self.scale_success_count += 1
+                if self.scale_success_count >= 1 and not self.scale_connected:
+                    self.scale_connected = True
+                    if self.prev_scale_ok is False:
+                        self.show_toast("✅ Terazi Bağlandı", f"CAS CL-3000 terazisine bağlandı ({scale_ip}:{scale_port}).")
+                    self.prev_scale_ok = True
+            else:
+                self.scale_success_count = 0
+                self.scale_fail_count += 1
+                # Anlık dalgalanmaları önlemek için üst üste 3 başarısız ping (yaklaşık 12 sn) beklenir
+                if self.scale_fail_count >= 3 and self.scale_connected:
+                    self.scale_connected = False
+                    if self.prev_scale_ok is not False:
+                        self.show_toast("⚠️ Terazi Bağlantısı Kesildi!", f"CAS CL-3000 terazisine ulaşılamıyor ({scale_ip}:{scale_port}). Ağ kablosunu kontrol ediniz.")
+                    self.prev_scale_ok = False
 
             # GUI güncelle
-            if scale_ok:
+            if self.scale_connected:
                 txt_scale = f"🟢 BAĞLI ({scale_ip}:{scale_port})"
                 color_scale = "#34d399"
             else:
@@ -598,7 +619,7 @@ class BonCoreHardwareDesktopApp:
                 color_scale = "#f87171"
             self.root.after(0, lambda s=txt_scale, c=color_scale: self.lbl_scale_conn.config(text=s, fg=c))
 
-            # Tepsi simgesini güncelle (Genel durum iyiyse yeşil, sorun varsa kırmızı)
+            # Tepsi simgesini güncelle (Genel durum)
             all_ok = self.server_connected and self.scale_connected
             if self.tray_icon:
                 try:
@@ -606,30 +627,46 @@ class BonCoreHardwareDesktopApp:
                 except Exception:
                     pass
 
-            time.sleep(3.0)
+            time.sleep(4.0)
 
     # --- BULUT SUNUCU İLE RELAY VE EMİR DİNLEME ---
     def cloud_relay_loop(self):
         local_ip = get_local_ip()
+        last_heartbeat_time = 0.0
 
         while self.is_running:
             server_url = self.cfg.get("server_url", "http://77.67.29.77").rstrip("/")
-            try:
-                # 1. Heartbeat
-                hb_payload = json.dumps({
-                    "local_ip": local_ip,
-                    "version": AGENT_VERSION,
-                    "agent_name": "BonCore Hardware Agent Desktop"
-                }).encode("utf-8")
-                req = urllib.request.Request(
-                    f"{server_url}/api/scale/agent/heartbeat",
-                    data=hb_payload,
-                    headers={"Content-Type": "application/json"}
-                )
-                with urllib.request.urlopen(req, timeout=3.0) as resp:
-                    pass
+            now = time.time()
 
-                if not self.server_connected:
+            try:
+                # 1. Heartbeat - her 4 saniyede bir gönderilir (her döngüde değil!)
+                if now - last_heartbeat_time >= 4.0:
+                    hb_payload = {
+                        "local_ip": local_ip,
+                        "version": AGENT_VERSION,
+                        "agent_name": "BonCore Hardware Agent Desktop"
+                    }
+                    hb_resp = self.session.post(
+                        f"{server_url}/api/scale/agent/heartbeat",
+                        json=hb_payload,
+                        timeout=5.0
+                    )
+                    hb_resp.raise_for_status()
+                    last_heartbeat_time = now
+
+                # 2. Poll - Emir Dinleme (Reused Keep-Alive TCP Socket)
+                poll_resp = self.session.get(
+                    f"{server_url}/api/scale/agent/poll",
+                    timeout=5.0
+                )
+                poll_resp.raise_for_status()
+                poll_data = poll_resp.json()
+
+                # Başarılı istek -> Sayaçları sıfırla ve gerekirse bağlıya çek
+                self.server_fail_count = 0
+                self.server_success_count += 1
+
+                if self.server_success_count >= 1 and not self.server_connected:
                     self.server_connected = True
                     self.root.after(0, lambda: self.lbl_server_status.config(
                         text=f"🟢 Sunucuya Bağlı ({server_url})",
@@ -641,53 +678,53 @@ class BonCoreHardwareDesktopApp:
                         fg="#86efac"
                     ))
                     if self.prev_server_ok is False:
-                        self.show_toast("✅ Sunucu Bağlandı", f"BonCore POS sunucusuna başarıyla bağlanıldı.")
+                        self.show_toast("✅ Sunucu Bağlandı", "BonCore POS sunucusuna başarıyla bağlanıldı.")
                     self.prev_server_ok = True
 
-                # 2. Poll (Emir Dinleme)
-                poll_req = urllib.request.Request(f"{server_url}/api/scale/agent/poll")
-                with urllib.request.urlopen(poll_req, timeout=4.0) as resp:
-                    poll_data = json.loads(resp.read().decode("utf-8"))
-                    if poll_data.get("has_command"):
-                        req_id = poll_data["req_id"]
-                        action = poll_data.get("action", "read_weight")
-                        target_ip = poll_data.get("ip", self.cfg.get("scale_default_ip", "192.168.1.150"))
-                        target_port = int(poll_data.get("port", self.cfg.get("scale_default_port", 2004)))
-                        timeout = float(poll_data.get("timeout", 2.5))
+                # Emir varsa yerine getir
+                if poll_data.get("has_command"):
+                    req_id = poll_data["req_id"]
+                    action = poll_data.get("action", "read_weight")
+                    target_ip = poll_data.get("ip", self.cfg.get("scale_default_ip", "192.168.1.150"))
+                    target_port = int(poll_data.get("port", self.cfg.get("scale_default_port", 2004)))
+                    timeout = float(poll_data.get("timeout", 2.5))
 
-                        if action == "read_weight":
-                            res = read_cas_scale(target_ip, target_port, timeout)
-                            res["req_id"] = req_id
-                            if res.get("success"):
-                                w = res["weight"]
-                                self.last_weight = w
-                                self.root.after(0, lambda val=w: self.lbl_weight_val.config(text=f"{val:.3f} Kg"))
+                    if action == "read_weight":
+                        res = read_cas_scale(target_ip, target_port, timeout)
+                        res["req_id"] = req_id
+                        if res.get("success"):
+                            w = res["weight"]
+                            self.last_weight = w
+                            self.root.after(0, lambda val=w: self.lbl_weight_val.config(text=f"{val:.3f} Kg"))
 
-                            rep_data = json.dumps(res, ensure_ascii=False).encode("utf-8")
-                            rep_req = urllib.request.Request(
-                                f"{server_url}/api/scale/agent/report",
-                                data=rep_data,
-                                headers={"Content-Type": "application/json"}
-                            )
-                            urllib.request.urlopen(rep_req, timeout=3.0)
+                        self.session.post(
+                            f"{server_url}/api/scale/agent/report",
+                            json=res,
+                            timeout=5.0
+                        )
 
-                        elif action == "test_connection":
-                            ok = ping_scale_tcp(target_ip, target_port, timeout)
-                            res = {
-                                "req_id": req_id,
-                                "success": ok,
-                                "message": "CAS CL-3000 terazisine bağlandı." if ok else "Teraziye ulaşılamadı."
-                            }
-                            rep_data = json.dumps(res, ensure_ascii=False).encode("utf-8")
-                            rep_req = urllib.request.Request(
-                                f"{server_url}/api/scale/agent/report",
-                                data=rep_data,
-                                headers={"Content-Type": "application/json"}
-                            )
-                            urllib.request.urlopen(rep_req, timeout=3.0)
+                    elif action == "test_connection":
+                        ok = ping_scale_tcp(target_ip, target_port, timeout)
+                        res = {
+                            "req_id": req_id,
+                            "success": ok,
+                            "message": "CAS CL-3000 terazisine bağlandı." if ok else "Teraziye ulaşılamadı."
+                        }
+                        self.session.post(
+                            f"{server_url}/api/scale/agent/report",
+                            json=res,
+                            timeout=5.0
+                        )
+
+                # Emir yokken 1 saniye bekle (Ağ yükünü ve soket yıpranmasını önler)
+                time.sleep(1.0)
 
             except Exception:
-                if self.server_connected:
+                self.server_success_count = 0
+                self.server_fail_count += 1
+
+                # Yalnızca üst üste 3 başarısız denemede kopma uyarısı verilir (Debounce)
+                if self.server_fail_count >= 3 and self.server_connected:
                     self.server_connected = False
                     self.root.after(0, lambda: self.lbl_server_status.config(
                         text=f"🔴 Sunucu Bağlantısı Kesildi ({server_url})",

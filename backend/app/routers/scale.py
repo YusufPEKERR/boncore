@@ -135,7 +135,7 @@ async def get_agent_status():
     Frontend checks if the agent is actively running.
     """
     diff = time.time() - AGENT_STATE["last_seen"]
-    is_online = diff < 8.0
+    is_online = diff < 15.0
     return {
         "isOnline": is_online,
         "localIp": AGENT_STATE["local_ip"] if is_online else None,
