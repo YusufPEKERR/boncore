@@ -73,12 +73,7 @@ async def get_current_weight(
     target_ip = (ip or cfg.get("ip_address") or "192.168.1.150").strip()
     target_port = int(port or cfg.get("port") or 2004)
     timeout = float(cfg.get("timeout") or 2.5)
-    demo_mode = bool(cfg.get("demo_mode", False))
-
-    if demo_mode:
-        return scale_service.get_demo_weight()
-
-    # Query physical scale in threadpool
+    # Gerçek fiziksel teraziyi TCP soket üzerinden sorgula
     result = await asyncio.to_thread(
         scale_service.sync_read_cas_cl3000,
         target_ip,

@@ -190,24 +190,12 @@ def parse_cas_weight_data(raw: str) -> Dict[str, Any]:
 
 def get_demo_weight() -> Dict[str, Any]:
     """
-    Realistic demo weight generator when the physical scale is offline or in test mode.
+    Random simülasyon kaldırıldı. Terazi bağlı değilse kesinlikle rastgele ağırlık verilmez.
     """
-    import random
-    # Choose realistic weights for meat/deli: 0.350, 0.480, 0.750, 1.250, 1.480, 2.100 kg
-    samples = [0.340, 0.480, 0.650, 0.850, 1.150, 1.280, 1.450, 1.820, 2.150]
-    w = random.choice(samples)
     return {
-        "success": True,
-        "weight": w,
-        "unit": "kg",
-        "grams": int(round(w * 1000)),
-        "is_stable": True,
-        "raw": f"ST,GS,+{w:07.3f}kg (DEMO SIMULASYON)",
-        "ip": "DEMO-SIMULATOR",
-        "port": 2004,
-        "simulated": True,
-        "timestamp": get_local_now().isoformat(),
-        "message": f"Demo Simulasyon Modu: {w:.3f} Kg ({int(round(w*1000))} gr) uretildi."
+        "success": False,
+        "weight": 0.0,
+        "error": "CAS CL-3000 terazisi bağlı değil veya IP adresine ulaşılamıyor. Lütfen terazi IP adresini Ayarlar > Terazi menüsünden kontrol ediniz."
     }
 
 def test_tcp_connectivity(ip: str, port: int, timeout: float = 2.0) -> Dict[str, Any]:

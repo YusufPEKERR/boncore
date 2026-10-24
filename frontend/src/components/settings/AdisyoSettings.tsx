@@ -60,7 +60,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     ip_address: string;
     port: number;
     timeout: number;
-    demo_mode: boolean;
+    
   }>({
     enabled: true,
     model: 'CAS CL-3000',
@@ -68,7 +68,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     ip_address: '192.168.1.150',
     port: 2004,
     timeout: 2.5,
-    demo_mode: false
+    
   });
   const [scaleTesting, setScaleTesting] = useState<boolean>(false);
   const [scaleTestResult, setScaleTestResult] = useState<{ success: boolean; message?: string; error?: string; latency_ms?: number } | null>(null);
@@ -1047,24 +1047,6 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                     </div>
                   </div>
 
-                  {/* Demo Modu Toggle */}
-                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <div>
-                      <span className="font-bold text-slate-900 dark:text-white">Simülasyon / Test Modu:</span>
-                      <p className="text-[11px] text-slate-500">Fiziksel terazi ağda yokken sanal tartım verisi üretir.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setScaleConfig({ ...scaleConfig, demo_mode: !scaleConfig.demo_mode })}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                        scaleConfig.demo_mode
-                          ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
-                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                      }`}
-                    >
-                      {scaleConfig.demo_mode ? 'AÇIK (Demo)' : 'KAPALI (Gerçek Ağ)'}
-                    </button>
-                  </div>
                 </div>
 
                 {/* Canlı Test & Dijital Gösterge Ekranı */}
