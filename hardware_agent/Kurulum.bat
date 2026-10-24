@@ -18,6 +18,10 @@ echo.
 set TARGET_DIR=%LocalAppData%\BonCoreAgent
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
 
+:: Halihazırda çalışan eski sürüm varsa kapat
+taskkill /F /IM BonCoreAgent.exe >nul 2>&1
+timeout /t 1 >nul
+
 copy /Y "%~dp0BonCoreAgent.exe" "%TARGET_DIR%\" >nul
 copy /Y "%~dp0config.json" "%TARGET_DIR%\" >nul
 
