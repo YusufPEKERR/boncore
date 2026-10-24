@@ -56,6 +56,9 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [weightKgInput, setWeightKgInput] = useState<string>('');
   const [weightGramInput, setWeightGramInput] = useState<string>('');
   const [weightActiveField, setWeightActiveField] = useState<'kg' | 'gram'>('kg');
+  // CAS CL-3000 Terazi State
+  const [scaleReading, setScaleReading] = useState<boolean>(false);
+  const [scaleStatus, setScaleStatus] = useState<{ is_stable?: boolean; simulated?: boolean; message?: string } | null>(null);
 
   // Quick Action Modals
   const [isFastPayModalOpen, setIsFastPayModalOpen] = useState<boolean>(false);
@@ -232,8 +235,49 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     return Number(total.toFixed(3));
   };
 
+  // Read weight from CAS CL-3000 Ethernet Scale
+  const handleReadFromScale = async () => {
+    try {
+      setScaleReading(true);
+      setScaleStatus(null);
+      const res = await api.getScaleWeight();
+      if (res.success && res.weight !== undefined && res.weight > 0) {
+        sound.beep();
+        const cleanKg = Number(Number(res.weight).toFixed(3));
+        setWeightKgInput(String(cleanKg));
+        setWeightGramInput(String(Math.round(cleanKg * 1000)));
+        setScaleStatus({
+          is_stable: res.is_stable,
+          simulated: res.simulated,
+          message: `${cleanKg.toFixed(3)} Kg okundu${res.is_stable ? ' (Dengeli Tartım)' : ' (Dengesiz)'}`
+        });
+        showToast(`⚖️ CAS CL-3000'den tartım alındı: ${cleanKg} Kg (${Math.round(cleanKg * 1000)} gr)`, 'success');
+      } else if (res.success && res.weight === 0) {
+        sound.warning();
+        setScaleStatus({
+          message: 'Kefede ağırlık yok (0.000 Kg)'
+        });
+        showToast('Terazi kefesi boş (0.000 Kg). Lütfen tartılacak eti terazinin üzerine koyun.', 'error');
+      } else {
+        sound.warning();
+        setScaleStatus({
+          message: res.error || 'Teraziye ulaşılamadı'
+        });
+        showToast(res.error || 'CAS CL-3000 teraziden ağırlık okunamadı.', 'error');
+      }
+    } catch (err: any) {
+      sound.warning();
+      setScaleStatus({ message: 'Ağ bağlantı hatası' });
+      showToast(`Terazi bağlantı hatası: ${err.message || 'Sokete ulaşılamadı'}`, 'error');
+    } finally {
+      setScaleReading(false);
+    }
+  };
+
   // Open Weight (Kg / Gramaj) Modal for a Kg product
   const openWeightModal = (product: Product) => {
+    setScaleStatus(null);
+    setScaleReading(false);
     const existingUnsaved = cartItems.find(i => !i.id && i.product_id === product.id);
     if (existingUnsaved && existingUnsaved.quantity > 0) {
       const kgVal = Number(Number(existingUnsaved.quantity).toFixed(3));
@@ -1302,6 +1346,45 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* CAS CL-3000 Ethernet Terazi Bağlantı Paneli */}
+            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/30 border-2 border-emerald-500/40 rounded-2xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm">
+              <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/30 shrink-0">
+                  <Scale className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-black text-emerald-950 dark:text-emerald-100">CAS CL-3000 (Ethernet)</span>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
+                      CANLI AĞ
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold truncate mt-0.5">
+                    {scaleStatus?.message || "Eti terazinin kefesine koyup butona basın"}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleReadFromScale}
+                disabled={scaleReading}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs shadow-md shadow-emerald-600/25 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 whitespace-nowrap"
+              >
+                {scaleReading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Tartılıyor...</span>
+                  </>
+                ) : (
+                  <>
+                    <Scale className="w-4 h-4" />
+                    <span>⚖️ Teraziden Ağırlığı Al</span>
+                  </>
+                )}
               </button>
             </div>
 

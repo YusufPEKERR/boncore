@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Settings, Save, CheckCircle2, Percent, DollarSign, 
   Receipt, Plus, Trash2, Edit3, ShieldAlert, Sparkles, Building2, 
-  Coins, HelpCircle, Utensils, Tag, CreditCard, Check, X, AlertCircle 
+  Coins, HelpCircle, Utensils, Tag, CreditCard, Check, X, AlertCircle, 
+  Scale, RefreshCw, Wifi, WifiOff, Activity 
 } from 'lucide-react';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
@@ -41,7 +42,7 @@ interface AdisyoSettingsProps {
 export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdated }) => {
   const [activeSubTab, setActiveSubTab] = useState<string>(() => {
     const saved = localStorage.getItem('boncore_settings_subtab');
-    const valid = ['parameters', 'discounts', 'payments', 'currency', 'address'];
+    const valid = ['parameters', 'discounts', 'payments', 'currency', 'address', 'scale'];
     return saved && valid.includes(saved) ? saved : 'parameters';
   });
 
@@ -50,6 +51,29 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   }, [activeSubTab]);
 
   const [savedMessage, setSavedMessage] = useState<boolean>(false);
+
+  // --- CAS CL-3000 Ethernet Terazi Durumu ---
+  const [scaleConfig, setScaleConfig] = useState<{
+    enabled: boolean;
+    model: string;
+    connection_type: string;
+    ip_address: string;
+    port: number;
+    timeout: number;
+    demo_mode: boolean;
+  }>({
+    enabled: true,
+    model: 'CAS CL-3000',
+    connection_type: 'ethernet',
+    ip_address: '192.168.1.150',
+    port: 2004,
+    timeout: 2.5,
+    demo_mode: false
+  });
+  const [scaleTesting, setScaleTesting] = useState<boolean>(false);
+  const [scaleTestResult, setScaleTestResult] = useState<{ success: boolean; message?: string; error?: string; latency_ms?: number } | null>(null);
+  const [scaleWeightReading, setScaleWeightReading] = useState<boolean>(false);
+  const [scaleLiveWeight, setScaleLiveWeight] = useState<{ weight: number; is_stable?: boolean; raw?: string; simulated?: boolean; message?: string } | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   // --- 1. Kuver Parametreleri ---
@@ -286,6 +310,11 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     // Save to SQLite Database
     try {
       await api.updateSettings(payload);
+      try {
+        await api.updateScaleConfig(scaleConfig);
+      } catch (e) {
+        console.error('Scale save err:', e);
+      }
       if (onSettingsUpdated && restaurantName) {
         onSettingsUpdated(restaurantName);
       }
@@ -338,7 +367,8 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     { id: 'discounts', label: 'İndirim & İkram Tanımları' },
     { id: 'payments', label: 'Ödeme Tipleri' },
     { id: 'currency', label: 'Döviz Ayarları' },
-    { id: 'address', label: 'Adres & Şirket Bilgileri' }
+    { id: 'address', label: 'Adres & Şirket Bilgileri' },
+    { id: 'scale', label: '⚖️ CAS Terazi (Ethernet)' }
   ];
 
   return (
@@ -928,6 +958,216 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
               </div>
             </div>
           )}
+          {/* 6. CAS CL-3000 Terazi Ayarları & Canlı Test Paneli */}
+          {activeSubTab === 'scale' && (
+            <div className="space-y-6 text-xs font-semibold">
+              {/* Bilgilendirme Kartı */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/30 flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/30 shrink-0">
+                  <Scale className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-emerald-900 dark:text-emerald-200">
+                    CAS CL-3000 / CL-5000 Ethernet Barkodlu / Tezgah Terazisi
+                  </h4>
+                  <p className="text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                    Terazinizi yerel ağa (Ethernet switch/modem) bağlayarak doğrudan IP üzerinden haberleştirebilirsiniz. 
+                    POS sipariş ekranında gramajlı ürün seçildiğinde <strong>"⚖️ Teraziden Ağırlığı Al"</strong> butonu bu IP ve port üzerinden teraziden kararlı ağırlığı anlık olarak okur.
+                  </p>
+                </div>
+              </div>
+
+              {/* Terazi Parametreleri */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4">
+                  <h5 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-emerald-600" />
+                    <span>Ağ & Donanım Yapılandırması</span>
+                  </h5>
+
+                  <div>
+                    <label className="text-slate-500 block mb-1">Terazi Modeli:</label>
+                    <input
+                      type="text"
+                      value={scaleConfig.model}
+                      onChange={(e) => setScaleConfig({ ...scaleConfig, model: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-bold text-slate-900 dark:text-white"
+                      placeholder="CAS CL-3000"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-slate-500 block mb-1">Terazi IP Adresi:</label>
+                      <input
+                        type="text"
+                        value={scaleConfig.ip_address}
+                        onChange={(e) => setScaleConfig({ ...scaleConfig, ip_address: e.target.value })}
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono font-bold text-emerald-600 dark:text-emerald-400"
+                        placeholder="192.168.1.150"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-500 block mb-1">Port (Varsayılan: 2004):</label>
+                      <input
+                        type="number"
+                        value={scaleConfig.port}
+                        onChange={(e) => setScaleConfig({ ...scaleConfig, port: parseInt(e.target.value) || 2004 })}
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono font-bold text-slate-900 dark:text-white"
+                        placeholder="2004"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-slate-500 block mb-1">Zaman Aşımı (Saniye):</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={scaleConfig.timeout}
+                        onChange={(e) => setScaleConfig({ ...scaleConfig, timeout: parseFloat(e.target.value) || 2.5 })}
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-slate-900 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-500 block mb-1">Entegrasyon Durumu:</label>
+                      <button
+                        type="button"
+                        onClick={() => setScaleConfig({ ...scaleConfig, enabled: !scaleConfig.enabled })}
+                        className={`w-full py-2.5 px-3 rounded-xl font-bold flex items-center justify-center gap-2 cursor-pointer transition ${
+                          scaleConfig.enabled
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-500/30'
+                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                        }`}
+                      >
+                        {scaleConfig.enabled ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <X className="w-4 h-4" />}
+                        <span>{scaleConfig.enabled ? 'Aktif (Açık)' : 'Devre Dışı'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Demo Modu Toggle */}
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-slate-900 dark:text-white">Simülasyon / Test Modu:</span>
+                      <p className="text-[11px] text-slate-500">Fiziksel terazi ağda yokken sanal tartım verisi üretir.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setScaleConfig({ ...scaleConfig, demo_mode: !scaleConfig.demo_mode })}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        scaleConfig.demo_mode
+                          ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                      }`}
+                    >
+                      {scaleConfig.demo_mode ? 'AÇIK (Demo)' : 'KAPALI (Gerçek Ağ)'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Canlı Test & Dijital Gösterge Ekranı */}
+                <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4 flex flex-col justify-between">
+                  <div>
+                    <h5 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2 mb-3">
+                      <Wifi className="w-4 h-4 text-emerald-600" />
+                      <span>Terazi Bağlantı & Tartım Testi</span>
+                    </h5>
+
+                    {/* Dijital Kantar Göstergesi */}
+                    <div className="p-4 rounded-2xl bg-slate-950 border-2 border-emerald-500/60 shadow-inner text-center font-mono space-y-1 relative overflow-hidden">
+                      <div className="flex items-center justify-between text-[10px] text-emerald-400/80 font-bold uppercase tracking-wider">
+                        <span>CAS CL-3000 EKRAN</span>
+                        <span>{scaleLiveWeight?.is_stable !== false ? '• DENGELİ (ST)' : '• DENGESİZ (US)'}</span>
+                      </div>
+                      <div className="text-4xl sm:text-5xl font-black text-emerald-400 tracking-wider py-1 drop-shadow-[0_0_12px_rgba(16,185,129,0.5)]">
+                        {scaleLiveWeight ? scaleLiveWeight.weight.toFixed(3) : '0.000'} <span className="text-xl text-emerald-500/90 font-bold">Kg</span>
+                      </div>
+                      <div className="text-[11px] text-emerald-400/70 font-semibold truncate">
+                        {scaleLiveWeight?.raw || 'Teraziden tartım okumak için butona basın.'}
+                      </div>
+                    </div>
+
+                    {/* Test Sonuç Mesajı */}
+                    {scaleTestResult && (
+                      <div className={`mt-3 p-3 rounded-xl border text-xs font-bold flex items-start gap-2 ${
+                        scaleTestResult.success
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                          : 'bg-rose-50 text-rose-800 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+                      }`}>
+                        {scaleTestResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />}
+                        <div>
+                          <div>{scaleTestResult.message || scaleTestResult.error}</div>
+                          {scaleTestResult.latency_ms !== undefined && (
+                            <div className="text-[10px] opacity-75 mt-0.5">Ping Gecikmesi: {scaleTestResult.latency_ms} ms</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Aksiyon Butonları */}
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <button
+                      type="button"
+                      disabled={scaleTesting}
+                      onClick={async () => {
+                        try {
+                          sound.beep();
+                          setScaleTesting(true);
+                          setScaleTestResult(null);
+                          const res = await api.testScaleConnection({
+                            ip_address: scaleConfig.ip_address,
+                            port: scaleConfig.port,
+                            timeout: scaleConfig.timeout
+                          });
+                          setScaleTestResult(res);
+                        } catch (err: any) {
+                          setScaleTestResult({ success: false, error: err.message || 'Ağ bağlantısı kurulamadı' });
+                        } finally {
+                          setScaleTesting(false);
+                        }
+                      }}
+                      className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-extrabold flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
+                    >
+                      {scaleTesting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4 text-emerald-600" />}
+                      <span>{scaleTesting ? 'Bağlanıyor...' : 'Ağı Test Et'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={scaleWeightReading}
+                      onClick={async () => {
+                        try {
+                          sound.beep();
+                          setScaleWeightReading(true);
+                          const res = await api.getScaleWeight(scaleConfig.ip_address, scaleConfig.port);
+                          if (res.success && res.weight !== undefined) {
+                            setScaleLiveWeight(res);
+                            sound.beep();
+                          } else {
+                            sound.warning();
+                            setScaleTestResult({ success: false, error: res.error || 'Ağırlık okunamadı.' });
+                          }
+                        } catch (err: any) {
+                          sound.warning();
+                          setScaleTestResult({ success: false, error: err.message || 'Hata oluştu' });
+                        } finally {
+                          setScaleWeightReading(false);
+                        }
+                      }}
+                      className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold shadow-md shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
+                    >
+                      {scaleWeightReading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Scale className="w-4 h-4" />}
+                      <span>{scaleWeightReading ? 'Okunuyor...' : 'Ağırlığı Oku'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
 

@@ -742,10 +742,55 @@ export const api = {
     return res.json();
   },
 
-  // Live System Time API
+    // Live System Time API
   async getServerTime(): Promise<any> {
     const res = await fetch(`${API_BASE}/settings/time`);
     return res.json();
+  },
+
+  // CAS CL-3000 Ethernet Scale API
+  async getScaleConfig(): Promise<any> {
+    const res = await fetch(`${API_BASE}/scale/config`, {
+      headers: getAuthHeaders(false)
+    });
+    return res.json();
+  },
+
+  async updateScaleConfig(payload: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/scale/config`, {
+      method: 'POST',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  },
+
+  async testScaleConnection(payload: { ip_address: string; port: number; timeout?: number }): Promise<any> {
+    const res = await fetch(`${API_BASE}/scale/test`, {
+      method: 'POST',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  },
+
+  async getScaleWeight(ip?: string, port?: number): Promise<{
+    success: boolean;
+    weight: number;
+    unit?: string;
+    grams?: number;
+    is_stable?: boolean;
+    raw?: string;
+    simulated?: boolean;
+    error?: string;
+    message?: string;
+  }> {
+    const q = new URLSearchParams();
+    if (ip) q.append('ip', ip);
+    if (port) q.append('port', String(port));
+    const res = await fetch(`${API_BASE}/scale/weight?${q.toString()}`, {
+      headers: getAuthHeaders(false)
+    });
+    return res.json();
   }
 };
-
