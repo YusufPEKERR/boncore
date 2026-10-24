@@ -1395,26 +1395,36 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                             <div
                               key={prName}
                               onClick={() => handleTogglePrinter(prName)}
-                              className={`p-3 rounded-xl border-2 transition cursor-pointer flex items-center justify-between gap-3 select-none ${
+                              className={`p-3 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
                                 isSelected
-                                  ? 'border-blue-600 bg-blue-500/10 text-blue-900 dark:text-blue-200 shadow-sm'
-                                  : 'border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+                                  ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40 shadow-sm ring-1 ring-blue-500'
+                                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-xs'
                               }`}
                             >
-                              <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
                                 <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition shrink-0 ${
                                   isSelected 
-                                    ? 'bg-blue-600 border-blue-600 text-white' 
-                                    : 'border-slate-400 bg-white dark:bg-slate-800'
+                                    ? 'bg-blue-600 border-blue-600 text-white shadow-xs' 
+                                    : 'border-slate-400 bg-slate-50 dark:bg-slate-800'
                                 }`}>
                                   {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                                 </div>
-                                <span className="text-xs font-bold truncate" title={prName}>
-                                  {prName}
-                                </span>
+                                <Printer className={`w-4 h-4 shrink-0 ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`} />
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs font-black text-slate-900 dark:text-slate-100 truncate block" title={prName}>
+                                    {prName}
+                                  </div>
+                                  <div className="text-[10px] font-medium text-slate-400 dark:text-slate-500">
+                                    Windows Spooler
+                                  </div>
+                                </div>
                               </div>
-                              <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
-                                Termal / RAW
+                              <span className={`text-[10px] uppercase font-black px-2 py-0.5 rounded-full shrink-0 border ${
+                                isSelected
+                                  ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700'
+                                  : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600'
+                              }`}>
+                                {isSelected ? 'SEÇİLİ' : 'RAW'}
                               </span>
                             </div>
                           );
