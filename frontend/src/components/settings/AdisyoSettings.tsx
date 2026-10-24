@@ -1388,45 +1388,51 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                     }
 
                     return (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                         {discovered.map((prName) => {
                           const isSelected = selectedPrinters.includes(prName);
                           return (
                             <div
                               key={prName}
                               onClick={() => handleTogglePrinter(prName)}
-                              className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3 select-none ${
+                              className={`p-3 px-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
                                 isSelected
                                   ? 'border-blue-600 bg-blue-50/90 dark:bg-blue-950/40 shadow-sm ring-1 ring-blue-500'
-                                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700 shadow-xs'
+                                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700'
                               }`}
                             >
-                              <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition shrink-0 ${
-                                isSelected 
-                                  ? 'bg-blue-600 border-blue-600 text-white shadow-xs' 
-                                  : 'border-slate-400 bg-slate-50 dark:bg-slate-700'
-                              }`}>
-                                {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                              </div>
-
-                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                                isSelected ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-700/60 text-slate-500'
-                              }`}>
-                                <Printer className="w-4 h-4" />
-                              </div>
-
-                              <div className="flex-1 min-w-0">
-                                <div className="text-xs font-black text-slate-900 dark:text-white break-words leading-snug">
-                                  {prName}
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition shrink-0 ${
+                                  isSelected 
+                                    ? 'bg-blue-600 border-blue-600 text-white shadow-xs' 
+                                    : 'border-slate-400 bg-slate-50 dark:bg-slate-700'
+                                }`}>
+                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                                 </div>
-                                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1.5 font-medium">
-                                  <span>Windows</span>
-                                  <span>•</span>
-                                  <span className={isSelected ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-500'}>
-                                    {isSelected ? '✓ Seçili' : 'Termal RAW'}
-                                  </span>
+
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                  isSelected ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-700 text-slate-500'
+                                }`}>
+                                  <Printer className="w-4 h-4" />
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs font-bold text-slate-900 dark:text-white truncate" title={prName}>
+                                    {prName}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                                    Windows Spooler
+                                  </div>
                                 </div>
                               </div>
+
+                              <span className={`text-[10px] uppercase px-2 py-0.5 rounded-full shrink-0 border ${
+                                isSelected
+                                  ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 font-black'
+                                  : 'bg-slate-100 dark:bg-slate-700 text-slate-500 border-slate-200 dark:border-slate-600 font-bold'
+                              }`}>
+                                {isSelected ? '✓ SEÇİLİ' : 'RAW'}
+                              </span>
                             </div>
                           );
                         })}
