@@ -25,7 +25,7 @@ from tkinter import ttk, messagebox
 import pystray
 from PIL import Image, ImageDraw
 
-AGENT_VERSION = "1.2.0"
+AGENT_VERSION = "1.3.0"
 APP_TITLE = "BonCore Donanım Köprüsü"
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
@@ -184,17 +184,16 @@ def print_slip_to_printer(printer_name: str, raw_text: str) -> bool:
 def parse_cas_cl3000(raw_bytes: bytes, raw_str: str):
     is_stable = True
     raw_upper = raw_str.upper()
-    if "US" in raw_upper or "UNSTABLE" in raw_upper or "U" in raw_upper and "ST" not in raw_upper:
+    if "US" in raw_upper or "UNSTABLE" in raw_upper or (" U " in raw_upper) or (raw_upper.startswith("U")):
         is_stable = False
-    elif "ST" in raw_upper or "STABLE" in raw_upper or "S" in raw_upper:
+    elif "ST" in raw_upper or "STABLE" in raw_upper or (" S " in raw_upper) or (raw_upper.startswith("S")):
         is_stable = True
 
     unit = "kg"
     if " g" in raw_str.lower() and "kg" not in raw_str.lower():
         unit = "g"
 
-    # 1. RegEx ile ondalıklı veya tam sayı ara (Örn: "1.250", "+ 0.450 kg", "001250")
-    # Öncelik ondalıklı sayılarda
+    # 1. RegEx ile ondalıklı sayı ara (Örn: "1.250", "+  0.450 kg", "0.000")
     match_float = re.search(r'([+-]?\s*\d+\.\d+)', raw_str)
     weight = 0.0
     found = False
@@ -212,13 +211,13 @@ def parse_cas_cl3000(raw_bytes: bytes, raw_str: str):
             pass
 
     if not found:
-        # Ondalıksız tamsayı ara (Örn: " 1250 g" veya "001250")
-        match_int = re.search(r'([+-]?\s*\d+)', raw_str)
+        # 2. Ondalıksız tam sayı ara (Örn: " 1250 g" veya CAS 6-digit weight "001250")
+        match_int = re.search(r'([+-]?\s*\d{2,})', raw_str)
         if match_int:
             try:
                 val_str = match_int.group(1).replace(" ", "")
                 val = float(val_str)
-                # 4-6 haneli sayı ise gram olarak yorumla (Örn: 1250 -> 1.250 kg)
+                # 50 ve üzeri sayı ise gramdır (Örn: 1250 gram = 1.250 kg)
                 if val >= 50 or unit == "g":
                     weight = round(val / 1000.0, 3)
                 else:
@@ -227,14 +226,15 @@ def parse_cas_cl3000(raw_bytes: bytes, raw_str: str):
             except Exception:
                 pass
 
-    if not found and len(raw_bytes) >= 4:
+    if not found and len(raw_bytes) >= 3:
         # 3. Binary / BCD paket çözücü (CAS CL binary format)
-        for i in range(len(raw_bytes) - 3):
-            # 3 veya 4 baytlık sayı dizisini ara
+        for i in range(len(raw_bytes) - 2):
             chunk = raw_bytes[i:i+4]
-            if all(0x30 <= b <= 0x39 for b in chunk):
+            # ASCII rakam bloğu var mı
+            digits = [chr(b) for b in chunk if 0x30 <= b <= 0x39]
+            if len(digits) >= 3:
                 try:
-                    val = float(chunk.decode('ascii'))
+                    val = float("".join(digits))
                     weight = round(val / 1000.0, 3)
                     found = True
                     break
@@ -251,51 +251,71 @@ def parse_cas_cl3000(raw_bytes: bytes, raw_str: str):
 
 def read_cas_scale(ip: str, port: int = 2004, timeout: float = 2.0):
     sock = None
+    all_chunks = []
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(min(timeout, 1.5))
         sock.connect((ip, port))
 
         # 1. Aşama: Stream (Sürekli akış) dinle
-        data = b""
-        sock.settimeout(0.3)
+        sock.settimeout(0.35)
         try:
             chunk = sock.recv(512)
             if chunk:
-                data += chunk
+                all_chunks.append(chunk)
         except Exception:
             pass
 
-        # 2. Aşama: Stream yoksa CAS komutlarını hızlıca gönder
-        if not data or len(data.strip()) == 0:
+        # 2. Aşama: Stream yoksa CAS komut varyasyonlarını hızlıca dene
+        if not all_chunks:
+            # CAS CL-3000 / CL-5000 / SW / AP komut setleri
             cmds = [
-                b"\x05",              # ENQ (CAS CL-3000 / CL-5000 sorgusu)
-                b"W\r\n",            # Standart CAS Weight query
-                b"Q\r\n",            # CAS CL/PDI query
-                b"\x11",              # DC1
-                b"\x02W\x03",          # STX W ETX
-                b"\x0201W\x03",        # STX 01 W ETX
-                b"P\r\n",            # Print / Poll
-                b":010300000001FB\r\n" # Modbus TCP
+                b"W",                   # SambaPOS / CAS ECR standardı (Tek bayt 0x57)
+                b"W\r",                 # CAS CL-3000 standart komutu (0x57 0x0D)
+                b"\x05",               # ENQ (Inquiry)
+                b"\x05\x11",           # ENQ + DC1
+                b"W\r\n",             # CRLF
+                b"Q\r",                 # CAS Q query
+                b"\x11",               # DC1
+                b"\x02W\x03",           # STX W ETX
+                b"\x0201W\r\x03",      # STX 01 W CR ETX
+                b"P\r",                 # Print query
+                b":010300000001FB\r\n"  # Modbus / CAS Ethernet
             ]
             for cmd in cmds:
                 try:
                     sock.sendall(cmd)
                     time.sleep(0.08)
-                    chunk = sock.recv(256)
-                    if chunk and len(chunk.strip()) > 0:
-                        data += chunk
-                        if b"kg" in chunk.lower() or b"g" in chunk.lower() or b"st" in chunk.lower() or len(chunk) >= 4:
+                    chunk = sock.recv(512)
+                    if chunk and len(chunk) > 0:
+                        all_chunks.append(chunk)
+                        # Eğer terazi ACK (0x06) dönerse hemen ardından 'W' gönder
+                        if b"\x06" in chunk:
+                            try:
+                                sock.sendall(b"W\r")
+                                time.sleep(0.08)
+                                sub_chunk = sock.recv(512)
+                                if sub_chunk:
+                                    all_chunks.append(sub_chunk)
+                            except Exception:
+                                pass
+                        # Yeterli veri geldiyse döngüyü bitir
+                        joined = b"".join(all_chunks)
+                        if b"kg" in joined.lower() or b"g" in joined.lower() or any(0x30 <= b <= 0x39 for b in joined):
                             break
                 except Exception:
                     pass
 
+        data = b"".join(all_chunks)
         raw_str = data.decode("latin-1", errors="ignore").strip()
+
         if not data:
             return {
                 "success": False,
                 "weight": 0.0,
-                "error": f"Teraziye ba\u011flan\u0131ld\u0131 ancak yan\u0131t al\u0131namad\u0131 ({ip}:{port}). Kefeyi kontrol ediniz."
+                "raw": "",
+                "hex": "",
+                "error": f"Teraziye baglandi ancak yanit donmedi ({ip}:{port}). Kefeyi kontrol ediniz."
             }
 
         parsed = parse_cas_cl3000(data, raw_str)
@@ -311,7 +331,7 @@ def read_cas_scale(ip: str, port: int = 2004, timeout: float = 2.0):
             "port": port
         }
     except Exception as e:
-        return {"success": False, "weight": 0.0, "error": str(e)}
+        return {"success": False, "weight": 0.0, "error": str(e), "raw": "", "hex": ""}
     finally:
         if sock:
             try:

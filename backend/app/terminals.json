@@ -1,6 +1,6 @@
 {
-  "kasa_61ea91": {
-    "id": "kasa_61ea91",
+  "kasa_f47d45": {
+    "id": "kasa_f47d45",
     "name": "Kasa 1",
     "local_ip": "192.168.0.120",
     "version": "1.2.0",
@@ -17,7 +17,7 @@
       "KİTCHEN",
       "Fax"
     ],
-    "last_seen": 1792928101.180302,
+    "last_seen": 1792929479.8882759,
     "is_default": false
   }
 }

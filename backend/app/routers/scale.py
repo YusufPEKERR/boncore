@@ -334,7 +334,17 @@ async def agent_report(payload: AgentReportSchema):
     """
     Agent posts the weight or test result back to the server.
     """
-    COMPLETED_RESULTS[payload.req_id] = payload.model_dump()
+    data = payload.model_dump()
+    # Önce sonucu kaydet (asla çökmemeli)
+    COMPLETED_RESULTS[payload.req_id] = data
+    
+    # Güvenli loglama
+    try:
+        with open("last_agent_report.json", "w", encoding="utf-8") as rf:
+            json.dump(data, rf, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+    print("=== LIVE AGENT REPORT RECEIVED ===", data.get("req_id"), "success:", data.get("success"), "weight:", data.get("weight"), flush=True)
     return {"status": "received"}
 
 @router.get("/config")
