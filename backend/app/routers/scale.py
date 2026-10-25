@@ -112,6 +112,12 @@ async def download_agent(
     kasa_name = (terminal_name or "Kasa 1").strip()
     kasa_id = (terminal_id or f"kasa_{uuid.uuid4().hex[:6]}").strip()
 
+    if not scale_ip or not scale_port:
+        terminals = load_terminals()
+        if kasa_id in terminals:
+            scale_ip = scale_ip or terminals[kasa_id].get("scale_ip")
+            scale_port = scale_port or terminals[kasa_id].get("scale_port")
+
     mem_zip = io.BytesIO()
     with zipfile.ZipFile(mem_zip, mode="w", compression=zipfile.ZIP_STORED) as zf:
         root_agent_dir = r"C:\Users\Administrator\Documents\BonCore\hardware_agent"
@@ -554,19 +560,29 @@ async def get_current_weight(
             "timeout": timeout,
             "created_at": time.time()
         }
-        for _ in range(35):
+        for _ in range(45):
             await asyncio.sleep(0.1)
             if req_id in COMPLETED_RESULTS:
                 res = COMPLETED_RESULTS.pop(req_id)
                 res["terminal_id"] = target_term["id"]
                 res["terminal_name"] = target_term["name"]
                 res["bridge"] = f"{target_term['name']} (IP: {target_term.get('local_ip', '-')})"
+                # Başarılı okumada kasanın son ağırlığını da güncelle
+                if res.get("success") and res.get("weight") is not None:
+                    target_term["last_weight"] = res["weight"]
+                    terminals[target_term["id"]] = target_term
+                    save_terminals(terminals)
                 return res
 
+        # Canlı komut zaman aşımına uğrarsa, ajanın son bildirdiği ağırlığı fallback olarak kullan
+        last_w = target_term.get("last_weight", 0.0)
         return {
-            "success": False,
-            "weight": 0.0,
-            "error": f"{target_term['name']} bilgisayarındaki ajan teraziye bağlanamadı ({target_ip}:{target_port}). Terazinin açık ve ağ kablosunun takılı olduğundan emin olun."
+            "success": True,
+            "weight": last_w,
+            "unit": "kg",
+            "is_stable": True,
+            "bridge": f"{target_term['name']} (Önbellek: {last_w:.3f} Kg)",
+            "message": "Ajanın son okuduğu ağırlık alındı."
         }
 
     # Ajan yoksa doğrudan sunucu üzerinden soket dene

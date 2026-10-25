@@ -1,15 +1,23 @@
 {
-  "kasa-1": {
-    "id": "kasa-1",
-    "name": "Kasa 1 - Ana Giris",
-    "local_ip": "192.168.1.100",
+  "kasa_61ea91": {
+    "id": "kasa_61ea91",
+    "name": "Kasa 1",
+    "local_ip": "192.168.0.120",
     "version": "1.2.0",
-    "scale_connected": false,
-    "scale_ip": "192.168.1.150",
-    "scale_port": 2004,
+    "scale_connected": true,
+    "scale_ip": "192.168.0.15",
+    "scale_port": 20304,
     "last_weight": 0.0,
-    "printers": [],
-    "last_seen": 1792879498.2185843,
-    "is_default": true
+    "printers": [
+      "OneNote for Windows 10",
+      "MUTFAK-POS",
+      "MUTFAK YAZICISI",
+      "Microsoft XPS Document Writer",
+      "Microsoft Print to PDF",
+      "KİTCHEN",
+      "Fax"
+    ],
+    "last_seen": 1792928101.180302,
+    "is_default": false
   }
 }

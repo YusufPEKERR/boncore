@@ -181,80 +181,132 @@ def print_slip_to_printer(printer_name: str, raw_text: str) -> bool:
         return False
 
 # --- CAS TERAZİ PARSER & NETWORK ---
-def parse_cas_cl3000(raw_str: str):
+def parse_cas_cl3000(raw_bytes: bytes, raw_str: str):
     is_stable = True
-    if "US" in raw_str.upper() or "UNSTABLE" in raw_str.upper():
+    raw_upper = raw_str.upper()
+    if "US" in raw_upper or "UNSTABLE" in raw_upper or "U" in raw_upper and "ST" not in raw_upper:
         is_stable = False
-    elif "ST" in raw_str.upper() or "STABLE" in raw_str.upper():
+    elif "ST" in raw_upper or "STABLE" in raw_upper or "S" in raw_upper:
         is_stable = True
 
     unit = "kg"
     if " g" in raw_str.lower() and "kg" not in raw_str.lower():
         unit = "g"
 
-    match = re.search(r'([+-]?\s*\d+(?:\.\d+)?)', raw_str)
+    # 1. RegEx ile ondalıklı veya tam sayı ara (Örn: "1.250", "+ 0.450 kg", "001250")
+    # Öncelik ondalıklı sayılarda
+    match_float = re.search(r'([+-]?\s*\d+\.\d+)', raw_str)
     weight = 0.0
-    if match:
+    found = False
+
+    if match_float:
         try:
-            val_str = match.group(1).replace(" ", "")
-            val = float(val_str)
+            val_str = match_float.group(1).replace(" ", "")
+            weight = float(val_str)
             if unit == "g":
-                weight = round(val / 1000.0, 3)
+                weight = round(weight / 1000.0, 3)
             else:
-                if val >= 50 and "." not in val_str:
+                weight = round(weight, 3)
+            found = True
+        except Exception:
+            pass
+
+    if not found:
+        # Ondalıksız tamsayı ara (Örn: " 1250 g" veya "001250")
+        match_int = re.search(r'([+-]?\s*\d+)', raw_str)
+        if match_int:
+            try:
+                val_str = match_int.group(1).replace(" ", "")
+                val = float(val_str)
+                # 4-6 haneli sayı ise gram olarak yorumla (Örn: 1250 -> 1.250 kg)
+                if val >= 50 or unit == "g":
                     weight = round(val / 1000.0, 3)
                 else:
                     weight = round(val, 3)
-        except Exception:
-            weight = 0.0
+                found = True
+            except Exception:
+                pass
+
+    if not found and len(raw_bytes) >= 4:
+        # 3. Binary / BCD paket çözücü (CAS CL binary format)
+        for i in range(len(raw_bytes) - 3):
+            # 3 veya 4 baytlık sayı dizisini ara
+            chunk = raw_bytes[i:i+4]
+            if all(0x30 <= b <= 0x39 for b in chunk):
+                try:
+                    val = float(chunk.decode('ascii'))
+                    weight = round(val / 1000.0, 3)
+                    found = True
+                    break
+                except Exception:
+                    pass
 
     return {
         "weight": max(0.0, weight),
         "grams": int(round(weight * 1000)),
         "unit": "kg",
-        "is_stable": is_stable
+        "is_stable": is_stable,
+        "found": found
     }
 
 def read_cas_scale(ip: str, port: int = 2004, timeout: float = 2.0):
     sock = None
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
+        sock.settimeout(min(timeout, 1.5))
         sock.connect((ip, port))
 
-        sock.setblocking(False)
+        # 1. Aşama: Stream (Sürekli akış) dinle
         data = b""
+        sock.settimeout(0.3)
         try:
-            data = sock.recv(256)
+            chunk = sock.recv(512)
+            if chunk:
+                data += chunk
         except Exception:
             pass
-        sock.setblocking(True)
-        sock.settimeout(timeout)
 
+        # 2. Aşama: Stream yoksa CAS komutlarını hızlıca gönder
         if not data or len(data.strip()) == 0:
-            for cmd in [b"W\r\n", b"\x05", b"Q\r\n", b"\x02W\x03"]:
+            cmds = [
+                b"\x05",              # ENQ (CAS CL-3000 / CL-5000 sorgusu)
+                b"W\r\n",            # Standart CAS Weight query
+                b"Q\r\n",            # CAS CL/PDI query
+                b"\x11",              # DC1
+                b"\x02W\x03",          # STX W ETX
+                b"\x0201W\x03",        # STX 01 W ETX
+                b"P\r\n",            # Print / Poll
+                b":010300000001FB\r\n" # Modbus TCP
+            ]
+            for cmd in cmds:
                 try:
                     sock.sendall(cmd)
+                    time.sleep(0.08)
                     chunk = sock.recv(256)
                     if chunk and len(chunk.strip()) > 0:
                         data += chunk
-                        if b"kg" in chunk.lower() or b"g" in chunk.lower() or b"st" in chunk.lower():
+                        if b"kg" in chunk.lower() or b"g" in chunk.lower() or b"st" in chunk.lower() or len(chunk) >= 4:
                             break
                 except Exception:
                     pass
 
-        raw = data.decode("latin-1", errors="ignore").strip()
-        if not raw:
-            return {"success": False, "weight": 0.0, "error": "Kefede ağırlık tespit edilemedi"}
+        raw_str = data.decode("latin-1", errors="ignore").strip()
+        if not data:
+            return {
+                "success": False,
+                "weight": 0.0,
+                "error": f"Teraziye ba\u011flan\u0131ld\u0131 ancak yan\u0131t al\u0131namad\u0131 ({ip}:{port}). Kefeyi kontrol ediniz."
+            }
 
-        parsed = parse_cas_cl3000(raw)
+        parsed = parse_cas_cl3000(data, raw_str)
         return {
             "success": True,
             "weight": parsed["weight"],
             "unit": parsed["unit"],
             "grams": parsed["grams"],
             "is_stable": parsed["is_stable"],
-            "raw": raw,
+            "raw": raw_str,
+            "hex": data.hex(),
             "ip": ip,
             "port": port
         }
@@ -685,6 +737,16 @@ class BonCoreHardwareDesktopApp:
                     if self.prev_scale_ok is False:
                         self.show_toast("✅ Terazi Bağlandı", f"CAS CL-3000 terazisine bağlandı ({scale_ip}:{scale_port}).")
                     self.prev_scale_ok = True
+
+                # CANLI AĞIRLIĞI DÜZENLİ OKU VE EKRANDA GÖSTER
+                try:
+                    read_res = read_cas_scale(scale_ip, scale_port, timeout=1.0)
+                    if read_res.get("success"):
+                        w = read_res["weight"]
+                        self.last_weight = w
+                        self.root.after(0, lambda val=w: self.lbl_weight_val.config(text=f"{val:.3f} Kg"))
+                except Exception as ex:
+                    print("Live scale read error:", ex)
             else:
                 self.scale_success_count = 0
                 self.scale_fail_count += 1
@@ -712,7 +774,7 @@ class BonCoreHardwareDesktopApp:
                 except Exception:
                     pass
 
-            time.sleep(4.0)
+            time.sleep(1.5)
 
     # --- BULUT SUNUCU İLE RELAY VE EMİR DİNLEME ---
     def cloud_relay_loop(self):
