@@ -25,7 +25,7 @@ from tkinter import ttk, messagebox
 import pystray
 from PIL import Image, ImageDraw
 
-AGENT_VERSION = "1.5.0"
+AGENT_VERSION = "2.0.0"
 APP_TITLE = "BonCore Donanım Köprüsü"
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
@@ -295,6 +295,81 @@ def read_from_serial_ports():
         pass
     return None
 
+def encode_cas_cl_packet(opcode: bytes, address: int = 0, data: bytes = b"") -> bytes:
+    """
+    CAS CL-3000 / CL-5000 Resmi İletişim Protokolü Paket Kodlayıcı
+    Header: Opcode (2B) + Address (4B LE) + ',' + Data Length (2B LE) + ':'
+    Body: Data (Max 512B) + ':'
+    Tail: Checksum (1B: Address[0]...':' % 0x100) + CR (0x0D)
+    """
+    buf = bytearray()
+    buf.extend(opcode)
+    buf.extend(struct.pack("<I", address))
+    buf.append(ord(","))
+    buf.extend(struct.pack("<H", len(data)))
+    buf.append(ord(":"))
+    buf.extend(data)
+    buf.append(ord(":"))
+    ck = sum(buf[2:]) % 256
+    buf.append(ck)
+    buf.append(0x0D)
+    return bytes(buf)
+
+def parse_cas_cl_response(raw_bytes: bytes):
+    """
+    CAS CL-3000 / CL-5000 Native Binary Status (WN) Paket Ayrıştırıcı
+    Header: 'WN' + ScaleID (4B) + ',' + Length (2B) + ':'
+    Data (30B):
+      Offset 0: Load Flag (0:Zero, 1:Non-zero, 2:Overload)
+      Offset 1: Stable Flag (0:Unstable, 1:Stable)
+      Offset 2: Tare Flag (0:No tare, 1:Tare)
+      Offset 3: Dual Range
+      Offset 4: Weight Unit (0:kg)
+      Offset 5: Weight Decimal Point (genelde 3)
+      Offset 6: Price Decimal Point
+      Offset 8..12: Tare (4B INT32U)
+      Offset 12..16: Weight (4B INT32S - Signed 32-bit Integer)
+      Offset 16..20: Unit Price
+      Offset 20..24: Total Price
+      Offset 24..28: PLU Number
+      Offset 28..30: Dept Number
+    """
+    if not raw_bytes or len(raw_bytes) < 12:
+        return None
+
+    idx = raw_bytes.find(b"WN")
+    if idx != -1 and len(raw_bytes) >= idx + 40:
+        packet = raw_bytes[idx:]
+        try:
+            scale_id = struct.unpack("<I", packet[2:6])[0]
+            data_len = struct.unpack("<H", packet[7:9])[0]
+            status_data = packet[10:10+data_len]
+            if len(status_data) >= 16:
+                load_flag = status_data[0]
+                stable_flag = status_data[1]
+                unit_code = status_data[4]
+                unit_str = "kg" if unit_code == 0 else "lb"
+                dec_pt = status_data[5]
+                divisor = float(10 ** dec_pt) if 1 <= dec_pt <= 4 else 1000.0
+                
+                weight_int = struct.unpack("<i", status_data[12:16])[0]
+                weight_kg = round(weight_int / divisor, 3)
+                
+                return {
+                    "found": True,
+                    "weight": max(0.0, weight_kg),
+                    "grams": int(round(weight_kg * 1000)),
+                    "unit": unit_str,
+                    "is_stable": (stable_flag == 1),
+                    "load_flag": load_flag,
+                    "scale_id": scale_id,
+                    "protocol": "CAS-CL-Native-Status (WN)"
+                }
+        except Exception as e:
+            print("CAS CL WN parse error:", e)
+
+    return None
+
 def try_read_from_socket(ip: str, port: int, timeout: float = 1.0):
     sock = None
     all_chunks = []
@@ -303,8 +378,8 @@ def try_read_from_socket(ip: str, port: int, timeout: float = 1.0):
         sock.settimeout(min(timeout, 1.0))
         sock.connect((ip, port))
 
-        # 1. Aşama: Stream (Sürekli akış) dinle (0.35 sn)
-        sock.settimeout(0.35)
+        # 1. Aşama: Stream (Sürekli akış) dinle (0.15 sn)
+        sock.settimeout(0.15)
         try:
             chunk = sock.recv(512)
             if chunk:
@@ -312,43 +387,32 @@ def try_read_from_socket(ip: str, port: int, timeout: float = 1.0):
         except Exception:
             pass
 
-        # 2. Aşama: CAS Komutları ve CL-Works paketleri
+        # 2. Aşama: CAS CL-3000 Native İkili Paketleri ve ASCII Komutları
         if not all_chunks:
             cmds = [
-                b"W\r",                 # CAS CL-3000 standart CR (0x57 0x0D)
-                b"W",                   # Tek bayt 0x57
-                b"R\r",                 # Read Weight
-                b"R",                   # Tek bayt R
-                b"\x05",               # ENQ (Inquiry)
-                b"\x05\x11",           # ENQ + DC1
-                b"\x0200W00\x03",       # CAS CL-Works live weight
-                b"\x02W\x03",           # STX W ETX
-                b"\x0201W\r\x03",      # STX 01 W CR ETX
-                b"\x02\x43\x4c\x03",      # STX CL ETX (CL-Works handshake)
-                b"\x01\x00\x00\x00",      # CL init
-                b"W\r\n",             # CRLF
-                b"Q\r",                 # CAS Q query
-                b"\x11",               # DC1
-                b"P\r",                 # Print query
-                b"\x0200RC00\x03",      # CL Read Current
-                b":010300000001FB\r\n"  # Modbus
+                encode_cas_cl_packet(b"RN", 0),    # CAS CL-3000 Status (Scale ID 0)
+                encode_cas_cl_packet(b"RN", 1),    # CAS CL-3000 Status (Scale ID 1 - Default)
+                encode_cas_cl_packet(b"RN", 255),  # CAS CL Broadcast Status
+                encode_cas_cl_packet(b"RV", 0),    # CAS CL Version
+                encode_cas_cl_packet(b"RV", 1),
+                b"W\r",                            # CAS Standart CR
+                b"W\r\n",                          # CAS Standart CRLF
+                b"W",                              # Tek bayt
+                b"\x05",                           # ENQ
+                b"\x0200RC00\x03",                 # CL-Works Read Current
+                b"\x0200W00\x03",                  # CL-Works Read Weight
+                b"\x02W\x03",                      # STX W ETX
+                b"Q\r"                             # CAS Q
             ]
+            sock.settimeout(0.2)
             for cmd in cmds:
                 try:
                     sock.sendall(cmd)
-                    time.sleep(0.08)
                     chunk = sock.recv(512)
                     if chunk and len(chunk) > 0:
                         all_chunks.append(chunk)
-                        if b"\x06" in chunk: # ACK
-                            try:
-                                sock.sendall(b"W\r")
-                                time.sleep(0.08)
-                                sub_chunk = sock.recv(512)
-                                if sub_chunk:
-                                    all_chunks.append(sub_chunk)
-                            except Exception:
-                                pass
+                        if parse_cas_cl_response(chunk):
+                            break
                         joined = b"".join(all_chunks)
                         if b"kg" in joined.lower() or b"g" in joined.lower() or any(0x30 <= b <= 0x39 for b in joined):
                             break
@@ -382,11 +446,11 @@ def read_cas_scale(ip: str, port: int = 2004, timeout: float = 2.0):
 
     # 2. Eğer belirtilen porttan veri gelmediyse, diğer standart terazi portlarını hızlıca tara
     if not data or len(data.strip()) == 0:
-        candidate_ports = [2004, 20304, 1001, 5000, 4001, 2001, 8000, 8080, 9000, 3000, 65500, 23]
+        candidate_ports = [20304, 2004, 1001, 5000, 4001, 2001, 8000, 8080, 9000, 3000, 65500, 23]
         for p in candidate_ports:
             if p == port:
                 continue
-            scan_res = try_read_from_socket(ip, p, timeout=0.3)
+            scan_res = try_read_from_socket(ip, p, timeout=0.25)
             if scan_res.get("connected"):
                 open_ports.append(p)
                 p_data = scan_res.get("data", b"")
@@ -397,6 +461,24 @@ def read_cas_scale(ip: str, port: int = 2004, timeout: float = 2.0):
 
     raw_str = data.decode("latin-1", errors="ignore").strip() if data else ""
 
+    # Önce CAS CL Native WN paket kontrolü
+    if data:
+        cl_res = parse_cas_cl_response(data)
+        if cl_res and cl_res.get("found"):
+            return {
+                "success": True,
+                "weight": cl_res["weight"],
+                "unit": cl_res["unit"],
+                "grams": cl_res["grams"],
+                "is_stable": cl_res["is_stable"],
+                "raw": raw_str,
+                "hex": data.hex(),
+                "ip": ip,
+                "port": working_port,
+                "open_ports": open_ports,
+                "protocol": cl_res.get("protocol")
+            }
+
     if not data:
         return {
             "success": False,
@@ -404,7 +486,7 @@ def read_cas_scale(ip: str, port: int = 2004, timeout: float = 2.0):
             "raw": "",
             "hex": "",
             "open_ports": open_ports,
-            "error": f"Teraziye baglandi (Acik port: {open_ports}) ancak terazi tartim verisi gondermiyor. Terazi menusunden (1832) ECR / POS modunun acik oldugundan emin olunuz."
+            "error": f"Teraziye baglandi (Acik port: {open_ports}) ancak terazi tartim verisi gondermiyor. Terazinin acik ve kefesinde agirlik oldugundan emin olun."
         }
 
     parsed = parse_cas_cl3000(data, raw_str)
