@@ -25,7 +25,7 @@ from tkinter import ttk, messagebox
 import pystray
 from PIL import Image, ImageDraw
 
-AGENT_VERSION = "1.4.0"
+AGENT_VERSION = "1.5.0"
 APP_TITLE = "BonCore Donanım Köprüsü"
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
@@ -249,6 +249,52 @@ def parse_cas_cl3000(raw_bytes: bytes, raw_str: str):
         "found": found
     }
 
+# --- SERİ (COM) PORT VE ETHERNET TCP OTOMATİK TARTIM MOTORU ---
+def read_from_serial_ports():
+    """
+    Bilgisayara takılı tüm COM portlarını (RS-232 / USB-Serial) tarar ve canlı ağırlık arar.
+    """
+    try:
+        import serial
+        import serial.tools.list_ports
+        ports = serial.tools.list_ports.comports()
+        for p in ports:
+            port_name = p.device
+            for baud in [9600, 4800, 19200]:
+                try:
+                    with serial.Serial(port_name, baud, timeout=0.25) as ser:
+                        # 1. Stream dinle
+                        chunk = ser.read(256)
+                        if not chunk:
+                            # 2. Komut gönder
+                            for cmd in [b"W\r", b"W", b"\x05", b"Q\r"]:
+                                ser.write(cmd)
+                                time.sleep(0.06)
+                                chunk = ser.read(256)
+                                if chunk:
+                                    break
+                        if chunk:
+                            raw_str = chunk.decode("latin-1", errors="ignore").strip()
+                            parsed = parse_cas_cl3000(chunk, raw_str)
+                            if parsed.get("found"):
+                                return {
+                                    "success": True,
+                                    "weight": parsed["weight"],
+                                    "unit": parsed["unit"],
+                                    "grams": parsed["grams"],
+                                    "is_stable": parsed["is_stable"],
+                                    "raw": raw_str,
+                                    "hex": chunk.hex(),
+                                    "source": f"Serial ({port_name} @ {baud})",
+                                    "ip": port_name,
+                                    "port": baud
+                                }
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return None
+
 def try_read_from_socket(ip: str, port: int, timeout: float = 1.0):
     sock = None
     all_chunks = []
@@ -257,8 +303,8 @@ def try_read_from_socket(ip: str, port: int, timeout: float = 1.0):
         sock.settimeout(min(timeout, 1.0))
         sock.connect((ip, port))
 
-        # 1. Aşama: Stream (Sürekli akış) dinle
-        sock.settimeout(0.3)
+        # 1. Aşama: Stream (Sürekli akış) dinle (0.35 sn)
+        sock.settimeout(0.35)
         try:
             chunk = sock.recv(512)
             if chunk:
@@ -269,32 +315,35 @@ def try_read_from_socket(ip: str, port: int, timeout: float = 1.0):
         # 2. Aşama: CAS Komutları ve CL-Works paketleri
         if not all_chunks:
             cmds = [
+                b"W\r",                 # CAS CL-3000 standart CR (0x57 0x0D)
                 b"W",                   # Tek bayt 0x57
-                b"W\r",                 # CAS CL-3000 CR
-                b"\x05",               # ENQ
+                b"R\r",                 # Read Weight
+                b"R",                   # Tek bayt R
+                b"\x05",               # ENQ (Inquiry)
                 b"\x05\x11",           # ENQ + DC1
                 b"\x0200W00\x03",       # CAS CL-Works live weight
                 b"\x02W\x03",           # STX W ETX
                 b"\x0201W\r\x03",      # STX 01 W CR ETX
+                b"\x02\x43\x4c\x03",      # STX CL ETX (CL-Works handshake)
+                b"\x01\x00\x00\x00",      # CL init
                 b"W\r\n",             # CRLF
                 b"Q\r",                 # CAS Q query
                 b"\x11",               # DC1
                 b"P\r",                 # Print query
                 b"\x0200RC00\x03",      # CL Read Current
-                b"\x02\x01\x00\x00\x00\x03", # CL handshake
                 b":010300000001FB\r\n"  # Modbus
             ]
             for cmd in cmds:
                 try:
                     sock.sendall(cmd)
-                    time.sleep(0.06)
+                    time.sleep(0.08)
                     chunk = sock.recv(512)
                     if chunk and len(chunk) > 0:
                         all_chunks.append(chunk)
                         if b"\x06" in chunk: # ACK
                             try:
                                 sock.sendall(b"W\r")
-                                time.sleep(0.06)
+                                time.sleep(0.08)
                                 sub_chunk = sock.recv(512)
                                 if sub_chunk:
                                     all_chunks.append(sub_chunk)
@@ -318,7 +367,12 @@ def try_read_from_socket(ip: str, port: int, timeout: float = 1.0):
                 pass
 
 def read_cas_scale(ip: str, port: int = 2004, timeout: float = 2.0):
-    # 1. Önce belirtilen portu dene
+    # 0. Önce bağlı Seri / COM portları dene (Eğer RS232/USB kablosu takılıysa)
+    ser_res = read_from_serial_ports()
+    if ser_res and ser_res.get("success"):
+        return ser_res
+
+    # 1. Önce belirtilen Ethernet portunu dene
     res = try_read_from_socket(ip, port, timeout=1.2)
     working_port = port
     data = res.get("data", b"")
@@ -350,7 +404,7 @@ def read_cas_scale(ip: str, port: int = 2004, timeout: float = 2.0):
             "raw": "",
             "hex": "",
             "open_ports": open_ports,
-            "error": f"Teraziye baglandi (Acik portlar: {open_ports}) ancak hicbir porttan tartim verisi donmedi ({ip}). Terazinin acik ve tartim modunda oldugundan emin olun."
+            "error": f"Teraziye baglandi (Acik port: {open_ports}) ancak terazi tartim verisi gondermiyor. Terazi menusunden (1832) ECR / POS modunun acik oldugundan emin olunuz."
         }
 
     parsed = parse_cas_cl3000(data, raw_str)
