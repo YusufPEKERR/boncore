@@ -1,9 +1,9 @@
 {
-  "kasa_f47d45": {
-    "id": "kasa_f47d45",
+  "kasa_168e29": {
+    "id": "kasa_168e29",
     "name": "Kasa 1",
     "local_ip": "192.168.0.120",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "scale_connected": true,
     "scale_ip": "192.168.0.15",
     "scale_port": 20304,
@@ -17,7 +17,7 @@
       "KİTCHEN",
       "Fax"
     ],
-    "last_seen": 1792929479.8882759,
+    "last_seen": 1792931469.8629642,
     "is_default": false
   }
 }

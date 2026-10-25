@@ -25,7 +25,7 @@ from tkinter import ttk, messagebox
 import pystray
 from PIL import Image, ImageDraw
 
-AGENT_VERSION = "1.3.0"
+AGENT_VERSION = "1.4.0"
 APP_TITLE = "BonCore Donanım Köprüsü"
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
@@ -249,16 +249,16 @@ def parse_cas_cl3000(raw_bytes: bytes, raw_str: str):
         "found": found
     }
 
-def read_cas_scale(ip: str, port: int = 2004, timeout: float = 2.0):
+def try_read_from_socket(ip: str, port: int, timeout: float = 1.0):
     sock = None
     all_chunks = []
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(min(timeout, 1.5))
+        sock.settimeout(min(timeout, 1.0))
         sock.connect((ip, port))
 
         # 1. Aşama: Stream (Sürekli akış) dinle
-        sock.settimeout(0.35)
+        sock.settimeout(0.3)
         try:
             chunk = sock.recv(512)
             if chunk:
@@ -266,40 +266,40 @@ def read_cas_scale(ip: str, port: int = 2004, timeout: float = 2.0):
         except Exception:
             pass
 
-        # 2. Aşama: Stream yoksa CAS komut varyasyonlarını hızlıca dene
+        # 2. Aşama: CAS Komutları ve CL-Works paketleri
         if not all_chunks:
-            # CAS CL-3000 / CL-5000 / SW / AP komut setleri
             cmds = [
-                b"W",                   # SambaPOS / CAS ECR standardı (Tek bayt 0x57)
-                b"W\r",                 # CAS CL-3000 standart komutu (0x57 0x0D)
-                b"\x05",               # ENQ (Inquiry)
+                b"W",                   # Tek bayt 0x57
+                b"W\r",                 # CAS CL-3000 CR
+                b"\x05",               # ENQ
                 b"\x05\x11",           # ENQ + DC1
+                b"\x0200W00\x03",       # CAS CL-Works live weight
+                b"\x02W\x03",           # STX W ETX
+                b"\x0201W\r\x03",      # STX 01 W CR ETX
                 b"W\r\n",             # CRLF
                 b"Q\r",                 # CAS Q query
                 b"\x11",               # DC1
-                b"\x02W\x03",           # STX W ETX
-                b"\x0201W\r\x03",      # STX 01 W CR ETX
                 b"P\r",                 # Print query
-                b":010300000001FB\r\n"  # Modbus / CAS Ethernet
+                b"\x0200RC00\x03",      # CL Read Current
+                b"\x02\x01\x00\x00\x00\x03", # CL handshake
+                b":010300000001FB\r\n"  # Modbus
             ]
             for cmd in cmds:
                 try:
                     sock.sendall(cmd)
-                    time.sleep(0.08)
+                    time.sleep(0.06)
                     chunk = sock.recv(512)
                     if chunk and len(chunk) > 0:
                         all_chunks.append(chunk)
-                        # Eğer terazi ACK (0x06) dönerse hemen ardından 'W' gönder
-                        if b"\x06" in chunk:
+                        if b"\x06" in chunk: # ACK
                             try:
                                 sock.sendall(b"W\r")
-                                time.sleep(0.08)
+                                time.sleep(0.06)
                                 sub_chunk = sock.recv(512)
                                 if sub_chunk:
                                     all_chunks.append(sub_chunk)
                             except Exception:
                                 pass
-                        # Yeterli veri geldiyse döngüyü bitir
                         joined = b"".join(all_chunks)
                         if b"kg" in joined.lower() or b"g" in joined.lower() or any(0x30 <= b <= 0x39 for b in joined):
                             break
@@ -307,37 +307,65 @@ def read_cas_scale(ip: str, port: int = 2004, timeout: float = 2.0):
                     pass
 
         data = b"".join(all_chunks)
-        raw_str = data.decode("latin-1", errors="ignore").strip()
-
-        if not data:
-            return {
-                "success": False,
-                "weight": 0.0,
-                "raw": "",
-                "hex": "",
-                "error": f"Teraziye baglandi ancak yanit donmedi ({ip}:{port}). Kefeyi kontrol ediniz."
-            }
-
-        parsed = parse_cas_cl3000(data, raw_str)
-        return {
-            "success": True,
-            "weight": parsed["weight"],
-            "unit": parsed["unit"],
-            "grams": parsed["grams"],
-            "is_stable": parsed["is_stable"],
-            "raw": raw_str,
-            "hex": data.hex(),
-            "ip": ip,
-            "port": port
-        }
+        return {"connected": True, "data": data, "port": port}
     except Exception as e:
-        return {"success": False, "weight": 0.0, "error": str(e), "raw": "", "hex": ""}
+        return {"connected": False, "data": b"", "port": port, "error": str(e)}
     finally:
         if sock:
             try:
                 sock.close()
             except Exception:
                 pass
+
+def read_cas_scale(ip: str, port: int = 2004, timeout: float = 2.0):
+    # 1. Önce belirtilen portu dene
+    res = try_read_from_socket(ip, port, timeout=1.2)
+    working_port = port
+    data = res.get("data", b"")
+    open_ports = []
+    if res.get("connected"):
+        open_ports.append(port)
+
+    # 2. Eğer belirtilen porttan veri gelmediyse, diğer standart terazi portlarını hızlıca tara
+    if not data or len(data.strip()) == 0:
+        candidate_ports = [2004, 20304, 1001, 5000, 4001, 2001, 8000, 8080, 9000, 3000, 65500, 23]
+        for p in candidate_ports:
+            if p == port:
+                continue
+            scan_res = try_read_from_socket(ip, p, timeout=0.3)
+            if scan_res.get("connected"):
+                open_ports.append(p)
+                p_data = scan_res.get("data", b"")
+                if p_data and len(p_data.strip()) > 0:
+                    data = p_data
+                    working_port = p
+                    break
+
+    raw_str = data.decode("latin-1", errors="ignore").strip() if data else ""
+
+    if not data:
+        return {
+            "success": False,
+            "weight": 0.0,
+            "raw": "",
+            "hex": "",
+            "open_ports": open_ports,
+            "error": f"Teraziye baglandi (Acik portlar: {open_ports}) ancak hicbir porttan tartim verisi donmedi ({ip}). Terazinin acik ve tartim modunda oldugundan emin olun."
+        }
+
+    parsed = parse_cas_cl3000(data, raw_str)
+    return {
+        "success": True,
+        "weight": parsed["weight"],
+        "unit": parsed["unit"],
+        "grams": parsed["grams"],
+        "is_stable": parsed["is_stable"],
+        "raw": raw_str,
+        "hex": data.hex(),
+        "ip": ip,
+        "port": working_port,
+        "open_ports": open_ports
+    }
 
 def ping_scale_tcp(ip: str, port: int = 2004, timeout: float = 1.5):
     sock = None

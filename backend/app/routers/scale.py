@@ -79,6 +79,9 @@ class AgentReportSchema(BaseModel):
     raw: Optional[str] = ""
     error: Optional[str] = None
     ip: Optional[str] = None
+    port: Optional[int] = None
+    open_ports: Optional[list] = []
+    hex: Optional[str] = ""
     latency_ms: Optional[float] = None
     message: Optional[str] = None
 
