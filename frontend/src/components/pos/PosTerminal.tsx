@@ -3,7 +3,8 @@ import {
   ArrowLeft, Search, Trash2, Edit3, Printer, 
   Tag, Zap, RefreshCw, 
   ChevronUp, AlertCircle, FileText, 
-  Utensils, DollarSign, X, CheckCircle2, CreditCard, Banknote, Scale 
+  Utensils, DollarSign, X, CheckCircle2, CreditCard, Banknote, Scale,
+  ArrowDownAZ, ArrowUpZA 
 } from 'lucide-react';
 import { Category, Product, OrderItem, Table, Order, StaffUser } from '../../types';
 import { sound } from '../../services/sound';
@@ -43,6 +44,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [activeCategoryId, setActiveCategoryId] = useState<number>(visibleCategories[0]?.id || categories[0]?.id || 1);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<Product[] | null>(null);
+  const [posSortMode, setPosSortMode] = useState<'custom' | 'az' | 'za'>('custom');
 
   useEffect(() => {
     if (visibleCategories.length > 0 && !visibleCategories.some(c => c.id === activeCategoryId)) {
@@ -264,7 +266,16 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   }, [searchQuery, visibleCategories]);
 
   const currentCategory = visibleCategories.find(c => c.id === activeCategoryId) || visibleCategories[0];
-  const displayedProducts = searchResults !== null ? searchResults : (currentCategory?.products || []);
+  const displayedProducts = useMemo(() => {
+    const baseList = searchResults !== null ? searchResults : (currentCategory?.products || []);
+    if (posSortMode === 'az') {
+      return [...baseList].sort((a, b) => a.name.localeCompare(b.name, 'tr', { sensitivity: 'base' }));
+    }
+    if (posSortMode === 'za') {
+      return [...baseList].sort((a, b) => b.name.localeCompare(a.name, 'tr', { sensitivity: 'base' }));
+    }
+    return baseList;
+  }, [searchResults, currentCategory, posSortMode]);
 
   // Helper to count quantity of product in cart
   const getProductQuantityInCart = (productId: number) => {
@@ -1236,6 +1247,40 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
           {/* Action Toolbar Icons */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* A-Z Sort Button */}
+            <button
+              onClick={() => {
+                sound.beep();
+                setPosSortMode(prev => (prev === 'az' ? 'custom' : 'az'));
+              }}
+              className={`px-2 py-1.5 rounded-xl border text-xs font-extrabold flex items-center gap-1 transition cursor-pointer ${
+                posSortMode === 'az'
+                  ? 'bg-red-600 text-white border-red-600'
+                  : 'text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700'
+              }`}
+              title="Ürünleri A'dan Z'ye Sırala"
+            >
+              <ArrowDownAZ className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">A-Z</span>
+            </button>
+
+            {/* Z-A Sort Button */}
+            <button
+              onClick={() => {
+                sound.beep();
+                setPosSortMode(prev => (prev === 'za' ? 'custom' : 'za'));
+              }}
+              className={`px-2 py-1.5 rounded-xl border text-xs font-extrabold flex items-center gap-1 transition cursor-pointer ${
+                posSortMode === 'za'
+                  ? 'bg-red-600 text-white border-red-600'
+                  : 'text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700'
+              }`}
+              title="Ürünleri Z'den A'ya Sırala"
+            >
+              <ArrowUpZA className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Z-A</span>
+            </button>
+
             {/* Note Button 📄 */}
             <button
               onClick={() => setIsNoteModalOpen(true)}

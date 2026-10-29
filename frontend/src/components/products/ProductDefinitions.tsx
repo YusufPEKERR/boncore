@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, Search, Copy, Trash2, Edit3, CheckCircle2, 
   AlertTriangle, Layers, ArrowLeft, Save, Scale, 
-  DollarSign, Utensils, X, ChefHat, Sparkles, Eye, EyeOff, GripVertical 
+  DollarSign, Utensils, X, ChefHat, Sparkles, Eye, EyeOff, GripVertical,
+  ArrowDownAZ, ArrowUpZA
 } from 'lucide-react';
 import { Category, Product, Ingredient, RecipeItem, ProductRecipe } from '../../types';
 import { sound } from '../../services/sound';
@@ -63,6 +64,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
   const [dragOverCatId, setDragOverCatId] = useState<number | null>(null);
   const [draggedProdId, setDraggedProdId] = useState<number | null>(null);
   const [dragOverProdId, setDragOverProdId] = useState<number | null>(null);
+  const [activeSortMode, setActiveSortMode] = useState<'custom' | 'az' | 'za'>('custom');
 
   useEffect(() => {
     setOrderedCategories(categories);
@@ -558,12 +560,54 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     setDragOverProdId(null);
   };
 
+  // Alphabetical A-Z and Z-A sorting for products
+  const handleSortProductsAlphabetically = async (direction: 'az' | 'za') => {
+    sound.beep();
+    setActiveSortMode(direction);
+
+    const catObj = orderedCategories.find(c => c.id === activeCatId) || orderedCategories[0];
+    if (!catObj || !catObj.products || catObj.products.length === 0) return;
+
+    const sortedProds = [...catObj.products].sort((a, b) =>
+      direction === 'az'
+        ? a.name.localeCompare(b.name, 'tr', { sensitivity: 'base' })
+        : b.name.localeCompare(a.name, 'tr', { sensitivity: 'base' })
+    );
+
+    setOrderedCategories(prev =>
+      prev.map(c => (c.id === catObj.id ? { ...c, products: sortedProds } : c))
+    );
+
+    try {
+      await api.reorderProducts(sortedProds.map(p => p.id));
+      showToast(
+        direction === 'az'
+          ? `"${catObj.name}" ürünleri A-Z olarak sıralandı ve kaydedildi.`
+          : `"${catObj.name}" ürünleri Z-A olarak sıralandı ve kaydedildi.`,
+        'success'
+      );
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showToast('Ürün sıralaması kaydedilemedi.', 'error');
+    }
+  };
+
   const currentCategory = orderedCategories.find(c => c.id === activeCatId) || orderedCategories[0];
-  const displayedProducts = searchQuery.trim()
-    ? orderedCategories
+  const displayedProducts = useMemo(() => {
+    if (searchQuery.trim()) {
+      const filtered = orderedCategories
         .flatMap(c => c.products || [])
-        .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    : (currentCategory?.products || []);
+        .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
+      if (activeSortMode === 'az') {
+        return [...filtered].sort((a, b) => a.name.localeCompare(b.name, 'tr', { sensitivity: 'base' }));
+      }
+      if (activeSortMode === 'za') {
+        return [...filtered].sort((a, b) => b.name.localeCompare(a.name, 'tr', { sensitivity: 'base' }));
+      }
+      return filtered;
+    }
+    return currentCategory?.products || [];
+  }, [orderedCategories, currentCategory, searchQuery, activeSortMode]);
 
   const isEditingOrCreating = selectedProduct !== null || isCreatingNew;
 
@@ -1225,6 +1269,36 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                     placeholder="Tüm ürünlerde ara..."
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-red-500"
                   />
+                </div>
+
+                {/* A-Z ve Z-A Sıralama Butonları */}
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleSortProductsAlphabetically('az')}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-extrabold border flex items-center gap-1 transition cursor-pointer ${
+                      activeSortMode === 'az'
+                        ? 'bg-red-600 text-white border-red-600 shadow-xs'
+                        : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                    }`}
+                    title="Ürünleri A'dan Z'ye Sırala"
+                  >
+                    <ArrowDownAZ className="w-3.5 h-3.5" />
+                    <span>A-Z</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSortProductsAlphabetically('za')}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-extrabold border flex items-center gap-1 transition cursor-pointer ${
+                      activeSortMode === 'za'
+                        ? 'bg-red-600 text-white border-red-600 shadow-xs'
+                        : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                    }`}
+                    title="Ürünleri Z'den A'ya Sırala"
+                  >
+                    <ArrowUpZA className="w-3.5 h-3.5" />
+                    <span>Z-A</span>
+                  </button>
                 </div>
               </div>
 
