@@ -72,7 +72,13 @@ async def download_latest_apk():
     return FileResponse(
         path=APK_FILE_PATH,
         filename=f"BonCore-POS-v{version_name}.apk",
-        media_type="application/vnd.android.package-archive"
+        media_type="application/vnd.android.package-archive",
+        headers={
+            "Content-Disposition": f'attachment; filename="BonCore-POS-v{version_name}.apk"',
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
     )
 
 @router.post("/upload")

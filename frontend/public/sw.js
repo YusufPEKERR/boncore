@@ -1,20 +1,7 @@
-// BonCore POS Service Worker for PWA Offline & Installability
-const CACHE_NAME = 'boncore-pos-v1';
-const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/icon.svg'
-];
+// BonCore POS PWA Service Worker
+const CACHE_NAME = 'boncore-pos-v2';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS).catch(() => {});
-    })
-  );
   self.skipWaiting();
 });
 
@@ -28,38 +15,35 @@ self.addEventListener('activate', (event) => {
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
-  // Pass through non-GET and API / WS calls to network directly
+  // Pass non-GET and API / WS directly to network
   if (event.request.method !== 'GET' || event.request.url.includes('/api/') || event.request.url.includes('/ws')) {
     return;
   }
 
-  // Network first with cache fallback
   event.respondWith(
     fetch(event.request)
-      .then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200) {
-          const responseToCache = networkResponse.clone();
+      .then((response) => {
+        // Cache successful basic responses
+        if (response && response.status === 200 && response.type === 'basic') {
+          const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache).catch(() => {});
+            cache.put(event.request, clone).catch(() => {});
           });
         }
-        return networkResponse;
+        return response;
       })
       .catch(() => {
-        return caches.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) {
-            return cachedResponse;
-          }
+        return caches.match(event.request).then((cached) => {
+          if (cached) return cached;
           if (event.request.mode === 'navigate') {
-            return caches.match('/');
+            return caches.match('/') || caches.match('/index.html');
           }
-          return new Response('Offline', { status: 503, statusText: 'Offline' });
+          return Promise.reject('no-match');
         });
       })
   );
