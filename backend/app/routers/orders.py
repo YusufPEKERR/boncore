@@ -6,7 +6,7 @@ from datetime import datetime
 from app.database import get_db
 from app.models.order import Order, OrderItem
 from app.models.table import Table
-from app.models.product import Product
+from app.models.product import Product, Recipe, Ingredient
 from app.models.audit import AuditLog
 from app.models.setting import RestaurantSetting
 from app.models.payment import Payment
@@ -22,6 +22,64 @@ import json
 import uuid
 
 router = APIRouter(prefix="/orders", tags=["Orders & POS"])
+
+async def validate_bom_stock_for_items(db: AsyncSession, items: list):
+    """
+    Reçetesi (BOM) olan ürünlerde sipariş girilirken:
+    Reçetedeki malzemelerden herhangi birinin stoğu bittiyse veya istenen miktara yetmiyorsa
+    siparişi durdurur, hangi malzemenin stoğunun bittiğini gösterir ve stoğun güncellenmesini
+    veya reçeteden kaldırılmasını bildirir.
+    """
+    if not items:
+        return
+
+    # Aynı ürün birden fazla satırda varsa toplam miktarını birleştir
+    qty_by_prod: dict[int, float] = {}
+    for it in items:
+        pid = int(it.product_id)
+        qty_by_prod[pid] = qty_by_prod.get(pid, 0.0) + float(it.quantity or 1.0)
+
+    for pid, total_qty in qty_by_prod.items():
+        stmt = select(Product).where(Product.id == pid).options(
+            selectinload(Product.recipes).selectinload(Recipe.ingredient)
+        )
+        res = await db.execute(stmt)
+        prod = res.scalar_one_or_none()
+        if not prod or not prod.recipes:
+            continue
+
+        out_of_stock_msgs = []
+        for r in prod.recipes:
+            ing = r.ingredient
+            if not ing or not r.amount or r.amount <= 0:
+                continue
+            # Self-reference kontrolü
+            if (ing.name or "").strip().lower() == (prod.name or "").strip().lower() and float(r.amount) == 1.0 and len(prod.recipes) == 1:
+                continue
+
+            avail = round(float(ing.current_stock or 0.0), 3)
+            needed = round(float(r.amount) * total_qty, 3)
+            unit_lbl = ing.unit or "Adet"
+
+            if avail <= 0:
+                out_of_stock_msgs.append(
+                    f"• {ing.name}: STOK BİTTİ (Mevcut Stok: 0 {unit_lbl}, Gereken: {needed:g} {unit_lbl})"
+                )
+            elif avail < needed:
+                out_of_stock_msgs.append(
+                    f"• {ing.name}: STOK YETERSİZ (Mevcut Stok: {avail:g} {unit_lbl}, Gereken: {needed:g} {unit_lbl})"
+                )
+
+        if out_of_stock_msgs:
+            joined = "\n".join(out_of_stock_msgs)
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f'"{prod.name}" ürününün reçetesinde bulunan malzeme(ler)in stoğu bitmiştir / yetersizdir:\n'
+                    f'{joined}\n'
+                    f'Sipariş girebilmek için lütfen Stok/Envanter ekranından bu ürünün stoğunu güncelleyin veya Ürün Reçetesi (BOM) ekranından reçeteden kaldırın.'
+                )
+            )
 
 @router.get("/{order_id}")
 async def get_order_details(order_id: int, db: AsyncSession = Depends(get_db)):
@@ -117,6 +175,9 @@ async def create_new_order(payload: CreateOrderRequest, db: AsyncSession = Depen
             add_req = AddItemsRequest(items=payload.items, waiter_name=payload.waiter_name)
             await add_items_to_order(existing_open.id, add_req, db)
             return {"status": "success", "order_id": existing_open.id, "order_no": existing_open.order_no}
+
+    # Reçete (BOM) hammadde stok kontrolü
+    await validate_bom_stock_for_items(db, payload.items)
 
     order_no = f"ORD-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
     kuver_count = payload.kuver_count or (table.kuver_count if table else 0)
@@ -257,6 +318,9 @@ async def add_items_to_order(order_id: int, payload: AddItemsRequest, db: AsyncS
         raise HTTPException(status_code=404, detail="Sipariş bulunamadı.")
     if order.status not in ["open", "bill_requested"]:
         raise HTTPException(status_code=400, detail="Açık sipariş bulunamadı.")
+
+    # Reçete (BOM) hammadde stok kontrolü
+    await validate_bom_stock_for_items(db, payload.items)
 
     added_amount = 0.0
     for it in payload.items:

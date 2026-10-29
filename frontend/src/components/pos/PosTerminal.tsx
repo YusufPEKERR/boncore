@@ -96,6 +96,17 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [voidReasonText, setVoidReasonText] = useState<string>('Müşteri vazgeçti');
   const [voidManagerPin, setVoidManagerPin] = useState<string>('9999');
 
+  // Reçete (BOM) Stoğu Biten Ürün Uyarı Modalı
+  const [bomStockWarningModal, setBomStockWarningModal] = useState<{
+    productName: string;
+    missingIngredients: Array<{
+      ingredient_name: string;
+      current_stock: number;
+      required_amount: number;
+      unit: string;
+    }>;
+  } | null>(null);
+
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -253,6 +264,45 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     return Number(total.toFixed(3));
   };
 
+  // Check if any recipe (BOM) ingredient is out of stock before adding to order
+  const checkBomStockBeforeAdd = (product: Product, requestedQty: number = 1, mode: 'add' | 'set' = 'add'): boolean => {
+    if (!product.has_recipe || !product.recipe_items || product.recipe_items.length === 0) {
+      return true;
+    }
+    const unsavedInCart = cartItems
+      .filter(i => !i.id && !i.is_voided && i.product_id === product.id)
+      .reduce((sum, i) => sum + Number(i.quantity), 0);
+    const totalTargetQty = mode === 'set' ? requestedQty : Number((unsavedInCart + requestedQty).toFixed(3));
+
+    const missing = product.recipe_items
+      .filter(r => {
+        const avail = Number(r.current_stock ?? 0);
+        const needed = Number((Number(r.amount || 0) * totalTargetQty).toFixed(3));
+        return avail <= 0 || avail + 1e-9 < needed;
+      })
+      .map(r => ({
+        ingredient_name: r.ingredient_name,
+        current_stock: Number(r.current_stock ?? 0),
+        required_amount: Number((Number(r.amount || 0) * totalTargetQty).toFixed(3)),
+        unit: r.unit || 'Adet'
+      }));
+
+    if (missing.length > 0) {
+      sound.warning();
+      setBomStockWarningModal({
+        productName: product.name,
+        missingIngredients: missing
+      });
+      const names = missing.map(m => `${m.ingredient_name} (Stok: ${m.current_stock} ${m.unit})`).join(', ');
+      showToast(
+        `⚠️ "${product.name}" reçetesindeki [${names}] stoğu bitti! Lütfen stoğu güncelleyin veya reçeteden kaldırın.`,
+        'error'
+      );
+      return false;
+    }
+    return true;
+  };
+
   // Read weight from CAS CL-3000 Ethernet Scale
   const handleReadFromScale = async () => {
     try {
@@ -383,6 +433,9 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return;
     }
     const cleanKg = Number(parsedKg.toFixed(3));
+    if (!checkBomStockBeforeAdd(weightModalProduct, cleanKg, mode)) {
+      return;
+    }
     sound.beep();
 
     const existingIndex = cartItems.findIndex(
@@ -423,6 +476,16 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       showToast(`"${product.name}" şu anda satışa kapalıdır (Pasif).`, 'error');
       return;
     }
+
+    // Reçetesinde (BOM) stoğu biten malzeme varsa sipariş girişini engelle ve uyar
+    if (!isWeightProduct(product) && !checkBomStockBeforeAdd(product, 1, 'add')) {
+      return;
+    }
+    if (isWeightProduct(product) && product.missing_ingredients && product.missing_ingredients.length > 0) {
+      checkBomStockBeforeAdd(product, 1, 'add');
+      return;
+    }
+
     sound.beep();
 
     // Kg / Gramaj ile satılan ürünlerde direkt Kg/Gramaj modalını aç
@@ -503,6 +566,10 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   };
 
   const handleAddModifiedItem = (item: OrderItem) => {
+    const prod = allProductsMap.get(item.product_id);
+    if (prod && !checkBomStockBeforeAdd(prod, Number(item.quantity || 1), 'add')) {
+      return;
+    }
     sound.beep();
     setCartItems(prev => [...prev, item]);
     setSelectedProductForModal(null);
@@ -1968,6 +2035,79 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 transition cursor-pointer"
             >
               Vazgeç
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Reçete (BOM) Stoğu Biten Ürün Uyarı Modalı */}
+      {bomStockWarningModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn font-sans">
+          <div className="bg-white dark:bg-slate-900 border-2 border-rose-500 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
+            <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-center border border-rose-500/30 shrink-0">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-rose-600 dark:text-rose-400 leading-tight">
+                    Reçetedeki Malzeme Stoğu Bitti!
+                  </h3>
+                  <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mt-0.5">
+                    {bomStockWarningModal.productName}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBomStockWarningModal(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-xs font-extrabold text-slate-500 dark:text-slate-400 uppercase block">
+                Stoğu Biten / Yetersiz Reçete Malzemeleri:
+              </span>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {bomStockWarningModal.missingIngredients.map((ing, i) => (
+                  <div
+                    key={i}
+                    className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/70 flex items-center justify-between gap-2"
+                  >
+                    <div>
+                      <div className="font-black text-xs sm:text-sm text-rose-700 dark:text-rose-300">
+                        {ing.ingredient_name}
+                      </div>
+                      <div className="text-[11px] font-semibold text-rose-600/80 dark:text-rose-400/80">
+                        Sipariş İçin Gerekli: <strong className="font-mono">{ing.required_amount} {ing.unit}</strong>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="inline-block px-2.5 py-1 rounded-xl bg-rose-600 text-white font-mono font-black text-xs">
+                        Stok: {ing.current_stock} {ing.unit}
+                      </span>
+                      <div className="text-[10px] font-extrabold text-rose-600 dark:text-rose-400 mt-0.5">
+                        {ing.current_stock <= 0 ? 'STOK BİTTİ!' : 'YETERSİZ STOK!'}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs font-semibold text-amber-900 dark:text-amber-200 leading-relaxed">
+              Bu ürünün reçetesinde (BOM) bulunan yukarıdaki malzemenin stoğu tükenmiştir. Sipariş girebilmek için lütfen <strong>Stok / Envanter</strong> ekranından bu malzemenin stoğunu güncelleyin veya <strong>Tanımlamalar &gt; Ürün Reçetesi (BOM)</strong> ekranından malzemeyi reçeteden kaldırın.
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setBomStockWarningModal(null)}
+              className="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-lg transition cursor-pointer"
+            >
+              Anlaşıldı
             </button>
           </div>
         </div>

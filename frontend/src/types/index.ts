@@ -93,6 +93,22 @@ export interface Product {
   modifier_groups?: ModifierGroup[];
   unit?: string;
   stock_quantity?: number;
+  has_recipe?: boolean;
+  recipe_items?: Array<{
+    ingredient_id: number;
+    ingredient_name: string;
+    amount: number;
+    unit: string;
+    current_stock: number;
+    producible_count?: number;
+  }>;
+  missing_ingredients?: Array<{
+    ingredient_id: number;
+    ingredient_name: string;
+    amount: number;
+    unit: string;
+    current_stock: number;
+  }>;
 }
 
 export interface Category {
@@ -201,6 +217,7 @@ export interface RecipeItem {
   ingredient_name: string;
   amount: number;
   unit: string;
+  current_stock?: number;
   waste_percentage: number;
   cost: number;
 }
@@ -211,6 +228,7 @@ export interface ProductRecipe {
   base_price: number;
   estimated_cost: number;
   profit_margin: number;
+  calculated_stock?: number | null;
   recipes: RecipeItem[];
 }
 

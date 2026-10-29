@@ -224,6 +224,25 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     return recipeItems.reduce((sum, item) => sum + (item.cost || 0), 0);
   }, [recipeItems]);
 
+  // Calculate producible stock from BOM recipe: min(floor(Stok / Kullanılan Malzeme))
+  const calculatedBomStock = useMemo(() => {
+    if (!recipeItems || recipeItems.length === 0) return null;
+    const producibleCounts = recipeItems.map(item => {
+      const ingObj = allIngredients.find(i => i.id === item.ingredient_id);
+      const currentStock = Math.max(0, Number(ingObj?.current_stock ?? item.current_stock ?? 0));
+      const usedAmount = Number(item.amount || 0);
+      if (usedAmount <= 0) return 0;
+      return Math.floor((currentStock / usedAmount) + 1e-9);
+    });
+    return producibleCounts.length > 0 ? Math.max(0, Math.min(...producibleCounts)) : null;
+  }, [recipeItems, allIngredients]);
+
+  useEffect(() => {
+    if (calculatedBomStock !== null) {
+      setProdStock(calculatedBomStock);
+    }
+  }, [calculatedBomStock]);
+
   const profitMargin = useMemo(() => {
     if (!prodPrice || prodPrice <= 0) return 0;
     return Math.max(0, ((prodPrice - totalRecipeCost) / prodPrice) * 100);
@@ -557,13 +576,25 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
 
                   <div className="grid grid-cols-3 gap-2.5">
                     <div>
-                      <label className="text-slate-500 block mb-1">Mevcut Stok:</label>
+                      <label className="text-slate-500 block mb-1">
+                        {recipeItems.length > 0 ? 'Stok (Reçeteden):' : 'Stok:'}
+                      </label>
                       <input
                         type="number"
                         step="0.001"
-                        value={prodStock}
-                        onChange={(e) => setProdStock(Number(e.target.value))}
-                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-slate-900 dark:text-white"
+                        value={calculatedBomStock !== null ? calculatedBomStock : prodStock}
+                        readOnly={recipeItems.length > 0}
+                        title={recipeItems.length > 0 ? 'Reçetesi olan ürünlerde stok miktarı (Kalan Hammadde Stoğu / Kullanılan Malzeme) formülüyle otomatik hesaplanır.' : ''}
+                        onChange={(e) => {
+                          if (recipeItems.length === 0) {
+                            setProdStock(Number(e.target.value));
+                          }
+                        }}
+                        className={`w-full border rounded-xl p-2.5 font-mono ${
+                          recipeItems.length > 0
+                            ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-black cursor-not-allowed'
+                            : 'bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white'
+                        }`}
                       />
                     </div>
                     <div>
@@ -648,11 +679,13 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                   </div>
 
                   <div className="p-3 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-2xl">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Elimizdeki Stok</span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block">
+                      {recipeItems.length > 0 ? 'Stok (Stok / Malzeme)' : 'Stok'}
+                    </span>
                     <span className={`text-sm sm:text-base font-black font-mono ${
-                      Number(prodStock || 0) > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600'
+                      Number((calculatedBomStock !== null ? calculatedBomStock : prodStock) || 0) > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600'
                     }`}>
-                      {Number(prodStock || 0).toLocaleString('tr-TR')} {prodUnit || 'Adet'}
+                      {Number((calculatedBomStock !== null ? calculatedBomStock : prodStock) || 0).toLocaleString('tr-TR')} {prodUnit || 'Adet'}
                     </span>
                   </div>
 
@@ -674,7 +707,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                         <th className="py-2.5 px-3">Hammadde Adı</th>
                         <th className="py-2.5 px-2 text-center">Birim Tüketim</th>
                         <th className="py-2.5 px-2 text-right">Birim Fiyat</th>
-                        <th className="py-2.5 px-2 text-right">Elimizdeki Stok</th>
+                        <th className="py-2.5 px-2 text-right">Stok</th>
                         <th className="py-2.5 px-2 text-right">Tutar</th>
                         <th className="py-2.5 px-2 text-center">Sil</th>
                       </tr>
@@ -683,11 +716,18 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                       {recipeItems.map((item, idx) => {
                         const ingObj = allIngredients.find(i => i.id === item.ingredient_id);
                         const unitCost = ingObj?.cost_per_unit || 0;
-                        const currentStock = ingObj?.current_stock ?? 0;
+                        const currentStock = ingObj?.current_stock ?? item.current_stock ?? 0;
+                        const producibleFromRow = item.amount > 0 ? Math.floor((Math.max(0, currentStock) / item.amount) + 1e-9) : 0;
+                        const isOutOfStock = currentStock <= 0 || producibleFromRow <= 0;
                         return (
                           <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
                             <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-white">
-                              {item.ingredient_name}
+                              <div>{item.ingredient_name}</div>
+                              {isOutOfStock && (
+                                <span className="inline-block mt-0.5 text-[10px] font-extrabold text-rose-600 dark:text-rose-400">
+                                  ⚠️ Stok Bitti! (Güncellenmeli veya Kaldırılmalı)
+                                </span>
+                              )}
                             </td>
                             <td className="py-2.5 px-2 text-center">
                               <div className="inline-flex items-center gap-1">
@@ -706,13 +746,16 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                               ₺{unitCost.toFixed(2)}
                             </td>
                             <td className={`py-2.5 px-2 text-right font-mono font-bold ${
-                              currentStock <= 0
+                              isOutOfStock
                                 ? 'text-rose-600 dark:text-rose-400'
                                 : ingObj?.is_critical
                                 ? 'text-amber-600 dark:text-amber-400'
                                 : 'text-emerald-600 dark:text-emerald-400'
                             }`}>
-                              {Number(currentStock).toLocaleString('tr-TR')} {ingObj?.unit || item.unit}
+                              <div>{Number(currentStock).toLocaleString('tr-TR')} {ingObj?.unit || item.unit}</div>
+                              <div className="text-[10px] text-slate-400 font-semibold">
+                                ({producibleFromRow} {prodUnit || 'Adet'} çıkar)
+                              </div>
                             </td>
                             <td className="py-2.5 px-2 text-right font-mono font-bold text-blue-600 dark:text-blue-400">
                               ₺{item.cost.toFixed(2)}
@@ -758,7 +801,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                           </span>
                           <span className="text-slate-300 dark:text-slate-600">•</span>
                           <span className={selIng.current_stock <= 0 ? 'text-rose-600' : 'text-emerald-600 dark:text-emerald-400'}>
-                            Elimizdeki Stok: <strong className="font-mono">{Number(selIng.current_stock ?? 0).toLocaleString('tr-TR')} {selIng.unit}</strong>
+                            Stok: <strong className="font-mono">{Number(selIng.current_stock ?? 0).toLocaleString('tr-TR')} {selIng.unit}</strong>
                           </span>
                         </div>
                       );
@@ -767,7 +810,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
                     <div className="sm:col-span-7">
-                      <label className="text-[10px] font-bold text-slate-500 block mb-1">Hammadde Seçin (Fiyat & Elimizdeki Stok):</label>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-1">Hammadde Seçin (Fiyat & Stok):</label>
                       <select
                         value={selectedIngId}
                         onChange={(e) => setSelectedIngId(e.target.value ? Number(e.target.value) : '')}

@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from datetime import datetime
+import math
 from app.database import get_db
 from app.models.product import Category, Ingredient, Recipe, Product
 from app.models.order import OrderItem
@@ -141,7 +142,6 @@ async def create_ingredient(payload: dict, db: AsyncSession = Depends(get_db)):
         )
         db.add(new_prod)
         await db.flush()
-        db.add(Recipe(product_id=new_prod.id, ingredient_id=new_ing.id, amount=1.0, waste_percentage=0.0))
 
     await db.commit()
     await db.refresh(new_ing)
@@ -190,14 +190,9 @@ async def update_ingredient(ing_id: int, payload: dict, db: AsyncSession = Depen
     if "warehouse_id" in payload and payload["warehouse_id"]:
         ing.warehouse_id = int(payload["warehouse_id"])
 
-    # Sync changes to linked POS Product
-    rec_res = await db.execute(select(Recipe).where(Recipe.ingredient_id == ing.id))
-    rec = rec_res.scalars().first()
+    # Sync changes ONLY to the direct POS Product with the same name
     linked_prod = None
-    if rec:
-        p_res = await db.execute(select(Product).where(Product.id == rec.product_id))
-        linked_prod = p_res.scalar_one_or_none()
-    if not linked_prod and old_name:
+    if old_name:
         p_res = await db.execute(select(Product).where(Product.name.ilike(old_name)))
         linked_prod = p_res.scalars().first()
 
@@ -223,13 +218,16 @@ async def delete_ingredient(ing_id: int, db: AsyncSession = Depends(get_db)):
     if not ing:
         raise HTTPException(status_code=404, detail="Stok kalemi bulunamadı.")
 
-    # Also remove or archive linked POS Product
+    # Remove recipe references for this ingredient
     rec_res = await db.execute(select(Recipe).where(Recipe.ingredient_id == ing.id))
     recs = rec_res.scalars().all()
     for r in recs:
-        p_res = await db.execute(select(Product).where(Product.id == r.product_id))
-        p_obj = p_res.scalar_one_or_none()
         await db.delete(r)
+
+    # Also remove or archive direct POS Product with the exact same name
+    if ing.name:
+        p_res = await db.execute(select(Product).where(Product.name.ilike(ing.name.strip())))
+        p_obj = p_res.scalars().first()
         if p_obj:
             oi_chk = await db.execute(select(OrderItem.id).where(OrderItem.product_id == p_obj.id).limit(1))
             if oi_chk.scalar_one_or_none():
@@ -267,6 +265,7 @@ async def get_all_recipes(db: AsyncSession = Depends(get_db)):
                 "ingredient_name": r.ingredient.name if r.ingredient else "Hammadde",
                 "amount": r.amount,
                 "unit": r.ingredient.unit if r.ingredient else "gr",
+                "current_stock": round(float(r.ingredient.current_stock or 0.0), 3) if r.ingredient else 0.0,
                 "waste_percentage": r.waste_percentage,
                 "cost": round(cost, 2)
             })
@@ -298,18 +297,25 @@ async def get_product_recipe(product_id: int, db: AsyncSession = Depends(get_db)
 
     recipes_data = []
     estimated_cost = 0.0
+    ratios = []
     for r in p.recipes:
+        ing_stock = round(float(r.ingredient.current_stock or 0.0), 3) if r.ingredient else 0.0
         cost = r.amount * (r.ingredient.cost_per_unit if r.ingredient else 0.0)
         estimated_cost += cost
+        if r.amount and r.amount > 0:
+            ratios.append(int(math.floor(max(0.0, ing_stock) / float(r.amount))))
         recipes_data.append({
             "id": r.id,
             "ingredient_id": r.ingredient_id,
             "ingredient_name": r.ingredient.name if r.ingredient else "Hammadde",
             "amount": r.amount,
             "unit": r.ingredient.unit if r.ingredient else "gr",
+            "current_stock": ing_stock,
             "waste_percentage": r.waste_percentage,
             "cost": round(cost, 2)
         })
+
+    calculated_stock = float(min(ratios)) if ratios else None
 
     return {
         "product_id": p.id,
@@ -317,6 +323,7 @@ async def get_product_recipe(product_id: int, db: AsyncSession = Depends(get_db)
         "base_price": p.base_price,
         "estimated_cost": round(estimated_cost, 2),
         "profit_margin": round(((p.base_price - estimated_cost) / p.base_price) * 100, 1) if p.base_price > 0 else 0,
+        "calculated_stock": calculated_stock,
         "recipes": recipes_data
     }
 
@@ -324,8 +331,7 @@ async def get_product_recipe(product_id: int, db: AsyncSession = Depends(get_db)
 @router.put("/recipes/{product_id}")
 async def update_product_recipe(product_id: int, payload: dict, db: AsyncSession = Depends(get_db)):
     """
-    Replaces/updates the recipe ingredients for a given product.
-    Payload: { "items": [ { "ingredient_id": 1, "amount": 180, "waste_percentage": 10 } ] }
+    Replaces/updates the recipe ingredients for a given product and recalculates product stock based on BOM.
     """
     stmt = select(Product).where(Product.id == product_id)
     res = await db.execute(stmt)
@@ -339,8 +345,9 @@ async def update_product_recipe(product_id: int, payload: dict, db: AsyncSession
     for r in old_recipes:
         await db.delete(r)
 
-    # Insert new recipe items
+    # Insert new recipe items and calculate producible stock (Stok / Kullanılan Malzeme)
     items = payload.get("items", [])
+    ratios = []
     for item in items:
         ing_id = item.get("ingredient_id")
         amount = float(item.get("amount") or 0.0)
@@ -352,6 +359,18 @@ async def update_product_recipe(product_id: int, payload: dict, db: AsyncSession
                 amount=amount,
                 waste_percentage=waste
             ))
+            ing_res = await db.execute(select(Ingredient).where(Ingredient.id == int(ing_id)))
+            ing_obj = ing_res.scalar_one_or_none()
+            if ing_obj:
+                avail = max(0.0, float(ing_obj.current_stock or 0.0))
+                ratios.append(int(math.floor(avail / amount)))
+
+    # Eğer ürün reçetesi varsa, ürünün kendi stok kartını (Stok / Kullanılan Malzeme) sonucuna göre güncelle
+    if ratios and prod.name:
+        prod_ing_res = await db.execute(select(Ingredient).where(Ingredient.name.ilike(prod.name.strip())))
+        prod_ing = prod_ing_res.scalars().first()
+        if prod_ing:
+            prod_ing.current_stock = float(min(ratios))
 
     await db.commit()
     await ws_hub.broadcast_all("MENU_UPDATED", {"product_id": product_id})

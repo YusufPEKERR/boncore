@@ -1,3 +1,4 @@
+import math
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -10,13 +11,60 @@ from app.websocket_hub import ws_hub
 
 router = APIRouter(prefix="/products", tags=["Products & Menu"])
 
+def calculate_bom_stock(prod_name: str, recipes: list) -> tuple[float, list, list]:
+    """
+    Reçetesi (BOM) olan ürünlerde:
+    Her hammaddenin (Mevcut Stok / Reçetede Kullanılan Miktar) oranını hesaplar,
+    en düşük oranı (darboğaz hammaddeyi) ürünün üretilebilir stok miktarı olarak döndürür.
+    Ayrıca stoğu biten / yetersiz kalan hammaddeleri listeler.
+    """
+    bom_rows = [
+        r for r in (recipes or [])
+        if r.ingredient is not None
+        and float(r.amount or 0.0) > 0
+        and not (
+            (r.ingredient.name or "").strip().lower() == (prod_name or "").strip().lower()
+            and float(r.amount or 0.0) == 1.0
+            and len(recipes) == 1
+        )
+    ]
+    if not bom_rows:
+        return -1.0, [], []
+
+    recipe_items = []
+    missing_ingredients = []
+    ratios = []
+
+    for r in bom_rows:
+        ing = r.ingredient
+        ing_stock = round(float(ing.current_stock or 0.0), 3)
+        used_amt = float(r.amount or 0.0)
+        producible = int(math.floor(max(0.0, ing_stock) / used_amt)) if used_amt > 0 else 0
+        ratios.append(producible)
+
+        item_info = {
+            "ingredient_id": ing.id,
+            "ingredient_name": (ing.name or "").strip(),
+            "amount": used_amt,
+            "unit": ing.unit or "Adet",
+            "current_stock": ing_stock,
+            "producible_count": producible
+        }
+        recipe_items.append(item_info)
+        if ing_stock <= 0 or ing_stock < used_amt:
+            missing_ingredients.append(item_info)
+
+    calc_stock = float(min(ratios)) if ratios else 0.0
+    return calc_stock, recipe_items, missing_ingredients
+
+
 @router.get("/categories")
 async def get_categories_with_products(
     all_items: bool = Query(True),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Returns full menu tree: Categories -> Products -> Variants, Modifier Groups & Real Stock Info.
+    Returns full menu tree: Categories -> Products -> Variants, Modifier Groups & Real/BOM Stock Info.
     """
     stmt = select(Category).options(
         selectinload(Category.products).selectinload(Product.variants),
@@ -28,32 +76,35 @@ async def get_categories_with_products(
     categories = result.scalars().all()
 
     ing_res = await db.execute(select(Ingredient))
-    all_ings = { (i.name or "").strip().lower(): i for i in ing_res.scalars().all() }
+    all_ings = {(i.name or "").strip().lower(): i for i in ing_res.scalars().all()}
 
     output = []
+    dirty_ings = False
+
     for cat in categories:
         prods = []
         for p in cat.products:
             if not all_items and not p.is_available:
                 continue
 
-            # Resolve real stock quantity and unit from linked Ingredient
             stock_qty = 0.0
             unit_label = "Adet"
-            linked_ing = None
+            direct_ing = all_ings.get((p.name or "").strip().lower())
+            if direct_ing and direct_ing.unit:
+                unit_label = direct_ing.unit
 
-            if p.recipes:
-                for r in p.recipes:
-                    if r.ingredient:
-                        linked_ing = r.ingredient
-                        break
+            calc_bom_stock, recipe_items, missing_ingredients = calculate_bom_stock(p.name, p.recipes)
+            has_recipe = len(recipe_items) > 0
 
-            if not linked_ing:
-                linked_ing = all_ings.get((p.name or "").strip().lower())
-
-            if linked_ing is not None:
-                stock_qty = round(float(linked_ing.current_stock or 0.0), 3)
-                unit_label = linked_ing.unit or "Adet"
+            if has_recipe:
+                stock_qty = calc_bom_stock
+                unit_label = "Adet"
+                if direct_ing is not None and float(direct_ing.current_stock or 0.0) != stock_qty:
+                    direct_ing.current_stock = stock_qty
+                    dirty_ings = True
+            elif direct_ing is not None:
+                stock_qty = round(float(direct_ing.current_stock or 0.0), 3)
+                unit_label = direct_ing.unit or "Adet"
 
             prods.append({
                 "id": p.id,
@@ -67,6 +118,9 @@ async def get_categories_with_products(
                 "station": p.station or "kitchen",
                 "unit": unit_label,
                 "stock_quantity": stock_qty,
+                "has_recipe": has_recipe,
+                "recipe_items": recipe_items,
+                "missing_ingredients": missing_ingredients,
                 "image_url": p.image_url,
                 "calories": p.calories,
                 "allergens": p.allergens or [],
@@ -104,6 +158,9 @@ async def get_categories_with_products(
             "target_station": cat.target_station,
             "products": prods
         })
+
+    if dirty_ings:
+        await db.commit()
 
     return output
 
@@ -168,7 +225,6 @@ async def delete_category(cat_id: int, db: AsyncSession = Depends(get_db)):
     if not cat:
         raise HTTPException(status_code=404, detail="Kategori bulunamadı.")
 
-    # Also remove corresponding stock items in this category
     ing_res = await db.execute(select(Ingredient).where(Ingredient.category_name.ilike(cat.name.strip())))
     for ing in ing_res.scalars().all():
         await db.delete(ing)
@@ -193,7 +249,7 @@ async def create_product(payload: dict, db: AsyncSession = Depends(get_db)):
     db.add(new_prod)
     await db.flush()
 
-    # Ensure matching Ingredient exists in stock report
+    # Ensure matching Ingredient exists in stock report (without adding a fake self-recipe row)
     if new_prod.name:
         cat_res = await db.execute(select(Category).where(Category.id == new_prod.category_id))
         cat_obj = cat_res.scalar_one_or_none()
@@ -215,12 +271,11 @@ async def create_product(payload: dict, db: AsyncSession = Depends(get_db)):
                 warehouse_id=3 if new_prod.station == "bar" else 2
             )
             db.add(new_ing)
-            await db.flush()
-            db.add(Recipe(product_id=new_prod.id, ingredient_id=new_ing.id, amount=1.0, waste_percentage=0.0))
         else:
             existing_ing.category_name = cat_label
             existing_ing.cost_per_unit = float(new_prod.base_price or 0.0)
-            db.add(Recipe(product_id=new_prod.id, ingredient_id=existing_ing.id, amount=1.0, waste_percentage=0.0))
+            if payload.get("stock_quantity") is not None:
+                existing_ing.current_stock = float(payload.get("stock_quantity"))
 
     await db.commit()
     await db.refresh(new_prod)
@@ -245,16 +300,16 @@ async def update_product(prod_id: int, payload: dict, db: AsyncSession = Depends
     if "barcode" in payload: prod.barcode = payload["barcode"]
     if "is_available" in payload: prod.is_available = bool(payload["is_available"])
 
-    # Sync with linked Ingredient in stock report
+    # Sync ONLY with the product's own direct Ingredient card (matched by product name, never overwriting BOM ingredients!)
     linked_ing = None
-    if prod.recipes:
-        for r in prod.recipes:
-            if r.ingredient:
-                linked_ing = r.ingredient
-                break
-    if not linked_ing and old_name:
+    if old_name:
         ing_chk = await db.execute(select(Ingredient).where(Ingredient.name.ilike(old_name)))
         linked_ing = ing_chk.scalars().first()
+    if not linked_ing and prod.name:
+        ing_chk = await db.execute(select(Ingredient).where(Ingredient.name.ilike(prod.name)))
+        linked_ing = ing_chk.scalars().first()
+
+    calc_bom_stock, recipe_items, _ = calculate_bom_stock(prod.name, prod.recipes)
 
     if linked_ing:
         if "name" in payload and payload["name"]:
@@ -268,7 +323,9 @@ async def update_product(prod_id: int, payload: dict, db: AsyncSession = Depends
                 linked_ing.category_name = cat_obj.name.upper()
         if "plu_code" in payload:
             linked_ing.product_code = payload["plu_code"] or ""
-        if "stock_quantity" in payload and payload["stock_quantity"] is not None:
+        if len(recipe_items) > 0:
+            linked_ing.current_stock = calc_bom_stock
+        elif "stock_quantity" in payload and payload["stock_quantity"] is not None:
             linked_ing.current_stock = float(payload["stock_quantity"])
         if "unit" in payload and payload["unit"]:
             linked_ing.unit = str(payload["unit"]).strip()
@@ -286,28 +343,24 @@ async def delete_product(prod_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Ürün bulunamadı.")
 
     linked_ing = None
-    if prod.recipes:
-        for r in prod.recipes:
-            if r.ingredient:
-                linked_ing = r.ingredient
-                break
-    if not linked_ing and prod.name:
+    if prod.name:
         ing_chk = await db.execute(select(Ingredient).where(Ingredient.name.ilike(prod.name.strip())))
         linked_ing = ing_chk.scalars().first()
 
-    # Geçmiş siparişlerde kullanılıp kullanılmadığını denetle
     order_items_check = await db.execute(select(OrderItem.id).where(OrderItem.product_id == prod_id).limit(1))
     if order_items_check.scalar_one_or_none():
         prod.is_available = False
         if linked_ing:
-            await db.delete(linked_ing)
+            linked_ing.current_stock = 0.0
         await db.commit()
         await ws_hub.broadcast_all("MENU_UPDATED", {"product_id": prod_id})
-        return {"status": "success", "message": "Ürünün geçmiş sipariş kayıtları bulunduğundan ürün arşivlendi ve stok listesinden kaldırıldı.", "archived": True}
+        return {"status": "archived", "message": "Geçmiş sipariş kaydı olduğu için ürün pasife alındı ve stoğu sıfırlandı."}
 
+    for r in (prod.recipes or []):
+        await db.delete(r)
     if linked_ing:
         await db.delete(linked_ing)
     await db.delete(prod)
     await db.commit()
     await ws_hub.broadcast_all("MENU_UPDATED", {"product_id": prod_id})
-    return {"status": "success", "message": "Ürün ve stok kartı silindi.", "archived": False}
+    return {"status": "success", "message": "Ürün ve bağlı stok kartı tamamen silindi."}
