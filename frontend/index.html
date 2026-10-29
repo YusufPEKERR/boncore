@@ -5,7 +5,6 @@
     <link rel="icon" type="image/png" href="/icon-192.png" />
     <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
-    <link rel="manifest" href="/manifest.json" />
     <meta name="application-name" content="BonCore POS" />
     <meta name="apple-mobile-web-app-title" content="BonCore POS" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
@@ -22,10 +21,17 @@
     <div id="root" class="h-full w-full"></div>
     <script>
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function() {
-          navigator.serviceWorker.register('/sw.js').catch(function(err) {
-            console.warn('SW reg error: ', err);
-          });
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+          for (var reg of regs) {
+            reg.unregister();
+          }
+        });
+      }
+      if ('caches' in window) {
+        caches.keys().then(function(names) {
+          for (var name of names) {
+            caches.delete(name);
+          }
         });
       }
     </script>

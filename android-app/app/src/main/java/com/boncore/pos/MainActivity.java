@@ -38,7 +38,7 @@ import java.net.URL;
 
 public class MainActivity extends Activity {
 
-    private static final String DEFAULT_SERVER_URL = "http://10.0.2.2:80";
+    private static final String DEFAULT_SERVER_URL = "http://77.67.29.77";
     private static final int CURRENT_VERSION_CODE = 1;
 
     private WebView webView;
