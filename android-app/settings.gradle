@@ -1,0 +1,2 @@
+rootProject.name = "BonCore POS"
+include ':app'

@@ -3,7 +3,8 @@ import {
   Settings, Save, CheckCircle2, Percent, DollarSign, 
   Receipt, Plus, Trash2, Edit3, ShieldAlert, Sparkles, Building2, 
   Coins, HelpCircle, Utensils, Tag, CreditCard, Check, X, AlertCircle, 
-  Scale, RefreshCw, Wifi, WifiOff, Activity, Laptop, Download, Monitor, Star, CheckSquare, Printer 
+  Scale, RefreshCw, Wifi, WifiOff, Activity, Laptop, Download, Monitor, Star, CheckSquare, Printer,
+  Smartphone, Upload, Zap
 } from 'lucide-react';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
@@ -43,9 +44,23 @@ interface AdisyoSettingsProps {
 export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdated }) => {
   const [activeSubTab, setActiveSubTab] = useState<string>(() => {
     const saved = localStorage.getItem('boncore_settings_subtab');
-    const valid = ['parameters', 'discounts', 'payments', 'currency', 'address', 'scale'];
+    const valid = ['parameters', 'discounts', 'payments', 'currency', 'address', 'scale', 'mobile_apk'];
     return saved && valid.includes(saved) ? saved : 'parameters';
   });
+
+  const [appInfo, setAppInfo] = useState<{
+    version_name: string;
+    version_code: number;
+    release_date: string;
+    is_apk_available: boolean;
+    file_size_mb: number;
+    changelog: string[];
+  } | null>(null);
+  const [apkUploading, setApkUploading] = useState<boolean>(false);
+  const [apkMessage, setApkMessage] = useState<{ text: string; success: boolean } | null>(null);
+  const [newApkVersion, setNewApkVersion] = useState<string>('1.0.1');
+  const [newApkCode, setNewApkCode] = useState<number>(2);
+  const [newApkChangelog, setNewApkChangelog] = useState<string>('');
 
   useEffect(() => {
     localStorage.setItem('boncore_settings_subtab', activeSubTab);
@@ -487,8 +502,18 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     { id: 'payments', label: 'Ödeme Tipleri' },
     { id: 'currency', label: 'Döviz Ayarları' },
     { id: 'address', label: 'Adres & Şirket Bilgileri' },
-    { id: 'scale', label: '⚖️ CAS Terazi (Ethernet)' }
+    { id: 'scale', label: '⚖️ CAS Terazi (Ethernet)' },
+    { id: 'mobile_apk', label: '📱 Mobil Terminal & APK' }
   ];
+
+  useEffect(() => {
+    if (activeSubTab === 'mobile_apk') {
+      fetch('/api/app/version')
+        .then(res => res.json())
+        .then(data => setAppInfo(data))
+        .catch(err => console.warn('App version error:', err));
+    }
+  }, [activeSubTab]);
 
   return (
     <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 select-none animate-fadeIn font-sans transition-colors duration-200">
@@ -1857,6 +1882,252 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 7: Mobil Terminal & Android APK */}
+          {activeSubTab === 'mobile_apk' && (
+            <div className="space-y-6 text-xs">
+              {/* Bildirim Mesajı */}
+              {apkMessage && (
+                <div className={`p-4 rounded-2xl border flex items-center justify-between animate-fadeIn ${
+                  apkMessage.success
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                    : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                }`}>
+                  <div className="flex items-center gap-2.5 font-bold">
+                    {apkMessage.success ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <AlertCircle className="w-5 h-5 text-rose-600" />}
+                    <span>{apkMessage.text}</span>
+                  </div>
+                  <button onClick={() => setApkMessage(null)} className="p-1 hover:opacity-70">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {/* 1. ÜST KART: APK İndirme & Sürüm Bilgisi */}
+              <div className="p-6 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl shadow-lg border border-slate-700/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 flex-shrink-0">
+                    <Smartphone className="w-7 h-7" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black tracking-wide">BonCore POS Android El Terminali</h3>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-black uppercase">
+                        v{appInfo?.version_name || '1.0.0'}
+                      </span>
+                    </div>
+                    <p className="text-slate-300 text-xs">
+                      Garson el terminalleri ve tabletler için optimize edilmiş, WakeLock ve titreşim destekli APK.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px] text-slate-400 font-semibold">
+                      <span>Yayın Tarihi: <strong className="text-white">{appInfo?.release_date || '2026-10-29'}</strong></span>
+                      <span>•</span>
+                      <span>Durum: <strong className={appInfo?.is_apk_available ? 'text-emerald-400' : 'text-amber-400'}>{appInfo?.is_apk_available ? 'İndirmeye Hazır' : 'Paket Bekleniyor'}</strong></span>
+                      {appInfo?.file_size_mb ? (
+                        <>
+                          <span>•</span>
+                          <span>Boyut: <strong className="text-white">{appInfo.file_size_mb} MB</strong></span>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                  <a
+                    href="/api/app/download"
+                    download={`BonCore-POS-v${appInfo?.version_name || '1.0.0'}.apk`}
+                    onClick={() => sound.beep()}
+                    className="px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs shadow-md shadow-emerald-500/30 transition flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>APK Paketini İndir</span>
+                  </a>
+                  <button
+                    onClick={() => {
+                      sound.beep();
+                      const url = `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}`;
+                      navigator.clipboard.writeText(url);
+                      setApkMessage({ text: `Terminal bağlantı adresi kopyalandı: ${url}`, success: true });
+                      setTimeout(() => setApkMessage(null), 4000);
+                    }}
+                    className="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-extrabold text-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Wifi className="w-4 h-4 text-emerald-400" />
+                    <span>IP / Web Linkini Kopyala</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. ORTA KARTLAR: Hızlı Bağlantı & Mobil Avantajları */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Mobil Özellikler Kartı */}
+                <div className="p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-3.5">
+                  <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2.5">
+                    <Zap className="w-4 h-4 text-amber-500" />
+                    <h4 className="text-sm font-black text-slate-900 dark:text-white">Android Terminal Teknolojileri</h4>
+                  </div>
+                  <ul className="space-y-2.5 font-medium text-slate-700 dark:text-slate-300">
+                    <li className="flex items-start gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <strong className="text-slate-900 dark:text-white">Otomatik OTA Güncelleme:</strong> Uygulama her açıldığında sunucuyla haberleşir, yeni versiyon varsa garsonu uyararak tek dokunuşla günceller.
+                      </div>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <strong className="text-slate-900 dark:text-white">Kesintisiz Ekran (WakeLock):</strong> Sipariş alma ve masa adisyonu esnasında telefonun ekranı asla kararmaz veya kapanmaz.
+                      </div>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <strong className="text-slate-900 dark:text-white">Haptik Titreşim (Touch Feedback):</strong> Dokunmatik ekranda her ürün eklendiğinde ve tuşa basıldığında fiziksel titreşim verir.
+                      </div>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <strong className="text-slate-900 dark:text-white">Ağ Kesintisi & IP Ayarı:</strong> Wi-Fi koptuğunda çevrimdışı uyarı ekranı devreye girer, garson terminalden kolayca sunucu IP adresini değiştirebilir.
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+
+                {/* Sürüm Günlüğü & Notlar */}
+                <div className="p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-3.5">
+                  <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2.5">
+                    <Activity className="w-4 h-4 text-indigo-500" />
+                    <h4 className="text-sm font-black text-slate-900 dark:text-white">Sürüm Değişiklik Günlüğü (Changelog)</h4>
+                  </div>
+                  <div className="space-y-2">
+                    {(appInfo?.changelog || [
+                      'BonCore POS Android El Terminali ve Tablet sürümü yayınlandı.',
+                      'Otomatik web güncelleme entegrasyonu (Canlı menü & sipariş akışı).',
+                      'Ekran açık tutma (WakeLock) ve dokunmatik titreşim (Haptik) desteği.',
+                      'Kendi kendini güncelleyebilen OTA (Over-The-Air) APK mekanizması.'
+                    ]).map((logItem, idx) => (
+                      <div key={idx} className="flex items-start gap-2 text-slate-600 dark:text-slate-400">
+                        <span className="text-emerald-600 font-black">•</span>
+                        <span>{logItem}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-200 dark:border-slate-700">
+                    <p className="text-[11px] text-slate-500">
+                      💡 <strong>PWA Kurulumu:</strong> Android telefonunuzda Chrome ile sisteme bağlandıktan sonra sağ üstteki üç noktaya basıp <span className="font-bold text-slate-800 dark:text-slate-200">"Uygulamayı Yükle"</span> veya <span className="font-bold text-slate-800 dark:text-slate-200">"Ana Ekrana Ekle"</span> diyerek de APK yüklemeden tam ekran kullanabilirsiniz.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. ALT KART: Yönetici Yeni APK Dağıtımı (OTA Upload) */}
+              <div className="p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-4">
+                <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2.5">
+                  <Upload className="w-4 h-4 text-emerald-600" />
+                  <h4 className="text-sm font-black text-slate-900 dark:text-white">Yeni APK Yükleme & OTA Güncelleme Yayınlama</h4>
+                </div>
+
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const form = e.target as HTMLFormElement;
+                    const fileInput = form.elements.namedItem('apk_file') as HTMLInputElement;
+                    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                      alert('Lütfen yüklenecek .apk dosyasını seçiniz.');
+                      return;
+                    }
+                    sound.beep();
+                    setApkUploading(true);
+                    try {
+                      const formData = new FormData();
+                      formData.append('file', fileInput.files[0]);
+                      formData.append('version_name', newApkVersion);
+                      formData.append('version_code', String(newApkCode));
+                      formData.append('changelog', newApkChangelog);
+
+                      const res = await fetch('/api/app/upload', {
+                        method: 'POST',
+                        body: formData
+                      });
+                      const data = await res.json();
+                      if (res.ok) {
+                        setApkMessage({ text: data.message || 'Yeni APK başarıyla yayınlandı!', success: true });
+                        const vRes = await fetch('/api/app/version');
+                        const vData = await vRes.json();
+                        setAppInfo(vData);
+                        form.reset();
+                      } else {
+                        setApkMessage({ text: data.detail || 'APK yüklenirken hata oluştu.', success: false });
+                      }
+                    } catch (err: any) {
+                      setApkMessage({ text: err.message || 'Bağlantı hatası.', success: false });
+                    } finally {
+                      setApkUploading(false);
+                    }
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-semibold">
+                    <div>
+                      <label className="text-slate-500 block mb-1">APK Dosyası (.apk):</label>
+                      <input
+                        type="file"
+                        name="apk_file"
+                        accept=".apk"
+                        required
+                        className="w-full text-xs p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700 cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-500 block mb-1">Sürüm Adı (Örn: 1.0.1):</label>
+                      <input
+                        type="text"
+                        value={newApkVersion}
+                        onChange={(e) => setNewApkVersion(e.target.value)}
+                        required
+                        className="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-500 block mb-1">Sürüm Kodu (Integer - Örn: 2):</label>
+                      <input
+                        type="number"
+                        value={newApkCode}
+                        onChange={(e) => setNewApkCode(Number(e.target.value))}
+                        required
+                        className="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-500 block mb-1">Sürüm Notları (Her satıra bir yenilik):</label>
+                    <textarea
+                      value={newApkChangelog}
+                      onChange={(e) => setNewApkChangelog(e.target.value)}
+                      rows={2}
+                      placeholder="Yeni arayüz iyileştirmeleri&#10;Performans ve kararlılık geliştirmeleri..."
+                      className="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs"
+                    />
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={apkUploading}
+                      className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {apkUploading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                      <span>{apkUploading ? 'Yükleniyor ve Dağıtılıyor...' : 'Yeni Sürümü Sisteme Yükle & OTA Dağıt'}</span>
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}

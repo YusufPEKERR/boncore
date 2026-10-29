@@ -16,6 +16,15 @@ class SoundEngine {
   // POS Touch / Item Add Beep
   beep() {
     if (!this.enabled) return;
+    // Android Native veya Mobil Haptik Titreşim Tetikle
+    try {
+      if ((window as any).AndroidNative && typeof (window as any).AndroidNative.vibrate === 'function') {
+        (window as any).AndroidNative.vibrate(25);
+      } else if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate(25);
+      }
+    } catch {}
+
     try {
       const ctx = this.getContext();
       const osc = ctx.createOscillator();

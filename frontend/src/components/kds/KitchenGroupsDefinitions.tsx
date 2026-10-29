@@ -110,7 +110,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
     try {
       const [data, freshCats] = await Promise.all([
         api.getKitchenGroups(),
-        api.getCategories(true).catch(() => null),
+        api.getCategories().catch(() => null),
       ]);
       if (Array.isArray(data)) {
         setGroups(data);
