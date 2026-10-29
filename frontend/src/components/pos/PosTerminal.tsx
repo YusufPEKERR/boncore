@@ -37,7 +37,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       .filter(c => (c.show_in_pos ?? true) !== false)
       .map(c => ({
         ...c,
-        products: (c.products || []).filter(p => (p.show_in_pos ?? p.is_available ?? true) !== false)
+        products: (c.products || []).filter(p => (p.show_in_pos ?? true) !== false)
       }));
   }, [categories]);
 
@@ -1360,8 +1360,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               <div
                 key={p.id}
                 onClick={() => handleProductClick(p)}
-                className={`h-24 sm:h-28 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-3 sm:p-3.5 flex flex-col justify-between cursor-pointer pos-touch-card shadow-sm hover:shadow-md transition relative group overflow-hidden ${
-                  isPassive ? 'opacity-50 grayscale' : ''
+                className={`h-24 sm:h-28 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-3 sm:p-3.5 flex flex-col justify-between pos-touch-card shadow-sm hover:shadow-md transition relative group overflow-hidden ${
+                  isPassive ? 'opacity-55 grayscale cursor-not-allowed' : 'cursor-pointer'
                 }`}
               >
                 <div className={qty > 0 ? 'pr-8' : 'pr-2'}>

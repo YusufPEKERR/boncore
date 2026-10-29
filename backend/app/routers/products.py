@@ -131,8 +131,8 @@ async def get_categories_with_products(
                 "allergens": p.allergens or [],
                 "is_vegan": p.is_vegan,
                 "is_spicy": p.is_spicy,
-                "is_available": p.is_available if p.is_available is not None else True,
-                "show_in_pos": bool(p.show_in_pos if p.show_in_pos is not None else (p.is_available if p.is_available is not None else True)),
+                "is_available": bool(p.is_available if p.is_available is not None else True),
+                "show_in_pos": bool(p.show_in_pos if p.show_in_pos is not None else True),
                 "variants": [
                     {
                         "id": v.id,
@@ -303,7 +303,6 @@ async def delete_category(cat_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/items")
 async def create_product(payload: dict, db: AsyncSession = Depends(get_db)):
-    show_pos = bool(payload.get("show_in_pos", payload.get("is_available", True)))
     new_prod = Product(
         category_id=payload.get("category_id"),
         name=(payload.get("name") or "").strip(),
@@ -312,8 +311,8 @@ async def create_product(payload: dict, db: AsyncSession = Depends(get_db)):
         plu_code=payload.get("plu_code"),
         barcode=payload.get("barcode"),
         station=payload.get("station", "kitchen"),
-        is_available=bool(payload.get("is_available", show_pos)),
-        show_in_pos=show_pos
+        is_available=bool(payload.get("is_available", True)),
+        show_in_pos=bool(payload.get("show_in_pos", True))
     )
     db.add(new_prod)
     await db.flush()
@@ -368,12 +367,7 @@ async def update_product(prod_id: int, payload: dict, db: AsyncSession = Depends
     if "plu_code" in payload: prod.plu_code = payload["plu_code"]
     if "barcode" in payload: prod.barcode = payload["barcode"]
     if "is_available" in payload: prod.is_available = bool(payload["is_available"])
-    if "show_in_pos" in payload:
-        prod.show_in_pos = bool(payload["show_in_pos"])
-        if "is_available" not in payload:
-            prod.is_available = bool(payload["show_in_pos"])
-    elif "is_available" in payload:
-        prod.show_in_pos = bool(payload["is_available"])
+    if "show_in_pos" in payload: prod.show_in_pos = bool(payload["show_in_pos"])
 
     # Sync ONLY with the product's own direct Ingredient card (matched by product name, never overwriting BOM ingredients!)
     linked_ing = None
