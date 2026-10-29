@@ -374,28 +374,65 @@ async def delete_kitchen_group(group_id: str, db: AsyncSession = Depends(get_db)
 @router.post("/kitchen-groups/{group_id}/assign-categories")
 async def assign_categories_to_kitchen_group(group_id: str, payload: Dict[str, Any], db: AsyncSession = Depends(get_db)):
     """
-    Bulk assigns all products in the given category_ids (or product_ids) to this kitchen group.
+    Syncs products assigned to this kitchen group (adds selected products/categories and removes unchecked ones).
     """
     groups = await _load_raw_kitchen_groups(db)
     if not any(g.get("id") == group_id for g in groups):
         raise HTTPException(status_code=404, detail="Mutfak grubu bulunamadı.")
 
+    # Normalize any legacy NULL or empty station to 'kitchen' first so unassigning from 'kitchen' works cleanly
+    await db.execute(
+        update(Product).where((Product.station == None) | (Product.station == "")).values(station="kitchen")
+    )
+
+    unassign_category_ids = payload.get("unassign_category_ids")
+    if unassign_category_ids is not None:
+        res = await db.execute(
+            update(Product)
+            .where(Product.station == group_id, Product.category_id.in_(unassign_category_ids))
+            .values(station="unassigned")
+        )
+        await db.commit()
+        await ws_hub.broadcast_all("MENU_UPDATED", {"station": group_id})
+        await ws_hub.broadcast_all("KITCHEN_GROUPS_UPDATED", {})
+        return {"status": "success", "updated_count": res.rowcount or 0}
+
     category_ids = payload.get("category_ids") or []
-    product_ids = payload.get("product_ids") or []
+    has_product_ids = "product_ids" in payload
+    product_ids = [int(pid) for pid in (payload.get("product_ids") or [])]
 
     updated_count = 0
-    if category_ids:
+    if has_product_ids:
+        # Remove products that were in this group_id but are no longer in product_ids
+        if len(product_ids) > 0:
+            unassign_res = await db.execute(
+                update(Product)
+                .where(Product.station == group_id, ~Product.id.in_(product_ids))
+                .values(station="unassigned")
+            )
+            updated_count += unassign_res.rowcount or 0
+
+            assign_res = await db.execute(
+                update(Product)
+                .where(Product.id.in_(product_ids))
+                .values(station=group_id)
+            )
+            updated_count += assign_res.rowcount or 0
+        else:
+            # All products were unchecked -> unassign all products from this group_id
+            unassign_res = await db.execute(
+                update(Product)
+                .where(Product.station == group_id)
+                .values(station="unassigned")
+            )
+            updated_count += unassign_res.rowcount or 0
+    elif category_ids:
         res = await db.execute(
             update(Product).where(Product.category_id.in_(category_ids)).values(station=group_id)
-        )
-        updated_count += res.rowcount or 0
-    if product_ids:
-        res = await db.execute(
-            update(Product).where(Product.id.in_(product_ids)).values(station=group_id)
         )
         updated_count += res.rowcount or 0
 
     await db.commit()
     await ws_hub.broadcast_all("MENU_UPDATED", {"station": group_id})
     await ws_hub.broadcast_all("KITCHEN_GROUPS_UPDATED", {})
-    return {"status": "success", "updated_count": updated_count}
+    return {"status": "success", "updated_count": updated_count, "assigned_count": len(product_ids)}

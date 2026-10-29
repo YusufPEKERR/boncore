@@ -69,10 +69,15 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
   onNavigateTab,
 }) => {
   const [groups, setGroups] = useState<KitchenGroupItem[]>([]);
+  const [localCategories, setLocalCategories] = useState<Category[]>(categories);
   const [loading, setLoading] = useState<boolean>(true);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  useEffect(() => {
+    setLocalCategories(categories);
+  }, [categories]);
 
   // Add / Edit Modal State
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -103,9 +108,15 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
   const loadGroups = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api.getKitchenGroups();
+      const [data, freshCats] = await Promise.all([
+        api.getKitchenGroups(),
+        api.getCategories(true).catch(() => null),
+      ]);
       if (Array.isArray(data)) {
         setGroups(data);
+      }
+      if (Array.isArray(freshCats)) {
+        setLocalCategories(freshCats);
       }
     } catch (e: any) {
       showToast(e.message || 'Mutfak grupları yüklenemedi.', 'error');
@@ -277,32 +288,57 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
     handleReorder(copy);
   };
 
+  const isProductInGroup = (p: Product, groupId: string) => {
+    const st = p.station || 'kitchen';
+    return st === groupId;
+  };
+
   const handleOpenAssignModal = (group: KitchenGroupItem) => {
     sound.beep();
     setAssignModalGroup(group);
-    setSelectedCategoryIds([]);
-    // Pre-select products already assigned to this group
     const existingProdIds: number[] = [];
-    categories.forEach(cat => {
-      (cat.products || []).forEach((p: Product) => {
-        if ((p.station || 'kitchen') === group.id) {
+    const activeCatIds: number[] = [];
+    localCategories.forEach(cat => {
+      const prods = cat.products || [];
+      let matchedInCat = 0;
+      prods.forEach((p: Product) => {
+        if (isProductInGroup(p, group.id)) {
           existingProdIds.push(p.id);
+          matchedInCat++;
         }
       });
+      if (prods.length > 0 && matchedInCat === prods.length) {
+        activeCatIds.push(cat.id);
+      }
     });
     setSelectedProductIds(existingProdIds);
+    setSelectedCategoryIds(activeCatIds);
   };
 
   const handleToggleAssignCategory = (cat: Category) => {
     sound.beep();
     const catProdIds = (cat.products || []).map(p => p.id);
-    const isCatSelected = selectedCategoryIds.includes(cat.id);
-    if (isCatSelected) {
+    const allInCatSelected = catProdIds.length > 0 && catProdIds.every(id => selectedProductIds.includes(id));
+    if (allInCatSelected || selectedCategoryIds.includes(cat.id)) {
       setSelectedCategoryIds(prev => prev.filter(id => id !== cat.id));
       setSelectedProductIds(prev => prev.filter(id => !catProdIds.includes(id)));
     } else {
-      setSelectedCategoryIds(prev => [...prev, cat.id]);
+      setSelectedCategoryIds(prev => Array.from(new Set([...prev, cat.id])));
       setSelectedProductIds(prev => Array.from(new Set([...prev, ...catProdIds])));
+    }
+  };
+
+  const handleQuickUnassignCategory = async (group: KitchenGroupItem, catId: number, catName: string) => {
+    sound.beep();
+    try {
+      await api.assignCategoriesToKitchenGroup(group.id, {
+        unassign_category_ids: [catId]
+      } as any);
+      showToast(`"${catName}" kategorisi "${group.name}" bölümünden kaldırıldı.`, 'success');
+      await loadGroups();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showToast(err.message || 'Kategori kaldırılamadı.', 'error');
     }
   };
 
@@ -311,11 +347,10 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
     setAssigning(true);
     sound.beep();
     try {
-      const res = await api.assignCategoriesToKitchenGroup(assignModalGroup.id, {
-        category_ids: selectedCategoryIds,
+      await api.assignCategoriesToKitchenGroup(assignModalGroup.id, {
         product_ids: selectedProductIds,
       });
-      showToast(`${res.updated_count || selectedProductIds.length} ürün "${assignModalGroup.name}" grubuna bağlandı.`, 'success');
+      showToast(`"${assignModalGroup.name}" bölümü ürün bağlantıları güncellendi (${selectedProductIds.length} ürün bağlı).`, 'success');
       setAssignModalGroup(null);
       await loadGroups();
       if (onRefreshData) onRefreshData();
@@ -459,11 +494,11 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
             const isDragTarget = dragOverId === group.id && draggedId !== group.id;
 
             // Categories that have products in this group
-            const groupCategories = categories
+            const groupCategories = localCategories
               .map(c => ({
                 id: c.id,
                 name: c.name,
-                count: (c.products || []).filter((p: Product) => (p.station || 'kitchen') === group.id).length
+                count: (c.products || []).filter((p: Product) => isProductInGroup(p, group.id)).length
               }))
               .filter(c => c.count > 0);
 
@@ -607,9 +642,17 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
                         {groupCategories.map(gc => (
                           <span
                             key={gc.id}
-                            className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold"
                           >
-                            {gc.name} <span className="font-mono text-slate-400">({gc.count})</span>
+                            <span>{gc.name} <span className="font-mono text-slate-400">({gc.count})</span></span>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickUnassignCategory(group, gc.id, gc.name)}
+                              title={`"${gc.name}" kategorisini bu bölümden kaldır`}
+                              className="p-0.5 rounded hover:bg-rose-100 dark:hover:bg-rose-950 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
                           </span>
                         ))}
                       </div>
@@ -884,12 +927,43 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
 
             <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
               <div>
-                <h4 className="font-extrabold uppercase text-slate-500 mb-2">
-                  1. Hızlı Kategori Seçimi (Tüm Kategoriyi Bağla)
-                </h4>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-extrabold uppercase text-slate-500">
+                    1. Hızlı Kategori Seçimi (Kategoriyi Bağla / Kaldır)
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sound.beep();
+                        const allCats = localCategories.map(c => c.id);
+                        const allProds = localCategories.flatMap(c => (c.products || []).map(p => p.id));
+                        setSelectedCategoryIds(allCats);
+                        setSelectedProductIds(allProds);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 font-extrabold hover:bg-blue-100 cursor-pointer"
+                    >
+                      Tümünü Seç
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sound.beep();
+                        setSelectedCategoryIds([]);
+                        setSelectedProductIds([]);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 font-extrabold hover:bg-rose-100 cursor-pointer"
+                    >
+                      Tümünü Kaldır
+                    </button>
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {categories.map((cat) => {
-                    const isSelected = selectedCategoryIds.includes(cat.id);
+                  {localCategories.map((cat) => {
+                    const catProdIds = (cat.products || []).map(p => p.id);
+                    const selectedInCatCount = catProdIds.filter(id => selectedProductIds.includes(id)).length;
+                    const isSelected = (catProdIds.length > 0 && selectedInCatCount === catProdIds.length) || selectedCategoryIds.includes(cat.id);
+                    const isPartial = selectedInCatCount > 0 && selectedInCatCount < catProdIds.length;
                     return (
                       <button
                         key={cat.id}
@@ -898,17 +972,25 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
                         className={`p-3 rounded-xl border text-left font-bold flex items-center justify-between transition cursor-pointer ${
                           isSelected
                             ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-500 text-blue-700 dark:text-blue-300'
+                            : isPartial
+                            ? 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-400 text-amber-800 dark:text-amber-300'
                             : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300'
                         }`}
                       >
                         <div className="truncate pr-2">
                           <div className="truncate">{cat.name}</div>
-                          <div className="text-[10px] text-slate-400">{(cat.products || []).length} Ürün</div>
+                          <div className="text-[10px] text-slate-400">
+                            {selectedInCatCount} / {catProdIds.length} Ürün Seçili
+                          </div>
                         </div>
                         <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${
-                          isSelected ? 'bg-blue-600 text-white' : 'border border-slate-300 dark:border-slate-600'
+                          isSelected
+                            ? 'bg-blue-600 text-white'
+                            : isPartial
+                            ? 'bg-amber-500 text-white'
+                            : 'border border-slate-300 dark:border-slate-600'
                         }`}>
-                          {isSelected && <Check className="w-3.5 h-3.5" />}
+                          {(isSelected || isPartial) && <Check className="w-3.5 h-3.5" />}
                         </div>
                       </button>
                     );
@@ -921,7 +1003,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
                   2. Ürün Bazlı Seçim ({selectedProductIds.length} Ürün Seçili)
                 </h4>
                 <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-                  {categories.map((cat) => (
+                  {localCategories.map((cat) => (
                     <div key={cat.id} className="border border-slate-200 dark:border-slate-800 rounded-2xl p-3">
                       <div className="font-extrabold text-slate-800 dark:text-slate-200 mb-2">{cat.name}</div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
@@ -978,7 +1060,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
                   className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-md cursor-pointer disabled:opacity-50"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>{assigning ? 'Atanıyor...' : 'Seçili Ürünleri Bağla'}</span>
+                  <span>{assigning ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}</span>
                 </button>
               </div>
             </div>
