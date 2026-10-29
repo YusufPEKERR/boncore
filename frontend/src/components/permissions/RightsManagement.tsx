@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Search, Save, CheckCircle2, HelpCircle } from 'lucide-react';
+import { Shield, Search, Save, CheckCircle2, HelpCircle, Check, X, Play, RefreshCw, Lock, Unlock } from 'lucide-react';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
 
@@ -376,6 +376,8 @@ export const RightsManagement: React.FC = () => {
   });
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
+  const [activeTestRole, setActiveTestRole] = useState<string>('waiter');
+  const [isTestPanelOpen, setIsTestPanelOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const loadPermissions = async () => {
@@ -461,13 +463,27 @@ export const RightsManagement: React.FC = () => {
             </div>
           </div>
 
-          <button
-            onClick={handleSave}
-            className="px-5 sm:px-6 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-md transition flex items-center gap-2 shrink-0 cursor-pointer"
-          >
-            <Save className="w-4 h-4" />
-            <span>Kaydet</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { sound.beep(); setIsTestPanelOpen(!isTestPanelOpen); }}
+              className={`px-4 py-2.5 rounded-xl font-bold text-xs transition flex items-center gap-2 shrink-0 cursor-pointer border ${
+                isTestPanelOpen
+                  ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
+                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              <Play className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+              <span>Rol Yetki Simülatörü</span>
+            </button>
+
+            <button
+              onClick={handleSave}
+              className="px-5 sm:px-6 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-md transition flex items-center gap-2 shrink-0 cursor-pointer"
+            >
+              <Save className="w-4 h-4" />
+              <span>Kaydet</span>
+            </button>
+          </div>
         </div>
 
         {/* Search Input */}
@@ -483,6 +499,97 @@ export const RightsManagement: React.FC = () => {
             />
           </div>
         </div>
+
+        {/* Live Role Permission Simulator Panel */}
+        {isTestPanelOpen && (
+          <div className="mx-4 sm:mx-6 p-4 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 space-y-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/60 dark:border-amber-900/40 pb-2.5">
+              <div>
+                <h4 className="text-xs font-black text-amber-900 dark:text-amber-200 uppercase tracking-wide flex items-center gap-1.5">
+                  <Play className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                  <span>Rol Bazlı Canlı Yetki Denetimi & Simülasyonu</span>
+                </h4>
+                <p className="text-[11px] text-amber-700/80 dark:text-amber-400 mt-0.5">
+                  Bir rol seçerek bu role ait açık ve engellenen tüm yetkileri canlı olarak inceleyebilirsiniz.
+                </p>
+              </div>
+
+              {/* Role Select Pills */}
+              <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-amber-200 dark:border-amber-900/60 shadow-xs overflow-x-auto">
+                {roles.map((r) => {
+                  const allowedCount = permissions.filter(p => p.roles[r.key as keyof typeof p.roles]).length;
+                  return (
+                    <button
+                      key={r.key}
+                      onClick={() => { sound.beep(); setActiveTestRole(r.key); }}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                        activeTestRole === r.key
+                          ? 'bg-amber-500 text-white shadow-xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <span>{r.label}</span>
+                      <span className={`text-[10px] px-1 py-0.2 rounded font-mono ${activeTestRole === r.key ? 'bg-amber-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
+                        {allowedCount}/{permissions.length}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Role Test Summary Matrix */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              {/* Allowed Items */}
+              <div className="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/50 rounded-xl p-3 shadow-xs">
+                <div className="font-extrabold text-emerald-700 dark:text-emerald-400 mb-2 flex items-center justify-between pb-1.5 border-b border-emerald-100 dark:border-emerald-900/30">
+                  <span className="flex items-center gap-1.5">
+                    <Unlock className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>AÇIK / İZİN VERİLEN İŞLEMLER ({permissions.filter(p => p.roles[activeTestRole as keyof typeof p.roles]).length})</span>
+                  </span>
+                  <span className="text-[10px] font-mono bg-emerald-50 dark:bg-emerald-950 text-emerald-600 px-1.5 py-0.5 rounded">Aktif</span>
+                </div>
+                <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 font-medium text-slate-700 dark:text-slate-300">
+                  {permissions
+                    .filter(p => p.roles[activeTestRole as keyof typeof p.roles])
+                    .map(p => (
+                      <div key={p.id} className="p-1.5 rounded-lg bg-emerald-50/50 dark:bg-emerald-950/20 text-[11px] flex items-start gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                        <div>
+                          <div className="font-bold text-slate-900 dark:text-white">{p.title}</div>
+                          <div className="text-[10px] text-slate-400">{p.group}</div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              {/* Blocked Items */}
+              <div className="bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/50 rounded-xl p-3 shadow-xs">
+                <div className="font-extrabold text-rose-700 dark:text-rose-400 mb-2 flex items-center justify-between pb-1.5 border-b border-rose-100 dark:border-rose-900/30">
+                  <span className="flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-rose-500" />
+                    <span>ENGELLENEN / KİLİTLİ İŞLEMLER ({permissions.filter(p => !p.roles[activeTestRole as keyof typeof p.roles]).length})</span>
+                  </span>
+                  <span className="text-[10px] font-mono bg-rose-50 dark:bg-rose-950 text-rose-600 px-1.5 py-0.5 rounded">Engelli</span>
+                </div>
+                <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 font-medium text-slate-700 dark:text-slate-300">
+                  {permissions
+                    .filter(p => !p.roles[activeTestRole as keyof typeof p.roles])
+                    .map(p => (
+                      <div key={p.id} className="p-1.5 rounded-lg bg-rose-50/50 dark:bg-rose-950/20 text-[11px] flex items-start gap-1.5">
+                        <X className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+                        <div>
+                          <div className="font-bold text-slate-900 dark:text-white">{p.title}</div>
+                          <div className="text-[10px] text-slate-400">{p.group}</div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {savedSuccess && (
           <div className="mx-4 sm:mx-6 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn">
