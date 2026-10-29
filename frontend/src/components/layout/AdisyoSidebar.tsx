@@ -59,7 +59,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
   const [isReportsOpen, setIsReportsOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem('boncore_menu_reports_open');
     if (saved !== null) return saved === 'true';
-    return ['restaurant_statistics', 'product_sales_report', 'day_end_report'].includes(activeTab);
+    return ['restaurant_statistics', 'closed_bills_report', 'product_sales_report', 'day_end_report'].includes(activeTab);
   });
 
   useEffect(() => {
@@ -459,6 +459,14 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                   }`}
                 >
                   Restaurant İstatistikleri
+                </button>
+                <button
+                  onClick={() => handleNavClick('closed_bills_report')}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                    activeTab === 'closed_bills_report' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  Kapatılan Adisyonlar
                 </button>
                 <button
                   onClick={() => handleNavClick('product_sales_report')}

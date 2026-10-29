@@ -27,6 +27,7 @@ import { TableAreaDefinitions } from './components/tables/TableAreaDefinitions';
 import { RightsManagement } from './components/permissions/RightsManagement';
 import { UsersManagement } from './components/users/UsersManagement';
 import { RestaurantStatistics } from './components/reports/RestaurantStatistics';
+import { ClosedBillsReport } from './components/reports/ClosedBillsReport';
 import { ProductSalesReport } from './components/reports/ProductSalesReport';
 import { DayEndReport } from './components/reports/DayEndReport';
 import { AppStore } from './components/appstore/AppStore';
@@ -50,7 +51,7 @@ export const App: React.FC = () => {
 
   const VALID_TABS = [
     'dashboard', 'tables', 'pos', 'kds', 'product_definition', 'table_definition',
-    'integration_menu', 'users', 'rights', 'restaurant_statistics', 'product_sales_report', 'day_end_report', 'app_store',
+    'integration_menu', 'users', 'rights', 'restaurant_statistics', 'closed_bills_report', 'product_sales_report', 'day_end_report', 'app_store',
     'settings', 'profile', 'cashier', 'delivery', 'inventory', 'qr', 'audit',
     'customers', 'reservations', 'cost_profit', 'hotel', 'kiosk'
   ];
@@ -451,6 +452,29 @@ export const App: React.FC = () => {
         {activeTab === 'rights' && <RightsManagement />}
 
         {activeTab === 'restaurant_statistics' && <RestaurantStatistics onNavigateTab={(tab) => setActiveTab(tab)} />}
+
+        {activeTab === 'closed_bills_report' && (
+          <ClosedBillsReport
+            currentUser={currentUser}
+            onOpenFiscalModal={(id) => setActiveFiscalOrderId(id)}
+            onRefreshGlobalData={loadInitialData}
+            onNavigateToTable={async (tableId) => {
+              await loadAreas();
+              const freshAreas = await api.getAreas();
+              setAreas(freshAreas);
+              if (tableId) {
+                for (const area of freshAreas) {
+                  const found = (area.tables || []).find((t: Table) => t.id === tableId);
+                  if (found) {
+                    handleSelectTable(found);
+                    return;
+                  }
+                }
+              }
+              setActiveTab('tables');
+            }}
+          />
+        )}
 
         {activeTab === 'product_sales_report' && <ProductSalesReport />}
 

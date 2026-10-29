@@ -1264,3 +1264,259 @@ async def get_product_sales_report(
         "categories_filter": categories_available,
         "items": items_list
     }
+
+
+@router.get("/reports/closed-bills")
+async def get_closed_bills_report(
+    date_range: str = "all",
+    start_date: str | None = None,
+    end_date: str | None = None,
+    search: str | None = None,
+    payment_method: str | None = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Kapatılan Adisyonlar Raporu:
+    Kapatılmış (paid / cancelled) adisyonları, ürün kalemlerini, ödeme yöntemlerini ve masa bilgisini listeler.
+    """
+    from app.services.time_service import get_date_range_bounds_utc, to_local_dt
+
+    start_utc, end_utc = get_date_range_bounds_utc(date_range, start_date, end_date)
+
+    stmt = (
+        select(Order)
+        .options(
+            selectinload(Order.items),
+            selectinload(Order.table).selectinload(Table.area),
+            selectinload(Order.payments)
+        )
+        .where(Order.status.in_(["paid", "cancelled"]))
+        .order_by(Order.closed_at.desc(), Order.id.desc())
+    )
+
+    if start_utc:
+        stmt = stmt.where(Order.created_at >= start_utc)
+    if end_utc:
+        stmt = stmt.where(Order.created_at < end_utc)
+
+    res = await db.execute(stmt)
+    orders = res.scalars().all()
+
+    method_labels = {
+        "cash": "Nakit",
+        "credit_card": "Kredi Kartı",
+        "sodexo": "Sodexo / Multinet",
+        "multinet": "Multinet",
+        "ticket": "Ticket",
+        "meal_card": "Yemek Kartı",
+        "open_account": "Açık Hesap (Cari)",
+        "online": "Online Ödeme"
+    }
+
+    closed_list = []
+    total_turnover = 0.0
+    cash_total = 0.0
+    card_total = 0.0
+    other_total = 0.0
+
+    for o in orders:
+        t_name = "Hızlı Satış / Paket"
+        t_area = ""
+        t_status = "empty"
+        if o.table:
+            t_area = o.table.area.name if o.table.area else ""
+            t_name = f"{t_area} - {o.table.name}" if t_area else o.table.name
+            t_status = o.table.status or "empty"
+        elif o.order_type == "takeaway":
+            t_name = "Gel-Al / Hızlı Satış"
+        elif o.order_type == "online_delivery":
+            t_name = "Paket Servis"
+
+        if search and search.strip():
+            q = search.strip().lower()
+            haystack = f"{o.order_no or ''} {t_name} {o.waiter_name or ''} {o.cashier_name or ''} {o.notes or ''}".lower()
+            item_match = any(q in (it.product_name or "").lower() for it in (o.items or []))
+            if q not in haystack and not item_match:
+                continue
+
+        if payment_method and payment_method != "all":
+            has_method = any((p.payment_method or "") == payment_method for p in (o.payments or []))
+            if not has_method:
+                continue
+
+        created_local = to_local_dt(o.created_at) if o.created_at else None
+        closed_local = to_local_dt(o.closed_at) if o.closed_at else created_local
+
+        payments_data = []
+        for p in (o.payments or []):
+            m_key = p.payment_method or "cash"
+            amt = round(float(p.amount or 0.0), 2)
+            payments_data.append({
+                "id": p.id,
+                "method": m_key,
+                "label": method_labels.get(m_key, m_key.upper()),
+                "amount": amt,
+                "created_at": to_local_dt(p.created_at).strftime("%H:%M") if p.created_at else ""
+            })
+            if o.status == "paid":
+                if m_key == "cash":
+                    cash_total += amt
+                elif m_key == "credit_card":
+                    card_total += amt
+                else:
+                    other_total += amt
+
+        if o.status == "paid":
+            total_turnover += float(o.grand_total or 0.0)
+
+        items_data = [
+            {
+                "id": it.id,
+                "product_id": it.product_id,
+                "product_name": it.product_name,
+                "variant_name": it.variant_name,
+                "quantity": float(it.quantity or 1.0),
+                "unit_price": round(float(it.unit_price or 0.0), 2),
+                "total_price": round(float(it.total_price or 0.0), 2),
+                "is_voided": bool(it.is_voided),
+                "is_treat": bool(it.is_treat),
+                "kitchen_note": it.kitchen_note,
+                "selected_modifiers": it.selected_modifiers or []
+            }
+            for it in (o.items or [])
+        ]
+
+        closed_list.append({
+            "id": o.id,
+            "order_no": o.order_no,
+            "table_id": o.table_id,
+            "table_name": t_name,
+            "table_current_status": t_status,
+            "order_type": o.order_type,
+            "status": o.status,
+            "subtotal": round(float(o.subtotal or 0.0), 2),
+            "discount_amount": round(float(o.discount_amount or 0.0), 2),
+            "treat_amount": round(float(o.treat_amount or 0.0), 2),
+            "service_charge": round(float(o.service_charge or 0.0), 2),
+            "grand_total": round(float(o.grand_total or 0.0), 2),
+            "paid_total": round(float(o.paid_total or 0.0), 2),
+            "waiter_name": o.waiter_name or "Garson",
+            "cashier_name": o.cashier_name or o.waiter_name or "Kasiyer",
+            "notes": o.notes or "",
+            "created_at": created_local.strftime("%d.%m.%Y %H:%M") if created_local else "-",
+            "closed_at": closed_local.strftime("%d.%m.%Y %H:%M") if closed_local else "-",
+            "items_count": len([i for i in items_data if not i["is_voided"]]),
+            "items": items_data,
+            "payments": payments_data
+        })
+
+    paid_count = len([c for c in closed_list if c["status"] == "paid"])
+    return {
+        "total_closed_count": len(closed_list),
+        "paid_orders_count": paid_count,
+        "total_turnover": round(total_turnover, 2),
+        "cash_total": round(cash_total, 2),
+        "card_total": round(card_total, 2),
+        "other_total": round(other_total, 2),
+        "average_ticket": round(total_turnover / paid_count, 2) if paid_count > 0 else 0.0,
+        "orders": closed_list
+    }
+
+
+@router.post("/{order_id}/reopen")
+async def reopen_closed_order(order_id: int, payload: dict | None = None, db: AsyncSession = Depends(get_db)):
+    """
+    Kapatılmış bir adisyonu ve bağlı olduğu masayı tekrar aktif (Açık Hesap / Dolu Masa) hale getirir.
+    """
+    payload = payload or {}
+    clear_payments = payload.get("clear_payments", True)
+    operator_name = payload.get("operator_name", "Yönetici")
+
+    stmt = (
+        select(Order)
+        .where(Order.id == order_id)
+        .options(
+            selectinload(Order.items),
+            selectinload(Order.table),
+            selectinload(Order.payments)
+        )
+    )
+    res = await db.execute(stmt)
+    order = res.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Adisyon bulunamadı.")
+
+    table = order.table
+    if not table and order.table_id:
+        t_res = await db.execute(select(Table).where(Table.id == order.table_id))
+        table = t_res.scalar_one_or_none()
+
+    # Eğer masada başka bir açık adisyon varsa uyar
+    if table:
+        active_chk = await db.execute(
+            select(Order).where(
+                Order.table_id == table.id,
+                Order.id != order.id,
+                Order.status.in_(["open", "bill_requested"])
+            )
+        )
+        existing_active = active_chk.scalars().first()
+        if existing_active:
+            raise HTTPException(
+                status_code=400,
+                detail=f'"{table.name}" masasında şu anda başka bir açık adisyon (#{existing_active.order_no}) bulunuyor. Önce mevcut masadaki açık siparişi kapatın veya başka masaya taşıyın.'
+            )
+
+    if clear_payments and order.payments:
+        for p in list(order.payments):
+            await db.delete(p)
+        order.paid_total = 0.0
+        order.remaining_total = round(float(order.grand_total or 0.0), 2)
+    else:
+        order.remaining_total = max(0.0, round(float(order.grand_total or 0.0) - float(order.paid_total or 0.0), 2))
+        if order.remaining_total <= 0:
+            order.paid_total = 0.0
+            order.remaining_total = round(float(order.grand_total or 0.0), 2)
+
+    order.status = "open"
+    order.closed_at = None
+
+    if table:
+        table.status = "occupied"
+        table.current_order_id = order.id
+        table.opened_at = order.created_at or datetime.utcnow()
+        table.waiter_name = order.waiter_name or operator_name
+
+    audit = AuditLog(
+        action_type="ORDER_REOPENED",
+        operator_name=operator_name,
+        operator_role="manager",
+        target_ref=order.order_no,
+        reason_code="REOPEN_TABLE",
+        reason_text=f"Kapatılan adisyon ({order.order_no}) ve masa ({table.name if table else 'Hızlı Satış'}) tekrar aktif edildi.",
+        details={"order_id": order.id, "table_id": order.table_id, "grand_total": order.grand_total},
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit)
+    await db.commit()
+
+    await ws_hub.broadcast_all("ORDER_UPDATED", {
+        "order_id": order.id,
+        "status": "open",
+        "table_id": order.table_id
+    })
+    if table:
+        await ws_hub.broadcast_all("TABLE_STATUS_CHANGED", {
+            "table_id": table.id,
+            "status": "occupied",
+            "order_id": order.id
+        })
+
+    return {
+        "status": "success",
+        "order_id": order.id,
+        "order_no": order.order_no,
+        "table_id": table.id if table else None,
+        "table_name": table.name if table else "Hızlı Satış",
+        "message": f'"{table.name if table else order.order_no}" masası ve adisyonu tekrar aktif edildi!'
+    }

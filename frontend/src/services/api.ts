@@ -726,6 +726,37 @@ export const api = {
     return res.json();
   },
 
+  // Closed Bills (Kapatılan Adisyonlar) Report & Reopen API
+  async getClosedBillsReport(params?: {
+    dateRange?: string;
+    startDate?: string;
+    endDate?: string;
+    search?: string;
+    paymentMethod?: string;
+  }): Promise<any> {
+    const q = new URLSearchParams();
+    if (params?.dateRange) q.append('date_range', params.dateRange);
+    if (params?.startDate) q.append('start_date', params.startDate);
+    if (params?.endDate) q.append('end_date', params.endDate);
+    if (params?.search) q.append('search', params.search);
+    if (params?.paymentMethod) q.append('payment_method', params.paymentMethod);
+    const res = await fetch(`${API_BASE}/orders/reports/closed-bills?${q.toString()}`);
+    return res.json();
+  },
+
+  async reopenClosedOrder(orderId: number, operatorName: string = 'Yönetici', clearPayments: boolean = true): Promise<any> {
+    const res = await fetch(`${API_BASE}/orders/${orderId}/reopen`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operator_name: operatorName, clear_payments: clearPayments })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Masa ve adisyon tekrar aktif edilemedi.');
+    }
+    return res.json();
+  },
+
   // Product Sales Report API
   async getProductSalesReport(params?: {
     dateRange?: string;

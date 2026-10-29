@@ -11,6 +11,7 @@ import {
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
 import { Ingredient } from '../../types';
+import { ClosedBillsReport } from './ClosedBillsReport';
 
 import { useWebSocket } from '../../services/websocket';
 
@@ -62,6 +63,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
 
   const tabs = [
     { id: 'summary', label: 'Özet' },
+    { id: 'closed_bills', label: 'Kapatılan Adisyonlar' },
     { id: 'stock_report', label: 'Stok Durum Raporu' },
     { id: 'daily_turnover', label: 'Günlük Ciro Verileri' },
     { id: 'chart_data', label: 'Grafik Verileri' },
@@ -485,6 +487,13 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
               <div className="text-[10px] uppercase font-bold text-slate-400 px-3 py-1">
                 Özel Raporlar
               </div>
+              <button
+                onClick={() => { sound.beep(); onNavigateTab('closed_bills_report'); }}
+                className="shrink-0 md:w-full px-3.5 py-2 md:p-2.5 rounded-xl text-left text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 transition flex items-center justify-between cursor-pointer"
+              >
+                <span>Kapatılan Adisyonlar</span>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              </button>
               <button
                 onClick={() => { sound.beep(); onNavigateTab('product_sales_report'); }}
                 className="shrink-0 md:w-full px-3.5 py-2 md:p-2.5 rounded-xl text-left text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 transition flex items-center justify-between cursor-pointer"
@@ -2129,6 +2138,16 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                   </table>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB: CLOSED BILLS REPORT */}
+          {activeTab === 'closed_bills' && (
+            <div className="-m-6 h-[calc(100%+3rem)]">
+              <ClosedBillsReport
+                embedded
+                onRefreshGlobalData={() => loadStatistics(dateRange)}
+              />
             </div>
           )}
         </div>
