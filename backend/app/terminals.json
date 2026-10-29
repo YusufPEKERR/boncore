@@ -24,8 +24,8 @@
     "is_default": false,
     "admin_override": false
   },
-  "kasa_774d47": {
-    "id": "kasa_774d47",
+  "kasa_691876": {
+    "id": "kasa_691876",
     "alias_ids": [
       "kasa_774d47",
       "kasa_691876"
@@ -48,7 +48,7 @@
       "Microsoft Print to PDF",
       "Microsoft XPS Document Writer"
     ],
-    "last_seen": 1793307128.210838,
+    "last_seen": 1793307606.6437533,
     "is_default": false,
     "admin_override": false
   },
@@ -79,7 +79,7 @@
       "Microsoft XPS Document Writer",
       "OneNote for Windows 10"
     ],
-    "last_seen": 1793307133.1843433,
+    "last_seen": 1793307610.1297414,
     "is_default": true,
     "admin_override": false
   }
