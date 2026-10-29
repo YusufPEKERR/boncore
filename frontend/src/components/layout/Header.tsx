@@ -97,9 +97,11 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-rose-600 to-orange-500 flex items-center justify-center text-white font-black text-sm shadow-sm shadow-rose-500/20">
-            B
-          </div>
+          <img 
+            src="/icon-192.png" 
+            alt="BonCore POS" 
+            className="w-8 h-8 rounded-xl object-contain shadow-sm" 
+          />
           <div className="leading-tight">
             <div className="flex items-center gap-1.5">
               <span className="font-black text-xs sm:text-sm text-slate-900 dark:text-white tracking-tight">

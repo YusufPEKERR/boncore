@@ -103,9 +103,11 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
         {/* Brand Header */}
         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-600 to-orange-500 flex items-center justify-center text-white font-black text-base shadow-sm shadow-rose-500/20">
-              <span>B</span>
-            </div>
+            <img 
+              src="/icon-192.png" 
+              alt="BonCore POS" 
+              className="w-9 h-9 rounded-xl object-contain shadow-sm" 
+            />
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-extrabold text-base text-slate-900 dark:text-white tracking-tight">BonCore <span className="text-rose-600 dark:text-rose-400">POS</span></span>

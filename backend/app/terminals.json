@@ -48,12 +48,12 @@
       "Microsoft Print to PDF",
       "Microsoft XPS Document Writer"
     ],
-    "last_seen": 1793307840.5609617,
+    "last_seen": 1793309700.6992953,
     "is_default": false,
     "admin_override": false
   },
-  "kasa_088aad": {
-    "id": "kasa_088aad",
+  "kasa_95d6a2": {
+    "id": "kasa_95d6a2",
     "alias_ids": [
       "kasa_0fbff8",
       "kasa_95d6a2",
@@ -79,7 +79,7 @@
       "Microsoft XPS Document Writer",
       "OneNote for Windows 10"
     ],
-    "last_seen": 1793307842.588153,
+    "last_seen": 1793309705.9260106,
     "is_default": true,
     "admin_override": false
   }
