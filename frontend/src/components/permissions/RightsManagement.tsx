@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Search, Save, CheckCircle2, UserCheck, HelpCircle } from 'lucide-react';
+import { Shield, Search, Save, CheckCircle2, HelpCircle } from 'lucide-react';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
 
-interface PermissionItem {
+export interface PermissionItem {
   id: string;
   title: string;
   description: string;
@@ -18,21 +18,17 @@ interface PermissionItem {
   };
 }
 
-const initialPermissions: PermissionItem[] = [
+export const initialPermissions: PermissionItem[] = [
+  // ===================== 1. MUTFAK YETKİLENDİRMELERİ =====================
   {
     id: 'kds_view',
-    title: 'Mutfak ekranı görüntüleme, sipariş hazırlama.',
+    title: 'Mutfak ekranı görüntüleme,sipariş hazırlama.',
     description: 'Kullanıcının mutfak ekranını görüntülemesini ve siparişleri hazırlanıyor ya da hazır olarak işaretlemesini sağlar.',
     group: 'Mutfak Yetkilendirmeleri',
-    roles: { waiter: true, kitchen: true, courier: false, cashier: true, manager: true, call_center: false }
+    roles: { waiter: true, kitchen: true, courier: false, cashier: true, manager: true, call_center: true }
   },
-  {
-    id: 'kds_reprint',
-    title: 'Mutfak fişini elle yeniden yazdırabilir.',
-    description: 'Kullanıcının mutfak fişini yazıcıdan tekrar çıkartmasını sağlar.',
-    group: 'Mutfak Yetkilendirmeleri',
-    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
-  },
+
+  // ===================== 2. KURYE YETKİLENDİRMELERİ =====================
   {
     id: 'courier_ops',
     title: 'Kurye işlemleri.',
@@ -43,10 +39,12 @@ const initialPermissions: PermissionItem[] = [
   {
     id: 'courier_payment_edit',
     title: 'Siparişin ödeme tipini değiştirebilir.',
-    description: 'Kullanıcının tahsil edilmiş bir siparişin ödeme tipini (nakit, kart vb.) değiştirmesini ve kilitli ödeme tipini düzenlemesini sağlar.',
+    description: 'Kullanıcının tahsil edilmiş bir siparişin ödeme tipini (nakit, kart vb.) değiştirmesini ve entegrasyon siparişlerinde kilitli gelen ödeme tipini düzenlemesini sağlar.',
     group: 'Kurye Yetkilendirmeleri',
     roles: { waiter: true, kitchen: true, courier: false, cashier: true, manager: true, call_center: true }
   },
+
+  // ===================== 3. RAPOR YETKİLENDİRMELERİ =====================
   {
     id: 'reports_view',
     title: 'Tüm raporlamaları görüntüleyebilir.',
@@ -56,39 +54,322 @@ const initialPermissions: PermissionItem[] = [
   },
   {
     id: 'reports_z_close',
-    title: 'Gün sonu işlemleri (Z-Raporu).',
+    title: 'Gün sonu işlemleri',
     description: 'Kullanıcının gün sonu raporunu görüntülemesini ve gün sonu kapanışını yapmasını sağlar.',
     group: 'Rapor Yetkilendirmeleri',
     roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
   },
   {
     id: 'reports_expense',
-    title: 'Gider / Masraf işlemleri.',
+    title: 'Gider / Masraf işlemleri',
     description: 'Kullanıcının gider ve zayi kayıtlarını görüntülemesini ve gider türü tanımlamasını sağlar.',
     group: 'Rapor Yetkilendirmeleri',
     roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
   },
   {
-    id: 'product_discount',
-    title: 'İndirim & İkram uygulayabilir.',
-    description: 'Kullanıcının adisyona manuel indirim veya ürün ikramı tanımlamasını sağlar.',
+    id: 'reports_register_edit',
+    title: 'Kasa açılış ve kapanış tutarlarını değiştirebilir.',
+    description: 'Kullanıcının kapanmış vardiyanın kasa açılış ve kapanış tutarlarını düzeltmesini sağlar.',
+    group: 'Rapor Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+
+  // ===================== 4. ÜRÜN YETKİLENDİRMELERİ =====================
+  {
+    id: 'prod_manage_menu',
+    title: 'Ürün, özellik, menü, reçete, birim tanımlayabilir ve düzenleyebilir',
+    description: 'Kullanıcının menü yapısını yönetmesini sağlar: ürün, kategori, özellik, birim, mutfak grubu, reçete ve dijital menü tanımları.',
     group: 'Ürün Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'prod_edit_prices',
+    title: 'Ürün fiyatlarını düzenleyebilir',
+    description: 'Kullanıcının ürünlerin menüdeki satış fiyatını değiştirmesini sağlar.',
+    group: 'Ürün Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'prod_integration_manage',
+    title: 'Entegrasyon ürünlerini yönetebilir.',
+    description: 'Kullanıcının entegrasyonlarda hangi ürünlerin satışa açık olacağını yönetmesini sağlar.',
+    group: 'Ürün Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'prod_integration_prices',
+    title: 'Entegrasyon ürünlerinin fiyatlarını yönetebilir.',
+    description: 'Kullanıcının entegrasyonlardaki ürün fiyatlarını değiştirmesini sağlar.',
+    group: 'Ürün Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+
+  // ===================== 5. SİPARİŞ YETKİLENDİRMELERİ =====================
+  {
+    id: 'order_general',
+    title: 'Genel sipariş işlemleri. Sipariş alabilir vb..',
+    description: 'Kullanıcının sipariş oluşturmasını, siparişe ürün eklemesini ve siparişi kapatmasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: true, kitchen: true, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_remove_item',
+    title: 'Siparişten ürün çıkarabilir.',
+    description: 'Kullanıcının adisyona eklenmiş bir ürünü silmesini veya adedini azaltmasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_discount',
+    title: 'Ödeme sırasında indirim yapabilir.',
+    description: 'Kullanıcının adisyonun tamamına indirim uygulamasını ve ödeme adımında tutar ya da yüzde girmesini sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_predefined_discount_only',
+    title: 'Sadece ön tanımlı indirim kullanabilir.',
+    description: 'Kullanıcıyı önceden tanımlanmış indirimlerle sınırlar ve tutarı elle girmesini engeller.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: false, call_center: false }
+  },
+  {
+    id: 'order_item_treat',
+    title: 'Siparişteki herhangi bir ürünü ikram yapabilir.',
+    description: 'Kullanıcının adisyondaki tek bir ürünü ikram etmesini veya o satıra indirim uygulamasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_take_payment',
+    title: 'Ödeme alabilir.',
+    description: 'Kullanıcının adisyona ödeme işlemesini, alınan ödemeyi silmesini ve ÖKC ile POS cihazından tahsilat yapmasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_cancel',
+    title: 'Siparişi iptal edebilir.',
+    description: 'Kullanıcının açık bir siparişi iptal etmesini sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_refund',
+    title: 'Siparişi iade edebilir.',
+    description: 'Kullanıcının kapatılmış bir siparişi iade etmesini sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_delivery',
+    title: 'Paket siparişi alabilir.',
+    description: 'Kullanıcının paket (adrese teslim) siparişi oluşturmasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_takeaway',
+    title: 'Gel-Al siparişi alabilir.',
+    description: 'Kullanıcının Gel-Al (tezgahtan teslim) siparişi oluşturmasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: true, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_transfer_item',
+    title: 'Siparişteki ürünü taşıyabilir',
+    description: 'Kullanıcının bir adisyondaki ürünü başka bir adisyona veya yeni bir adisyona taşımasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_view_closed_cancelled',
+    title: 'Kapatılmış veya iptal edilmiş siparişi görüntüleyebilir.',
+    description: 'Kullanıcının kapatılmış ve iptal edilmiş siparişlerin detayını görüntülemesini sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_open_account_transfer',
+    title: 'Ödenecek tutarı açık hesaba aktarabilir.',
+    description: 'Kullanıcının tahsil edilmeyen tutarı müşterinin açık hesabına (veresiye) aktarmasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_table_move_merge',
+    title: 'Masa değiştirme, masa birleştirme ve adisyon aktarma işlemleri yapabilir.',
+    description: 'Kullanıcının açık adisyonu başka bir masaya taşımasını, masaları birleştirmesini veya ayırmasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: true, kitchen: true, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_edit_item_price',
+    title: 'Sipariş içindeki ürünün fiyatını değiştirebilir.',
+    description: 'Kullanıcının adisyondaki ürünün birim fiyatını yalnızca o siparişe özel olarak değiştirmesini sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_edit_item_qty',
+    title: 'Sipariş içindeki ürünün miktarını değiştirebilir.',
+    description: 'Kullanıcının adisyondaki ürünün adedini artırmasını veya azaltmasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: true, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_manual_print',
+    title: 'Manuel sipariş yazdırabilir',
+    description: 'Kullanıcının adisyon veya hesap fişini elle yazdırmasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: true, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_manual_kitchen_print',
+    title: 'Manuel mutfak çıktısı alabilir',
+    description: 'Kullanıcının mutfak fişini elle yeniden yazdırmasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_open_cash_drawer',
+    title: 'Para çekmecesini manuel olarak açabilir.',
+    description: 'Kullanıcının satış işlemi olmadan para çekmecesini açmasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: false, manager: false, call_center: false }
+  },
+  {
+    id: 'order_add_kuver_service',
+    title: 'Siparişe kuver veya garsoniye ücreti ekleyebilir.',
+    description: 'Kullanıcının adisyona kuver veya garsoniye ücreti eklemesini sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
     roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
   },
   {
-    id: 'product_void',
-    title: 'Ürün ve Adisyon iptali yapabilir.',
-    description: 'Kullanıcının kayıtlı sipariş kalemlerini iptal etmesini sağlar.',
-    group: 'Ürün Yetkilendirmeleri',
-    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
+    id: 'order_close_complimentary',
+    title: 'Adisyonu ödenmez olarak kapatabilir.',
+    description: 'Kullanıcının adisyonu ödenmez olarak kapatmasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_add_tip',
+    title: 'Siparişe Bahşiş Ekleyebilir',
+    description: 'Kullanıcının siparişe bahşiş eklemesini sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+
+  // ===================== 6. RESTAURANT TANIM YETKİLENDİRMELERİ =====================
+  {
+    id: 'def_table_area',
+    title: 'Masa ve Bölge İşlemleri.',
+    description: 'Kullanıcının salon düzenini yönetmesini; bölge ve masa eklemesini, düzenlemesini ve silmesini sağlar.',
+    group: 'Restaurant Tanım Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'def_general_settings',
+    title: 'Restoran ile ilgili genel tanımlamalar.',
+    description: 'Kullanıcının işletmenin temel tanımlarını yönetmesini sağlar: KDV oranları, indirimler, müşteriler, kuver/garsoniye, yazıcılar ve cihazlar.',
+    group: 'Restaurant Tanım Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'def_users_manage',
+    title: 'Genel kullanıcı işlemleri.',
+    description: 'Kullanıcının yeni kullanıcı eklemesini, mevcut kullanıcıları düzenlemesini, silmesini ve şifrelerini yenilemesini sağlar.',
+    group: 'Restaurant Tanım Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'def_permissions_manage',
+    title: 'Yetkilendirme işlemleri',
+    description: 'Kullanıcının rollere yetki tanımlamasını veya mevcut yetkileri kaldırmasını sağlar.',
+    group: 'Restaurant Tanım Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'def_stock_entry_count',
+    title: 'Stok girişi,stok sayımı işlemleri.',
+    description: 'Kullanıcının stok girişi yapmasını, sayım kaydetmesini ve açılış maliyeti girmesini sağlar.',
+    group: 'Restaurant Tanım Yetkilendirmeleri',
+    roles: { waiter: true, kitchen: true, courier: true, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'def_delivery_integration_status',
+    title: 'Paket Sipariş Entegrasyon durumunu değiştirebilir',
+    description: 'Kullanıcının Yemeksepeti ve Trendyol gibi satış kanallarını sipariş almaya açmasını veya kapatmasını sağlar.',
+    group: 'Restaurant Tanım Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'def_stock_view',
+    title: 'Stok Miktarlarını görüntüleyebilir.',
+    description: 'Kullanıcının ürünlerin kalan stok miktarını görüntülemesini sağlar.',
+    group: 'Restaurant Tanım Yetkilendirmeleri',
+    roles: { waiter: true, kitchen: true, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'def_integrations_appstore',
+    title: 'Entegrasyonlar ekranını görebilir ve işlem yapabilir',
+    description: 'Kullanıcının Uygulama Mağazası ekranını açmasını ve entegrasyon ayarlarını kaydetmesini sağlar.',
+    group: 'Restaurant Tanım Yetkilendirmeleri',
+    roles: { waiter: true, kitchen: true, courier: true, cashier: true, manager: true, call_center: true }
+  },
+
+  // ===================== 7. GİDER/MASRAF İŞLEMLER =====================
+  {
+    id: 'expense_add',
+    title: 'Gider ekleyebilir.',
+    description: 'Kullanıcının yeni gider kaydı oluşturmasını sağlar.',
+    group: 'Gider/Masraf İşlemler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'expense_edit_delete',
+    title: 'Gider düzenleyebilir ve silebilir.',
+    description: 'Kullanıcının mevcut gider kaydını değiştirmesini veya silmesini sağlar.',
+    group: 'Gider/Masraf İşlemler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
   }
 ];
+
+function mergeWithInitialPermissions(savedList: any[] | null | undefined): PermissionItem[] {
+  if (!Array.isArray(savedList) || savedList.length === 0) {
+    return initialPermissions;
+  }
+  const savedMap = new Map<string, any>();
+  savedList.forEach(item => {
+    if (item && item.id) {
+      savedMap.set(item.id, item);
+    }
+  });
+
+  return initialPermissions.map(defItem => {
+    const existing = savedMap.get(defItem.id);
+    if (existing && existing.roles) {
+      return {
+        ...defItem,
+        roles: {
+          waiter: Boolean(existing.roles.waiter),
+          kitchen: Boolean(existing.roles.kitchen),
+          courier: Boolean(existing.roles.courier),
+          cashier: Boolean(existing.roles.cashier),
+          manager: Boolean(existing.roles.manager),
+          call_center: Boolean(existing.roles.call_center),
+        }
+      };
+    }
+    return defItem;
+  });
+}
 
 export const RightsManagement: React.FC = () => {
   const [permissions, setPermissions] = useState<PermissionItem[]>(() => {
     try {
       const saved = localStorage.getItem('boncore_role_permissions');
-      return saved ? JSON.parse(saved) : initialPermissions;
+      return saved ? mergeWithInitialPermissions(JSON.parse(saved)) : initialPermissions;
     } catch {
       return initialPermissions;
     }
@@ -101,8 +382,11 @@ export const RightsManagement: React.FC = () => {
       try {
         const settings = await api.getSettings();
         if (settings?.role_permissions && Array.isArray(settings.role_permissions)) {
-          setPermissions(settings.role_permissions);
-          localStorage.setItem('boncore_role_permissions', JSON.stringify(settings.role_permissions));
+          const merged = mergeWithInitialPermissions(settings.role_permissions);
+          setPermissions(merged);
+          localStorage.setItem('boncore_role_permissions', JSON.stringify(merged));
+        } else {
+          localStorage.setItem('boncore_role_permissions', JSON.stringify(initialPermissions));
         }
       } catch (err) {
         console.warn('Failed to load settings permissions', err);
@@ -171,13 +455,15 @@ export const RightsManagement: React.FC = () => {
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">Yetki / İzin Ekranı</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Kullanıcılarınızın yetkilerini/izinlerini buradan güncelleyebilirsiniz.</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Kullanıcılarınızın yetkilerini/izinlerini buradan güncelleyebilirsiniz ({permissions.length} Yetki Tanımı).
+              </p>
             </div>
           </div>
 
           <button
             onClick={handleSave}
-            className="px-5 sm:px-6 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-md transition flex items-center gap-2 shrink-0"
+            className="px-5 sm:px-6 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-md transition flex items-center gap-2 shrink-0 cursor-pointer"
           >
             <Save className="w-4 h-4" />
             <span>Kaydet</span>
@@ -192,7 +478,7 @@ export const RightsManagement: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Yetki ara..."
+              placeholder="Yetki veya grup ara..."
               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-red-500"
             />
           </div>
