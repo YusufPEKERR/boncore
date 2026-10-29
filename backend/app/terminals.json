@@ -24,36 +24,8 @@
     "is_default": false,
     "admin_override": false
   },
-  "kasa_774d47": {
-    "id": "kasa_774d47",
-    "alias_ids": [
-      "kasa_774d47",
-      "kasa_691876"
-    ],
-    "name": "Kasa 1",
-    "custom_name": "Kasa",
-    "local_ip": "192.168.0.108",
-    "version": "1.2.0",
-    "scale_connected": false,
-    "scale_ip": "192.168.1.150",
-    "custom_scale_ip": "192.168.1.150",
-    "scale_port": 2004,
-    "custom_scale_port": 2004,
-    "last_weight": 0.0,
-    "printers": [
-      "BAHÇE",
-      "Kasaa",
-      "MUTFAKK 2",
-      "Fax",
-      "Microsoft Print to PDF",
-      "Microsoft XPS Document Writer"
-    ],
-    "last_seen": 1793309700.6992953,
-    "is_default": false,
-    "admin_override": false
-  },
-  "kasa_95d6a2": {
-    "id": "kasa_95d6a2",
+  "kasa_088aad": {
+    "id": "kasa_088aad",
     "alias_ids": [
       "kasa_0fbff8",
       "kasa_95d6a2",
@@ -79,8 +51,36 @@
       "Microsoft XPS Document Writer",
       "OneNote for Windows 10"
     ],
-    "last_seen": 1793309705.9260106,
+    "last_seen": 1793310009.8278139,
     "is_default": true,
+    "admin_override": false
+  },
+  "kasa_774d47": {
+    "id": "kasa_774d47",
+    "alias_ids": [
+      "kasa_774d47",
+      "kasa_691876"
+    ],
+    "name": "Kasa 1",
+    "custom_name": "Kasa",
+    "local_ip": "192.168.0.108",
+    "version": "1.2.0",
+    "scale_connected": false,
+    "scale_ip": "192.168.1.150",
+    "custom_scale_ip": "192.168.1.150",
+    "scale_port": 2004,
+    "custom_scale_port": 2004,
+    "last_weight": 0.0,
+    "printers": [
+      "BAHÇE",
+      "Kasaa",
+      "MUTFAKK 2",
+      "Fax",
+      "Microsoft Print to PDF",
+      "Microsoft XPS Document Writer"
+    ],
+    "last_seen": 1793310015.1597316,
+    "is_default": false,
     "admin_override": false
   }
 }
