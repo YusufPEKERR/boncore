@@ -90,6 +90,8 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [newTerminalName, setNewTerminalName] = useState<string>('Kasa 2 - Paket Servis');
   const [editingTerminalId, setEditingTerminalId] = useState<string | null>(null);
   const [editingTerminalName, setEditingTerminalName] = useState<string>('');
+  const [editingScaleIp, setEditingScaleIp] = useState<string>('');
+  const [editingScalePort, setEditingScalePort] = useState<number>(2004);
   const [scaleTesting, setScaleTesting] = useState<boolean>(false);
   const [scaleTestResult, setScaleTestResult] = useState<{ success: boolean; message?: string; error?: string; latency_ms?: number } | null>(null);
   const [scaleWeightReading, setScaleWeightReading] = useState<boolean>(false);
@@ -98,21 +100,60 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [selectedPrinters, setSelectedPrinters] = useState<string[]>(() => localHardware.getSelectedPrinters());
   const [printerTestStatus, setPrinterTestStatus] = useState<{ loading: boolean; message?: string; success?: boolean } | null>(null);
   const [customPrinterInput, setCustomPrinterInput] = useState<string>('');
+  const [printerSearchQuery, setPrinterSearchQuery] = useState<string>('');
+  const [showVirtualPrinters, setShowVirtualPrinters] = useState<boolean>(true);
 
-  const handleTogglePrinter = (pName: string) => {
+  const isVirtualPrinter = (pName: string) => {
+    const low = (pName || '').toLowerCase();
+    return ['microsoft print to pdf', 'microsoft xps', 'onenote', 'fax', 'anydesk printer', 'send to onenote'].some(k => low.includes(k));
+  };
+
+  const handleTogglePrinter = (qualifiedKey: string, plainName?: string) => {
     sound.beep();
     setSelectedPrinters(prev => {
-      const updated = prev.includes(pName)
-        ? prev.filter(p => p !== pName)
-        : [...prev, pName];
+      const hasQualified = prev.includes(qualifiedKey);
+      const hasPlain = plainName ? prev.includes(plainName) : false;
+      let updated: string[];
+      if (hasQualified || hasPlain) {
+        updated = prev.filter(p => p !== qualifiedKey && p !== plainName);
+      } else {
+        updated = [...prev, qualifiedKey];
+      }
       localHardware.setSelectedPrinters(updated);
       return updated;
     });
   };
 
+  const handleSingleTestPrint = async (qualifiedKey: string, displayName: string, localIp: string) => {
+    sound.beep();
+    setPrinterTestStatus({ loading: true, message: `${displayName} (${localIp}) yazıcısına test fişi gönderiliyor...`, success: true });
+    try {
+      const res = await localHardware.printReceipt({
+        printers: [qualifiedKey],
+        rawText:
+          '================================\n' +
+          '        BONCORE POS TEST        \n' +
+          '================================\n' +
+          'Tarih: ' + new Date().toLocaleDateString('tr-TR') + ' ' + new Date().toLocaleTimeString('tr-TR') + '\n' +
+          'Kasa IP: ' + localIp + '\n' +
+          'Yazici:  ' + displayName + '\n' +
+          '--------------------------------\n' +
+          'Yazici Testi Basarili!\n' +
+          '================================\n\n\n\n'
+      });
+      if (res.success) {
+        setPrinterTestStatus({ loading: false, success: true, message: res.message || `${displayName} (${localIp}) yazıcısından test fişi başarıyla çıktı!` });
+      } else {
+        setPrinterTestStatus({ loading: false, success: false, message: res.error || 'Yazdırma isteği tamamlanamadı.' });
+      }
+    } catch (e: any) {
+      setPrinterTestStatus({ loading: false, success: false, message: e.message || 'Hata oluştu' });
+    }
+  };
+
   const handleTestPrint = async () => {
     if (selectedPrinters.length === 0) {
-      alert('Lutfen en az bir yazici secin.');
+      alert('Lütfen en az bir yazıcı seçin.');
       return;
     }
     sound.beep();
@@ -120,15 +161,15 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     try {
       const res = await localHardware.printReceipt({
         printers: selectedPrinters,
-        rawText: '================================\n        BONCORE POS TEST        \n================================\nTarih: ' + new Date().toLocaleDateString('tr-TR') + ' ' + new Date().toLocaleTimeString('tr-TR') + '\nYazici Testi Basarili!\n\nSecili Yazicilar:\n' + selectedPrinters.map(p => ' - ' + p).join('\n') + '\n================================\n\n\n\n'
+        rawText: '================================\n        BONCORE POS TEST        \n================================\nTarih: ' + new Date().toLocaleDateString('tr-TR') + ' ' + new Date().toLocaleTimeString('tr-TR') + '\nYazici Testi Basarili!\n\nSecili Yazicilar:\n' + selectedPrinters.map(p => ' - ' + p.replace('::', ' @ ')).join('\n') + '\n================================\n\n\n\n'
       });
       if (res.success) {
-        setPrinterTestStatus({ loading: false, success: true, message: res.message || 'Secili yazicilara test fisi basariyla gonderildi!' });
+        setPrinterTestStatus({ loading: false, success: true, message: res.message || 'Seçili yazıcılara test fişi başarıyla gönderildi!' });
       } else {
-        setPrinterTestStatus({ loading: false, success: false, message: res.error || 'Yazdirma istegi tamamlanamadi.' });
+        setPrinterTestStatus({ loading: false, success: false, message: res.error || 'Yazdırma isteği tamamlanamadı.' });
       }
     } catch (e: any) {
-      setPrinterTestStatus({ loading: false, success: false, message: e.message || 'Hata olustu' });
+      setPrinterTestStatus({ loading: false, success: false, message: e.message || 'Hata oluştu' });
     }
   };
 
@@ -1137,57 +1178,89 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
                             {editingTerminalId === term.id ? (
-                              <div className="flex items-center gap-1.5">
-                                <input
-                                  type="text"
-                                  value={editingTerminalName}
-                                  onChange={(e) => setEditingTerminalName(e.target.value)}
-                                  className="px-2 py-1 bg-white dark:bg-slate-800 border border-purple-500 rounded-lg text-xs font-bold text-slate-900 dark:text-white w-40"
-                                  autoFocus
-                                />
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    if (editingTerminalName.trim()) {
-                                      await localHardware.updateTerminal(term.id, { name: editingTerminalName.trim() });
-                                      setEditingTerminalId(null);
-                                      fetchTerminalsData();
-                                    }
-                                  }}
-                                  className="p-1 rounded-md bg-purple-600 text-white hover:bg-purple-700"
-                                  title="Kaydet"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingTerminalId(null)}
-                                  className="p-1 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
-                                  title="İptal"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
+                              <div className="flex flex-col gap-2 w-full bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-purple-500/50 shadow-sm">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-bold text-slate-400 w-16">Kasa Adı:</span>
+                                  <input
+                                    type="text"
+                                    value={editingTerminalName}
+                                    onChange={(e) => setEditingTerminalName(e.target.value)}
+                                    className="px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-purple-500 rounded-lg text-xs font-bold text-slate-900 dark:text-white flex-1"
+                                    autoFocus
+                                  />
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-bold text-slate-400 w-16">Terazi IP:</span>
+                                  <input
+                                    type="text"
+                                    value={editingScaleIp}
+                                    onChange={(e) => setEditingScaleIp(e.target.value)}
+                                    placeholder="192.168.0.15"
+                                    className="px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-emerald-500 rounded-lg text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 w-28"
+                                  />
+                                  <span className="text-[10px] font-bold text-slate-400">Port:</span>
+                                  <input
+                                    type="number"
+                                    value={editingScalePort}
+                                    onChange={(e) => setEditingScalePort(parseInt(e.target.value) || 2004)}
+                                    className="px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-emerald-500 rounded-lg text-xs font-mono font-bold text-slate-900 dark:text-white w-16"
+                                  />
+                                </div>
+                                <div className="flex items-center justify-end gap-1.5 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (editingTerminalName.trim()) {
+                                        await localHardware.updateTerminal(term.id, {
+                                          name: editingTerminalName.trim(),
+                                          scale_ip: editingScaleIp.trim() || term.scale_ip,
+                                          scale_port: editingScalePort || term.scale_port
+                                        });
+                                        setEditingTerminalId(null);
+                                        fetchTerminalsData();
+                                      }
+                                    }}
+                                    className="px-2.5 py-1 rounded-md bg-purple-600 text-white hover:bg-purple-700 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                                    title="Kalıcı Kaydet"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>Kaydet</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingTerminalId(null)}
+                                    className="px-2 py-1 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[11px] font-bold cursor-pointer"
+                                    title="İptal"
+                                  >
+                                    İptal
+                                  </button>
+                                </div>
                               </div>
                             ) : (
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-black text-slate-900 dark:text-white">
                                   {term.name}
                                 </span>
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-black bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                  {term.local_ip}
+                                </span>
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setEditingTerminalId(term.id);
                                     setEditingTerminalName(term.name);
+                                    setEditingScaleIp(term.scale_ip || '192.168.1.150');
+                                    setEditingScalePort(term.scale_port || 2004);
                                   }}
-                                  className="p-1 rounded text-slate-400 hover:text-purple-600 dark:hover:text-purple-400"
-                                  title="Kasa Adını Değiştir"
+                                  className="p-1 rounded text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 cursor-pointer"
+                                  title="Kasa Adı, Terazi IP ve Portu Düzenle"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             )}
 
-                            {term.is_default && (
+                            {term.is_default && editingTerminalId !== term.id && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-500/30">
                                 <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
                                 Varsayılan
@@ -1213,6 +1286,9 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                             <span className="text-slate-400">Kasa Bilgisayarı IP:</span>
                             <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{term.local_ip}</span>
                             <span className="text-slate-400 text-[10px]">• v{term.version}</span>
+                            <span className="text-blue-600 dark:text-blue-400 text-[10px] font-bold">
+                              • {(term.printers || []).length} Yazıcı
+                            </span>
                           </div>
 
                           <div className="flex items-center gap-1.5">
@@ -1223,7 +1299,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                               </span>
                             ) : (
                               <span className="text-rose-500 dark:text-rose-400 font-bold">
-                                🔴 Terazi Bağlantısı Yok ({term.scale_ip})
+                                🔴 Terazi Bağlantısı Yok ({term.scale_ip}:{term.scale_port})
                               </span>
                             )}
                           </div>
@@ -1242,13 +1318,27 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                             setScaleWeightReading(false);
                           }}
                           disabled={!term.is_online}
-                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold flex items-center gap-1 transition"
+                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold flex items-center gap-1 transition cursor-pointer"
                         >
                           <Scale className="w-3.5 h-3.5" />
                           <span>Bu Kasadan Tartım Al</span>
                         </button>
 
                         <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingTerminalId(term.id);
+                              setEditingTerminalName(term.name);
+                              setEditingScaleIp(term.scale_ip || '192.168.1.150');
+                              setEditingScalePort(term.scale_port || 2004);
+                            }}
+                            className="px-2 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-300 font-bold cursor-pointer"
+                            title="Kasa Adı, Terazi IP ve Portu Düzenle"
+                          >
+                            Ayarla
+                          </button>
+
                           {!term.is_default && (
                             <button
                               type="button"
@@ -1257,7 +1347,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                                 await localHardware.updateTerminal(term.id, { is_default: true });
                                 fetchTerminalsData();
                               }}
-                              className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold"
+                              className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold cursor-pointer"
                               title="Bu kasayı varsayılan yap"
                             >
                               Varsayılan Yap
@@ -1268,12 +1358,12 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                             <button
                               type="button"
                               onClick={async () => {
-                                if (window.confirm(`${term.name} kasasını silmek istediğinize emin misiniz?`)) {
+                                if (window.confirm(`${term.name} (${term.local_ip}) kasasını silmek istediğinize emin misiniz?`)) {
                                   await localHardware.deleteTerminal(term.id);
                                   fetchTerminalsData();
                                 }
                               }}
-                              className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                              className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
                               title="Kasayı Sil"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1293,7 +1383,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       Yeni Bir Kasa / Bilgisayar Ekle
                     </span>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Yeni kasanız için bir isim belirleyip indirin. İndirilen paketi diğer bilgisayarda çalıştırdığınızda otomatik bu isimle kaydolur.
+                      Yeni kasanız için bir isim belirleyip indirin. İndirilen paketi diğer bilgisayarda çalıştırdığınızda otomatik bu isimle kaydolur ve kapanıp açılsa bile ayarları sıfırlanmaz.
                     </p>
                   </div>
 
@@ -1317,9 +1407,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                 </div>
               </div>
 
-              {/* Bilgilendirme Kartı */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/30 flex items-start gap-3">
-                              {/* TERMAL YAZICI VE OTOMATIK CIKTI YONETIMI (COKLU SECIM) */}
+              {/* TERMAL YAZICI VE OTOMATİK ÇIKTI YÖNETİMİ (IP ADRESİNE VE İSME GÖRE GRUPLANMIŞ) */}
               <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-3">
@@ -1327,16 +1415,16 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       <Printer className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
-                        <span>Fiziksel Termal Yazicilar (Dogrudan Cikti)</span>
+                      <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
+                        <span>Fiziksel Termal Yazıcılar (IP Adresine & İsme Göre Gruplanmış)</span>
                         {selectedPrinters.length > 0 && (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                            {selectedPrinters.length} Yazici Secili
+                            {selectedPrinters.length} Yazıcı Seçili
                           </span>
                         )}
                       </h4>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Kasa bilgisayarinizda tanimli tum yazicilar (USB/Ag) ajan tarafindan taranir. Birden fazla yazici secerek fisin ayni anda birden cok noktadan (kasa, mutfak, bar) cikmasini saglayabilirsiniz.
+                        Ağdaki her kasa bilgisayarının (<code className="font-mono font-bold">IP Adresi</code>) yazıcıları kendi grubu altında ve <strong>isme göre alfabetik</strong> sıralanır. Böylece farklı kasalardaki mutfak/kasa yazıcıları birbirine karışmaz.
                       </p>
                     </div>
                   </div>
@@ -1349,9 +1437,31 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black text-xs shadow-md shadow-blue-600/30 flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer whitespace-nowrap"
                     >
                       <Printer className="w-4 h-4" />
-                      <span>{printerTestStatus?.loading ? 'Yazdiriliyor...' : 'Secili Yazicilara Test Fisi Yazdir'}</span>
+                      <span>{printerTestStatus?.loading ? 'Yazdırılıyor...' : 'Seçili Yazıcılara Test Fişi Yazdır'}</span>
                     </button>
                   </div>
+                </div>
+
+                {/* Arama / Filtre ve Sanal Yazıcı Gizleme Barı */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                  <div className="flex items-center gap-2 flex-1">
+                    <input
+                      type="text"
+                      value={printerSearchQuery}
+                      onChange={(e) => setPrinterSearchQuery(e.target.value)}
+                      placeholder="Yazıcı adı, Kasa adı veya IP adresine göre filtrele (Örn: 192.168.0.120 veya MUTFAK)..."
+                      className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer px-2 py-1 select-none">
+                    <input
+                      type="checkbox"
+                      checked={showVirtualPrinters}
+                      onChange={(e) => setShowVirtualPrinters(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded accent-blue-600"
+                    />
+                    <span>PDF / OneNote / Fax Sanal Yazıcılarını Göster</span>
+                  </label>
                 </div>
 
                 {/* Test Durum Bildirimi */}
@@ -1366,92 +1476,187 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                   </div>
                 )}
 
-                {/* Bulunan Yazicilar Listesi */}
-                <div>
-                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-2">
-                    Kasa Bilgisayarinda Kesfedilen Yazicilar (Coklu Secim):
-                  </label>
-
+                {/* IP Adresi ve Kasa İsmine Göre Gruplanmış Yazıcılar */}
+                <div className="space-y-4">
                   {(() => {
-                    const discovered = Array.from(new Set(
-                      terminalsList.flatMap(t => t.printers || [])
-                    ));
+                    // Terminalleri IP ve İsme göre sırala (Çevrimiçi olanlar üstte)
+                    const groupedTerminals = [...terminalsList]
+                      .filter(t => (t.printers && t.printers.length > 0))
+                      .sort((a, b) => {
+                        if (a.is_online !== b.is_online) return a.is_online ? -1 : 1;
+                        return (a.local_ip || '').localeCompare(b.local_ip || '', 'tr');
+                      });
 
-                    if (discovered.length === 0) {
+                    if (groupedTerminals.length === 0) {
                       return (
                         <div className="p-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-center text-slate-500 dark:text-slate-400">
                           <Printer className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                          <p className="text-xs font-bold">Ajan henuz bilgisayarinizdaki yazicilari bildirmedi veya ajan kapali.</p>
-                          <p className="text-[11px] mt-1">Bilgisayarda BonCore Ajanini baslatin veya asagidaki kutudan yazici adinizi manuel ekleyin.</p>
+                          <p className="text-xs font-bold">Ajan henüz bilgisayarınızdaki yazıcıları bildirmedi veya ajan kapalı.</p>
+                          <p className="text-[11px] mt-1">Bilgisayarda BonCore Ajanını başlatın veya aşağıdaki kutudan yazıcı adınızı manuel ekleyin.</p>
                         </div>
                       );
                     }
 
-                    return (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                        {discovered.map((prName) => {
-                          const isSelected = selectedPrinters.includes(prName);
-                          return (
-                            <div
-                              key={prName}
-                              onClick={() => handleTogglePrinter(prName)}
-                              className={`p-3 px-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
-                                isSelected
-                                  ? 'border-blue-600 bg-blue-50/90 dark:bg-blue-950/40 shadow-sm ring-1 ring-blue-500'
-                                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700'
-                              }`}
-                            >
-                              <div className="flex items-center gap-3 min-w-0 flex-1">
-                                <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition shrink-0 ${
-                                  isSelected 
-                                    ? 'bg-blue-600 border-blue-600 text-white shadow-xs' 
-                                    : 'border-slate-400 bg-slate-50 dark:bg-slate-700'
-                                }`}>
-                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                                </div>
+                    const q = printerSearchQuery.trim().toLowerCase();
 
-                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                                  isSelected ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-700 text-slate-500'
-                                }`}>
-                                  <Printer className="w-4 h-4" />
-                                </div>
+                    return groupedTerminals.map((term) => {
+                      const ipAddr = term.local_ip || term.id;
+                      // Bu kasadaki yazıcıları isme göre alfabetik sırala (Fiziksel termal yazıcılar üstte, sanal yazıcılar altta)
+                      const allPrinters = [...(term.printers || [])].sort((a, b) => {
+                        const va = isVirtualPrinter(a);
+                        const vb = isVirtualPrinter(b);
+                        if (va !== vb) return va ? 1 : -1;
+                        return a.localeCompare(b, 'tr');
+                      });
 
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-xs font-bold text-slate-900 dark:text-white truncate" title={prName}>
-                                    {prName}
-                                  </div>
-                                  <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                                    Windows Spooler
-                                  </div>
-                                </div>
-                              </div>
+                      const filteredPrinters = allPrinters.filter(prName => {
+                        if (!showVirtualPrinters && isVirtualPrinter(prName)) return false;
+                        if (!q) return true;
+                        return (
+                          prName.toLowerCase().includes(q) ||
+                          (term.name || '').toLowerCase().includes(q) ||
+                          ipAddr.toLowerCase().includes(q)
+                        );
+                      });
 
-                              <span className={`text-[10px] uppercase px-2 py-0.5 rounded-full shrink-0 border ${
-                                isSelected
-                                  ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 font-black'
-                                  : 'bg-slate-100 dark:bg-slate-700 text-slate-500 border-slate-200 dark:border-slate-600 font-bold'
-                              }`}>
-                                {isSelected ? '✓ SEÇİLİ' : 'RAW'}
+                      if (filteredPrinters.length === 0) return null;
+
+                      const thermalCount = filteredPrinters.filter(p => !isVirtualPrinter(p)).length;
+
+                      return (
+                        <div
+                          key={term.id}
+                          className="rounded-2xl border-2 border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-50/40 dark:bg-slate-900/40"
+                        >
+                          {/* Grup Başlığı: Kasa Adı + IP Adresi */}
+                          <div className="px-4 py-2.5 bg-slate-100/90 dark:bg-slate-800/90 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-mono text-xs font-black shadow-xs">
+                                IP: {ipAddr}
+                              </span>
+                              <span className="text-xs font-black text-slate-900 dark:text-white">
+                                {term.name}
+                              </span>
+                              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                                ({thermalCount} Termal / POS • Toplam {filteredPrinters.length} Yazıcı)
                               </span>
                             </div>
-                          );
-                        })}
-                      </div>
-                    );
+
+                            <div className="flex items-center gap-2">
+                              {term.is_online ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-500/30">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                  AKTİF KASA ({ipAddr})
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400">
+                                  ÇEVRİMDAŞI ({ipAddr})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Bu IP'deki Yazıcı Kartları (İsme Göre Sıralı) */}
+                          <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                            {filteredPrinters.map((prName) => {
+                              const qualifiedKey = `${ipAddr}::${prName}`;
+                              const isSelected = selectedPrinters.includes(qualifiedKey) || selectedPrinters.includes(prName);
+                              const isVirtual = isVirtualPrinter(prName);
+
+                              return (
+                                <div
+                                  key={qualifiedKey}
+                                  onClick={() => handleTogglePrinter(qualifiedKey, prName)}
+                                  className={`p-3 px-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
+                                    isSelected
+                                      ? 'border-blue-600 bg-blue-50/90 dark:bg-blue-950/40 shadow-sm ring-1 ring-blue-500'
+                                      : isVirtual
+                                      ? 'border-slate-200/70 dark:border-slate-800/70 bg-white/60 dark:bg-slate-800/40 opacity-80 hover:opacity-100'
+                                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/90 hover:border-blue-400 dark:hover:border-blue-700'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                                    <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition shrink-0 ${
+                                      isSelected 
+                                        ? 'bg-blue-600 border-blue-600 text-white shadow-xs' 
+                                        : 'border-slate-400 bg-slate-50 dark:bg-slate-700'
+                                    }`}>
+                                      {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                    </div>
+
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                      isSelected
+                                        ? 'bg-blue-600 text-white shadow-xs'
+                                        : isVirtual
+                                        ? 'bg-slate-100 dark:bg-slate-700 text-slate-400'
+                                        : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                    }`}>
+                                      <Printer className="w-4 h-4" />
+                                    </div>
+
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-xs font-black text-slate-900 dark:text-white truncate" title={prName}>
+                                          {prName}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-semibold">
+                                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                                          {ipAddr}
+                                        </span>
+                                        <span className="text-slate-300 dark:text-slate-600">•</span>
+                                        <span className="text-slate-500 dark:text-slate-400 truncate">
+                                          {term.name}
+                                        </span>
+                                        <span className="text-slate-300 dark:text-slate-600">•</span>
+                                        <span className={isVirtual ? 'text-slate-400' : 'text-emerald-600 dark:text-emerald-400 font-bold'}>
+                                          {isVirtual ? 'Sanal Yazıcı' : 'Termal / POS'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSingleTestPrint(qualifiedKey, prName, ipAddr);
+                                      }}
+                                      className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-blue-600 hover:text-white dark:bg-slate-700 dark:hover:bg-blue-600 text-slate-700 dark:text-slate-200 text-[10px] font-black transition cursor-pointer"
+                                      title={`${ipAddr} üzerindeki ${prName} yazıcısına test fişi gönder`}
+                                    >
+                                      Test
+                                    </button>
+                                    <span className={`text-[10px] uppercase px-2 py-0.5 rounded-full shrink-0 border ${
+                                      isSelected
+                                        ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 font-black'
+                                        : 'bg-slate-100 dark:bg-slate-700 text-slate-500 border-slate-200 dark:border-slate-600 font-bold'
+                                    }`}>
+                                      {isSelected ? '✓ SEÇİLİ' : 'SEÇ'}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    });
                   })()}
                 </div>
 
-                {/* Manuel Yazici Ekleme */}
+                {/* Manuel Yazıcı Ekleme */}
                 <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                   <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Listede gorunmeyen veya ozel bir yazici eklemek icin:
+                    Listede görünmeyen veya özel bir ağ yazıcısı eklemek için (Örn: <code className="font-mono">192.168.0.120::MUTFAK-POS</code>):
                   </span>
                   <div className="flex items-center gap-2 w-full sm:w-auto">
                     <input
                       type="text"
                       value={customPrinterInput}
                       onChange={(e) => setCustomPrinterInput(e.target.value)}
-                      placeholder="Orn: POS-80 veya EPSON TM-T20"
+                      placeholder="Örn: 192.168.0.120::POS-80"
                       className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white w-full sm:w-56"
                     />
                     <button
@@ -1465,13 +1670,15 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       }}
                       className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition whitespace-nowrap cursor-pointer"
                     >
-                      Ekle & Sec
+                      Ekle & Seç
                     </button>
                   </div>
                 </div>
               </div>
 
-<div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/30 shrink-0">
+              {/* Bilgilendirme Kartı */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/30 flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/30 shrink-0">
                   <Scale className="w-5 h-5" />
                 </div>
                 <div>

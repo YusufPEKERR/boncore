@@ -24,25 +24,29 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 AGENT_PORT = 9099
-AGENT_VERSION = "1.1.0"
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+AGENT_VERSION = "2.2.0"
+EXE_DIR = os.path.dirname(os.path.abspath(sys.executable)) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+APPDATA_CONFIG_FILE = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "BonCoreAgent", "config.json")
+LOCAL_CONFIG_FILE = os.path.join(EXE_DIR, "config.json")
 
 # Default Config
 CONFIG = {
-    "server_url": "https://contributing-sustained-cure-posting.trycloudflare.com",
+    "server_url": "http://77.67.29.77",
+    "terminal_name": "Kasa 1",
     "scale_default_ip": "192.168.1.150",
     "scale_default_port": 2004
 }
 
 def load_config():
     global CONFIG
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                loaded = json.load(f)
-                CONFIG.update(loaded)
-        except Exception:
-            pass
+    for path in (APPDATA_CONFIG_FILE, LOCAL_CONFIG_FILE):
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                    CONFIG.update(loaded)
+            except Exception:
+                pass
 
 def get_local_ip():
     try:

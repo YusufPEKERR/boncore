@@ -102,7 +102,7 @@ export const localHardware = {
   /**
    * Kasa ismini veya varsayılan durumunu günceller
    */
-  async updateTerminal(terminalId: string, payload: { name?: string; is_default?: boolean }) {
+  async updateTerminal(terminalId: string, payload: { name?: string; scale_ip?: string; scale_port?: number; is_default?: boolean }) {
     return await api.updateTerminal(terminalId, payload);
   },
 

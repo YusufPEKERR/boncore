@@ -832,7 +832,7 @@ export const api = {
     return res.json();
   },
 
-  async updateTerminal(terminalId: string, payload: { name?: string; is_default?: boolean }): Promise<any> {
+  async updateTerminal(terminalId: string, payload: { name?: string; scale_ip?: string; scale_port?: number; is_default?: boolean }): Promise<any> {
     const res = await fetch(`${API_BASE}/scale/terminals/${encodeURIComponent(terminalId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

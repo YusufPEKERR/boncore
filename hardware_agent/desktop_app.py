@@ -26,9 +26,20 @@ from tkinter import ttk, messagebox
 import pystray
 from PIL import Image, ImageDraw
 
-AGENT_VERSION = "2.1.0"
+AGENT_VERSION = "2.2.0"
 APP_TITLE = "BonCore Donanım Köprüsü"
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+
+# PyInstaller --onefile modunda __file__ geçici _MEI klasörünü gösterir ve kapanınca silinir!
+# Bu nedenle ayarları hem .exe yanına, hem %APPDATA%\BonCoreAgent klasörüne, hem de Windows Registry'ye kalıcı kaydediyoruz.
+if getattr(sys, "frozen", False):
+    EXE_DIR = os.path.dirname(sys.executable)
+else:
+    EXE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+CONFIG_FILE = os.path.join(EXE_DIR, "config.json")
+APPDATA_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "BonCoreAgent")
+APPDATA_CONFIG_FILE = os.path.join(APPDATA_DIR, "config.json")
+SETTINGS_REG_KEY = r"Software\BonCoreAgent"
 
 # Varsayılan Konfigürasyon
 DEFAULT_CONFIG = {
@@ -39,29 +50,9 @@ DEFAULT_CONFIG = {
     "scale_default_port": 2004,
     "auto_start": True,
     "minimize_to_tray": True,
-    "show_notifications": True
+    "show_notifications": True,
+    "user_customized": False
 }
-
-def load_config():
-    cfg = DEFAULT_CONFIG.copy()
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                cfg.update(json.load(f))
-        except Exception:
-            pass
-    if not cfg.get("terminal_id"):
-        import uuid
-        cfg["terminal_id"] = f"kasa_{uuid.uuid4().hex[:6]}"
-        save_config(cfg)
-    return cfg
-
-def save_config(cfg):
-    try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
 
 def get_local_ip():
     try:
@@ -72,6 +63,92 @@ def get_local_ip():
         return ip
     except Exception:
         return "127.0.0.1"
+
+def _get_deterministic_terminal_id():
+    ip = get_local_ip()
+    if ip and ip != "127.0.0.1":
+        return "kasa_" + ip.replace(".", "_")
+    import uuid
+    return f"kasa_{uuid.getnode() % 1000000:06d}"
+
+def _load_reg_settings() -> dict:
+    data = {}
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, SETTINGS_REG_KEY, 0, winreg.KEY_READ)
+        for field in ["server_url", "terminal_id", "terminal_name", "scale_default_ip", "scale_default_port", "user_customized"]:
+            try:
+                val, _ = winreg.QueryValueEx(key, field)
+                if field == "scale_default_port":
+                    data[field] = int(val)
+                elif field == "user_customized":
+                    data[field] = (str(val).lower() == "true")
+                else:
+                    data[field] = str(val)
+            except FileNotFoundError:
+                pass
+        winreg.CloseKey(key)
+    except Exception:
+        pass
+    return data
+
+def _save_reg_settings(cfg: dict):
+    try:
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, SETTINGS_REG_KEY)
+        for field in ["server_url", "terminal_id", "terminal_name", "scale_default_ip", "scale_default_port", "user_customized"]:
+            if field in cfg and cfg[field] is not None:
+                winreg.SetValueEx(key, field, 0, winreg.REG_SZ, str(cfg[field]))
+        winreg.CloseKey(key)
+    except Exception:
+        pass
+
+def load_config():
+    cfg = DEFAULT_CONFIG.copy()
+    # 1. Önce .exe yanındaki config.json dosyasını oku (ZIP'ten ilk çıktığında)
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                cfg.update(json.load(f))
+        except Exception:
+            pass
+
+    # 2. %APPDATA%\BonCoreAgent\config.json dosyasını oku (Kalıcı kullanıcı ayarları)
+    if os.path.exists(APPDATA_CONFIG_FILE):
+        try:
+            with open(APPDATA_CONFIG_FILE, "r", encoding="utf-8") as f:
+                appdata_cfg = json.load(f)
+                cfg.update(appdata_cfg)
+        except Exception:
+            pass
+
+    # 3. Windows Registry'deki kalıcı kullanıcı ayarlarını oku
+    reg_cfg = _load_reg_settings()
+    if reg_cfg:
+        cfg.update(reg_cfg)
+
+    # 4. Sabit (Deterministik) Terminal ID ata
+    det_id = _get_deterministic_terminal_id()
+    if not cfg.get("terminal_id") or cfg["terminal_id"].startswith("kasa_"):
+        cfg["terminal_id"] = det_id
+
+    save_config(cfg)
+    return cfg
+
+def save_config(cfg):
+    # 1. %APPDATA%\BonCoreAgent\config.json içine kaydet
+    try:
+        os.makedirs(APPDATA_DIR, exist_ok=True)
+        with open(APPDATA_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+    # 2. .exe yanındaki config.json içine kaydet
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+    # 3. Windows Registry içine kaydet
+    _save_reg_settings(cfg)
 
 # --- WINDOWS BAŞLANGIÇ KAYDI (AUTOSTART) ---
 REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -118,21 +195,23 @@ def get_windows_printers():
             name = p[2]
             if name and name not in printers:
                 printers.append(name)
-        if printers:
-            return printers
     except Exception:
         pass
 
     # 2. PowerShell fallback
-    try:
-        cmd = ["powershell", "-NoProfile", "-Command", "(Get-Printer).Name"]
-        out = subprocess.check_output(cmd, text=True, errors="ignore")
-        for line in out.splitlines():
-            line = line.strip()
-            if line and line not in printers:
-                printers.append(line)
-    except Exception:
-        pass
+    if not printers:
+        try:
+            cmd = ["powershell", "-NoProfile", "-Command", "(Get-Printer).Name"]
+            out = subprocess.check_output(cmd, text=True, errors="ignore")
+            for line in out.splitlines():
+                line = line.strip()
+                if line and line not in printers:
+                    printers.append(line)
+        except Exception:
+            pass
+
+    virtual_kw = ("microsoft print to pdf", "microsoft xps", "onenote", "fax", "anydesk printer", "send to onenote")
+    printers.sort(key=lambda x: (any(k in x.lower() for k in virtual_kw), x.lower()))
     return printers
 
 def print_slip_to_printer(printer_name: str, raw_text: str) -> bool:
@@ -610,7 +689,63 @@ class BonCoreHardwareDesktopApp:
         self.root.lift()
         self.root.focus_force()
 
+    def sync_entries_to_config(self, user_action=False):
+        """Ekrandaki kutularda yazılı olan en son değerleri otomatik olarak kalıcı hafızaya kaydeder."""
+        try:
+            changed = False
+            new_url = self.ent_server_url.get().strip().rstrip("/")
+            if new_url and new_url != self.cfg.get("server_url"):
+                self.cfg["server_url"] = new_url
+                changed = True
+
+            new_name = self.ent_terminal_name.get().strip()
+            if new_name and new_name != self.cfg.get("terminal_name"):
+                self.cfg["terminal_name"] = new_name
+                self.lbl_title.config(text=f"BonCore Donanım Köprüsü • {new_name}")
+                changed = True
+
+            new_ip = self.ent_scale_ip.get().strip()
+            if new_ip and new_ip != self.cfg.get("scale_default_ip"):
+                self.cfg["scale_default_ip"] = new_ip
+                changed = True
+
+            new_port_str = self.ent_scale_port.get().strip()
+            if new_port_str.isdigit():
+                new_port = int(new_port_str)
+                if new_port != int(self.cfg.get("scale_default_port", 2004)):
+                    self.cfg["scale_default_port"] = new_port
+                    changed = True
+
+            if user_action or changed:
+                self.cfg["user_customized"] = True
+                save_config(self.cfg)
+                threading.Thread(target=self._push_immediate_heartbeat, daemon=True).start()
+        except Exception:
+            pass
+
+    def _push_immediate_heartbeat(self):
+        try:
+            server_url = self.cfg.get("server_url", "http://77.67.29.77").rstrip("/")
+            hb_payload = {
+                "terminal_id": self.cfg.get("terminal_id", "kasa-1"),
+                "terminal_name": self.cfg.get("terminal_name", "Kasa 1"),
+                "local_ip": get_local_ip(),
+                "version": AGENT_VERSION,
+                "agent_name": self.cfg.get("terminal_name", "Kasa 1"),
+                "scale_connected": self.scale_connected,
+                "scale_ip": self.cfg.get("scale_default_ip", "192.168.1.150"),
+                "scale_port": int(self.cfg.get("scale_default_port", 2004)),
+                "last_weight": self.last_weight,
+                "printers": self.printers_list,
+                "user_configured": True
+            }
+            self.session.post(f"{server_url}/api/scale/agent/heartbeat", json=hb_payload, timeout=4.0)
+        except Exception:
+            pass
+
     def on_close_clicked(self):
+        self.sync_entries_to_config()
+        save_config(self.cfg)
         if self.cfg.get("minimize_to_tray", True):
             self.root.withdraw()
             self.show_toast(
@@ -621,6 +756,8 @@ class BonCoreHardwareDesktopApp:
             self.quit_app()
 
     def quit_app(self, icon=None, item=None):
+        self.sync_entries_to_config()
+        save_config(self.cfg)
         self.is_running = False
         if self.tray_icon:
             try:
@@ -864,28 +1001,39 @@ class BonCoreHardwareDesktopApp:
         )
         btn_exit.pack(side="right")
 
+        # Kutulardan çıkıldığında veya Enter'a basıldığında otomatik kaydet (Butona basmayı unutsa bile sıfırlanmasın)
+        for ent in [self.ent_server_url, self.ent_terminal_name, self.ent_scale_ip, self.ent_scale_port]:
+            ent.bind("<FocusOut>", lambda e: self.sync_entries_to_config(user_action=True))
+            ent.bind("<Return>", lambda e: self.sync_entries_to_config(user_action=True))
+
     def save_server_url(self):
         new_url = self.ent_server_url.get().strip().rstrip("/")
         if new_url:
             self.cfg["server_url"] = new_url
+            self.cfg["user_customized"] = True
             save_config(self.cfg)
-            messagebox.showinfo("Başarılı", "Sunucu adresi kaydedildi. Yeni bağlantı deneniyor...")
+            threading.Thread(target=self._push_immediate_heartbeat, daemon=True).start()
+            messagebox.showinfo("Başarılı", "Sunucu adresi kalıcı olarak kaydedildi.")
 
     def save_terminal_name(self):
         new_name = self.ent_terminal_name.get().strip()
         if new_name:
             self.cfg["terminal_name"] = new_name
+            self.cfg["user_customized"] = True
             save_config(self.cfg)
             self.lbl_title.config(text=f"BonCore Donanım Köprüsü • {new_name}")
-            messagebox.showinfo("Başarılı", f"Kasa ismi kaydedildi: {new_name}")
+            threading.Thread(target=self._push_immediate_heartbeat, daemon=True).start()
+            messagebox.showinfo("Başarılı", f"Kasa ismi kalıcı olarak kaydedildi: {new_name}")
 
     def save_scale_params(self):
         ip = self.ent_scale_ip.get().strip()
         port = int(self.ent_scale_port.get().strip() or "2004")
         self.cfg["scale_default_ip"] = ip
         self.cfg["scale_default_port"] = port
+        self.cfg["user_customized"] = True
         save_config(self.cfg)
-        messagebox.showinfo("Başarılı", f"Terazi adresi kaydedildi: {ip}:{port}")
+        threading.Thread(target=self._push_immediate_heartbeat, daemon=True).start()
+        messagebox.showinfo("Başarılı", f"Terazi adresi kalıcı olarak kaydedildi: {ip}:{port}")
 
     def toggle_autostart(self):
         val = self.var_autostart.get()
@@ -983,7 +1131,8 @@ class BonCoreHardwareDesktopApp:
                         "scale_ip": self.cfg.get("scale_default_ip", "192.168.1.150"),
                         "scale_port": int(self.cfg.get("scale_default_port", 2004)),
                         "last_weight": self.last_weight,
-                        "printers": self.printers_list
+                        "printers": self.printers_list,
+                        "user_configured": bool(self.cfg.get("user_customized", False))
                     }
                     hb_resp = self.session.post(
                         f"{server_url}/api/scale/agent/heartbeat",
@@ -991,6 +1140,36 @@ class BonCoreHardwareDesktopApp:
                         timeout=5.0
                     )
                     hb_resp.raise_for_status()
+                    hb_json = hb_resp.json()
+                    # Sunucuda bu IP için kayıtlı özel isim/terazi IP/port varsa ve yerelde henüz özelleştirilmemişse senkronize et
+                    srv_name = hb_json.get("terminal_name")
+                    srv_scale_ip = hb_json.get("scale_ip")
+                    srv_scale_port = hb_json.get("scale_port")
+                    cfg_updated_from_srv = False
+                    if srv_name and srv_name != self.cfg.get("terminal_name") and (not self.cfg.get("user_customized") or hb_json.get("admin_override")):
+                        self.cfg["terminal_name"] = srv_name
+                        cfg_updated_from_srv = True
+                        self.root.after(0, lambda n=srv_name: (
+                            self.lbl_title.config(text=f"BonCore Donanım Köprüsü • {n}"),
+                            self.ent_terminal_name.delete(0, tk.END),
+                            self.ent_terminal_name.insert(0, n)
+                        ))
+                    if srv_scale_ip and srv_scale_ip != self.cfg.get("scale_default_ip") and (not self.cfg.get("user_customized") or hb_json.get("admin_override")):
+                        self.cfg["scale_default_ip"] = srv_scale_ip
+                        cfg_updated_from_srv = True
+                        self.root.after(0, lambda sip=srv_scale_ip: (
+                            self.ent_scale_ip.delete(0, tk.END),
+                            self.ent_scale_ip.insert(0, sip)
+                        ))
+                    if srv_scale_port and int(srv_scale_port) != int(self.cfg.get("scale_default_port", 2004)) and (not self.cfg.get("user_customized") or hb_json.get("admin_override")):
+                        self.cfg["scale_default_port"] = int(srv_scale_port)
+                        cfg_updated_from_srv = True
+                        self.root.after(0, lambda sp=srv_scale_port: (
+                            self.ent_scale_port.delete(0, tk.END),
+                            self.ent_scale_port.insert(0, str(sp))
+                        ))
+                    if cfg_updated_from_srv:
+                        save_config(self.cfg)
                     last_heartbeat_time = now
 
                 # 2. Poll - Emir Dinleme (Reused Keep-Alive TCP Socket)
