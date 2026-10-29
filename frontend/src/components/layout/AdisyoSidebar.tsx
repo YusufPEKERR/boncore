@@ -293,6 +293,70 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             <span>Paket Servis & Kurye</span>
           </button>
 
+          {/* Müşteri Sadakat & Cari (CRM) */}
+          <button
+            onClick={() => handleNavClick('customers')}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
+              activeTab === 'customers'
+                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Gift className="w-4 h-4 text-rose-500" />
+              <span>Müşteri Sadakat & Cari</span>
+            </div>
+            <span className="bg-rose-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded">CRM</span>
+          </button>
+
+          {/* Masa Rezervasyon */}
+          <button
+            onClick={() => handleNavClick('reservations')}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
+              activeTab === 'reservations'
+                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <FileText className="w-4 h-4 text-indigo-500" />
+              <span>Masa Rezervasyon</span>
+            </div>
+            <span className="bg-indigo-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded">Pro</span>
+          </button>
+
+          {/* Self-Servis Kiosk & CFD */}
+          <button
+            onClick={() => handleNavClick('kiosk')}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
+              activeTab === 'kiosk'
+                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Smartphone className="w-4 h-4 text-emerald-500" />
+              <span>Kiosk & Çağrı Ekranı</span>
+            </div>
+            <span className="bg-emerald-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded">CFD</span>
+          </button>
+
+          {/* Otel Yönetim (PMS Oda Folyo) */}
+          <button
+            onClick={() => handleNavClick('hotel')}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
+              activeTab === 'hotel'
+                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Warehouse className="w-4 h-4 text-amber-500" />
+              <span>Otel Yönetim (PMS)</span>
+            </div>
+            <span className="bg-amber-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded">Folyo</span>
+          </button>
+
           {/* İşlemler (Stok / Kasa / Masraf / Denetim) Dropdown */}
           <div>
             <button
@@ -411,6 +475,15 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                   }`}
                 >
                   Gün Sonu Raporu (Z)
+                </button>
+                <button
+                  onClick={() => handleNavClick('cost_profit')}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between ${
+                    activeTab === 'cost_profit' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <span>Maliyet & Rapor Sihirbazı</span>
+                  <span className="bg-emerald-600 text-white text-[8px] font-black px-1 py-0.2 rounded">Pro</span>
                 </button>
               </div>
             )}

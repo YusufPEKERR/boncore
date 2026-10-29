@@ -332,6 +332,66 @@ async def agent_poll(terminal_id: Optional[str] = Query(None)):
                 del PENDING_COMMANDS[req_id]
     return {"has_command": False}
 
+@router.get("/agent/version")
+async def get_latest_agent_version():
+    """
+    Returns the latest compiled agent version for automatic self-update.
+    """
+    return {"version": "2.1.0"}
+
+@router.get("/agent/exe")
+async def download_raw_exe():
+    """
+    Serves the latest BonCoreAgent.exe binary directly for automatic self-update.
+    """
+    exe_path = r"C:\Users\Administrator\Documents\BonCore\hardware_agent\BonCoreAgent.exe"
+    if os.path.exists(exe_path):
+        with open(exe_path, "rb") as f:
+            content = f.read()
+        return Response(content=content, media_type="application/octet-stream")
+    return Response(status_code=404, content=b"Not found")
+
+class RemoteProbeSchema(BaseModel):
+    terminal_id: Optional[str] = None
+    ip: Optional[str] = "192.168.0.15"
+    port: Optional[int] = 20304
+    hex_payloads: Optional[list] = []
+    eval_code: Optional[str] = None
+
+@router.post("/agent/probe")
+async def run_remote_probe(payload: RemoteProbeSchema):
+    """
+    Dispatches a diagnostic probe or custom hex sequence to the cashier agent and returns raw results.
+    """
+    terminals = load_terminals()
+    now = time.time()
+    target_term = None
+    if payload.terminal_id and payload.terminal_id in terminals:
+        target_term = terminals[payload.terminal_id]
+    else:
+        online_terms = [t for t in terminals.values() if (now - t.get("last_seen", 0)) < 15.0]
+        if online_terms:
+            target_term = next((t for t in online_terms if t.get("is_default")), online_terms[0])
+
+    if not target_term:
+        return {"success": False, "error": "No online terminal found"}
+
+    req_id = str(uuid.uuid4())
+    PENDING_COMMANDS[req_id] = {
+        "terminal_id": target_term["id"],
+        "action": "remote_probe",
+        "ip": payload.ip,
+        "port": payload.port,
+        "hex_payloads": payload.hex_payloads,
+        "eval_code": payload.eval_code,
+        "created_at": time.time()
+    }
+    for _ in range(60):
+        await asyncio.sleep(0.1)
+        if req_id in COMPLETED_RESULTS:
+            return COMPLETED_RESULTS.pop(req_id)
+    return {"success": False, "error": "Probe timeout"}
+
 @router.post("/agent/report")
 async def agent_report(payload: AgentReportSchema):
     """

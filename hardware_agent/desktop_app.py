@@ -10,6 +10,7 @@ import sys
 import json
 import time
 import socket
+import struct
 import re
 import threading
 import subprocess
@@ -25,7 +26,7 @@ from tkinter import ttk, messagebox
 import pystray
 from PIL import Image, ImageDraw
 
-AGENT_VERSION = "2.0.0"
+AGENT_VERSION = "2.1.0"
 APP_TITLE = "BonCore Donanım Köprüsü"
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 

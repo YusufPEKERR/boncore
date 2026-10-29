@@ -31,6 +31,11 @@ import { ProductSalesReport } from './components/reports/ProductSalesReport';
 import { DayEndReport } from './components/reports/DayEndReport';
 import { AppStore } from './components/appstore/AppStore';
 import { MenuIntegrationOperations } from './components/integrations/MenuIntegrationOperations';
+import { CustomersLoyaltyView } from './components/modules/CustomersLoyaltyView';
+import { ReservationsView } from './components/modules/ReservationsView';
+import { CostProfitWizardView } from './components/modules/CostProfitWizardView';
+import { HotelFolioView } from './components/modules/HotelFolioView';
+import { KioskCfdView } from './components/modules/KioskCfdView';
 
 import { Area, Category, Table, StaffUser } from './types';
 import { api } from './services/api';
@@ -46,7 +51,8 @@ export const App: React.FC = () => {
   const VALID_TABS = [
     'dashboard', 'tables', 'pos', 'kds', 'product_definition', 'table_definition',
     'integration_menu', 'users', 'rights', 'restaurant_statistics', 'product_sales_report', 'day_end_report', 'app_store',
-    'settings', 'profile', 'cashier', 'delivery', 'inventory', 'qr', 'audit'
+    'settings', 'profile', 'cashier', 'delivery', 'inventory', 'qr', 'audit',
+    'customers', 'reservations', 'cost_profit', 'hotel', 'kiosk'
   ];
 
   // Helper to get initial tab from URL hash or localStorage
@@ -479,6 +485,16 @@ export const App: React.FC = () => {
         )}
 
         {activeTab === 'audit' && <AuditLogViewer />}
+
+        {activeTab === 'customers' && <CustomersLoyaltyView />}
+
+        {activeTab === 'reservations' && <ReservationsView />}
+
+        {activeTab === 'cost_profit' && <CostProfitWizardView />}
+
+        {activeTab === 'hotel' && <HotelFolioView />}
+
+        {activeTab === 'kiosk' && <KioskCfdView categories={categories} />}
       </main>
 
       {/* Mobile Bottom Navigation Bar (Visible on phones < md) */}

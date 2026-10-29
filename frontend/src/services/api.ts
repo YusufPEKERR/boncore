@@ -872,5 +872,108 @@ export const api = {
     } catch (e: any) {
       return { success: false, error: e.message || 'Yazdırma isteği gönderilemedi.' };
     }
+  },
+
+  // --- ADISYO PRO MODULES API ---
+  async getCustomersLoyalty(): Promise<any> {
+    const res = await fetch(`${API_BASE}/modules/customers`);
+    return res.json();
+  },
+
+  async createCustomer(payload: { name: string; phone: string; email?: string; tier?: string; points?: number; balance?: number; notes?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/modules/customers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  },
+
+  async addCustomerTransaction(customerId: string, payload: { type: string; amount?: number; points?: number; note?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/modules/customers/${encodeURIComponent(customerId)}/transaction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  },
+
+  async deleteCustomer(customerId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/modules/customers/${encodeURIComponent(customerId)}`, {
+      method: 'DELETE'
+    });
+    return res.json();
+  },
+
+  async toggleCampaign(campaignId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/modules/campaigns/${encodeURIComponent(campaignId)}/toggle`, {
+      method: 'POST'
+    });
+    return res.json();
+  },
+
+  async getReservations(): Promise<any> {
+    const res = await fetch(`${API_BASE}/modules/reservations`);
+    return res.json();
+  },
+
+  async createReservation(payload: { guest_name: string; phone: string; guests_count: number; date: string; time: string; table_name: string; notes?: string; deposit?: number }): Promise<any> {
+    const res = await fetch(`${API_BASE}/modules/reservations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  },
+
+  async updateReservationStatus(resId: string, status: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/modules/reservations/${encodeURIComponent(resId)}/status`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    return res.json();
+  },
+
+  async deleteReservation(resId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/modules/reservations/${encodeURIComponent(resId)}`, {
+      method: 'DELETE'
+    });
+    return res.json();
+  },
+
+  async getCostProfitAnalysis(): Promise<any> {
+    const res = await fetch(`${API_BASE}/modules/cost-profit`);
+    return res.json();
+  },
+
+  async getHotelFolios(): Promise<any> {
+    const res = await fetch(`${API_BASE}/modules/hotel`);
+    return res.json();
+  },
+
+  async addHotelCharge(payload: { room_no: string; amount: number; description?: string; order_id?: number }): Promise<any> {
+    const res = await fetch(`${API_BASE}/modules/hotel/charge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  },
+
+  async settleHotelFolio(roomNo: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/modules/hotel/${encodeURIComponent(roomNo)}/settle`, {
+      method: 'POST'
+    });
+    return res.json();
+  },
+
+  async submitKioskOrder(payload: { customer_name: string; order_type: string; payment_method: string; items: Array<{ product_id: number; quantity: number; notes?: string }> }): Promise<any> {
+    const res = await fetch(`${API_BASE}/modules/kiosk-order`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.json();
   }
 };
