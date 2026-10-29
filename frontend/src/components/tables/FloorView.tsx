@@ -49,7 +49,8 @@ export const FloorView: React.FC<FloorViewProps> = ({
 
   const getTableElapsedFormatted = (openedAt?: string) => {
     if (!openedAt) return 'Yeni Açıldı';
-    const start = new Date(openedAt).getTime();
+    const normalized = /[Zz]|[+-]\d{2}:\d{2}$/.test(openedAt) ? openedAt : `${openedAt}Z`;
+    const start = new Date(normalized).getTime();
     if (isNaN(start)) return 'Yeni Açıldı';
     const diffSec = Math.max(0, Math.floor((currentNow - start) / 1000));
     const mins = Math.floor(diffSec / 60);
@@ -256,7 +257,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
                 <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                   {isOccupied ? (
                     <span className="font-mono text-slate-600 dark:text-slate-300">
-                      {getTableElapsedFormatted(table.opened_at)}
+                      {getTableElapsedFormatted(table.active_order?.created_at || table.opened_at)}
                     </span>
                   ) : (
                     <span className="text-[10px] text-slate-400">{currentArea?.name}</span>

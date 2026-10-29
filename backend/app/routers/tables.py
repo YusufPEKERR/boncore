@@ -80,6 +80,9 @@ async def get_areas_with_tables(db: AsyncSession = Depends(get_db)):
                     if table.current_order_id != chosen_order.id:
                         table.current_order_id = chosen_order.id
                         needs_commit = True
+                    if chosen_order.created_at and (table.opened_at is None or table.opened_at != chosen_order.created_at):
+                        table.opened_at = chosen_order.created_at
+                        needs_commit = True
                     active_order = {
                         "id": chosen_order.id,
                         "order_no": chosen_order.order_no,
@@ -91,7 +94,7 @@ async def get_areas_with_tables(db: AsyncSession = Depends(get_db)):
                         "kuver_count": chosen_order.kuver_count,
                         "waiter_name": chosen_order.waiter_name,
                         "items_count": len([i for i in chosen_order.items if not i.is_voided]),
-                        "created_at": chosen_order.created_at.isoformat() if chosen_order.created_at else None,
+                        "created_at": (chosen_order.created_at.isoformat() + "Z") if chosen_order.created_at else None,
                     }
 
             # Eğer aktif açık sipariş yoksa ve rezerve değilse masa kesinlikle BOŞ'tur
@@ -122,7 +125,7 @@ async def get_areas_with_tables(db: AsyncSession = Depends(get_db)):
                 "height": table.height,
                 "seats": table.seats,
                 "status": table.status,
-                "opened_at": table.opened_at.isoformat() if table.opened_at else None,
+                "opened_at": (table.opened_at.isoformat() + "Z") if table.opened_at else None,
                 "duration_minutes": duration_minutes,
                 "kuver_count": table.kuver_count,
                 "waiter_name": table.waiter_name,

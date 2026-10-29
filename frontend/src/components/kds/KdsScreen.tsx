@@ -63,7 +63,8 @@ export const KdsScreen: React.FC = () => {
   // Format dynamic elapsed time
   const getElapsedFormatted = (createdAtStr?: string) => {
     if (!createdAtStr) return '00:00';
-    const start = new Date(createdAtStr).getTime();
+    const normalized = /[Zz]|[+-]\d{2}:\d{2}$/.test(createdAtStr) ? createdAtStr : `${createdAtStr}Z`;
+    const start = new Date(normalized).getTime();
     if (isNaN(start)) return '00:00';
     const diffSec = Math.max(0, Math.floor((currentTime - start) / 1000));
     const hours = Math.floor(diffSec / 3600);
