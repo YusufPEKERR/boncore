@@ -50,6 +50,30 @@ async def download_e_adisyon_xml(order_id: int, db: AsyncSession = Depends(get_d
         headers={"Content-Disposition": f"attachment; filename=E-Adisyon-{doc['ettn']}.xml"}
     )
 
+@router.get("/e-adisyon/{order_id}/pdf")
+async def download_e_adisyon_pdf(order_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Downloads official GİB E-Adisyon document as a PDF file.
+    """
+    stmt = select(Order).where(Order.id == order_id).options(
+        selectinload(Order.items),
+        selectinload(Order.table),
+        selectinload(Order.payments)
+    )
+    res = await db.execute(stmt)
+    order = res.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Sipariş bulunamadı.")
+
+    doc = FiscalService.generate_e_adisyon(order, order.payments, order.cashier_name or "Kasiyer")
+    pdf_bytes = FiscalService.generate_e_adisyon_pdf(doc)
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=E-Adisyon-{doc['doc_no']}.pdf"}
+    )
+
 @router.get("/receipt/{order_id}/escpos")
 async def get_escpos_thermal_slip(order_id: int, db: AsyncSession = Depends(get_db)):
     """

@@ -190,6 +190,11 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
     window.open(`/api/fiscal/e-adisyon/${orderId}/xml`, '_blank');
   };
 
+  const handleDownloadPdf = () => {
+    sound.beep();
+    window.open(`/api/fiscal/e-adisyon/${orderId}/pdf`, '_blank');
+  };
+
   return (
     <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4 select-none">
       <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
@@ -319,14 +324,24 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-3">
-          <button
-            onClick={handleDownloadXml}
-            className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold flex items-center gap-2"
-          >
-            <Download className="w-4 h-4 text-blue-400" />
-            <span>GİB XML İndir</span>
-          </button>
+        <div className="p-4 bg-slate-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadXml}
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold flex items-center gap-2 transition cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-blue-400" />
+              <span>GİB XML İndir</span>
+            </button>
+
+            <button
+              onClick={handleDownloadPdf}
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold flex items-center gap-2 transition cursor-pointer"
+            >
+              <FileText className="w-4 h-4 text-rose-400" />
+              <span>PDF İndir</span>
+            </button>
+          </div>
 
           <button
             onClick={() => printThermalReceipt(fiscalDoc)}
