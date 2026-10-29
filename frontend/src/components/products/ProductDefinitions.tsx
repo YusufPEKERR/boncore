@@ -162,9 +162,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     if (!ingObj) return;
 
     const amt = Number(newIngAmount);
-    const waste = Number(newIngWaste) || 0;
-    const fireMultiplier = 1.0 + (waste / 100.0);
-    const lineCost = Number((amt * fireMultiplier * (ingObj.cost_per_unit || 0)).toFixed(2));
+    const lineCost = Number((amt * (ingObj.cost_per_unit || 0)).toFixed(2));
 
     // Check if ingredient already in list
     const existingIdx = recipeItems.findIndex(r => r.ingredient_id === ingObj.id);
@@ -172,8 +170,8 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
       setRecipeItems(prev => prev.map((item, idx) => {
         if (idx === existingIdx) {
           const updatedAmt = Number((item.amount + amt).toFixed(3));
-          const updatedCost = Number((updatedAmt * (1 + (item.waste_percentage / 100)) * (ingObj.cost_per_unit || 0)).toFixed(2));
-          return { ...item, amount: updatedAmt, cost: updatedCost };
+          const updatedCost = Number((updatedAmt * (ingObj.cost_per_unit || 0)).toFixed(2));
+          return { ...item, amount: updatedAmt, waste_percentage: 0, cost: updatedCost };
         }
         return item;
       }));
@@ -184,7 +182,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
         ingredient_name: ingObj.name,
         amount: amt,
         unit: ingObj.unit || 'gr',
-        waste_percentage: waste,
+        waste_percentage: 0,
         cost: lineCost
       };
       setRecipeItems(prev => [...prev, newItem]);
@@ -202,19 +200,18 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     setRecipeItems(prev => prev.filter((_, idx) => idx !== index));
   };
 
-  // Update ingredient amount or waste in existing recipe row
+  // Update ingredient amount in existing recipe row
   const handleUpdateRecipeRow = (index: number, field: 'amount' | 'waste_percentage', value: number) => {
     setRecipeItems(prev => prev.map((item, idx) => {
       if (idx === index) {
         const amt = field === 'amount' ? Math.max(0, value) : item.amount;
-        const waste = field === 'waste_percentage' ? Math.max(0, value) : item.waste_percentage;
         const ingObj = allIngredients.find(i => i.id === item.ingredient_id);
         const costPerUnit = ingObj?.cost_per_unit || 0;
-        const lineCost = Number((amt * (1 + (waste / 100)) * costPerUnit).toFixed(2));
+        const lineCost = Number((amt * costPerUnit).toFixed(2));
         return {
           ...item,
           amount: amt,
-          waste_percentage: waste,
+          waste_percentage: 0,
           cost: lineCost
         };
       }
@@ -623,7 +620,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                   <div>
                     <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-2">
                       <Scale className="w-4 h-4 text-blue-500" />
-                      <span>2. Ürün Reçetesi & Fire Oranı (BOM)</span>
+                      <span>2. Ürün Reçetesi (BOM)</span>
                     </h3>
                     <p className="text-[11px] text-slate-400 mt-0.5 font-medium">
                       Bu ürün satıldığında depodan otomatik düşülecek hammadde ve gramajlar
@@ -634,8 +631,8 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                   </span>
                 </div>
 
-                {/* KPI Metrics: Maliyet, Satış Fiyatı, Kar Marjı */}
-                <div className="grid grid-cols-3 gap-3">
+                {/* KPI Metrics: Maliyet, Satış Fiyatı & Eldeki Stok, Kar Marjı */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="p-3 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-2xl">
                     <span className="text-[10px] font-bold text-slate-500 uppercase block">Toplam Maliyet</span>
                     <span className="text-sm sm:text-base font-black font-mono text-blue-600 dark:text-blue-400">
@@ -647,6 +644,15 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                     <span className="text-[10px] font-bold text-slate-500 uppercase block">Satış Fiyatı</span>
                     <span className="text-sm sm:text-base font-black font-mono text-slate-900 dark:text-white">
                       ₺{Number(prodPrice || 0).toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-2xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Elimizdeki Stok</span>
+                    <span className={`text-sm sm:text-base font-black font-mono ${
+                      Number(prodStock || 0) > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600'
+                    }`}>
+                      {Number(prodStock || 0).toLocaleString('tr-TR')} {prodUnit || 'Adet'}
                     </span>
                   </div>
 
@@ -667,8 +673,8 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                       <tr>
                         <th className="py-2.5 px-3">Hammadde Adı</th>
                         <th className="py-2.5 px-2 text-center">Birim Tüketim</th>
-                        <th className="py-2.5 px-2 text-center">Fire (%)</th>
                         <th className="py-2.5 px-2 text-right">Birim Fiyat</th>
+                        <th className="py-2.5 px-2 text-right">Elimizdeki Stok</th>
                         <th className="py-2.5 px-2 text-right">Tutar</th>
                         <th className="py-2.5 px-2 text-center">Sil</th>
                       </tr>
@@ -677,6 +683,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                       {recipeItems.map((item, idx) => {
                         const ingObj = allIngredients.find(i => i.id === item.ingredient_id);
                         const unitCost = ingObj?.cost_per_unit || 0;
+                        const currentStock = ingObj?.current_stock ?? 0;
                         return (
                           <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
                             <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-white">
@@ -695,22 +702,17 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                                 <span className="text-[10px] text-slate-400 font-mono">{item.unit}</span>
                               </div>
                             </td>
-                            <td className="py-2.5 px-2 text-center">
-                              <div className="inline-flex items-center gap-0.5">
-                                <span className="text-slate-400 text-[10px]">%</span>
-                                <input
-                                  type="number"
-                                  step="1"
-                                  min="0"
-                                  max="100"
-                                  value={item.waste_percentage}
-                                  onChange={(e) => handleUpdateRecipeRow(idx, 'waste_percentage', parseFloat(e.target.value) || 0)}
-                                  className="w-12 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1 text-center font-mono font-bold text-xs"
-                                />
-                              </div>
-                            </td>
                             <td className="py-2.5 px-2 text-right font-mono text-slate-500">
                               ₺{unitCost.toFixed(2)}
+                            </td>
+                            <td className={`py-2.5 px-2 text-right font-mono font-bold ${
+                              currentStock <= 0
+                                ? 'text-rose-600 dark:text-rose-400'
+                                : ingObj?.is_critical
+                                ? 'text-amber-600 dark:text-amber-400'
+                                : 'text-emerald-600 dark:text-emerald-400'
+                            }`}>
+                              {Number(currentStock).toLocaleString('tr-TR')} {ingObj?.unit || item.unit}
                             </td>
                             <td className="py-2.5 px-2 text-right font-mono font-bold text-blue-600 dark:text-blue-400">
                               ₺{item.cost.toFixed(2)}
@@ -742,13 +744,30 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
 
                 {/* Form to Add New Ingredient to this Recipe */}
                 <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
-                  <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 block">
-                    + Reçeteye Yeni Hammadde Ekle
-                  </span>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 block">
+                      + Reçeteye Yeni Hammadde Ekle
+                    </span>
+                    {selectedIngId !== '' && (() => {
+                      const selIng = allIngredients.find(i => i.id === Number(selectedIngId));
+                      if (!selIng) return null;
+                      return (
+                        <div className="flex items-center gap-2 text-[11px] font-bold bg-white dark:bg-slate-900 px-3 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                          <span className="text-slate-600 dark:text-slate-300">
+                            Birim Fiyat: <strong className="font-mono text-slate-900 dark:text-white">₺{(selIng.cost_per_unit || 0).toFixed(2)} / {selIng.unit}</strong>
+                          </span>
+                          <span className="text-slate-300 dark:text-slate-600">•</span>
+                          <span className={selIng.current_stock <= 0 ? 'text-rose-600' : 'text-emerald-600 dark:text-emerald-400'}>
+                            Elimizdeki Stok: <strong className="font-mono">{Number(selIng.current_stock ?? 0).toLocaleString('tr-TR')} {selIng.unit}</strong>
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
-                    <div className="sm:col-span-5">
-                      <label className="text-[10px] font-bold text-slate-500 block mb-1">Hammadde Seçin:</label>
+                    <div className="sm:col-span-7">
+                      <label className="text-[10px] font-bold text-slate-500 block mb-1">Hammadde Seçin (Fiyat & Elimizdeki Stok):</label>
                       <select
                         value={selectedIngId}
                         onChange={(e) => setSelectedIngId(e.target.value ? Number(e.target.value) : '')}
@@ -757,7 +776,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                         <option value="">Hammadde seçiniz...</option>
                         {allIngredients.map((ing) => (
                           <option key={ing.id} value={ing.id}>
-                            {ing.name} ({ing.unit}) - ₺{(ing.cost_per_unit || 0).toFixed(2)}
+                            {ing.name} ({ing.unit}) - ₺{(ing.cost_per_unit || 0).toFixed(2)} | Stok: {Number(ing.current_stock ?? 0).toLocaleString('tr-TR')} {ing.unit}
                           </option>
                         ))}
                       </select>
@@ -772,20 +791,6 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                         value={newIngAmount}
                         onChange={(e) => setNewIngAmount(e.target.value ? parseFloat(e.target.value) : '')}
                         placeholder="Örn: 180"
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs text-slate-900 dark:text-white font-mono font-bold"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-2">
-                      <label className="text-[10px] font-bold text-slate-500 block mb-1">Fire %:</label>
-                      <input
-                        type="number"
-                        step="1"
-                        min="0"
-                        max="100"
-                        value={newIngWaste}
-                        onChange={(e) => setNewIngWaste(Number(e.target.value) || 0)}
-                        placeholder="0"
                         className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs text-slate-900 dark:text-white font-mono font-bold"
                       />
                     </div>
