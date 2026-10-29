@@ -707,7 +707,6 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         });
         setIsFastPayModalOpen(false);
         sound.cashDrawer();
-        onOpenFiscalModal(targetOrderId);
         onRefreshData();
         onBackToTables();
       }

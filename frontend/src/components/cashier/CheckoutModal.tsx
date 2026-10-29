@@ -711,20 +711,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </div>
                   <div className="grid grid-cols-1 gap-2">
                     <button
-                      onClick={() => handleProcessPayment(selectedMethod, true, true)}
+                      onClick={() => handleProcessPayment(selectedMethod, false, true)}
                       disabled={loading}
                       className="w-full py-3 px-3 rounded-xl bg-[#27ae60] hover:bg-[#219653] text-white font-extrabold text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
                     >
-                      <Printer className="w-4 h-4" />
-                      <span>ÖDE, YAZDIR VE KAPAT (₺{payAmount})</span>
+                      <Save className="w-4 h-4" />
+                      <span>ÖDE VE KAPAT (₺{payAmount})</span>
                     </button>
                     <button
-                      onClick={() => handleProcessPayment(selectedMethod, false, true)}
+                      onClick={() => handleProcessPayment(selectedMethod, true, true)}
                       disabled={loading}
                       className="w-full py-2.5 px-3 rounded-xl bg-[#d32f2f] hover:bg-red-700 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
                     >
-                      <Save className="w-3.5 h-3.5" />
-                      <span>ÖDE VE KAPAT (Fişsiz)</span>
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>ÖDE, YAZDIR VE KAPAT</span>
                     </button>
                   </div>
                 </div>

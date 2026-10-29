@@ -172,10 +172,6 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
       ]);
       setFiscalDoc(doc);
       setEscposText(slip.slip_text);
-      // Otomatik Adisyo Fişi Yazdır
-      setTimeout(() => {
-        printThermalReceipt(doc);
-      }, 250);
     } catch (e) {
       console.warn('Failed to load fiscal doc', e);
     } finally {
