@@ -41,7 +41,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
   const [isDefinitionsOpen, setIsDefinitionsOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem('boncore_menu_definitions_open');
     if (saved !== null) return saved === 'true';
-    return ['settings', 'table_definition', 'product_definition', 'inventory', 'profile'].includes(activeTab);
+    return ['settings', 'table_definition', 'product_definition', 'kitchen_groups', 'inventory', 'profile'].includes(activeTab);
   });
 
   const [isOperationsOpen, setIsOperationsOpen] = useState<boolean>(() => {
@@ -237,8 +237,10 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                   Birimler & Reçeteler
                 </button>
                 <button
-                  onClick={() => handleNavClick('kds')}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                  onClick={() => handleNavClick('kitchen_groups')}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                    activeTab === 'kitchen_groups' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
                 >
                   Mutfak Grupları
                 </button>

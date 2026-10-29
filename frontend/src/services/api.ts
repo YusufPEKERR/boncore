@@ -1033,5 +1033,86 @@ export const api = {
       body: JSON.stringify(payload)
     });
     return res.json();
+  },
+
+  // Kitchen Groups (KDS Mutfak Grupları / İstasyon Yönetimi)
+  async getKitchenGroups(): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/settings/kitchen-groups`);
+    if (!res.ok) throw new Error('Mutfak grupları yüklenemedi.');
+    return res.json();
+  },
+
+  async createKitchenGroup(payload: {
+    id?: string;
+    name: string;
+    description?: string;
+    icon?: string;
+    color?: string;
+    printer_name?: string;
+    target_prep_minutes?: number;
+    sound_alert?: boolean;
+    auto_print?: boolean;
+    is_active?: boolean;
+  }): Promise<any> {
+    const res = await fetch(`${API_BASE}/settings/kitchen-groups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Mutfak grubu oluşturulamadı.');
+    }
+    return res.json();
+  },
+
+  async updateKitchenGroup(groupId: string, payload: Record<string, any>): Promise<any> {
+    const res = await fetch(`${API_BASE}/settings/kitchen-groups/${encodeURIComponent(groupId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Mutfak grubu güncellenemedi.');
+    }
+    return res.json();
+  },
+
+  async deleteKitchenGroup(groupId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/settings/kitchen-groups/${encodeURIComponent(groupId)}`, {
+      method: 'DELETE'
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Mutfak grubu silinemedi.');
+    }
+    return res.json();
+  },
+
+  async reorderKitchenGroups(orderedIds: string[]): Promise<any> {
+    const res = await fetch(`${API_BASE}/settings/kitchen-groups-reorder`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ordered_ids: orderedIds })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Mutfak grupları sıralanamadı.');
+    }
+    return res.json();
+  },
+
+  async assignCategoriesToKitchenGroup(groupId: string, payload: { category_ids?: number[]; product_ids?: number[] }): Promise<any> {
+    const res = await fetch(`${API_BASE}/settings/kitchen-groups/${encodeURIComponent(groupId)}/assign-categories`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Kategori ataması yapılamadı.');
+    }
+    return res.json();
   }
 };

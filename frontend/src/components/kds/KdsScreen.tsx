@@ -5,14 +5,52 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
+import { useWebSocket } from '../../services/websocket';
+import { KitchenGroupItem } from './KitchenGroupsDefinitions';
 
-export const KdsScreen: React.FC = () => {
+interface KdsScreenProps {
+  onNavigateTab?: (tab: string) => void;
+}
+
+const DEFAULT_STATIONS = [
+  { id: 'kitchen', label: 'Mutfak' },
+  { id: 'grill', label: 'Izgara' },
+  { id: 'bar', label: 'Bar' },
+  { id: 'pastry', label: 'Tatlı' },
+];
+
+export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
   const [orders, setOrders] = useState<any[]>([]);
   const [station, setStation] = useState<string>('all');
+  const [stationTabs, setStationTabs] = useState<Array<{ id: string; label: string }>>(DEFAULT_STATIONS);
   const [stageFilter, setStageFilter] = useState<'all' | 'preparing' | 'ready'>('preparing');
   const [sortAZ, setSortAZ] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
+
+  const loadStationTabs = async () => {
+    try {
+      const groups: KitchenGroupItem[] = await api.getKitchenGroups();
+      if (Array.isArray(groups) && groups.length > 0) {
+        const activeOnes = groups
+          .filter(g => g.is_active !== false)
+          .map(g => ({ id: g.id, label: g.name }));
+        setStationTabs(activeOnes.length > 0 ? activeOnes : DEFAULT_STATIONS);
+      }
+    } catch {
+      setStationTabs(DEFAULT_STATIONS);
+    }
+  };
+
+  useEffect(() => {
+    loadStationTabs();
+  }, []);
+
+  useWebSocket('all', (type) => {
+    if (type === 'KITCHEN_GROUPS_UPDATED') {
+      loadStationTabs();
+    }
+  });
 
   // Tick timer every second for live elapsed display
   useEffect(() => {
@@ -114,15 +152,12 @@ export const KdsScreen: React.FC = () => {
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold gap-1 overflow-x-auto max-w-full no-scrollbar">
             {[
               { id: 'all', label: 'Tümü' },
-              { id: 'kitchen', label: 'Mutfak' },
-              { id: 'grill', label: 'Izgara' },
-              { id: 'bar', label: 'Bar' },
-              { id: 'pastry', label: 'Tatlı' },
+              ...stationTabs,
             ].map(st => (
               <button
                 key={st.id}
                 onClick={() => { sound.beep(); setStation(st.id); }}
-                className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap shrink-0 ${
+                className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
                   station === st.id
                     ? 'bg-red-600 text-white shadow-sm'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -132,6 +167,18 @@ export const KdsScreen: React.FC = () => {
               </button>
             ))}
           </div>
+
+          {onNavigateTab && (
+            <button
+              type="button"
+              onClick={() => { sound.beep(); onNavigateTab('kitchen_groups'); }}
+              title="Mutfak Gruplarını (KDS İstasyonlarını) Yönet"
+              className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer shrink-0"
+            >
+              <Settings className="w-3.5 h-3.5 text-red-500" />
+              <span>Mutfak Grupları</span>
+            </button>
+          )}
 
           {/* Quick Filter Buttons */}
           <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-bold text-slate-600 dark:text-slate-400 overflow-x-auto max-w-full no-scrollbar">

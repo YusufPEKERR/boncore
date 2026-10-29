@@ -1,13 +1,72 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from typing import Dict, Any
+from sqlalchemy import func, update
+from typing import Dict, Any, List
 import json
+import re
 from app.database import get_db
 from app.models.setting import RestaurantSetting
+from app.models.product import Product
+from app.models.order import Order, OrderItem
 from app.websocket_hub import ws_hub
 
 router = APIRouter(prefix="/settings", tags=["Settings & Definitions"])
+
+DEFAULT_KITCHEN_GROUPS: List[Dict[str, Any]] = [
+    {
+        "id": "kitchen",
+        "name": "Mutfak",
+        "description": "Ana sıcak mutfak, kahvaltı ve yemek hazırlama istasyonu",
+        "icon": "utensils",
+        "color": "red",
+        "printer_name": "Mutfak Yazıcısı",
+        "target_prep_minutes": 15,
+        "sound_alert": True,
+        "auto_print": True,
+        "is_active": True,
+        "display_order": 0,
+    },
+    {
+        "id": "grill",
+        "name": "Izgara",
+        "description": "Izgara, kebap, mangal ve et ürünleri istasyonu",
+        "icon": "flame",
+        "color": "amber",
+        "printer_name": "Izgara Yazıcısı",
+        "target_prep_minutes": 20,
+        "sound_alert": True,
+        "auto_print": True,
+        "is_active": True,
+        "display_order": 1,
+    },
+    {
+        "id": "bar",
+        "name": "Bar",
+        "description": "Soğuk ve sıcak içecekler, kahve ve bar istasyonu",
+        "icon": "wine",
+        "color": "blue",
+        "printer_name": "Bar Yazıcısı",
+        "target_prep_minutes": 5,
+        "sound_alert": True,
+        "auto_print": True,
+        "is_active": True,
+        "display_order": 2,
+    },
+    {
+        "id": "pastry",
+        "name": "Tatlı",
+        "description": "Tatlı, pasta, dondurma ve fırın ürünleri istasyonu",
+        "icon": "cake",
+        "color": "purple",
+        "printer_name": "Tatlı / Fırın Yazıcısı",
+        "target_prep_minutes": 10,
+        "sound_alert": True,
+        "auto_print": False,
+        "is_active": True,
+        "display_order": 3,
+    },
+]
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "is_kuver_enabled": True,
@@ -47,7 +106,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         {"id": "multinet", "name": "Multinet", "icon": "💳", "desc": "Multinet kart ve karekod", "is_active": True},
         {"id": "ticket", "name": "Ticket Edenred", "icon": "🎫", "desc": "Edenred yemek kartı", "is_active": True},
         {"id": "open_account", "name": "Açık Hesap / Veresiye", "icon": "📋", "desc": "Cari müşteri borçlandırma", "is_active": True}
-    ]
+    ],
+    "kitchen_groups": DEFAULT_KITCHEN_GROUPS,
 }
 
 @router.get("/")
@@ -111,3 +171,231 @@ async def get_current_system_time():
     """
     from app.services.time_service import get_live_time_info
     return get_live_time_info()
+
+
+async def _load_raw_kitchen_groups(db: AsyncSession) -> List[Dict[str, Any]]:
+    stmt = select(RestaurantSetting).where(RestaurantSetting.key == "kitchen_groups")
+    res = await db.execute(stmt)
+    setting = res.scalar_one_or_none()
+    if setting and setting.value:
+        try:
+            parsed = json.loads(setting.value)
+            if isinstance(parsed, list) and len(parsed) > 0:
+                return sorted(parsed, key=lambda g: int(g.get("display_order", 0)))
+        except Exception:
+            pass
+    return [dict(g) for g in DEFAULT_KITCHEN_GROUPS]
+
+
+async def _save_raw_kitchen_groups(db: AsyncSession, groups: List[Dict[str, Any]]) -> None:
+    for idx, g in enumerate(groups):
+        g["display_order"] = idx
+    stmt = select(RestaurantSetting).where(RestaurantSetting.key == "kitchen_groups")
+    res = await db.execute(stmt)
+    existing = res.scalar_one_or_none()
+    str_val = json.dumps(groups, ensure_ascii=False)
+    if existing:
+        existing.value = str_val
+    else:
+        db.add(RestaurantSetting(key="kitchen_groups", value=str_val))
+    await db.commit()
+    await ws_hub.broadcast_all("KITCHEN_GROUPS_UPDATED", {"kitchen_groups": groups})
+
+
+def _slugify_station_id(name: str) -> str:
+    tr_map = str.maketrans("çğıöşüÇĞİÖŞÜ ", "cgiosuCGIOSU_")
+    cleaned = name.translate(tr_map).lower()
+    cleaned = re.sub(r"[^a-z0-9_]", "", cleaned)
+    cleaned = re.sub(r"_+", "_", cleaned).strip("_")
+    return cleaned or "station"
+
+
+@router.get("/kitchen-groups")
+async def get_kitchen_groups(db: AsyncSession = Depends(get_db)):
+    """
+    Returns all defined KDS kitchen groups/stations with product counts and active KDS item counts.
+    """
+    groups = await _load_raw_kitchen_groups(db)
+
+    # Count products per station
+    prod_stmt = select(Product.station, func.count(Product.id)).group_by(Product.station)
+    prod_res = await db.execute(prod_stmt)
+    prod_counts = { (row[0] or "kitchen"): int(row[1] or 0) for row in prod_res.all() }
+
+    # Count active KDS items per station
+    kds_stmt = (
+        select(OrderItem.station, func.count(OrderItem.id))
+        .join(Order, OrderItem.order_id == Order.id)
+        .where(
+            Order.status.in_(["open", "bill_requested"]),
+            OrderItem.is_voided == False,
+            OrderItem.is_hold == False,
+            OrderItem.status.in_(["pending", "preparing"]),
+        )
+        .group_by(OrderItem.station)
+    )
+    kds_res = await db.execute(kds_stmt)
+    kds_counts = { (row[0] or "kitchen"): int(row[1] or 0) for row in kds_res.all() }
+
+    enriched = []
+    for idx, g in enumerate(groups):
+        gid = g.get("id", "kitchen")
+        enriched.append({
+            **g,
+            "display_order": int(g.get("display_order", idx)),
+            "product_count": prod_counts.get(gid, 0),
+            "active_kds_count": kds_counts.get(gid, 0),
+        })
+    return enriched
+
+
+@router.post("/kitchen-groups")
+async def create_kitchen_group(payload: Dict[str, Any], db: AsyncSession = Depends(get_db)):
+    """
+    Creates a new KDS kitchen group / station.
+    """
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Mutfak grubu adı boş olamaz.")
+
+    groups = await _load_raw_kitchen_groups(db)
+    raw_id = (payload.get("id") or "").strip()
+    station_id = _slugify_station_id(raw_id if raw_id else name)
+
+    existing_ids = {g.get("id") for g in groups}
+    if station_id in existing_ids or station_id == "all":
+        suffix = 2
+        while f"{station_id}_{suffix}" in existing_ids:
+            suffix += 1
+        station_id = f"{station_id}_{suffix}"
+
+    new_group = {
+        "id": station_id,
+        "name": name,
+        "description": (payload.get("description") or "").strip(),
+        "icon": payload.get("icon") or "utensils",
+        "color": payload.get("color") or "red",
+        "printer_name": (payload.get("printer_name") or "").strip(),
+        "target_prep_minutes": int(payload.get("target_prep_minutes") or 15),
+        "sound_alert": bool(payload.get("sound_alert", True)),
+        "auto_print": bool(payload.get("auto_print", True)),
+        "is_active": bool(payload.get("is_active", True)),
+        "display_order": len(groups),
+    }
+    groups.append(new_group)
+    await _save_raw_kitchen_groups(db, groups)
+    return {"status": "success", "group": new_group, "kitchen_groups": groups}
+
+
+@router.put("/kitchen-groups-reorder")
+async def reorder_kitchen_groups(payload: Dict[str, Any], db: AsyncSession = Depends(get_db)):
+    """
+    Reorders kitchen groups according to ordered_ids list.
+    """
+    ordered_ids: List[str] = payload.get("ordered_ids") or []
+    groups = await _load_raw_kitchen_groups(db)
+    group_map = {g.get("id"): g for g in groups}
+
+    new_groups: List[Dict[str, Any]] = []
+    for gid in ordered_ids:
+        if gid in group_map:
+            new_groups.append(group_map.pop(gid))
+    for remaining in groups:
+        if remaining.get("id") in group_map:
+            new_groups.append(remaining)
+
+    await _save_raw_kitchen_groups(db, new_groups)
+    return {"status": "success", "kitchen_groups": new_groups}
+
+
+@router.put("/kitchen-groups/{group_id}")
+async def update_kitchen_group(group_id: str, payload: Dict[str, Any], db: AsyncSession = Depends(get_db)):
+    """
+    Updates an existing KDS kitchen group / station.
+    """
+    groups = await _load_raw_kitchen_groups(db)
+    target = None
+    for g in groups:
+        if g.get("id") == group_id:
+            target = g
+            break
+
+    if not target:
+        raise HTTPException(status_code=404, detail="Mutfak grubu bulunamadı.")
+
+    if "name" in payload and str(payload["name"]).strip():
+        target["name"] = str(payload["name"]).strip()
+    if "description" in payload:
+        target["description"] = str(payload["description"] or "").strip()
+    if "icon" in payload:
+        target["icon"] = str(payload["icon"] or "utensils")
+    if "color" in payload:
+        target["color"] = str(payload["color"] or "red")
+    if "printer_name" in payload:
+        target["printer_name"] = str(payload["printer_name"] or "").strip()
+    if "target_prep_minutes" in payload:
+        target["target_prep_minutes"] = max(1, int(payload["target_prep_minutes"] or 15))
+    if "sound_alert" in payload:
+        target["sound_alert"] = bool(payload["sound_alert"])
+    if "auto_print" in payload:
+        target["auto_print"] = bool(payload["auto_print"])
+    if "is_active" in payload:
+        target["is_active"] = bool(payload["is_active"])
+
+    await _save_raw_kitchen_groups(db, groups)
+    return {"status": "success", "group": target, "kitchen_groups": groups}
+
+
+@router.delete("/kitchen-groups/{group_id}")
+async def delete_kitchen_group(group_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Deletes a KDS kitchen group and reassigns its products to the fallback kitchen group.
+    """
+    groups = await _load_raw_kitchen_groups(db)
+    if len(groups) <= 1:
+        raise HTTPException(status_code=400, detail="Sistemde en az 1 mutfak grubu bulunmalıdır.")
+
+    remaining = [g for g in groups if g.get("id") != group_id]
+    if len(remaining) == len(groups):
+        raise HTTPException(status_code=404, detail="Silinecek mutfak grubu bulunamadı.")
+
+    fallback_id = remaining[0].get("id", "kitchen")
+    await db.execute(
+        update(Product).where(Product.station == group_id).values(station=fallback_id)
+    )
+    await _save_raw_kitchen_groups(db, remaining)
+    return {
+        "status": "success",
+        "fallback_station": fallback_id,
+        "kitchen_groups": remaining,
+    }
+
+
+@router.post("/kitchen-groups/{group_id}/assign-categories")
+async def assign_categories_to_kitchen_group(group_id: str, payload: Dict[str, Any], db: AsyncSession = Depends(get_db)):
+    """
+    Bulk assigns all products in the given category_ids (or product_ids) to this kitchen group.
+    """
+    groups = await _load_raw_kitchen_groups(db)
+    if not any(g.get("id") == group_id for g in groups):
+        raise HTTPException(status_code=404, detail="Mutfak grubu bulunamadı.")
+
+    category_ids = payload.get("category_ids") or []
+    product_ids = payload.get("product_ids") or []
+
+    updated_count = 0
+    if category_ids:
+        res = await db.execute(
+            update(Product).where(Product.category_id.in_(category_ids)).values(station=group_id)
+        )
+        updated_count += res.rowcount or 0
+    if product_ids:
+        res = await db.execute(
+            update(Product).where(Product.id.in_(product_ids)).values(station=group_id)
+        )
+        updated_count += res.rowcount or 0
+
+    await db.commit()
+    await ws_hub.broadcast_all("MENU_UPDATED", {"station": group_id})
+    await ws_hub.broadcast_all("KITCHEN_GROUPS_UPDATED", {})
+    return {"status": "success", "updated_count": updated_count}

@@ -12,6 +12,7 @@ import { PinModal } from './components/layout/PinModal';
 import { FloorView } from './components/tables/FloorView';
 import { PosTerminal } from './components/pos/PosTerminal';
 import { KdsScreen } from './components/kds/KdsScreen';
+import { KitchenGroupsDefinitions } from './components/kds/KitchenGroupsDefinitions';
 import { CashierManagement } from './components/cashier/CashierManagement';
 import { CheckoutModal } from './components/cashier/CheckoutModal';
 import { DeliveryHub } from './components/delivery/DeliveryHub';
@@ -50,7 +51,7 @@ export const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
 
   const VALID_TABS = [
-    'dashboard', 'tables', 'pos', 'kds', 'product_definition', 'table_definition',
+    'dashboard', 'tables', 'pos', 'kds', 'kitchen_groups', 'product_definition', 'table_definition',
     'integration_menu', 'users', 'rights', 'restaurant_statistics', 'closed_bills_report', 'product_sales_report', 'day_end_report', 'app_store',
     'settings', 'profile', 'cashier', 'delivery', 'inventory', 'qr', 'audit',
     'customers', 'reservations', 'cost_profit', 'hotel', 'kiosk'
@@ -418,7 +419,15 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === 'kds' && <KdsScreen />}
+        {activeTab === 'kds' && <KdsScreen onNavigateTab={setActiveTab} />}
+
+        {activeTab === 'kitchen_groups' && (
+          <KitchenGroupsDefinitions
+            categories={categories}
+            onRefreshData={loadCategories}
+            onNavigateTab={setActiveTab}
+          />
+        )}
 
         {/* New Video 3 Screens */}
         {activeTab === 'product_definition' && (

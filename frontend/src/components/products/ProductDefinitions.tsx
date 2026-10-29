@@ -66,6 +66,12 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
   const [draggedProdId, setDraggedProdId] = useState<number | null>(null);
   const [dragOverProdId, setDragOverProdId] = useState<number | null>(null);
   const [activeSortMode, setActiveSortMode] = useState<'custom' | 'az' | 'za'>('custom');
+  const [kitchenGroups, setKitchenGroups] = useState<Array<{ id: string; name: string }>>([
+    { id: 'kitchen', name: 'Mutfak' },
+    { id: 'grill', name: 'Izgara / Kebap' },
+    { id: 'bar', name: 'Bar / İçecek' },
+    { id: 'pastry', name: 'Tatlı / Fırın' },
+  ]);
 
   useEffect(() => {
     setOrderedCategories(categories);
@@ -79,6 +85,13 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
 
   useEffect(() => {
     loadIngredients();
+    api.getKitchenGroups()
+      .then((groups) => {
+        if (Array.isArray(groups) && groups.length > 0) {
+          setKitchenGroups(groups.map((g: any) => ({ id: g.id, name: g.name })));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const loadIngredients = async () => {
@@ -849,10 +862,9 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                         onChange={(e) => setProdStation(e.target.value as any)}
                         className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-slate-900 dark:text-white font-bold"
                       >
-                        <option value="kitchen">Mutfak</option>
-                        <option value="grill">Izgara / Kebap</option>
-                        <option value="bar">Bar / İçecek</option>
-                        <option value="pastry">Tatlı / Fırın</option>
+                        {kitchenGroups.map((kg) => (
+                          <option key={kg.id} value={kg.id}>{kg.name}</option>
+                        ))}
                       </select>
                     </div>
                   </div>
