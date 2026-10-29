@@ -81,9 +81,13 @@ async def get_categories_with_products(
     output = []
     dirty_ings = False
 
-    for cat in categories:
+    for cat in sorted(categories, key=lambda c: (c.order_index if c.order_index is not None else 0, c.id)):
         prods = []
-        for p in cat.products:
+        sorted_cat_products = sorted(
+            cat.products or [],
+            key=lambda p: (p.order_index if p.order_index is not None else 0, p.id)
+        )
+        for p in sorted_cat_products:
             if not all_items and not p.is_available:
                 continue
 
@@ -116,6 +120,7 @@ async def get_categories_with_products(
                 "barcode": p.barcode,
                 "vat_rate": p.vat_rate,
                 "station": p.station or "kitchen",
+                "order_index": p.order_index if p.order_index is not None else 0,
                 "unit": unit_label,
                 "stock_quantity": stock_qty,
                 "has_recipe": has_recipe,
@@ -244,6 +249,40 @@ async def update_category(cat_id: int, payload: dict, db: AsyncSession = Depends
     await db.commit()
     await ws_hub.broadcast_all("MENU_UPDATED", {"category_id": cat.id})
     return {"status": "success", "category_id": cat.id}
+
+@router.put("/categories-reorder")
+async def reorder_categories(payload: dict, db: AsyncSession = Depends(get_db)):
+    category_ids = payload.get("category_ids") or []
+    if not isinstance(category_ids, list):
+        raise HTTPException(status_code=400, detail="Geçersiz kategori sıralama listesi.")
+
+    res = await db.execute(select(Category))
+    cats_map = {c.id: c for c in res.scalars().all()}
+    for idx, cid in enumerate(category_ids):
+        cat_obj = cats_map.get(int(cid))
+        if cat_obj is not None:
+            cat_obj.order_index = idx
+
+    await db.commit()
+    await ws_hub.broadcast_all("MENU_UPDATED", {"reordered": "categories"})
+    return {"status": "success"}
+
+@router.put("/items-reorder")
+async def reorder_products(payload: dict, db: AsyncSession = Depends(get_db)):
+    product_ids = payload.get("product_ids") or []
+    if not isinstance(product_ids, list):
+        raise HTTPException(status_code=400, detail="Geçersiz ürün sıralama listesi.")
+
+    res = await db.execute(select(Product).where(Product.id.in_([int(pid) for pid in product_ids if pid is not None])))
+    prods_map = {p.id: p for p in res.scalars().all()}
+    for idx, pid in enumerate(product_ids):
+        p_obj = prods_map.get(int(pid))
+        if p_obj is not None:
+            p_obj.order_index = idx
+
+    await db.commit()
+    await ws_hub.broadcast_all("MENU_UPDATED", {"reordered": "products"})
+    return {"status": "success"}
 
 @router.delete("/categories/{cat_id}")
 async def delete_category(cat_id: int, db: AsyncSession = Depends(get_db)):

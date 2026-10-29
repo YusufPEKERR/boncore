@@ -27,6 +27,7 @@ class Product(Base):
     barcode = Column(String(50), nullable=True, index=True) # e.g. "8690123456"
     vat_rate = Column(Float, default=10.0) # %1, %10, %20
     station = Column(String(50), default="kitchen") # kitchen, bar, pastry, grill
+    order_index = Column(Integer, default=0) # Kategori içi sıralama indeksi
     is_available = Column(Boolean, default=True)
     show_in_pos = Column(Boolean, default=True) # Sipariş ekranında gösterilsin mi?
     image_url = Column(String(255), nullable=True)

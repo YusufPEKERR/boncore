@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, Search, Copy, Trash2, Edit3, CheckCircle2, 
   AlertTriangle, Layers, ArrowLeft, Save, Scale, 
-  DollarSign, Utensils, X, ChefHat, Sparkles, Eye, EyeOff 
+  DollarSign, Utensils, X, ChefHat, Sparkles, Eye, EyeOff, GripVertical 
 } from 'lucide-react';
 import { Category, Product, Ingredient, RecipeItem, ProductRecipe } from '../../types';
 import { sound } from '../../services/sound';
@@ -56,6 +56,17 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [newCatName, setNewCatName] = useState<string>('');
   const [newCatShowInPos, setNewCatShowInPos] = useState<boolean>(true);
+
+  // Drag & Drop Ordering State (Categories & Products)
+  const [orderedCategories, setOrderedCategories] = useState<Category[]>(categories);
+  const [draggedCatId, setDraggedCatId] = useState<number | null>(null);
+  const [dragOverCatId, setDragOverCatId] = useState<number | null>(null);
+  const [draggedProdId, setDraggedProdId] = useState<number | null>(null);
+  const [dragOverProdId, setDragOverProdId] = useState<number | null>(null);
+
+  useEffect(() => {
+    setOrderedCategories(categories);
+  }, [categories]);
 
   useEffect(() => {
     if (categories.length > 0 && !categories.some(c => c.id === activeCatId)) {
@@ -447,9 +458,109 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     }
   };
 
-  const currentCategory = categories.find(c => c.id === activeCatId) || categories[0];
+  // Category Drag & Drop Handlers
+  const handleCatDragStart = (e: React.DragEvent, catId: number) => {
+    setDraggedCatId(catId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(catId));
+  };
+
+  const handleCatDragOver = (e: React.DragEvent, catId: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverCatId !== catId) {
+      setDragOverCatId(catId);
+    }
+  };
+
+  const handleCatDrop = async (e: React.DragEvent, targetCatId: number) => {
+    e.preventDefault();
+    const sourceId = draggedCatId;
+    setDraggedCatId(null);
+    setDragOverCatId(null);
+    if (sourceId === null || sourceId === targetCatId) return;
+
+    const oldIndex = orderedCategories.findIndex(c => c.id === sourceId);
+    const newIndex = orderedCategories.findIndex(c => c.id === targetCatId);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const updated = [...orderedCategories];
+    const [moved] = updated.splice(oldIndex, 1);
+    updated.splice(newIndex, 0, moved);
+    setOrderedCategories(updated);
+    sound.beep();
+
+    try {
+      await api.reorderCategories(updated.map(c => c.id));
+      showToast('Kategori sıralaması güncellendi.', 'success');
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showToast('Kategori sıralaması kaydedilemedi.', 'error');
+    }
+  };
+
+  const handleCatDragEnd = () => {
+    setDraggedCatId(null);
+    setDragOverCatId(null);
+  };
+
+  // Product Drag & Drop Handlers
+  const handleProdDragStart = (e: React.DragEvent, prodId: number) => {
+    if (searchQuery.trim()) return;
+    setDraggedProdId(prodId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(prodId));
+  };
+
+  const handleProdDragOver = (e: React.DragEvent, prodId: number) => {
+    if (searchQuery.trim() || draggedProdId === null) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverProdId !== prodId) {
+      setDragOverProdId(prodId);
+    }
+  };
+
+  const handleProdDrop = async (e: React.DragEvent, targetProdId: number) => {
+    e.preventDefault();
+    const sourceId = draggedProdId;
+    setDraggedProdId(null);
+    setDragOverProdId(null);
+    if (searchQuery.trim() || sourceId === null || sourceId === targetProdId) return;
+
+    const catObj = orderedCategories.find(c => c.id === activeCatId) || orderedCategories[0];
+    if (!catObj || !catObj.products) return;
+
+    const prods = [...catObj.products];
+    const oldIndex = prods.findIndex(p => p.id === sourceId);
+    const newIndex = prods.findIndex(p => p.id === targetProdId);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const [moved] = prods.splice(oldIndex, 1);
+    prods.splice(newIndex, 0, moved);
+
+    setOrderedCategories(prev =>
+      prev.map(c => (c.id === catObj.id ? { ...c, products: prods } : c))
+    );
+    sound.beep();
+
+    try {
+      await api.reorderProducts(prods.map(p => p.id));
+      showToast('Ürün sıralaması güncellendi.', 'success');
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showToast('Ürün sıralaması kaydedilemedi.', 'error');
+    }
+  };
+
+  const handleProdDragEnd = () => {
+    setDraggedProdId(null);
+    setDragOverProdId(null);
+  };
+
+  const currentCategory = orderedCategories.find(c => c.id === activeCatId) || orderedCategories[0];
   const displayedProducts = searchQuery.trim()
-    ? categories
+    ? orderedCategories
         .flatMap(c => c.products || [])
         .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
     : (currentCategory?.products || []);
@@ -997,21 +1108,33 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
             </div>
 
             <div className="flex md:flex-col md:flex-1 overflow-x-auto md:overflow-y-auto p-2 gap-1.5 md:gap-0 md:space-y-1 no-scrollbar">
-              {categories.map((cat) => {
+              {orderedCategories.map((cat) => {
                 const isActive = cat.id === activeCatId;
                 const catShowInPos = cat.show_in_pos ?? true;
+                const isDragging = draggedCatId === cat.id;
+                const isDragOver = dragOverCatId === cat.id && draggedCatId !== cat.id;
                 return (
                   <div
                     key={cat.id}
+                    draggable
+                    onDragStart={(e) => handleCatDragStart(e, cat.id)}
+                    onDragOver={(e) => handleCatDragOver(e, cat.id)}
+                    onDrop={(e) => handleCatDrop(e, cat.id)}
+                    onDragEnd={handleCatDragEnd}
                     onClick={() => { sound.beep(); setActiveCatId(cat.id); }}
-                    className={`p-2 sm:p-2.5 rounded-xl cursor-pointer transition flex items-center justify-between gap-1.5 text-xs font-bold shrink-0 ${
+                    className={`p-2 sm:p-2.5 rounded-xl cursor-grab active:cursor-grabbing transition flex items-center justify-between gap-1.5 text-xs font-bold shrink-0 ${
+                      isDragging ? 'opacity-40 scale-95' : ''
+                    } ${
+                      isDragOver ? 'ring-2 ring-red-500 bg-red-50 dark:bg-red-950/40' : ''
+                    } ${
                       isActive
                         ? 'bg-slate-200 text-slate-950 dark:bg-slate-800 dark:text-white border-b-2 md:border-b-0 md:border-l-4 border-red-600 shadow-sm'
                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900'
                     }`}
+                    title="Sıralamayı değiştirmek için sürükleyip bırakın"
                   >
-                    <div className="flex items-center gap-2 truncate min-w-0">
-                      <Layers className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <div className="flex items-center gap-1.5 truncate min-w-0">
+                      <GripVertical className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0 cursor-grab" />
                       <span className={`uppercase truncate ${!catShowInPos ? 'line-through opacity-60' : ''}`}>
                         {cat.name}
                       </span>
@@ -1118,30 +1241,47 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
             <div className="flex-1 overflow-y-auto p-3 sm:p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 content-start">
               {displayedProducts.map((p) => {
                 const showInPos = p.show_in_pos ?? p.is_available ?? true;
+                const isProdDragging = draggedProdId === p.id;
+                const isProdDragOver = dragOverProdId === p.id && draggedProdId !== p.id;
                 return (
                 <div
                   key={p.id}
+                  draggable={!searchQuery.trim()}
+                  onDragStart={(e) => handleProdDragStart(e, p.id)}
+                  onDragOver={(e) => handleProdDragOver(e, p.id)}
+                  onDrop={(e) => handleProdDrop(e, p.id)}
+                  onDragEnd={handleProdDragEnd}
                   onClick={() => handleSelectProduct(p)}
-                  className="h-36 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-red-400 dark:hover:border-red-600 rounded-2xl p-4 flex flex-col justify-between shadow-sm hover:shadow-md transition relative group cursor-pointer"
+                  className={`h-36 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-red-400 dark:hover:border-red-600 rounded-2xl p-4 flex flex-col justify-between shadow-sm hover:shadow-md transition relative group ${
+                    !searchQuery.trim() ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+                  } ${isProdDragging ? 'opacity-40 scale-95' : ''} ${
+                    isProdDragOver ? 'ring-2 ring-red-500 bg-red-50/40 dark:bg-red-950/30' : ''
+                  }`}
+                  title={!searchQuery.trim() ? 'Sıralamayı değiştirmek için sürükleyip bırakın veya düzenlemek için tıklayın' : ''}
                 >
                   {/* Card Top: Availability Status & Action Icons */}
                   <div className="flex items-center justify-between text-xs">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleAvailability(p);
-                      }}
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-black transition cursor-pointer flex items-center gap-1 ${
-                        showInPos
-                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-300 dark:border-slate-700 hover:bg-slate-200'
-                      }`}
-                      title="Sipariş Ekranında Gösterilsin mi?"
-                    >
-                      {showInPos ? <Eye className="w-3 h-3 text-emerald-600" /> : <EyeOff className="w-3 h-3 text-slate-400" />}
-                      <span>{showInPos ? 'Sipariş Ekranında Göster' : 'Sipariş Ekranında Gizli'}</span>
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {!searchQuery.trim() && (
+                        <GripVertical className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0 cursor-grab" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleAvailability(p);
+                        }}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-black transition cursor-pointer flex items-center gap-1 ${
+                          showInPos
+                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-300 dark:border-slate-700 hover:bg-slate-200'
+                        }`}
+                        title="Sipariş Ekranında Gösterilsin mi?"
+                      >
+                        {showInPos ? <Eye className="w-3 h-3 text-emerald-600" /> : <EyeOff className="w-3 h-3 text-slate-400" />}
+                        <span>{showInPos ? 'Sipariş Ekranında Göster' : 'Sipariş Ekranında Gizli'}</span>
+                      </button>
+                    </div>
 
                     <div className="flex items-center gap-1.5 text-slate-400">
                       <button 

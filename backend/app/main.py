@@ -45,6 +45,8 @@ async def lifespan(app: FastAPI):
             prod_cols = [c["name"] for c in inspector.get_columns("products")]
             if "show_in_pos" not in prod_cols:
                 sync_conn.execute(text("ALTER TABLE products ADD COLUMN show_in_pos BOOLEAN DEFAULT 1"))
+            if "order_index" not in prod_cols:
+                sync_conn.execute(text("ALTER TABLE products ADD COLUMN order_index INTEGER DEFAULT 0"))
         await conn.run_sync(migrate_schema)
 
     # Seed initial data

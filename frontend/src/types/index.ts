@@ -83,6 +83,7 @@ export interface Product {
   barcode?: string;
   vat_rate?: number;
   station: 'kitchen' | 'bar' | 'pastry' | 'grill';
+  order_index?: number;
   is_available: boolean;
   show_in_pos?: boolean;
   image_url?: string;

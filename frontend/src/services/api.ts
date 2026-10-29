@@ -674,6 +674,24 @@ export const api = {
     return res.json();
   },
 
+  async reorderCategories(categoryIds: number[]): Promise<any> {
+    const res = await fetch(`${API_BASE}/products/categories-reorder`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category_ids: categoryIds })
+    });
+    return res.json();
+  },
+
+  async reorderProducts(productIds: number[]): Promise<any> {
+    const res = await fetch(`${API_BASE}/products/items-reorder`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_ids: productIds })
+    });
+    return res.json();
+  },
+
   async deleteCategory(catId: number): Promise<any> {
     const res = await fetch(`${API_BASE}/products/categories/${catId}`, { method: 'DELETE' });
     return res.json();
