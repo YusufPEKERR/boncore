@@ -665,6 +665,15 @@ export const api = {
     return res.json();
   },
 
+  async updateCategory(catId: number, payload: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/products/categories/${catId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  },
+
   async deleteCategory(catId: number): Promise<any> {
     const res = await fetch(`${API_BASE}/products/categories/${catId}`, { method: 'DELETE' });
     return res.json();

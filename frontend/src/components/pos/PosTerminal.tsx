@@ -31,15 +31,24 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   onOpenFiscalModal,
   onRefreshData
 }) => {
-  const [activeCategoryId, setActiveCategoryId] = useState<number>(categories[0]?.id || 1);
+  const visibleCategories = useMemo(() => {
+    return categories
+      .filter(c => (c.show_in_pos ?? true) !== false)
+      .map(c => ({
+        ...c,
+        products: (c.products || []).filter(p => (p.show_in_pos ?? p.is_available ?? true) !== false)
+      }));
+  }, [categories]);
+
+  const [activeCategoryId, setActiveCategoryId] = useState<number>(visibleCategories[0]?.id || categories[0]?.id || 1);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<Product[] | null>(null);
 
   useEffect(() => {
-    if (categories.length > 0 && !categories.some(c => c.id === activeCategoryId)) {
-      setActiveCategoryId(categories[0].id);
+    if (visibleCategories.length > 0 && !visibleCategories.some(c => c.id === activeCategoryId)) {
+      setActiveCategoryId(visibleCategories[0].id);
     }
-  }, [categories]);
+  }, [visibleCategories, activeCategoryId]);
 
   // Cart & Order state
   const [cartItems, setCartItems] = useState<OrderItem[]>([]);
@@ -238,22 +247,23 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     }
   };
 
-  // Filter products
+  // Filter products (only those marked as visible in POS)
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults(null);
       return;
     }
     const q = searchQuery.toLowerCase().trim();
-    const allProducts = categories.flatMap(c => c.products);
+    const allProducts = visibleCategories.flatMap(c => c.products);
     const matched = allProducts.filter(p => 
       p.name.toLowerCase().includes(q) || 
-      (p.plu_code && p.plu_code.toLowerCase().includes(q))
+      (p.plu_code && p.plu_code.toLowerCase().includes(q)) ||
+      (p.barcode && p.barcode.toLowerCase().includes(q))
     );
     setSearchResults(matched);
-  }, [searchQuery, categories]);
+  }, [searchQuery, visibleCategories]);
 
-  const currentCategory = categories.find(c => c.id === activeCategoryId) || categories[0];
+  const currentCategory = visibleCategories.find(c => c.id === activeCategoryId) || visibleCategories[0];
   const displayedProducts = searchResults !== null ? searchResults : (currentCategory?.products || []);
 
   // Helper to count quantity of product in cart
@@ -1271,7 +1281,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         {/* 2-Row Horizontal Category Grid */}
         <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-2 sm:p-3 overflow-x-auto shrink-0">
           <div className="flex flex-nowrap sm:flex-wrap gap-1.5 sm:max-h-24 overflow-x-auto sm:overflow-y-auto no-scrollbar">
-            {categories.map((cat) => {
+            {visibleCategories.map((cat) => {
               const isCatActive = activeCategoryId === cat.id && searchResults === null;
               return (
                 <button

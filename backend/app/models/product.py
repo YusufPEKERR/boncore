@@ -11,6 +11,7 @@ class Category(Base):
     color = Column(String(30), default="#f97316") # Category badge color
     order_index = Column(Integer, default=0)
     target_station = Column(String(50), default="kitchen") # kitchen, bar, pastry, grill
+    show_in_pos = Column(Boolean, default=True) # Sipariş ekranında gösterilsin mi?
 
     products = relationship("Product", back_populates="category", cascade="all, delete-orphan")
 
@@ -27,6 +28,7 @@ class Product(Base):
     vat_rate = Column(Float, default=10.0) # %1, %10, %20
     station = Column(String(50), default="kitchen") # kitchen, bar, pastry, grill
     is_available = Column(Boolean, default=True)
+    show_in_pos = Column(Boolean, default=True) # Sipariş ekranında gösterilsin mi?
     image_url = Column(String(255), nullable=True)
     calories = Column(Integer, nullable=True)
     allergens = Column(JSON, default=list) # ["Gluten", "Süt", "Fıstık"]

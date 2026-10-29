@@ -84,6 +84,7 @@ export interface Product {
   vat_rate?: number;
   station: 'kitchen' | 'bar' | 'pastry' | 'grill';
   is_available: boolean;
+  show_in_pos?: boolean;
   image_url?: string;
   calories?: number;
   allergens?: string[];
@@ -118,6 +119,7 @@ export interface Category {
   color: string;
   order_index: number;
   target_station: string;
+  show_in_pos?: boolean;
   products: Product[];
 }
 

@@ -39,6 +39,12 @@ async def lifespan(app: FastAPI):
                 sync_conn.execute(text("ALTER TABLE staff_users ADD COLUMN password_hash VARCHAR(255)"))
             if "last_login_at" not in user_cols:
                 sync_conn.execute(text("ALTER TABLE staff_users ADD COLUMN last_login_at DATETIME"))
+            cat_cols = [c["name"] for c in inspector.get_columns("categories")]
+            if "show_in_pos" not in cat_cols:
+                sync_conn.execute(text("ALTER TABLE categories ADD COLUMN show_in_pos BOOLEAN DEFAULT 1"))
+            prod_cols = [c["name"] for c in inspector.get_columns("products")]
+            if "show_in_pos" not in prod_cols:
+                sync_conn.execute(text("ALTER TABLE products ADD COLUMN show_in_pos BOOLEAN DEFAULT 1"))
         await conn.run_sync(migrate_schema)
 
     # Seed initial data

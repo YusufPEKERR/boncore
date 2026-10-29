@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, Search, Copy, Trash2, Edit3, CheckCircle2, 
   AlertTriangle, Layers, ArrowLeft, Save, Scale, 
-  DollarSign, Utensils, X, ChefHat, Sparkles 
+  DollarSign, Utensils, X, ChefHat, Sparkles, Eye, EyeOff 
 } from 'lucide-react';
 import { Category, Product, Ingredient, RecipeItem, ProductRecipe } from '../../types';
 import { sound } from '../../services/sound';
@@ -51,9 +51,11 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
   const [newIngAmount, setNewIngAmount] = useState<number | ''>('');
   const [newIngWaste, setNewIngWaste] = useState<number>(0);
 
-  // Category Add Modal (lightweight)
+  // Category Add / Edit Modal (lightweight)
   const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState<boolean>(false);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [newCatName, setNewCatName] = useState<string>('');
+  const [newCatShowInPos, setNewCatShowInPos] = useState<boolean>(true);
 
   useEffect(() => {
     if (categories.length > 0 && !categories.some(c => c.id === activeCatId)) {
@@ -95,7 +97,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     setProdPlu(p.plu_code || '');
     setProdBarcode(p.barcode || '');
     setProdVatRate(p.vat_rate ?? 10);
-    setProdIsAvailable(p.is_available ?? true);
+    setProdIsAvailable(p.show_in_pos ?? p.is_available ?? true);
     setProdDescription(p.description || '');
 
     // Reset Add Ingredient Form
@@ -272,6 +274,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
           plu_code: prodPlu.trim() || undefined,
           barcode: prodBarcode.trim() || undefined,
           is_available: prodIsAvailable,
+          show_in_pos: prodIsAvailable,
           description: prodDescription.trim() || undefined
         });
         targetProductId = createRes.product_id;
@@ -287,6 +290,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
           plu_code: prodPlu.trim() || undefined,
           barcode: prodBarcode.trim() || undefined,
           is_available: prodIsAvailable,
+          show_in_pos: prodIsAvailable,
           description: prodDescription.trim() || undefined
         });
       }
@@ -350,9 +354,15 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
   const handleToggleAvailability = async (p: Product) => {
     sound.beep();
     try {
-      const newStatus = !(p.is_available ?? true);
-      await api.updateProduct(p.id, { is_available: newStatus });
-      showToast('Ürün durumu güncellendi.', 'success');
+      const currentVal = p.show_in_pos ?? p.is_available ?? true;
+      const newStatus = !currentVal;
+      await api.updateProduct(p.id, { is_available: newStatus, show_in_pos: newStatus });
+      showToast(
+        newStatus
+          ? `"${p.name}" sipariş ekranında gösterilecek.`
+          : `"${p.name}" sipariş ekranından gizlendi.`,
+        'success'
+      );
       if (onRefreshData) onRefreshData();
     } catch (err: any) {
       showToast(err.message || 'Ürün durumu güncellenemedi.', 'error');
@@ -360,18 +370,65 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     }
   };
 
+  const handleToggleCategoryShowInPos = async (cat: Category) => {
+    sound.beep();
+    try {
+      const currentVal = cat.show_in_pos ?? true;
+      const nextVal = !currentVal;
+      await api.updateCategory(cat.id, { show_in_pos: nextVal });
+      showToast(
+        nextVal
+          ? `"${cat.name}" kategorisi sipariş ekranında gösterilecek.`
+          : `"${cat.name}" kategorisi sipariş ekranından gizlendi.`,
+        'success'
+      );
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showToast(err.message || 'Kategori güncellenemedi.', 'error');
+      sound.warning();
+    }
+  };
+
+  const handleOpenAddCategory = () => {
+    sound.beep();
+    setEditingCategory(null);
+    setNewCatName('');
+    setNewCatShowInPos(true);
+    setIsAddCategoryModalOpen(true);
+  };
+
+  const handleOpenEditCategory = (cat: Category) => {
+    sound.beep();
+    setEditingCategory(cat);
+    setNewCatName(cat.name);
+    setNewCatShowInPos(cat.show_in_pos ?? true);
+    setIsAddCategoryModalOpen(true);
+  };
+
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCatName.trim()) return;
     sound.beep();
     try {
-      await api.createCategory({ name: newCatName.trim().toUpperCase() });
+      if (editingCategory) {
+        await api.updateCategory(editingCategory.id, {
+          name: newCatName.trim().toUpperCase(),
+          show_in_pos: newCatShowInPos
+        });
+        showToast('Kategori başarıyla güncellendi.', 'success');
+      } else {
+        await api.createCategory({
+          name: newCatName.trim().toUpperCase(),
+          show_in_pos: newCatShowInPos
+        });
+        showToast('Kategori başarıyla eklendi.', 'success');
+      }
       if (onRefreshData) onRefreshData();
-      showToast('Kategori başarıyla eklendi.', 'success');
       setNewCatName('');
+      setEditingCategory(null);
       setIsAddCategoryModalOpen(false);
     } catch (err: any) {
-      showToast(err.message || 'Kategori eklenemedi.', 'error');
+      showToast(err.message || 'Kategori kaydedilemedi.', 'error');
       sound.warning();
     }
   };
@@ -481,22 +538,70 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
               
               {/* ================= SECTION 1: ÜRÜN BİLGİLERİ (5 cols) ================= */}
               <div className="xl:col-span-5 bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-                <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
+                <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between gap-2">
                   <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-2">
                     <Utensils className="w-4 h-4 text-amber-500" />
                     <span>1. Ürün & Satış Bilgileri</span>
                   </h3>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.beep();
+                      setProdIsAvailable(prev => !prev);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold border transition flex items-center gap-1.5 cursor-pointer ${
+                      prodIsAvailable
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-400 dark:border-emerald-700 shadow-xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+                    }`}
+                  >
                     <input
                       type="checkbox"
                       checked={prodIsAvailable}
                       onChange={(e) => setProdIsAvailable(e.target.checked)}
-                      className="w-4 h-4 rounded text-red-600 accent-red-600 cursor-pointer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 rounded text-emerald-600 accent-emerald-600 cursor-pointer"
                     />
-                    <span className={`text-xs font-bold ${prodIsAvailable ? 'text-emerald-600' : 'text-slate-400'}`}>
-                      {prodIsAvailable ? 'Satışa Açık' : 'Pasif'}
-                    </span>
-                  </label>
+                    <span>Sipariş Ekranında Gösterilsin</span>
+                  </button>
+                </div>
+
+                {/* Sipariş Ekranında Gösterilsin mi? Bilgi ve Seçenek Kartı */}
+                <div
+                  onClick={() => {
+                    sound.beep();
+                    setProdIsAvailable(prev => !prev);
+                  }}
+                  className={`p-3 rounded-2xl border flex items-center justify-between gap-3 cursor-pointer transition ${
+                    prodIsAvailable
+                      ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800'
+                      : 'bg-slate-100 dark:bg-slate-800/70 border-slate-300 dark:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    {prodIsAvailable ? (
+                      <Eye className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    ) : (
+                      <EyeOff className="w-4 h-4 text-slate-400 shrink-0" />
+                    )}
+                    <div>
+                      <div className={`text-xs font-black ${prodIsAvailable ? 'text-emerald-800 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-400'}`}>
+                        Sipariş Ekranında Gösterilsin mi?
+                      </div>
+                      <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                        {prodIsAvailable
+                          ? 'İşaretli: Bu ürün sipariş (POS) ekranında gösterilir.'
+                          : 'İşaretli Değil: Bu ürün sipariş (POS) ekranında gizlenir.'}
+                      </div>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={prodIsAvailable}
+                    onChange={(e) => setProdIsAvailable(e.target.checked)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-5 h-5 rounded text-emerald-600 accent-emerald-600 cursor-pointer shrink-0"
+                  />
                 </div>
 
                 <div className="space-y-3.5 text-xs font-semibold">
@@ -880,10 +985,10 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
         /* ========================================================================= */
         <div className="flex-1 flex flex-col md:flex-row h-full min-h-0 overflow-hidden">
           {/* Left Sidebar: Categories List */}
-          <div className="w-full md:w-72 bg-white dark:bg-slate-900 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 flex flex-col shadow-sm z-10 shrink-0">
+          <div className="w-full md:w-80 bg-white dark:bg-slate-900 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 flex flex-col shadow-sm z-10 shrink-0">
             <div className="p-2.5 sm:p-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
               <button
-                onClick={() => { sound.beep(); setIsAddCategoryModalOpen(true); }}
+                onClick={handleOpenAddCategory}
                 className="w-full py-2 sm:py-2.5 px-3 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-extrabold text-xs border border-red-200 dark:border-red-900/60 flex items-center justify-center gap-1.5 transition cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
@@ -894,31 +999,67 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
             <div className="flex md:flex-col md:flex-1 overflow-x-auto md:overflow-y-auto p-2 gap-1.5 md:gap-0 md:space-y-1 no-scrollbar">
               {categories.map((cat) => {
                 const isActive = cat.id === activeCatId;
+                const catShowInPos = cat.show_in_pos ?? true;
                 return (
                   <div
                     key={cat.id}
                     onClick={() => { sound.beep(); setActiveCatId(cat.id); }}
-                    className={`p-2 sm:p-2.5 rounded-xl cursor-pointer transition flex items-center justify-between gap-2 text-xs font-bold shrink-0 ${
+                    className={`p-2 sm:p-2.5 rounded-xl cursor-pointer transition flex items-center justify-between gap-1.5 text-xs font-bold shrink-0 ${
                       isActive
                         ? 'bg-slate-200 text-slate-950 dark:bg-slate-800 dark:text-white border-b-2 md:border-b-0 md:border-l-4 border-red-600 shadow-sm'
                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900'
                     }`}
                   >
-                    <div className="flex items-center gap-2 truncate">
+                    <div className="flex items-center gap-2 truncate min-w-0">
                       <Layers className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="uppercase truncate">{cat.name}</span>
-                      <span className="text-[10px] font-mono text-slate-400">({cat.products?.length || 0})</span>
+                      <span className={`uppercase truncate ${!catShowInPos ? 'line-through opacity-60' : ''}`}>
+                        {cat.name}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400 shrink-0">({cat.products?.length || 0})</span>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteCategory(cat.id, cat.name);
-                      }}
-                      className="p-1 text-slate-400 hover:text-red-500 rounded transition shrink-0 cursor-pointer"
-                      title="Kategoriyi Sil"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleCategoryShowInPos(cat);
+                        }}
+                        className={`px-1.5 py-0.5 rounded-lg text-[10px] font-extrabold border flex items-center gap-1 transition cursor-pointer ${
+                          catShowInPos
+                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-300 dark:border-slate-700'
+                        }`}
+                        title="Sipariş Ekranında Gösterilsin mi?"
+                      >
+                        {catShowInPos ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                        <span className="hidden sm:inline">{catShowInPos ? 'Göster' : 'Gizli'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenEditCategory(cat);
+                        }}
+                        className="p-1 text-slate-400 hover:text-blue-500 rounded transition shrink-0 cursor-pointer"
+                        title="Kategoriyi Düzenle"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteCategory(cat.id, cat.name);
+                        }}
+                        className="p-1 text-slate-400 hover:text-red-500 rounded transition shrink-0 cursor-pointer"
+                        title="Kategoriyi Sil"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -928,10 +1069,30 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
           {/* Right Content: Products Grid & Search Toolbar */}
           <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 min-h-0">
             <div className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 flex items-center justify-between gap-2.5 sm:gap-4 shadow-sm shrink-0">
-              <div className="flex items-center gap-2 sm:gap-3 flex-1 max-w-lg">
+              <div className="flex items-center gap-2 sm:gap-3 flex-1 max-w-2xl">
                 <span className="hidden sm:inline text-xs font-black uppercase text-slate-600 dark:text-slate-300 whitespace-nowrap">
                   {searchQuery.trim() ? 'Arama Sonuçları' : currentCategory?.name}
                 </span>
+                {!searchQuery.trim() && currentCategory && (
+                  <button
+                    type="button"
+                    onClick={() => handleToggleCategoryShowInPos(currentCategory)}
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold border flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
+                      (currentCategory.show_in_pos ?? true)
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-300 dark:border-slate-700'
+                    }`}
+                    title="Bu kategorinin sipariş ekranında gösterilip gösterilmeyeceğini değiştir"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={currentCategory.show_in_pos ?? true}
+                      onChange={() => {}}
+                      className="w-3.5 h-3.5 rounded accent-emerald-600 cursor-pointer"
+                    />
+                    <span className="hidden md:inline">Kategori Sipariş Ekranında Gösterilsin</span>
+                  </button>
+                )}
                 <div className="relative flex-1">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
@@ -955,7 +1116,9 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
 
             {/* Products Cards Grid */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 content-start">
-              {displayedProducts.map((p) => (
+              {displayedProducts.map((p) => {
+                const showInPos = p.show_in_pos ?? p.is_available ?? true;
+                return (
                 <div
                   key={p.id}
                   onClick={() => handleSelectProduct(p)}
@@ -970,14 +1133,14 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                         handleToggleAvailability(p);
                       }}
                       className={`px-2 py-0.5 rounded-full text-[10px] font-black transition cursor-pointer flex items-center gap-1 ${
-                        (p.is_available ?? true)
+                        showInPos
                           ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-300 dark:border-slate-700 hover:bg-slate-200'
                       }`}
-                      title="Satışa Aç / Kapat"
+                      title="Sipariş Ekranında Gösterilsin mi?"
                     >
-                      <span className={`w-1.5 h-1.5 rounded-full ${(p.is_available ?? true) ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                      <span>{(p.is_available ?? true) ? 'Satışta' : 'Pasif'}</span>
+                      {showInPos ? <Eye className="w-3 h-3 text-emerald-600" /> : <EyeOff className="w-3 h-3 text-slate-400" />}
+                      <span>{showInPos ? 'Sipariş Ekranında Göster' : 'Sipariş Ekranında Gizli'}</span>
                     </button>
 
                     <div className="flex items-center gap-1.5 text-slate-400">
@@ -1040,7 +1203,8 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                     </span>
                   </div>
                 </div>
-              ))}
+                );
+              })}
 
               {displayedProducts.length === 0 && (
                 <div className="col-span-full py-16 text-center text-slate-400 text-xs font-semibold">
@@ -1052,12 +1216,14 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
         </div>
       )}
 
-      {/* Lightweight Category Add Modal */}
+      {/* Lightweight Category Add / Edit Modal */}
       {isAddCategoryModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
-            <h3 className="text-base font-black">Yeni Kategori Ekle</h3>
-            <form onSubmit={handleAddCategory} className="space-y-3 text-xs font-semibold">
+            <h3 className="text-base font-black">
+              {editingCategory ? 'Kategori Düzenle' : 'Yeni Kategori Ekle'}
+            </h3>
+            <form onSubmit={handleAddCategory} className="space-y-3.5 text-xs font-semibold">
               <div>
                 <label className="text-slate-500 block mb-1">Kategori Adı:</label>
                 <input
@@ -1069,10 +1235,49 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-slate-900 dark:text-white uppercase font-bold"
                 />
               </div>
+
+              <div
+                onClick={() => {
+                  sound.beep();
+                  setNewCatShowInPos(prev => !prev);
+                }}
+                className={`p-3 rounded-2xl border flex items-center justify-between gap-3 cursor-pointer transition ${
+                  newCatShowInPos
+                    ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800'
+                    : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {newCatShowInPos ? (
+                    <Eye className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  ) : (
+                    <EyeOff className="w-4 h-4 text-slate-400 shrink-0" />
+                  )}
+                  <div>
+                    <div className="font-black text-slate-900 dark:text-white">
+                      Sipariş Ekranında Gösterilsin
+                    </div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                      {newCatShowInPos ? 'Sipariş ekranında görünür' : 'Sipariş ekranında gizlenir'}
+                    </div>
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={newCatShowInPos}
+                  onChange={(e) => setNewCatShowInPos(e.target.checked)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-4 h-4 rounded accent-emerald-600 cursor-pointer"
+                />
+              </div>
+
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsAddCategoryModalOpen(false)}
+                  onClick={() => {
+                    setEditingCategory(null);
+                    setIsAddCategoryModalOpen(false);
+                  }}
                   className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold cursor-pointer"
                 >
                   İptal
@@ -1081,7 +1286,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                   type="submit"
                   className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black shadow cursor-pointer"
                 >
-                  Ekle
+                  {editingCategory ? 'Kaydet' : 'Ekle'}
                 </button>
               </div>
             </form>

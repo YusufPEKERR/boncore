@@ -127,6 +127,7 @@ async def get_categories_with_products(
                 "is_vegan": p.is_vegan,
                 "is_spicy": p.is_spicy,
                 "is_available": p.is_available if p.is_available is not None else True,
+                "show_in_pos": bool(p.show_in_pos if p.show_in_pos is not None else (p.is_available if p.is_available is not None else True)),
                 "variants": [
                     {
                         "id": v.id,
@@ -156,6 +157,7 @@ async def get_categories_with_products(
             "color": cat.color,
             "order_index": cat.order_index,
             "target_station": cat.target_station,
+            "show_in_pos": bool(cat.show_in_pos if cat.show_in_pos is not None else True),
             "products": prods
         })
 
@@ -209,13 +211,39 @@ async def create_category(payload: dict, db: AsyncSession = Depends(get_db)):
         icon=payload.get("icon", "Utensils"),
         color=payload.get("color", "#f97316"),
         order_index=payload.get("order_index", 99),
-        target_station=payload.get("target_station", "kitchen")
+        target_station=payload.get("target_station", "kitchen"),
+        show_in_pos=bool(payload.get("show_in_pos", True))
     )
     db.add(new_cat)
     await db.commit()
     await db.refresh(new_cat)
     await ws_hub.broadcast_all("MENU_UPDATED", {"category_id": new_cat.id})
     return {"status": "success", "category_id": new_cat.id}
+
+@router.put("/categories/{cat_id}")
+async def update_category(cat_id: int, payload: dict, db: AsyncSession = Depends(get_db)):
+    stmt = select(Category).where(Category.id == cat_id)
+    res = await db.execute(stmt)
+    cat = res.scalar_one_or_none()
+    if not cat:
+        raise HTTPException(status_code=404, detail="Kategori bulunamadı.")
+
+    if "name" in payload and payload["name"]:
+        cat.name = str(payload["name"]).strip().upper()
+    if "icon" in payload:
+        cat.icon = payload["icon"]
+    if "color" in payload:
+        cat.color = payload["color"]
+    if "order_index" in payload:
+        cat.order_index = int(payload["order_index"])
+    if "target_station" in payload:
+        cat.target_station = payload["target_station"]
+    if "show_in_pos" in payload:
+        cat.show_in_pos = bool(payload["show_in_pos"])
+
+    await db.commit()
+    await ws_hub.broadcast_all("MENU_UPDATED", {"category_id": cat.id})
+    return {"status": "success", "category_id": cat.id}
 
 @router.delete("/categories/{cat_id}")
 async def delete_category(cat_id: int, db: AsyncSession = Depends(get_db)):
@@ -236,6 +264,7 @@ async def delete_category(cat_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/items")
 async def create_product(payload: dict, db: AsyncSession = Depends(get_db)):
+    show_pos = bool(payload.get("show_in_pos", payload.get("is_available", True)))
     new_prod = Product(
         category_id=payload.get("category_id"),
         name=(payload.get("name") or "").strip(),
@@ -244,7 +273,8 @@ async def create_product(payload: dict, db: AsyncSession = Depends(get_db)):
         plu_code=payload.get("plu_code"),
         barcode=payload.get("barcode"),
         station=payload.get("station", "kitchen"),
-        is_available=payload.get("is_available", True)
+        is_available=bool(payload.get("is_available", show_pos)),
+        show_in_pos=show_pos
     )
     db.add(new_prod)
     await db.flush()
@@ -299,6 +329,12 @@ async def update_product(prod_id: int, payload: dict, db: AsyncSession = Depends
     if "plu_code" in payload: prod.plu_code = payload["plu_code"]
     if "barcode" in payload: prod.barcode = payload["barcode"]
     if "is_available" in payload: prod.is_available = bool(payload["is_available"])
+    if "show_in_pos" in payload:
+        prod.show_in_pos = bool(payload["show_in_pos"])
+        if "is_available" not in payload:
+            prod.is_available = bool(payload["show_in_pos"])
+    elif "is_available" in payload:
+        prod.show_in_pos = bool(payload["is_available"])
 
     # Sync ONLY with the product's own direct Ingredient card (matched by product name, never overwriting BOM ingredients!)
     linked_ing = None
