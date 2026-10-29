@@ -78,4 +78,4 @@ class StockService:
             if prod_ing:
                 prod_ing.current_stock = float(min(ratios))
 
-        await db.commit()
+        await db.flush()

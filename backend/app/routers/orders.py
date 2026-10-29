@@ -39,12 +39,15 @@ async def validate_bom_stock_for_items(db: AsyncSession, items: list):
         pid = int(it.product_id)
         qty_by_prod[pid] = qty_by_prod.get(pid, 0.0) + float(it.quantity or 1.0)
 
+    p_ids = list(qty_by_prod.keys())
+    stmt = select(Product).where(Product.id.in_(p_ids)).options(
+        selectinload(Product.recipes).selectinload(Recipe.ingredient)
+    )
+    res = await db.execute(stmt)
+    prods_map = {p.id: p for p in res.scalars().all()}
+
     for pid, total_qty in qty_by_prod.items():
-        stmt = select(Product).where(Product.id == pid).options(
-            selectinload(Product.recipes).selectinload(Recipe.ingredient)
-        )
-        res = await db.execute(stmt)
-        prod = res.scalar_one_or_none()
+        prod = prods_map.get(pid)
         if not prod or not prod.recipes:
             continue
 
@@ -227,10 +230,14 @@ async def create_new_order(payload: CreateOrderRequest, db: AsyncSession = Depen
     db.add(order)
     await db.flush()
 
+    p_ids = list({it.product_id for it in payload.items})
+    p_stmt = select(Product).where(Product.id.in_(p_ids))
+    p_res = await db.execute(p_stmt)
+    prods_map = {p.id: p for p in p_res.scalars().all()}
+
     subtotal = 0.0
     for it in payload.items:
-        p_res = await db.execute(select(Product).where(Product.id == it.product_id))
-        prod = p_res.scalar_one_or_none()
+        prod = prods_map.get(it.product_id)
         p_name = prod.name if prod else "Ürün"
         station = prod.station if prod else "kitchen"
 
@@ -322,10 +329,14 @@ async def add_items_to_order(order_id: int, payload: AddItemsRequest, db: AsyncS
     # Reçete (BOM) hammadde stok kontrolü
     await validate_bom_stock_for_items(db, payload.items)
 
+    p_ids = list({it.product_id for it in payload.items})
+    p_stmt = select(Product).where(Product.id.in_(p_ids))
+    p_res = await db.execute(p_stmt)
+    prods_map = {p.id: p for p in p_res.scalars().all()}
+
     added_amount = 0.0
     for it in payload.items:
-        p_res = await db.execute(select(Product).where(Product.id == it.product_id))
-        prod = p_res.scalar_one_or_none()
+        prod = prods_map.get(it.product_id)
         p_name = prod.name if prod else "Ürün"
         station = prod.station if prod else "kitchen"
 

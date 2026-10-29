@@ -644,12 +644,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     setLoading(true);
     try {
       if (activeOrderId) {
-        await api.addItemsToOrder(activeOrderId, unsavedItems, currentUser?.name || 'MEHMETABİ');
+        const promises: Promise<any>[] = [
+          api.addItemsToOrder(activeOrderId, unsavedItems, currentUser?.name || 'MEHMETABİ')
+        ];
         if (orderNote) {
-          await api.updateOrderNotes(activeOrderId, orderNote);
+          promises.push(api.updateOrderNotes(activeOrderId, orderNote));
         }
-        sound.kitchenBell();
-        await loadOrder(activeOrderId);
+        await Promise.all(promises);
       } else {
         const payload = {
           table_id: activeTable?.id || null,
@@ -659,14 +660,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           notes: orderNote || null,
           kuver_count: 0
         };
-        const res = await api.createOrder(payload);
-        sound.kitchenBell();
-        if (res.order_id) {
-          await loadOrder(res.order_id);
-        }
+        await api.createOrder(payload);
       }
-      onRefreshData();
+      sound.kitchenBell();
       onBackToTables();
+      onRefreshData();
     } catch (err: any) {
       showToast(err.message || 'Sipariş kaydedilemedi.', 'error');
       sound.warning();
