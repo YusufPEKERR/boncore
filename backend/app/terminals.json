@@ -20,17 +20,17 @@
       "Microsoft Print to PDF",
       "OneNote (Desktop)"
     ],
-    "last_seen": 1793395469.5380476,
+    "last_seen": 1793396562.9865973,
     "is_default": false,
     "admin_override": false
   },
   "kasa_3fc3a1": {
     "id": "kasa_3fc3a1",
     "alias_ids": [
+      "kasa_a81012",
       "kasa_774d47",
-      "kasa_691876",
       "kasa_3fc3a1",
-      "kasa_a81012"
+      "kasa_691876"
     ],
     "name": "Kasa 1",
     "custom_name": "Kasa",
@@ -57,10 +57,10 @@
   "kasa_088aad": {
     "id": "kasa_088aad",
     "alias_ids": [
+      "kasa_95d6a2",
       "kasa_088aad",
-      "kasa_0fbff8",
       "kasa_6df57d",
-      "kasa_95d6a2"
+      "kasa_0fbff8"
     ],
     "name": "Kasap",
     "custom_name": "Kasap",
@@ -81,7 +81,7 @@
       "Microsoft XPS Document Writer",
       "OneNote for Windows 10"
     ],
-    "last_seen": 1793395466.2376485,
+    "last_seen": 1793396561.5546052,
     "is_default": true,
     "admin_override": false
   }

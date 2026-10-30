@@ -1,7 +1,44 @@
 import { Area, Category, Product, Order, StaffUser, Ingredient, ProductRecipe, Courier, DeliveryOrder, AuditLog } from '../types';
-import { offlineDb, saveAreasToOfflineCache, saveCategoriesToOfflineCache, queueOfflineOrder, queueOfflinePayment } from './offlineDb';
+import { offlineDb, saveAreasToOfflineCache, saveCategoriesToOfflineCache, clearOfflineCache, queueOfflineOrder, queueOfflinePayment } from './offlineDb';
 
 const API_BASE = '/api';
+
+// =========================================================================
+// Global Multi-Tenant Fetch Interceptor
+// Automatically attaches 'Authorization' and 'X-Restaurant-Code' to ALL API requests
+// so that areas, tables, products, orders, settings never bleed across restaurants!
+// =========================================================================
+if (typeof window !== 'undefined' && window.fetch) {
+  const originalFetch = window.fetch;
+  window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    const urlStr = typeof input === 'string' 
+      ? input 
+      : input instanceof URL 
+        ? input.toString() 
+        : (input as Request).url;
+
+    if (urlStr.includes('/api/')) {
+      const customInit: RequestInit = init ? { ...init } : {};
+      const headers = new Headers(customInit.headers || {});
+
+      try {
+        const token = localStorage.getItem('boncore_token');
+        if (token && !headers.has('Authorization')) {
+          headers.set('Authorization', `Bearer ${token}`);
+        }
+        const rCode = localStorage.getItem('boncore_restaurant_code');
+        if (rCode && !headers.has('X-Restaurant-Code')) {
+          headers.set('X-Restaurant-Code', rCode);
+        }
+      } catch {}
+
+      customInit.headers = headers;
+      return originalFetch.call(this, input, customInit);
+    }
+
+    return originalFetch.call(this, input, init);
+  };
+}
 
 export function getAuthHeaders(includeJson: boolean = true): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -40,16 +77,22 @@ export const api = {
     if (data.restaurant?.code) {
       localStorage.setItem('boncore_restaurant_code', data.restaurant.code);
       localStorage.setItem('boncore_active_restaurant_name', data.restaurant.name);
+      try {
+        document.cookie = `boncore_restaurant_code=${data.restaurant.code}; path=/; max-age=604800; SameSite=Lax`;
+        await clearOfflineCache();
+      } catch {}
     }
     return data;
   },
 
-  logout() {
+  async logout() {
     try {
       localStorage.removeItem('boncore_token');
       localStorage.removeItem('boncore_restaurant_code');
       localStorage.removeItem('boncore_active_restaurant_name');
       localStorage.removeItem('boncore_current_user');
+      document.cookie = 'boncore_restaurant_code=; path=/; max-age=0; SameSite=Lax';
+      await clearOfflineCache();
     } catch {}
   },
 

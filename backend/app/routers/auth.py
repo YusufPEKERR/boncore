@@ -4,7 +4,7 @@ from collections import defaultdict, deque
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -76,7 +76,7 @@ def _serialize_user(u: StaffUser, include_pin: bool = True) -> dict:
 
 
 @router.post("/login")
-async def login(payload: LoginRequest, request: Request, master_db: AsyncSession = Depends(get_master_db)):
+async def login(payload: LoginRequest, request: Request, response: Response, master_db: AsyncSession = Depends(get_master_db)):
     """
     Restoran kullanıcı adı + personel şifresi/PIN kodu ile giriş.
     Restoran kullanıcı adı işletmeyi seçer, girilen şifre veya PIN ise o restorandaki
@@ -220,6 +220,14 @@ async def login(payload: LoginRequest, request: Request, master_db: AsyncSession
             "status": target_tenant.status
         }
     }
+
+    response.set_cookie(
+        key="boncore_restaurant_code",
+        value=target_tenant.code,
+        path="/",
+        max_age=7 * 24 * 3600,
+        samesite="lax"
+    )
 
     return resp_payload
 

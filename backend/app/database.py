@@ -109,7 +109,12 @@ def resolve_tenant_code_from_request(request: Optional[Request]) -> str:
         except Exception:
             pass
 
-    # 3. Query Parameter
+    # 3. Cookie (Tarayıcı tarafından her isteğe otomatik eklenir)
+    cookie_code = request.cookies.get("boncore_restaurant_code") or request.cookies.get("restaurant_code")
+    if cookie_code:
+        return clean_tenant_code(cookie_code)
+
+    # 4. Query Parameter
     q_code = (
         request.query_params.get("restaurant") or 
         request.query_params.get("restaurant_code") or 

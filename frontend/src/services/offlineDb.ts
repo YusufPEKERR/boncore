@@ -41,6 +41,15 @@ class BonCoreOfflineDB extends Dexie {
 
 export const offlineDb = new BonCoreOfflineDB();
 
+export async function clearOfflineCache() {
+  try {
+    await offlineDb.cachedAreas.clear();
+    await offlineDb.cachedCategories.clear();
+  } catch (e) {
+    console.warn('Failed to clear offline cache', e);
+  }
+}
+
 export async function saveAreasToOfflineCache(areas: Area[]) {
   try {
     await offlineDb.cachedAreas.clear();

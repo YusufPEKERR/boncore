@@ -386,6 +386,12 @@ export const App: React.FC = () => {
     if (token) {
       localStorage.setItem('boncore_token', token);
     }
+    if (restaurant && restaurant.code) {
+      localStorage.setItem('boncore_restaurant_code', restaurant.code);
+      try {
+        document.cookie = `boncore_restaurant_code=${restaurant.code}; path=/; max-age=604800; SameSite=Lax`;
+      } catch {}
+    }
     if (restaurant && restaurant.name) {
       setRestaurantTitle(restaurant.name);
       try {
