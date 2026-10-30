@@ -161,9 +161,7 @@ async def login(payload: LoginRequest, request: Request, response: Response, mas
                             # Bu restoranda aranan kullanıcı bulundu!
                             pwd_ok = (
                                 verify_password(clean_pwd, u.password_hash) or
-                                (u.pin_code and str(u.pin_code).strip() == clean_pwd) or
-                                (clean_pwd in ("1234", "123456") and u.role == "manager") or
-                                (clean_pwd in ("1234", "123456") and u.pin_code in ("1234", "123456", "2001", "2002", "2003", "2004"))
+                                (u.pin_code and str(u.pin_code).strip() == clean_pwd)
                             )
                             if pwd_ok:
                                 matched_user = u
@@ -201,9 +199,7 @@ async def login(payload: LoginRequest, request: Request, response: Response, mas
             for u in tenant_users:
                 pwd_ok = (
                     verify_password(clean_pwd, u.password_hash) or
-                    (u.pin_code and str(u.pin_code).strip() == clean_pwd) or
-                    (clean_pwd in ("1234", "123456") and u.role == "manager") or
-                    (clean_pwd in ("1234", "123456") and u.pin_code in ("1234", "123456", "2001", "2002", "2003", "2004"))
+                    (u.pin_code and str(u.pin_code).strip() == clean_pwd)
                 )
                 if pwd_ok:
                     matched_user = u
