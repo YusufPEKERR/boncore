@@ -1,5 +1,11 @@
 {
   "server_url": "http://77.67.29.77",
+  "restaurant_code": "moda-meyhane",
+  "terminal_id": "kasa-1",
+  "terminal_name": "Kasa 1",
   "scale_default_ip": "192.168.1.150",
-  "scale_default_port": 2004
+  "scale_default_port": 2004,
+  "auto_start": true,
+  "minimize_to_tray": true,
+  "show_notifications": true
 }

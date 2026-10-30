@@ -76,7 +76,7 @@ def _load_reg_settings() -> dict:
     data = {}
     try:
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, SETTINGS_REG_KEY, 0, winreg.KEY_READ)
-        for field in ["server_url", "terminal_id", "terminal_name", "scale_default_ip", "scale_default_port", "user_customized"]:
+        for field in ["server_url", "terminal_id", "terminal_name", "scale_default_ip", "scale_default_port", "user_customized", "restaurant_code"]:
             try:
                 val, _ = winreg.QueryValueEx(key, field)
                 if field == "scale_default_port":
@@ -95,7 +95,7 @@ def _load_reg_settings() -> dict:
 def _save_reg_settings(cfg: dict):
     try:
         key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, SETTINGS_REG_KEY)
-        for field in ["server_url", "terminal_id", "terminal_name", "scale_default_ip", "scale_default_port", "user_customized"]:
+        for field in ["server_url", "terminal_id", "terminal_name", "scale_default_ip", "scale_default_port", "user_customized", "restaurant_code"]:
             if field in cfg and cfg[field] is not None:
                 winreg.SetValueEx(key, field, 0, winreg.REG_SZ, str(cfg[field]))
         winreg.CloseKey(key)
@@ -104,11 +104,15 @@ def _save_reg_settings(cfg: dict):
 
 def load_config():
     cfg = DEFAULT_CONFIG.copy()
+    local_rc = None
     # 1. Önce .exe yanındaki config.json dosyasını oku (ZIP'ten ilk çıktığında)
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                cfg.update(json.load(f))
+                cf = json.load(f)
+                cfg.update(cf)
+                if cf.get("restaurant_code"):
+                    local_rc = cf.get("restaurant_code")
         except Exception:
             pass
 
@@ -125,6 +129,10 @@ def load_config():
     reg_cfg = _load_reg_settings()
     if reg_cfg:
         cfg.update(reg_cfg)
+
+    # ZIP paketinden gelen özel restoran kodu varsa önceliklendir
+    if local_rc:
+        cfg["restaurant_code"] = local_rc
 
     # 4. Sabit (Deterministik) Terminal ID ata
     det_id = _get_deterministic_terminal_id()
@@ -699,6 +707,12 @@ class BonCoreHardwareDesktopApp:
                 self.cfg["server_url"] = new_url
                 changed = True
 
+            if hasattr(self, "ent_restaurant_code"):
+                new_rc = self.ent_restaurant_code.get().strip().lower()
+                if new_rc and new_rc != self.cfg.get("restaurant_code"):
+                    self.cfg["restaurant_code"] = new_rc
+                    changed = True
+
             new_name = self.ent_terminal_name.get().strip()
             if new_name and new_name != self.cfg.get("terminal_name"):
                 self.cfg["terminal_name"] = new_name
@@ -840,6 +854,19 @@ class BonCoreHardwareDesktopApp:
         btn_save_url = tk.Button(f_srv, text="Kaydet", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#0284c7", activebackground="#0369a1", relief="flat", padx=8, command=self.save_server_url)
         btn_save_url.grid(row=0, column=2)
         f_srv.columnconfigure(1, weight=1)
+
+        # Restoran Kodu Ayarı
+        f_rc = tk.Frame(card_server, bg="#1e293b")
+        f_rc.pack(fill="x", pady=(8, 0))
+
+        tk.Label(f_rc, text="Restoran Kodu:", font=("Segoe UI", 9), fg="#94a3b8", bg="#1e293b").grid(row=0, column=0, sticky="w")
+        self.ent_restaurant_code = tk.Entry(f_rc, font=("Segoe UI", 9, "bold"), fg="#10b981", bg="#0f172a", relief="flat", insertbackground="white")
+        self.ent_restaurant_code.insert(0, self.cfg.get("restaurant_code", "boncore-kadikoy"))
+        self.ent_restaurant_code.grid(row=0, column=1, sticky="ew", padx=8)
+
+        btn_save_rc = tk.Button(f_rc, text="Restoranı Seç", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#059669", activebackground="#047857", relief="flat", padx=8, command=self.save_restaurant_code)
+        btn_save_rc.grid(row=0, column=2)
+        f_rc.columnconfigure(1, weight=1)
 
         # Kasa İsmi Ayarı
         f_kasa = tk.Frame(card_server, bg="#1e293b")
@@ -1006,7 +1033,7 @@ class BonCoreHardwareDesktopApp:
         btn_exit.pack(side="right")
 
         # Kutulardan çıkıldığında veya Enter'a basıldığında otomatik kaydet (Butona basmayı unutsa bile sıfırlanmasın)
-        for ent in [self.ent_server_url, self.ent_terminal_name, self.ent_scale_ip, self.ent_scale_port]:
+        for ent in [self.ent_server_url, self.ent_restaurant_code, self.ent_terminal_name, self.ent_scale_ip, self.ent_scale_port]:
             ent.bind("<FocusOut>", lambda e: self.sync_entries_to_config(user_action=True))
             ent.bind("<Return>", lambda e: self.sync_entries_to_config(user_action=True))
 
@@ -1018,6 +1045,15 @@ class BonCoreHardwareDesktopApp:
             save_config(self.cfg)
             threading.Thread(target=self._push_immediate_heartbeat, daemon=True).start()
             messagebox.showinfo("Başarılı", "Sunucu adresi kalıcı olarak kaydedildi.")
+
+    def save_restaurant_code(self):
+        new_rc = self.ent_restaurant_code.get().strip().lower()
+        if new_rc:
+            self.cfg["restaurant_code"] = new_rc
+            self.cfg["user_customized"] = True
+            save_config(self.cfg)
+            threading.Thread(target=self._push_immediate_heartbeat, daemon=True).start()
+            messagebox.showinfo("Başarılı", f"Restoran kodu kalıcı olarak kaydedildi: {new_rc}\nArtık bu restoranın terazileri ve kasaları ile eşleşecek.")
 
     def save_terminal_name(self):
         new_name = self.ent_terminal_name.get().strip()

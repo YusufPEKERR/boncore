@@ -1182,7 +1182,14 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 w-full md:w-auto">
+                <div className="flex items-center gap-2 w-full md:w-auto flex-wrap sm:flex-nowrap">
+                  <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300">
+                    <span className="text-slate-400">İşletme:</span>
+                    <span className="font-mono text-emerald-600 dark:text-emerald-400 font-extrabold">
+                      {localStorage.getItem('boncore_restaurant_code') || 'boncore-kadikoy'}
+                    </span>
+                  </div>
+
                   <button
                     type="button"
                     onClick={async () => {
@@ -1196,8 +1203,8 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                   </button>
 
                   <a
-                    href="/api/scale/download-agent"
-                    download="boncore-hardware-agent.zip"
+                    href={`/api/scale/download-agent?restaurant_code=${encodeURIComponent(localStorage.getItem('boncore_restaurant_code') || '')}`}
+                    download={`boncore-hardware-agent-${localStorage.getItem('boncore_restaurant_code') || 'pos'}.zip`}
                     className="px-4 py-2 rounded-xl bg-[#338d35] hover:bg-[#28702a] active:scale-95 text-white font-black text-xs shadow-md shadow-brand-600/30 transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                   >
                     <Download className="w-4 h-4" />
@@ -1460,7 +1467,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white w-full sm:w-48"
                     />
                     <a
-                      href={`/api/scale/download-agent?terminal_name=${encodeURIComponent(newTerminalName)}`}
+                      href={`/api/scale/download-agent?terminal_name=${encodeURIComponent(newTerminalName)}&restaurant_code=${encodeURIComponent(localStorage.getItem('boncore_restaurant_code') || '')}`}
                       download={`boncore-hardware-agent-${newTerminalName}.zip`}
                       className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-black text-xs shadow-md shadow-purple-600/30 transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer"
                     >
