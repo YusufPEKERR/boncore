@@ -633,7 +633,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </section>
 
         {/* ================= COLUMN 2: TOPLAM & NUMPAD (Center: 5 cols) ================= */}
-        <section className="md:col-span-5 bg-white rounded-2xl border border-gray-200 shadow-xs p-4 sm:p-5 flex flex-col justify-between">
+        <section className="md:col-span-5 bg-white rounded-2xl border border-gray-200 shadow-xs p-4 flex flex-col justify-between">
           {/* Top Header: TOPLAM & Tahsilat Geçmişi & Total Amount */}
           <div className="space-y-3">
             <div className="flex items-center justify-between pb-2.5 border-b border-gray-100">
@@ -678,8 +678,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             </div>
 
-            {/* Ödenecek Tutar Giriş ve Gösterge Alanı (Açık ve Koyu Tema Uyumlu) */}
-            <div className="bg-slate-50 dark:bg-slate-900/90 text-slate-800 dark:text-slate-100 rounded-2xl p-3.5 shadow-xs border border-slate-200/90 dark:border-slate-800 space-y-2.5 transition-colors">
+            {/* Ödenecek Tutar Giriş ve Gösterge Alanı + Bitişik Hızlı Banknot Butonları */}
+            <div className="bg-slate-50 dark:bg-slate-900/90 text-slate-800 dark:text-slate-100 rounded-2xl p-3 shadow-xs border border-slate-200/90 dark:border-slate-800 space-y-2 transition-colors">
               <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 font-semibold">
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -691,7 +691,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     onClick={() => {
                       sound.beep();
                       setPayAmount('0.00');
-                                          }}
+                    }}
                     className="text-[11px] px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-medium transition cursor-pointer shadow-2xs"
                     title="Tutarı sıfırla"
                   >
@@ -703,7 +703,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       sound.beep();
                       setSelectedItemIds([]);
                       setPayAmount(order.remaining_total.toFixed(2));
-                                          }}
+                    }}
                     className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold transition cursor-pointer shadow-xs"
                     title="Kalan borcun tamamını yaz"
                   >
@@ -713,7 +713,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
 
               {/* Klavyeden doğrudan yazılabilen İnteraktif Giriş Kutusu */}
-              <div className="relative flex items-center bg-white dark:bg-slate-950 rounded-xl px-3.5 py-2 border-2 border-slate-200 dark:border-slate-700/80 focus-within:border-emerald-500 dark:focus-within:border-emerald-500 focus-within:ring-3 focus-within:ring-emerald-500/20 shadow-inner transition">
+              <div className="relative flex items-center bg-white dark:bg-slate-950 rounded-xl px-3.5 py-1.5 border-2 border-slate-200 dark:border-slate-700/80 focus-within:border-emerald-500 dark:focus-within:border-emerald-500 focus-within:ring-3 focus-within:ring-emerald-500/20 shadow-inner transition">
                 <span className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 mr-2 select-none">₺</span>
                 <input
                   id="checkout-pay-input"
@@ -724,7 +724,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     const val = e.target.value.replace(/[^0-9.]/g, '');
                     const rem = order?.remaining_total || 0;
                     const num = parseFloat(val);
-                    // KULLANICI KURALI: Girilen sayı kalan borçtan büyükse ödenecek tutarı 0 yap!
                     if (!isNaN(num) && num > rem) {
                       sound.warning();
                       setPayAmount('0.00');
@@ -749,7 +748,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 />
               </div>
 
-              {/* Akıllı Durum Rozeti: Açık ve Koyu Tema ile Uyumlu */}
+              {/* Akıllı Durum Rozeti */}
               {(() => {
                 const numPay = parseFloat(payAmount) || 0;
                 const rem = order.remaining_total || 0;
@@ -761,7 +760,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 if (numPay <= 0) {
                   return (
-                    <div className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/80 rounded-lg px-2.5 py-1.5 text-center font-bold flex items-center justify-center gap-1.5">
+                    <div className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/80 rounded-lg px-2.5 py-1 text-center font-bold flex items-center justify-center gap-1.5">
                       <span>⚠️ Lütfen ödenecek bir tutar giriniz.</span>
                     </div>
                   );
@@ -769,7 +768,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 if (diff < -0.05) {
                   return (
-                    <div className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800/80 rounded-lg px-2.5 py-1.5 text-center font-bold flex items-center justify-between">
+                    <div className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800/80 rounded-lg px-2.5 py-1 text-center font-bold flex items-center justify-between">
                       <span className="font-bold">⚠️ Kısmi Ödeme (Masa Açık Kalır)</span>
                       <span className="font-mono font-black">Kalan Borç: ₺{Math.abs(diff).toFixed(2)}</span>
                     </div>
@@ -778,7 +777,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 if (Math.abs(diff) <= 0.05) {
                   return (
-                    <div className="text-[11px] text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-700/80 rounded-lg px-2.5 py-1.5 text-center font-bold flex items-center justify-center gap-1.5">
+                    <div className="text-[11px] text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-700/80 rounded-lg px-2.5 py-1 text-center font-bold flex items-center justify-center gap-1.5">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                       <span>Tam Ödeme: Bu işlemle masa hesabı tamamen kapanacaktır.</span>
                     </div>
@@ -786,39 +785,39 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 }
 
                 return (
-                  <div className="text-[11px] text-cyan-800 dark:text-cyan-200 bg-cyan-50 dark:bg-cyan-950/50 border border-cyan-300 dark:border-cyan-700/80 rounded-lg px-2.5 py-1.5 text-center font-bold flex items-center justify-between">
+                  <div className="text-[11px] text-cyan-800 dark:text-cyan-200 bg-cyan-50 dark:bg-cyan-950/50 border border-cyan-300 dark:border-cyan-700/80 rounded-lg px-2.5 py-1 text-center font-bold flex items-center justify-between">
                     <span className="font-bold">💵 Para Üstü Verilecek:</span>
                     <span className="font-mono text-sm text-cyan-700 dark:text-cyan-300 font-black">₺{diff.toFixed(2)}</span>
                   </div>
                 );
               })()}
-            </div>
 
-            {/* Hızlı Tutar ve Banknot Butonları */}
-            <div className="grid grid-cols-5 gap-1.5 text-xs font-bold">
-              {[
-                { label: '₺50', val: 50 },
-                { label: '₺100', val: 100 },
-                { label: '₺200', val: 200 },
-                { label: '1/2', fn: () => (order.remaining_total / 2).toFixed(2) },
-                { label: 'Kalan', fn: () => order.remaining_total.toFixed(2) }
-              ].map((btn, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => {
-                    sound.beep();
-                    if (btn.fn) {
-                      setPayAmount(btn.fn());
-                    } else if (btn.val) {
-                      setPayAmount(btn.val.toFixed(2));
-                    }
-                  }}
-                  className="py-1.5 px-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-100 border border-gray-200 dark:border-slate-700 transition active:scale-95 text-center cursor-pointer font-mono text-[11px] font-extrabold shadow-2xs"
-                >
-                  {btn.label}
-                </button>
-              ))}
+              {/* Hızlı Tutar ve Banknot Butonları: Boşluksuz alta yapışık */}
+              <div className="grid grid-cols-5 gap-1.5 pt-1.5 border-t border-slate-200/80 dark:border-slate-800/80 text-xs font-bold">
+                {[
+                  { label: '₺50', val: 50 },
+                  { label: '₺100', val: 100 },
+                  { label: '₺200', val: 200 },
+                  { label: '1/2', fn: () => (order.remaining_total / 2).toFixed(2) },
+                  { label: 'Kalan', fn: () => order.remaining_total.toFixed(2) }
+                ].map((btn, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      sound.beep();
+                      if (btn.fn) {
+                        setPayAmount(btn.fn());
+                      } else if (btn.val) {
+                        setPayAmount(btn.val.toFixed(2));
+                      }
+                    }}
+                    className="py-1.5 px-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-100 border border-gray-200 dark:border-slate-700 transition active:scale-95 text-center cursor-pointer font-mono text-[11px] font-extrabold shadow-2xs"
+                  >
+                    {btn.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
