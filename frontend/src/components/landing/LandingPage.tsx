@@ -42,7 +42,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-emerald-500 selection:text-white relative">
+    <div className="min-h-screen w-full overflow-y-auto overflow-x-hidden scroll-smooth bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-emerald-500 selection:text-white relative">
       
       {/* Sticky Modern Navbar with "Giriş Yap" button */}
       <LandingNavbar

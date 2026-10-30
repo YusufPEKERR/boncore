@@ -28,9 +28,10 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({
 
   useEffect(() => {
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 20);
+      const scrollPos = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop;
+      setIsScrolled(scrollPos > 20);
     };
-    window.addEventListener('scroll', handleScroll);
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
