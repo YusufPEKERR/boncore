@@ -108,6 +108,27 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         {"id": "open_account", "name": "Açık Hesap / Veresiye", "icon": "📋", "desc": "Cari müşteri borçlandırma", "is_active": True}
     ],
     "kitchen_groups": DEFAULT_KITCHEN_GROUPS,
+    "receipt_design": {
+        "header_title": "BONCORE RESTORAN",
+        "header_sub": "Lezzet & Keyif Noktası",
+        "show_logo": True,
+        "paper_width": "80mm",
+        "font_size": "medium",
+        "show_order_no": True,
+        "show_table_name": True,
+        "show_waiter_name": True,
+        "show_date_time": True,
+        "show_vat_breakdown": True,
+        "show_payment_details": True,
+        "show_qr_code": True,
+        "show_address_phone": True,
+        "footer_message": "TEŞEKKÜR EDERİZ • AFİYET OLSUN!",
+        "footer_sub": "Mali değeri yoktur, bilgi fişidir.",
+        "wifi_name": "BonCore_Misafir",
+        "wifi_password": "afiyetolsun",
+        "instagram": "@boncore_restoran",
+        "custom_note": ""
+    },
 }
 
 @router.get("/")

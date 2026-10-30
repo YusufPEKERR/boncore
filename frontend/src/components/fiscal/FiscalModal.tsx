@@ -69,39 +69,72 @@ export const printThermalReceipt = async (doc: any) => {
       )
       .join('');
 
+    let design: any = doc.receipt_design;
+    if (!design) {
+      try {
+        const cached = localStorage.getItem('boncore_receipt_design');
+        if (cached) design = JSON.parse(cached);
+      } catch (e) {}
+    }
+    const paperWidth = design?.paper_width === '58mm' ? '58mm' : '80mm';
+    const bodyWidth = design?.paper_width === '58mm' ? '52mm' : '74mm';
+    const fontSize = design?.font_size === 'small' ? '10px' : design?.font_size === 'large' ? '13px' : '11px';
+    const headerTitle = design?.header_title || doc.company_title || 'BONCORE RESTORAN';
+    const headerSub = design?.header_sub ? `<div class="center" style="font-size:10px;margin-bottom:2px;">${design.header_sub}</div>` : '';
+    const footerMsg = design?.footer_message || 'TEŞEKKÜR EDERİZ • AFİYET OLSUN!';
+    const footerSub = design?.footer_sub ? `<div class="center" style="font-size:9px;color:#555;margin-top:2px;">${design.footer_sub}</div>` : '';
+    const wifiInfo = design?.wifi_name ? `<div class="center" style="font-size:9px;margin-top:3px;border-top:1px dashed #777;padding-top:2px;">📶 Wi-Fi: <b>${design.wifi_name}</b> ${design.wifi_password ? `(Şifre: <b>${design.wifi_password}</b>)` : ''}</div>` : '';
+    const instagramInfo = design?.instagram ? `<div class="center" style="font-size:9px;">📷 Instagram: <b>${design.instagram}</b></div>` : '';
+    const customNote = design?.custom_note ? `<div class="center" style="font-size:9px;font-style:italic;margin-top:2px;">${design.custom_note}</div>` : '';
+
     const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
   <title>Adisyo Fişi - ${doc.doc_no || ''}</title>
   <style>
-    @page { size: 80mm auto; margin: 3mm; }
+    @page { size: ${paperWidth} auto; margin: 3mm; }
     body {
       font-family: 'Courier New', Courier, monospace;
-      width: 74mm;
+      width: ${bodyWidth};
       margin: 0 auto;
       padding: 4px;
       color: #000;
-      font-size: 11px;
+      font-size: ${fontSize};
       line-height: 1.35;
     }
     .center { text-align: center; }
     .bold { font-weight: 700; }
     .divider { border-top: 1px dashed #000; margin: 6px 0; }
     .double-divider { border-top: 2px solid #000; margin: 6px 0; }
-    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    table { width: 100%; border-collapse: collapse; font-size: ${fontSize}; }
     th { border-bottom: 1px solid #000; padding-bottom: 3px; text-align: left; font-size: 10px; }
     .row { display: flex; justify-content: space-between; margin: 2px 0; }
   </style>
 </head>
 <body>
-  <div class="center bold" style="font-size:14px;">${doc.company_title || 'BONCORE RESTORAN'}</div>
+  ${design?.show_logo !== false ? '<div class="center" style="margin-bottom:4px;"><img src="/logo.png" style="max-height:36px;filter:grayscale(100%);" alt="Logo" onerror="this.style.display=\'none\'" /></div>' : ''}
+  <div class="center bold" style="font-size:14px;">${headerTitle}</div>
+  ${headerSub}
+  ${design?.show_address_phone !== false && doc.address ? `<div class="center" style="font-size:9px;">${doc.address}</div>` : ''}
   <div class="center" style="font-size:10px;">VKN: ${doc.vkn || '1234567890'} • E-ADİSYON FİŞİ</div>
-  <div class="center" style="font-size:10px;">Belge No: ${doc.doc_no || '-'}</div>
+  ${design?.show_order_no !== false ? `<div class="center" style="font-size:10px;">Belge No: ${doc.doc_no || '-'}</div>` : ''}
   <div class="double-divider"></div>
-  <div class="row"><span><b>Masa:</b> ${doc.table_name || 'Hızlı Satış'}</span><span><b>Tarih:</b> ${doc.date || ''}</span></div>
-  <div class="row"><span><b>Garson:</b> ${doc.waiter_name || '-'}</span><span><b>Saat:</b> ${doc.time || ''}</span></div>
-  <div class="row"><span><b>Kasiyer:</b> ${doc.cashier_name || '-'}</span><span></span></div>
+  ${design?.show_table_name !== false || design?.show_date_time !== false ? `
+  <div class="row">
+    ${design?.show_table_name !== false ? `<span><b>Masa:</b> ${doc.table_name || 'Hızlı Satış'}</span>` : '<span></span>'}
+    ${design?.show_date_time !== false ? `<span><b>Tarih:</b> ${doc.date || ''}</span>` : '<span></span>'}
+  </div>` : ''}
+  ${design?.show_waiter_name !== false || design?.show_date_time !== false ? `
+  <div class="row">
+    ${design?.show_waiter_name !== false ? `<span><b>Garson:</b> ${doc.waiter_name || '-'}</span>` : '<span></span>'}
+    ${design?.show_date_time !== false ? `<span><b>Saat:</b> ${doc.time || ''}</span>` : '<span></span>'}
+  </div>` : ''}
+  ${design?.show_waiter_name !== false && doc.cashier_name ? `
+  <div class="row">
+    <span><b>Kasiyer:</b> ${doc.cashier_name}</span>
+    <span></span>
+  </div>` : ''}
   <div class="divider"></div>
   <table>
     <thead>
@@ -122,16 +155,20 @@ export const printThermalReceipt = async (doc: any) => {
   ${doc.service_charge > 0 ? `<div class="row"><span>Servis Bedeli:</span><b>₺${Number(doc.service_charge).toFixed(2)}</b></div>` : ''}
   ${doc.discount > 0 ? `<div class="row"><span>İndirim:</span><b>-₺${Number(doc.discount).toFixed(2)}</b></div>` : ''}
   ${doc.treat > 0 ? `<div class="row"><span>İkram:</span><b>-₺${Number(doc.treat).toFixed(2)}</b></div>` : ''}
-  <div class="row"><span>KDV (%10 Dahil):</span><span>₺${Number(doc.vat_summary?.vat_10?.tax || 0).toFixed(2)}</span></div>
+  ${design?.show_vat_breakdown !== false ? `<div class="row"><span>KDV (%10 Dahil):</span><span>₺${Number(doc.vat_summary?.vat_10?.tax || 0).toFixed(2)}</span></div>` : ''}
   <div class="double-divider"></div>
   <div class="row" style="font-size:14px;font-weight:900;">
     <span>GENEL TOPLAM:</span>
     <span>₺${Number(doc.grand_total || 0).toFixed(2)}</span>
   </div>
-  ${paymentsRows ? `<div class="divider"></div>${paymentsRows}` : ''}
+  ${design?.show_payment_details !== false && paymentsRows ? `<div class="divider"></div>${paymentsRows}` : ''}
+  ${wifiInfo}
+  ${instagramInfo}
+  ${customNote}
   <div class="double-divider"></div>
-  <div class="center" style="font-size:9px;word-break:break-all;">ETTN: ${doc.ettn || ''}</div>
-  <div class="center bold" style="font-size:10px;margin-top:4px;">TEŞEKKÜR EDERİZ • AFİYET OLSUN!</div>
+  ${design?.show_qr_code !== false ? `<div class="center" style="font-size:9px;word-break:break-all;">ETTN: ${doc.ettn || ''}</div>` : ''}
+  <div class="center bold" style="font-size:10px;margin-top:4px;">${footerMsg}</div>
+  ${footerSub}
 </body>
 </html>`;
 

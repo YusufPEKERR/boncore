@@ -10,6 +10,7 @@ import { sound } from '../../services/sound';
 import { api } from '../../services/api';
 import { localHardware } from '../../services/localHardware';
 import { PaymentMethodConfig } from '../../types';
+import { ReceiptDesignSettings, ReceiptDesignConfig, defaultReceiptDesign } from './ReceiptDesignSettings';
 
 export const defaultPaymentMethods: PaymentMethodConfig[] = [
   { id: 'cash', name: 'Nakit Türk Lirası (TRY)', icon: '💵', desc: 'Kasada anlık nakit tahsilat', is_active: true },
@@ -259,6 +260,9 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [street, setStreet] = useState<string>('Moda Cad. No:84 D:4');
   const [phone, setPhone] = useState<string>('+90 216 444 37 79');
 
+  // --- 7. Fiş & Adisyon Tasarımı ---
+  const [receiptDesign, setReceiptDesign] = useState<ReceiptDesignConfig>(defaultReceiptDesign);
+
   // Load settings from backend database on mount
   useEffect(() => {
     loadSettingsFromDb();
@@ -312,6 +316,19 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
         if (data.district !== undefined) setDistrict(String(data.district));
         if (data.street !== undefined) setStreet(String(data.street));
         if (data.phone !== undefined) setPhone(String(data.phone));
+
+        if (data.receipt_design) {
+          setReceiptDesign({ ...defaultReceiptDesign, ...data.receipt_design });
+        } else {
+          const cachedDesign = localStorage.getItem('boncore_receipt_design');
+          if (cachedDesign) {
+            try {
+              setReceiptDesign({ ...defaultReceiptDesign, ...JSON.parse(cachedDesign) });
+            } catch (e) {
+              console.warn('Failed to parse cached receipt design', e);
+            }
+          }
+        }
       }
     } catch (err) {
       console.warn('Backend settings fetch error, loading from local cache:', err);
@@ -430,7 +447,8 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
       city: city,
       district: district,
       street: street,
-      phone: phone
+      phone: phone,
+      receipt_design: receiptDesign
     };
 
     // Save to LocalStorage immediately for instant sync
@@ -440,6 +458,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     localStorage.setItem('boncore_service_rate', serviceChargeRate.toString());
     localStorage.setItem('boncore_discounts', JSON.stringify(discounts));
     localStorage.setItem('boncore_payment_methods', JSON.stringify(paymentMethods));
+    localStorage.setItem('boncore_receipt_design', JSON.stringify(receiptDesign));
 
     // Save to SQLite Database
     try {
@@ -502,6 +521,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     { id: 'payments', label: 'Ödeme Tipleri' },
     { id: 'currency', label: 'Döviz Ayarları' },
     { id: 'address', label: 'Adres & Şirket Bilgileri' },
+    { id: 'receipt_design', label: '🧾 Fiş & Adisyon Tasarımı' },
     { id: 'scale', label: '⚖️ CAS Terazi (Ethernet)' },
     { id: 'mobile_apk', label: '📱 Mobil Terminal & APK' }
   ];
@@ -1108,6 +1128,23 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
               </div>
             </div>
           )}
+
+          {/* 5.5 Fiş & Adisyon Tasarımı */}
+          {activeSubTab === 'receipt_design' && (
+            <ReceiptDesignSettings
+              design={receiptDesign}
+              onChange={setReceiptDesign}
+              restaurantInfo={{
+                name: restaurantName,
+                phone: phone,
+                address: `${street} ${district} / ${city}`,
+                taxOffice: taxOffice,
+                taxNumber: taxNumber
+              }}
+              onSave={handleSave}
+            />
+          )}
+
           {/* 6. CAS CL-3000 Terazi Ayarları & Canlı Test Paneli */}
           {activeSubTab === 'scale' && (
             <div className="space-y-6 text-xs font-semibold">
