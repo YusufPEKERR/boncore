@@ -10,13 +10,33 @@ import uuid
 import zipfile
 import io
 import re
-from app.database import get_db
+from app.database import (
+    get_db, 
+    resolve_tenant_code_from_request, 
+    clean_tenant_code, 
+    DEFAULT_TENANT_CODE, 
+    _TENANTS_DIR
+)
 from app.services import scale_service
 
 router = APIRouter(prefix="/scale", tags=["Hardware & CAS Scale Integration"])
 
-# In-memory agent state & command relay queues
-TERMINALS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "terminals.json")
+# Legacy fallback file
+LEGACY_TERMINALS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "terminals.json")
+
+def get_terminals_file(tenant_code: Optional[str] = None) -> str:
+    code = clean_tenant_code(tenant_code)
+    os.makedirs(_TENANTS_DIR, exist_ok=True)
+    tenant_file = os.path.join(_TENANTS_DIR, f"{code}_terminals.json")
+    if not os.path.exists(tenant_file) and code == DEFAULT_TENANT_CODE and os.path.exists(LEGACY_TERMINALS_FILE):
+        try:
+            with open(LEGACY_TERMINALS_FILE, "r", encoding="utf-8") as rf:
+                content = rf.read()
+            with open(tenant_file, "w", encoding="utf-8") as wf:
+                wf.write(content)
+        except Exception:
+            pass
+    return tenant_file
 
 VIRTUAL_PRINTER_KEYWORDS = (
     "microsoft print to pdf",
@@ -102,34 +122,54 @@ def consolidate_terminals_by_ip(data: Dict[str, Any]) -> Dict[str, Any]:
         out[item["id"]] = item
     return out
 
-def load_terminals() -> Dict[str, Any]:
-    if os.path.exists(TERMINALS_FILE):
+def load_terminals(tenant_code: Optional[str] = None) -> Dict[str, Any]:
+    file_path = get_terminals_file(tenant_code)
+    if os.path.exists(file_path):
         try:
-            with open(TERMINALS_FILE, "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 raw = json.load(f)
             consolidated = consolidate_terminals_by_ip(raw)
             if len(consolidated) != len(raw):
-                save_terminals(consolidated)
+                save_terminals(consolidated, tenant_code)
             return consolidated
         except Exception:
             pass
     return {}
 
-def save_terminals(data: Dict[str, Any]):
+def save_terminals(data: Dict[str, Any], tenant_code: Optional[str] = None):
+    file_path = get_terminals_file(tenant_code)
     try:
-        with open(TERMINALS_FILE, "w", encoding="utf-8") as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception as e:
-        print("Error saving terminals:", e)
+        print(f"Error saving terminals for {tenant_code}:", e)
 
-AGENT_STATE = {
-    "last_seen": 0.0,
-    "local_ip": "127.0.0.1",
-    "version": "2.2.0",
-    "agent_name": "Kasa 1"
-}
-PENDING_COMMANDS: Dict[str, Any] = {}
-COMPLETED_RESULTS: Dict[str, Any] = {}
+AGENT_STATES_BY_TENANT: Dict[str, Dict[str, Any]] = {}
+PENDING_COMMANDS_BY_TENANT: Dict[str, Dict[str, Any]] = {}
+COMPLETED_RESULTS_BY_TENANT: Dict[str, Dict[str, Any]] = {}
+
+def get_tenant_agent_state(tenant_code: Optional[str] = None) -> Dict[str, Any]:
+    code = clean_tenant_code(tenant_code)
+    if code not in AGENT_STATES_BY_TENANT:
+        AGENT_STATES_BY_TENANT[code] = {
+            "last_seen": 0.0,
+            "local_ip": "127.0.0.1",
+            "version": "2.2.0",
+            "agent_name": "Kasa 1"
+        }
+    return AGENT_STATES_BY_TENANT[code]
+
+def get_tenant_pending_commands(tenant_code: Optional[str] = None) -> Dict[str, Any]:
+    code = clean_tenant_code(tenant_code)
+    if code not in PENDING_COMMANDS_BY_TENANT:
+        PENDING_COMMANDS_BY_TENANT[code] = {}
+    return PENDING_COMMANDS_BY_TENANT[code]
+
+def get_tenant_completed_results(tenant_code: Optional[str] = None) -> Dict[str, Any]:
+    code = clean_tenant_code(tenant_code)
+    if code not in COMPLETED_RESULTS_BY_TENANT:
+        COMPLETED_RESULTS_BY_TENANT[code] = {}
+    return COMPLETED_RESULTS_BY_TENANT[code]
 
 def get_public_server_url(request: Request) -> str:
     fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
@@ -150,12 +190,14 @@ class AgentHeartbeatSchema(BaseModel):
     last_weight: Optional[float] = 0.0
     printers: Optional[list] = []
     user_configured: Optional[bool] = False
+    restaurant_code: Optional[str] = None
 
 class TerminalUpdateSchema(BaseModel):
     name: Optional[str] = None
     scale_ip: Optional[str] = None
     scale_port: Optional[int] = None
     is_default: Optional[bool] = None
+    restaurant_code: Optional[str] = None
 
 class AgentReportSchema(BaseModel):
     req_id: str
@@ -173,6 +215,7 @@ class AgentReportSchema(BaseModel):
     latency_ms: Optional[float] = None
     message: Optional[str] = None
     results: Optional[list] = None
+    restaurant_code: Optional[str] = None
 
 class ScaleConfigSchema(BaseModel):
     enabled: Optional[bool] = True
@@ -182,12 +225,14 @@ class ScaleConfigSchema(BaseModel):
     port: Optional[int] = 2004
     timeout: Optional[float] = 2.5
     demo_mode: Optional[bool] = False
+    restaurant_code: Optional[str] = None
 
 class ScaleTestSchema(BaseModel):
     ip_address: str
     port: int = 2004
     timeout: float = 2.0
     terminal_id: Optional[str] = None
+    restaurant_code: Optional[str] = None
 
 @router.get("/download-agent")
 async def download_agent(
@@ -195,17 +240,19 @@ async def download_agent(
     terminal_name: Optional[str] = Query(None),
     terminal_id: Optional[str] = Query(None),
     scale_ip: Optional[str] = Query(None),
-    scale_port: Optional[int] = Query(None)
+    scale_port: Optional[int] = Query(None),
+    restaurant_code: Optional[str] = Query(None)
 ):
     """
     Downloads the BonCore Hardware Bridge Agent zip package with auto-configured server_url and Kasa name.
     """
+    tenant_code = (restaurant_code or "").strip() or resolve_tenant_code_from_request(request)
     server_base = get_public_server_url(request)
     kasa_name = (terminal_name or "Kasa 1").strip()
     kasa_id = (terminal_id or f"kasa_{uuid.uuid4().hex[:6]}").strip()
 
     if not scale_ip or not scale_port:
-        terminals = load_terminals()
+        terminals = load_terminals(tenant_code)
         if kasa_id in terminals:
             scale_ip = scale_ip or terminals[kasa_id].get("scale_ip")
             scale_port = scale_port or terminals[kasa_id].get("scale_port")
@@ -239,6 +286,7 @@ async def download_agent(
 
         config_content = json.dumps({
             "server_url": server_base,
+            "restaurant_code": tenant_code,
             "terminal_id": kasa_id,
             "terminal_name": kasa_name,
             "scale_default_ip": (scale_ip or "192.168.1.150").strip(),
@@ -261,11 +309,12 @@ async def download_agent(
     )
 
 @router.get("/terminals")
-async def get_terminals():
+async def get_terminals(request: Request):
     """
     Returns list of all registered Kasalar (Terminals) with real-time status and sorted printers.
     """
-    terminals = load_terminals()
+    tenant_code = resolve_tenant_code_from_request(request)
+    terminals = load_terminals(tenant_code)
     now = time.time()
     result = []
 
@@ -293,11 +342,12 @@ async def get_terminals():
     return {"terminals": result}
 
 @router.put("/terminals/{terminal_id}")
-async def update_terminal(terminal_id: str, payload: TerminalUpdateSchema):
+async def update_terminal(terminal_id: str, payload: TerminalUpdateSchema, request: Request):
     """
     Updates terminal name, scale IP/port, or default status from Admin panel.
     """
-    terminals = load_terminals()
+    tenant_code = (payload.restaurant_code or "").strip() or resolve_tenant_code_from_request(request)
+    terminals = load_terminals(tenant_code)
     target_key = terminal_id
     if target_key not in terminals:
         for tid, t in terminals.items():
@@ -334,28 +384,30 @@ async def update_terminal(terminal_id: str, payload: TerminalUpdateSchema):
         for tid in terminals:
             terminals[tid]["is_default"] = (tid == target_key and payload.is_default)
 
-    save_terminals(terminals)
+    save_terminals(terminals, tenant_code)
     return {"success": True, "terminal": terminals[target_key]}
 
 @router.delete("/terminals/{terminal_id}")
-async def delete_terminal(terminal_id: str):
+async def delete_terminal(terminal_id: str, request: Request):
     """
     Removes a terminal from the registry.
     """
-    terminals = load_terminals()
+    tenant_code = resolve_tenant_code_from_request(request)
+    terminals = load_terminals(tenant_code)
     if terminal_id in terminals:
         del terminals[terminal_id]
-        save_terminals(terminals)
+        save_terminals(terminals, tenant_code)
         return {"success": True, "message": "Kasa silindi."}
     return {"success": False, "message": "Kasa bulunamadı."}
 
 @router.post("/agent/heartbeat")
-async def agent_heartbeat(payload: AgentHeartbeatSchema):
+async def agent_heartbeat(payload: AgentHeartbeatSchema, request: Request):
     """
     Agent calls this every 4 seconds to announce its presence.
     Consolidates by local_ip and preserves custom Kasa Name, Scale IP, and Scale Port across restarts.
     """
-    terminals = load_terminals()
+    tenant_code = (payload.restaurant_code or "").strip() or resolve_tenant_code_from_request(request)
+    terminals = load_terminals(tenant_code)
     t_id = (payload.terminal_id or "kasa-1").strip()
     local_ip = (payload.local_ip or "127.0.0.1").strip()
     now = time.time()
@@ -445,12 +497,13 @@ async def agent_heartbeat(payload: AgentHeartbeatSchema):
         "is_default": existing.get("is_default", len(terminals) == 0),
         "admin_override": False
     }
-    save_terminals(terminals)
+    save_terminals(terminals, tenant_code)
 
-    AGENT_STATE["last_seen"] = now
-    AGENT_STATE["local_ip"] = local_ip
-    AGENT_STATE["version"] = payload.version
-    AGENT_STATE["agent_name"] = final_name
+    agent_state = get_tenant_agent_state(tenant_code)
+    agent_state["last_seen"] = now
+    agent_state["local_ip"] = local_ip
+    agent_state["version"] = payload.version
+    agent_state["agent_name"] = final_name
 
     return {
         "status": "ok",
@@ -463,12 +516,14 @@ async def agent_heartbeat(payload: AgentHeartbeatSchema):
     }
 
 @router.get("/agent/status")
-async def get_agent_status(terminal_id: Optional[str] = Query(None)):
+async def get_agent_status(request: Request, terminal_id: Optional[str] = Query(None)):
     """
     Frontend checks if any or a specific Kasa agent is actively running.
     """
-    terminals = load_terminals()
+    tenant_code = resolve_tenant_code_from_request(request)
+    terminals = load_terminals(tenant_code)
     now = time.time()
+    agent_state = get_tenant_agent_state(tenant_code)
 
     if terminal_id and terminal_id in terminals:
         t = terminals[terminal_id]
@@ -488,38 +543,45 @@ async def get_agent_status(terminal_id: Optional[str] = Query(None)):
     is_online = len(online_terms) > 0
     active_t = next((t for t in online_terms if t.get("is_default")), online_terms[0]) if online_terms else None
 
-    diff = now - AGENT_STATE["last_seen"]
+    diff = now - agent_state["last_seen"]
     return {
         "isOnline": is_online or (diff < 15.0),
         "terminalId": active_t["id"] if active_t else None,
-        "terminalName": active_t["name"] if active_t else AGENT_STATE.get("agent_name"),
-        "localIp": active_t["local_ip"] if active_t else AGENT_STATE.get("local_ip"),
-        "version": active_t["version"] if active_t else AGENT_STATE.get("version"),
+        "terminalName": active_t["name"] if active_t else agent_state.get("agent_name"),
+        "localIp": active_t["local_ip"] if active_t else agent_state.get("local_ip"),
+        "version": active_t["version"] if active_t else agent_state.get("version"),
         "activeTerminalsCount": len(online_terms),
-        "last_seen_seconds_ago": round(diff, 1) if AGENT_STATE["last_seen"] > 0 else 999
+        "last_seen_seconds_ago": round(diff, 1) if agent_state["last_seen"] > 0 else 999
     }
 
 @router.get("/agent/poll")
-async def agent_poll(terminal_id: Optional[str] = Query(None)):
+async def agent_poll(
+    request: Request,
+    terminal_id: Optional[str] = Query(None),
+    restaurant_code: Optional[str] = Query(None)
+):
     """
     Agent polls this endpoint every 1s to receive commands for its specific Kasa (matching id or alias_ids).
     """
     now = time.time()
-    terminals = load_terminals()
+    tenant_code = (restaurant_code or "").strip() or resolve_tenant_code_from_request(request)
+    terminals = load_terminals(tenant_code)
+    pending_commands = get_tenant_pending_commands(tenant_code)
+
     matched_canonical_id = terminal_id
     for tid, t in terminals.items():
         if terminal_id == tid or terminal_id in (t.get("alias_ids") or []):
             matched_canonical_id = tid
             break
 
-    for req_id, cmd in list(PENDING_COMMANDS.items()):
+    for req_id, cmd in list(pending_commands.items()):
         cmd_target = cmd.get("terminal_id")
         if cmd_target is None or cmd_target in (terminal_id, matched_canonical_id):
             if now - cmd.get("created_at", 0) < 10.0:
-                del PENDING_COMMANDS[req_id]
+                del pending_commands[req_id]
                 return {"has_command": True, "req_id": req_id, **cmd}
             else:
-                del PENDING_COMMANDS[req_id]
+                del pending_commands[req_id]
     return {"has_command": False}
 
 @router.get("/agent/version")
@@ -547,13 +609,17 @@ class RemoteProbeSchema(BaseModel):
     port: Optional[int] = 20304
     hex_payloads: Optional[list] = []
     eval_code: Optional[str] = None
+    restaurant_code: Optional[str] = None
 
 @router.post("/agent/probe")
-async def run_remote_probe(payload: RemoteProbeSchema):
+async def run_remote_probe(payload: RemoteProbeSchema, request: Request):
     """
     Dispatches a diagnostic probe or custom hex sequence to the cashier agent and returns raw results.
     """
-    terminals = load_terminals()
+    tenant_code = (payload.restaurant_code or "").strip() or resolve_tenant_code_from_request(request)
+    terminals = load_terminals(tenant_code)
+    pending_commands = get_tenant_pending_commands(tenant_code)
+    completed_results = get_tenant_completed_results(tenant_code)
     now = time.time()
     target_term = None
     if payload.terminal_id and payload.terminal_id in terminals:
@@ -567,7 +633,7 @@ async def run_remote_probe(payload: RemoteProbeSchema):
         return {"success": False, "error": "No online terminal found"}
 
     req_id = str(uuid.uuid4())
-    PENDING_COMMANDS[req_id] = {
+    pending_commands[req_id] = {
         "terminal_id": target_term["id"],
         "action": "remote_probe",
         "ip": payload.ip,
@@ -578,24 +644,26 @@ async def run_remote_probe(payload: RemoteProbeSchema):
     }
     for _ in range(60):
         await asyncio.sleep(0.1)
-        if req_id in COMPLETED_RESULTS:
-            return COMPLETED_RESULTS.pop(req_id)
+        if req_id in completed_results:
+            return completed_results.pop(req_id)
     return {"success": False, "error": "Probe timeout"}
 
 @router.post("/agent/report")
-async def agent_report(payload: AgentReportSchema):
+async def agent_report(payload: AgentReportSchema, request: Request):
     """
     Agent posts the weight, test result, or print result back to the server.
     """
+    tenant_code = (payload.restaurant_code or "").strip() or resolve_tenant_code_from_request(request)
+    completed_results = get_tenant_completed_results(tenant_code)
     data = payload.model_dump()
-    COMPLETED_RESULTS[payload.req_id] = data
+    completed_results[payload.req_id] = data
 
     try:
         with open("last_agent_report.json", "w", encoding="utf-8") as rf:
             json.dump(data, rf, ensure_ascii=False, indent=2)
     except Exception:
         pass
-    print("=== LIVE AGENT REPORT RECEIVED ===", data.get("req_id"), "success:", data.get("success"), "weight:", data.get("weight"), flush=True)
+    print(f"=== LIVE AGENT REPORT RECEIVED [{tenant_code}] ===", data.get("req_id"), "success:", data.get("success"), "weight:", data.get("weight"), flush=True)
     return {"status": "received"}
 
 @router.get("/config")
@@ -622,11 +690,14 @@ async def update_config(payload: ScaleConfigSchema, db: AsyncSession = Depends(g
     }
 
 @router.post("/test")
-async def test_connection(payload: ScaleTestSchema):
+async def test_connection(payload: ScaleTestSchema, request: Request):
     """
     Tests TCP connection directly or relays through a specific Kasa agent.
     """
-    terminals = load_terminals()
+    tenant_code = (payload.restaurant_code or "").strip() or resolve_tenant_code_from_request(request)
+    terminals = load_terminals(tenant_code)
+    pending_commands = get_tenant_pending_commands(tenant_code)
+    completed_results = get_tenant_completed_results(tenant_code)
     now = time.time()
 
     target_term = None
@@ -641,7 +712,7 @@ async def test_connection(payload: ScaleTestSchema):
 
     if target_term and (now - target_term.get("last_seen", 0)) < 15.0:
         req_id = str(uuid.uuid4())
-        PENDING_COMMANDS[req_id] = {
+        pending_commands[req_id] = {
             "terminal_id": target_term["id"],
             "action": "test_connection",
             "ip": payload.ip_address.strip(),
@@ -651,8 +722,8 @@ async def test_connection(payload: ScaleTestSchema):
         }
         for _ in range(30):
             await asyncio.sleep(0.1)
-            if req_id in COMPLETED_RESULTS:
-                res = COMPLETED_RESULTS.pop(req_id)
+            if req_id in completed_results:
+                res = completed_results.pop(req_id)
                 res["bridge"] = f"{target_term['name']} (IP: {target_term.get('local_ip', '-')})"
                 return res
 
@@ -670,6 +741,7 @@ class PrintRequestSchema(BaseModel):
     raw_text: Optional[str] = None
     doc_type: Optional[str] = "adisyon"
     document: Optional[Dict[str, Any]] = None
+    restaurant_code: Optional[str] = None
 
 def build_receipt_text(doc: Dict[str, Any]) -> str:
     company = doc.get("company_title") or "BONCORE RESTORAN"
@@ -726,12 +798,15 @@ def build_receipt_text(doc: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 @router.post("/print")
-async def print_receipt(payload: PrintRequestSchema):
+async def print_receipt(payload: PrintRequestSchema, request: Request):
     """
     Relays a receipt print job to one or multiple physical Windows thermal printers via the cashier PC agent(s).
     Supports IP-qualified printer keys like "192.168.0.120::MUTFAK-POS" so printers on different cashier PCs never get mixed up.
     """
-    terminals = load_terminals()
+    tenant_code = (payload.restaurant_code or "").strip() or resolve_tenant_code_from_request(request)
+    terminals = load_terminals(tenant_code)
+    pending_commands = get_tenant_pending_commands(tenant_code)
+    completed_results = get_tenant_completed_results(tenant_code)
     now = time.time()
 
     raw_text = payload.raw_text
@@ -824,7 +899,7 @@ async def print_receipt(payload: PrintRequestSchema):
             continue
 
         req_id = str(uuid.uuid4())
-        PENDING_COMMANDS[req_id] = {
+        pending_commands[req_id] = {
             "terminal_id": tid,
             "target_ip": term.get("local_ip"),
             "action": "print_receipt",
@@ -850,8 +925,8 @@ async def print_receipt(payload: PrintRequestSchema):
         await asyncio.sleep(0.1)
         for d in dispatched_reqs:
             rid = d["req_id"]
-            if rid not in completed_reqs and rid in COMPLETED_RESULTS:
-                res = COMPLETED_RESULTS.pop(rid)
+            if rid not in completed_reqs and rid in completed_results:
+                res = completed_results.pop(rid)
                 completed_reqs.add(rid)
                 term = d["terminal"]
                 for r in (res.get("results") or []):
@@ -881,6 +956,7 @@ async def print_receipt(payload: PrintRequestSchema):
 
 @router.get("/weight")
 async def get_current_weight(
+    request: Request,
     ip: Optional[str] = None,
     port: Optional[int] = None,
     terminal_id: Optional[str] = Query(None),
@@ -890,8 +966,11 @@ async def get_current_weight(
     Reads live weight from CAS CL-3000 scale.
     Routes to specified terminal_id or active default Kasa.
     """
+    tenant_code = resolve_tenant_code_from_request(request)
     cfg = await scale_service.get_scale_config(db)
-    terminals = load_terminals()
+    terminals = load_terminals(tenant_code)
+    pending_commands = get_tenant_pending_commands(tenant_code)
+    completed_results = get_tenant_completed_results(tenant_code)
     now = time.time()
 
     target_term = None
@@ -910,7 +989,7 @@ async def get_current_weight(
         target_port = int(port or target_term.get("scale_port") or cfg.get("port") or 2004)
         timeout = float(cfg.get("timeout") or 2.5)
 
-        PENDING_COMMANDS[req_id] = {
+        pending_commands[req_id] = {
             "terminal_id": target_term["id"],
             "target_ip": target_term.get("local_ip"),
             "action": "read_weight",
@@ -921,15 +1000,15 @@ async def get_current_weight(
         }
         for _ in range(45):
             await asyncio.sleep(0.1)
-            if req_id in COMPLETED_RESULTS:
-                res = COMPLETED_RESULTS.pop(req_id)
+            if req_id in completed_results:
+                res = completed_results.pop(req_id)
                 res["terminal_id"] = target_term["id"]
                 res["terminal_name"] = target_term["name"]
                 res["bridge"] = f"{target_term['name']} (IP: {target_term.get('local_ip', '-')})"
                 if res.get("success") and res.get("weight") is not None:
                     target_term["last_weight"] = res["weight"]
                     terminals[target_term["id"]] = target_term
-                    save_terminals(terminals)
+                    save_terminals(terminals, tenant_code)
                 return res
 
         last_w = target_term.get("last_weight", 0.0)

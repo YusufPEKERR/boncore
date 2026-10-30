@@ -23,6 +23,7 @@ ENV/
 *.sqlite
 *.sqlite3
 backend/boncore.db
+backend/data/
 
 # Logs
 npm-debug.log*

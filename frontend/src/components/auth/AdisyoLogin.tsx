@@ -24,17 +24,15 @@ import { api } from '../../services/api';
 
 interface AdisyoLoginProps {
   onLoginSuccess: (user: StaffUser, token?: string, restaurant?: any) => void;
+  onMasterLoginSuccess?: (token: string, user: any) => void;
   staffList?: StaffUser[];
   onBackToLanding?: () => void;
-  onOpenMasterAdmin?: () => void;
-  onMasterLoginSuccess?: (token: string, user: any) => void;
 }
 
 export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({ 
-  onLoginSuccess, 
-  onBackToLanding,
-  onOpenMasterAdmin,
-  onMasterLoginSuccess
+  onLoginSuccess,
+  onMasterLoginSuccess,
+  onBackToLanding
 }) => {
   const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('');
@@ -222,10 +220,10 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                     <div className="w-6 h-6 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
                       <KeyRound className="w-3.5 h-3.5" />
                     </div>
-                    <span className="text-xs font-bold text-slate-900">Otomatik Rol Tanıma</span>
+                    <span className="text-xs font-bold text-slate-900">Rol Bazlı Yetkilendirme</span>
                   </div>
                   <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Girdiğiniz şifre veya PIN kodu yetkinizi belirler (Müdür, Kasiyer, Garson, Mutfak).
+                    Kullanıcı rollerine göre ayrılmış menü, masa ve yetki sınırlandırması.
                   </p>
                 </div>
 
@@ -279,7 +277,7 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
               </div>
             </div>
 
-            {/* Back to Landing Page link & SaaS Master Admin Switch */}
+            {/* Back to Landing Page link */}
             <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
               {onBackToLanding && (
                 <button
@@ -291,17 +289,6 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                   <span>Tanıtım & Anasayfaya Dön</span>
                 </button>
               )}
-
-              {onOpenMasterAdmin && (
-                <button
-                  type="button"
-                  onClick={() => { sound.beep(); onOpenMasterAdmin(); }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 border border-amber-300 text-xs font-black transition cursor-pointer select-none shadow-xs"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
-                  <span>🔐 SaaS Master Panel</span>
-                </button>
-              )}
             </div>
 
             {/* Header */}
@@ -310,9 +297,9 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                 <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
               <div>
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Restoran & Personel Girişi</h1>
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Restoran Girişi</h1>
                 <p className="text-xs text-slate-500 font-medium">
-                  Restoran kullanıcı adınızı girin; şifreniz görevinizi otomatik belirler.
+                  Restoran kullanıcı adınızı ve parolanızı girerek oturum açın.
                 </p>
               </div>
             </div>
@@ -357,9 +344,8 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-extrabold text-slate-800">
-                    🔑 Personel Şifresi / PIN Kodu
+                    🔑 Personel Parolası
                   </label>
-                  <span className="text-[10px] font-mono text-slate-400">Kullanıcıyı Belirler</span>
                 </div>
                 <div className="relative">
                   <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -370,7 +356,7 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                       setPassword(e.target.value);
                       setErrorMsg('');
                     }}
-                    placeholder="Personel şifreniz veya PIN kodunuz"
+                    placeholder="Personel parolanızı girin"
                     autoComplete="new-password"
                     required
                     className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-emerald-600 rounded-2xl pl-10 pr-11 py-3 sm:py-3.5 text-sm text-slate-900 placeholder-slate-400 font-mono font-bold focus:outline-none transition shadow-2xs"
@@ -383,12 +369,6 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
-                </div>
-                
-                {/* Role Detection Info Pill */}
-                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 font-medium flex items-start gap-2">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
-                  <span>Girdiğiniz şifre veya PIN kodu, o restorandaki görevinizi (<strong>Müdür</strong>, <strong>Kasiyer</strong>, <strong>Garson</strong>, <strong>Şef</strong>) otomatik belirler.</span>
                 </div>
               </div>
 
@@ -420,7 +400,7 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
             {/* Security Note */}
             <div className="pt-3 border-t border-slate-200 flex items-center justify-center gap-2 text-[11px] text-slate-500 font-medium">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span>Restoran ve kullanıcı yönetimi <strong>SaaS Master Admin</strong> panelinden yapılır.</span>
+              <span>Güvenli Restoran POS & Operasyon Yönetim Sistemi</span>
             </div>
           </div>
         </div>

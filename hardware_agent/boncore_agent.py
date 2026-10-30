@@ -203,23 +203,33 @@ def cloud_relay_worker():
     if not server_url:
         server_url = "https://contributing-sustained-cure-posting.trycloudflare.com"
 
+    restaurant_code = CONFIG.get("restaurant_code", "").strip()
+
     last_hb = 0
     connected_once = False
 
     while True:
         try:
             now = time.time()
+            headers = {"Content-Type": "application/json"}
+            if restaurant_code:
+                headers["X-Restaurant-Code"] = restaurant_code
+
             # 1. Heartbeat (Her 2 saniyede bir)
             if now - last_hb > 2.0:
-                hb_payload = json.dumps({
+                hb_data = {
                     "local_ip": local_ip,
                     "version": AGENT_VERSION,
                     "agent_name": "BonCore Hardware Agent"
-                }).encode("utf-8")
+                }
+                if restaurant_code:
+                    hb_data["restaurant_code"] = restaurant_code
+
+                hb_payload = json.dumps(hb_data).encode("utf-8")
                 req = urllib.request.Request(
                     f"{server_url}/api/scale/agent/heartbeat",
                     data=hb_payload,
-                    headers={"Content-Type": "application/json"}
+                    headers=headers
                 )
                 try:
                     with urllib.request.urlopen(req, timeout=3.0) as resp:
@@ -236,7 +246,10 @@ def cloud_relay_worker():
                     continue
 
             # 2. Poll (Emir Dinleme)
-            poll_req = urllib.request.Request(f"{server_url}/api/scale/agent/poll")
+            poll_url = f"{server_url}/api/scale/agent/poll"
+            if restaurant_code:
+                poll_url += f"?restaurant_code={urllib.parse.quote(restaurant_code)}"
+            poll_req = urllib.request.Request(poll_url, headers=headers)
             with urllib.request.urlopen(poll_req, timeout=4.0) as resp:
                 poll_data = json.loads(resp.read().decode("utf-8"))
                 if poll_data.get("has_command"):
@@ -251,6 +264,8 @@ def cloud_relay_worker():
                     if action == "read_weight":
                         res = read_cas_from_local_network(target_ip, target_port, timeout)
                         res["req_id"] = req_id
+                        if restaurant_code:
+                            res["restaurant_code"] = restaurant_code
                         if res.get("success"):
                             print(f"[{datetime.now().strftime('%H:%M:%S')}] OK: Teraziden {res['weight']} Kg okundu -> Siteye aktarildi!")
                         else:
@@ -260,18 +275,20 @@ def cloud_relay_worker():
                         rep_req = urllib.request.Request(
                             f"{server_url}/api/scale/agent/report",
                             data=report_data,
-                            headers={"Content-Type": "application/json"}
+                            headers=headers
                         )
                         urllib.request.urlopen(rep_req, timeout=3.0)
 
                     elif action == "test_connection":
                         res = test_local_connection(target_ip, target_port, timeout)
                         res["req_id"] = req_id
+                        if restaurant_code:
+                            res["restaurant_code"] = restaurant_code
                         report_data = json.dumps(res, ensure_ascii=False).encode("utf-8")
                         rep_req = urllib.request.Request(
                             f"{server_url}/api/scale/agent/report",
                             data=report_data,
-                            headers={"Content-Type": "application/json"}
+                            headers=headers
                         )
                         urllib.request.urlopen(rep_req, timeout=3.0)
 

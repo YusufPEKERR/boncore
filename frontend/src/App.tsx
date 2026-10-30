@@ -542,9 +542,8 @@ export const App: React.FC = () => {
     return (
       <AdisyoLogin
         onLoginSuccess={handleLoginSuccess}
-        onBackToLanding={handleGoToLanding}
-        onOpenMasterAdmin={handleOpenMasterAdmin}
         onMasterLoginSuccess={handleMasterLoginSuccess}
+        onBackToLanding={handleGoToLanding}
       />
     );
   }
@@ -585,7 +584,6 @@ export const App: React.FC = () => {
         onOpenOkcModal={() => setIsOkcModalOpen(true)}
         onLogout={handleLogout}
         onOpenLanding={handleGoToLanding}
-        onOpenMasterAdmin={handleOpenMasterAdmin}
       />
 
       {/* Main View Area */}

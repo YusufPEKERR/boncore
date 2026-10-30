@@ -44,6 +44,7 @@ SETTINGS_REG_KEY = r"Software\BonCoreAgent"
 # Varsayılan Konfigürasyon
 DEFAULT_CONFIG = {
     "server_url": "http://77.67.29.77",
+    "restaurant_code": "boncore-kadikoy",
     "terminal_id": "",
     "terminal_name": "Kasa 1",
     "scale_default_ip": "192.168.1.150",
@@ -726,6 +727,7 @@ class BonCoreHardwareDesktopApp:
     def _push_immediate_heartbeat(self):
         try:
             server_url = self.cfg.get("server_url", "http://77.67.29.77").rstrip("/")
+            rc = self.cfg.get("restaurant_code", "").strip()
             hb_payload = {
                 "terminal_id": self.cfg.get("terminal_id", "kasa-1"),
                 "terminal_name": self.cfg.get("terminal_name", "Kasa 1"),
@@ -737,9 +739,11 @@ class BonCoreHardwareDesktopApp:
                 "scale_port": int(self.cfg.get("scale_default_port", 2004)),
                 "last_weight": self.last_weight,
                 "printers": self.printers_list,
-                "user_configured": True
+                "user_configured": True,
+                "restaurant_code": rc
             }
-            self.session.post(f"{server_url}/api/scale/agent/heartbeat", json=hb_payload, timeout=4.0)
+            headers = {"X-Restaurant-Code": rc} if rc else {}
+            self.session.post(f"{server_url}/api/scale/agent/heartbeat", json=hb_payload, headers=headers, timeout=4.0)
         except Exception:
             pass
 
@@ -1121,6 +1125,7 @@ class BonCoreHardwareDesktopApp:
             try:
                 # 1. Heartbeat - her 4 saniyede bir gönderilir (her döngüde değil!)
                 if now - last_heartbeat_time >= 4.0:
+                    rc = self.cfg.get("restaurant_code", "").strip()
                     hb_payload = {
                         "terminal_id": self.cfg.get("terminal_id", "kasa-1"),
                         "terminal_name": self.cfg.get("terminal_name", "Kasa 1"),
@@ -1132,11 +1137,14 @@ class BonCoreHardwareDesktopApp:
                         "scale_port": int(self.cfg.get("scale_default_port", 2004)),
                         "last_weight": self.last_weight,
                         "printers": self.printers_list,
-                        "user_configured": bool(self.cfg.get("user_customized", False))
+                        "user_configured": bool(self.cfg.get("user_customized", False)),
+                        "restaurant_code": rc
                     }
+                    headers = {"X-Restaurant-Code": rc} if rc else {}
                     hb_resp = self.session.post(
                         f"{server_url}/api/scale/agent/heartbeat",
                         json=hb_payload,
+                        headers=headers,
                         timeout=5.0
                     )
                     hb_resp.raise_for_status()
@@ -1174,8 +1182,12 @@ class BonCoreHardwareDesktopApp:
 
                 # 2. Poll - Emir Dinleme (Reused Keep-Alive TCP Socket)
                 t_id = self.cfg.get("terminal_id", "kasa-1")
+                poll_url = f"{server_url}/api/scale/agent/poll?terminal_id={t_id}"
+                if rc:
+                    poll_url += f"&restaurant_code={urllib.parse.quote(rc)}"
                 poll_resp = self.session.get(
-                    f"{server_url}/api/scale/agent/poll?terminal_id={t_id}",
+                    poll_url,
+                    headers=headers,
                     timeout=5.0
                 )
                 poll_resp.raise_for_status()
@@ -1211,6 +1223,8 @@ class BonCoreHardwareDesktopApp:
                     if action == "read_weight":
                         res = read_cas_scale(target_ip, target_port, timeout)
                         res["req_id"] = req_id
+                        if rc:
+                            res["restaurant_code"] = rc
                         if res.get("success"):
                             w = res["weight"]
                             self.last_weight = w
@@ -1219,6 +1233,7 @@ class BonCoreHardwareDesktopApp:
                         self.session.post(
                             f"{server_url}/api/scale/agent/report",
                             json=res,
+                            headers=headers,
                             timeout=5.0
                         )
 
@@ -1229,9 +1244,12 @@ class BonCoreHardwareDesktopApp:
                             "success": ok,
                             "message": "CAS CL-3000 terazisine bağlandı." if ok else "Teraziye ulaşılamadı."
                         }
+                        if rc:
+                            res["restaurant_code"] = rc
                         self.session.post(
                             f"{server_url}/api/scale/agent/report",
                             json=res,
+                            headers=headers,
                             timeout=5.0
                         )
 
@@ -1249,9 +1267,12 @@ class BonCoreHardwareDesktopApp:
                             "results": results,
                             "message": f"{ok_count}/{len(target_printers)} yazıcıdan çıktı alındı." if target_printers else "Yazıcı listesi boş."
                         }
+                        if rc:
+                            res["restaurant_code"] = rc
                         self.session.post(
                             f"{server_url}/api/scale/agent/report",
                             json=res,
+                            headers=headers,
                             timeout=5.0
                         )
 
