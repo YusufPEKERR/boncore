@@ -633,9 +633,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </section>
 
         {/* ================= COLUMN 2: TOPLAM & NUMPAD (Center: 5 cols) ================= */}
-        <section className="md:col-span-5 bg-white rounded-2xl border border-gray-200 shadow-xs p-4 flex flex-col justify-between">
+        <section className="md:col-span-5 bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 shadow-xs p-4 flex flex-col gap-2.5 transition-colors">
           {/* Top Header: TOPLAM & Tahsilat Geçmişi & Total Amount */}
-          <div className="space-y-3">
+          <div className="space-y-2">
             <div className="flex items-center justify-between pb-2.5 border-b border-gray-100">
               <h2 className="text-[15px] font-bold text-[#212529] tracking-tight flex items-center gap-2">
                 <span>HESAP & ÖDEME</span>
@@ -822,14 +822,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
 
           {/* Numeric Keypad Table Grid */}
-          <div className="border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-2xs">
+          <div className="flex-1 flex flex-col border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-2xs mt-0.5">
             {/* Row 1: 7 | 8 | 9 | Tüm */}
-            <div className="grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
+            <div className="flex-1 grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
               {['7', '8', '9', 'Tüm'].map((k) => (
                 <button
                   key={k}
                   onClick={() => handleNumpad(k)}
-                  className="py-3.5 bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-medium text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
+                  className="h-full flex items-center justify-center bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-medium text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
                 >
                   {k === 'Tüm' ? <span className="text-sm font-semibold text-gray-700">Tüm</span> : k}
                 </button>
@@ -837,12 +837,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
 
             {/* Row 2: 4 | 5 | 6 | 1/n */}
-            <div className="grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
+            <div className="flex-1 grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
               {['4', '5', '6', '1/n'].map((k) => (
                 <button
                   key={k}
                   onClick={() => handleNumpad(k)}
-                  className="py-3.5 bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-medium text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
+                  className="h-full flex items-center justify-center bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-medium text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
                 >
                   {k === '1/n' ? <span className="text-sm font-semibold text-gray-700">1/n</span> : k}
                 </button>
@@ -850,12 +850,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
 
             {/* Row 3: 1 | 2 | 3 | İndirim */}
-            <div className="grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
+            <div className="flex-1 grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
               {['1', '2', '3', 'İndirim'].map((k) => (
                 <button
                   key={k}
                   onClick={() => handleNumpad(k)}
-                  className="py-3.5 bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-medium text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
+                  className="h-full flex items-center justify-center bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-medium text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
                 >
                   {k === 'İndirim' ? <span className="text-sm font-semibold text-gray-700">İndirim</span> : k}
                 </button>
@@ -863,7 +863,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
 
             {/* Row 4: . | 0 | ← | Empty */}
-            <div className="grid grid-cols-4">
+            <div className="flex-1 grid grid-cols-4">
               {['.', '0', '←', ''].map((k, idx) => (
                 <button
                   key={idx}
