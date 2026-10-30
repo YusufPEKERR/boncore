@@ -45,6 +45,8 @@ export interface ActiveOrderSummary {
   grand_total: number;
   subtotal: number;
   discount_amount: number;
+  paid_total?: number;
+  remaining_total?: number;
   kuver_count: number;
   waiter_name: string;
   items_count: number;

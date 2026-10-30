@@ -88,6 +88,7 @@ async def get_areas_with_tables(db: AsyncSession = Depends(get_db)):
                         "order_no": chosen_order.order_no,
                         "status": chosen_order.status,
                         "grand_total": chosen_order.grand_total,
+                        "paid_total": float(chosen_order.paid_total or 0.0),
                         "remaining_total": chosen_order.remaining_total,
                         "subtotal": chosen_order.subtotal,
                         "discount_amount": chosen_order.discount_amount,

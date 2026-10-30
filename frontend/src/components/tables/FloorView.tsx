@@ -232,12 +232,25 @@ export const FloorView: React.FC<FloorViewProps> = ({
                   </div>
                 </div>
 
-                {/* Card Center: Amount Display (Matching Frame 105: ₺3.070,00) */}
+                {/* Card Center: Amount Display (Ara Tahsilat Uyumlu: Toplam / Ödenen) */}
                 <div className="text-center my-auto">
                   {isOccupied && table.active_order ? (
-                    <div className="text-xl font-black text-slate-950 dark:text-white font-mono tracking-tight">
-                      ₺{table.active_order.grand_total.toFixed(2)}
-                    </div>
+                    table.active_order.paid_total && table.active_order.paid_total > 0 ? (
+                      <div className="flex flex-col items-center">
+                        <div className="text-base sm:text-lg font-black font-mono tracking-tight text-slate-900 dark:text-white">
+                          <span>₺{table.active_order.grand_total.toFixed(2)}</span>
+                          <span className="text-slate-400 font-normal mx-0.5">/</span>
+                          <span className="text-emerald-600 dark:text-emerald-400">₺{table.active_order.paid_total.toFixed(2)}</span>
+                        </div>
+                        <span className="text-[10px] font-extrabold text-rose-600 dark:text-rose-400 font-mono mt-0.5">
+                          Kalan: ₺{((table.active_order.remaining_total !== undefined ? table.active_order.remaining_total : table.active_order.grand_total - table.active_order.paid_total)).toFixed(2)}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-xl font-black text-slate-950 dark:text-white font-mono tracking-tight">
+                        ₺{table.active_order.grand_total.toFixed(2)}
+                      </div>
+                    )
                   ) : isReserved ? (
                     <span className="text-xs font-bold text-amber-700 dark:text-amber-400">
                       {table.reservation_name || 'Rezerve'}
