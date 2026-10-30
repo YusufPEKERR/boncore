@@ -218,6 +218,12 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                         <span>{tenant.city || 'İstanbul'}</span>
                         {tenant.tax_number && <span>• VKN: {tenant.tax_number}</span>}
                       </div>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 inline-flex items-center gap-1">
+                          <Building2 className="w-2.5 h-2.5" />
+                          <span>Giriş Kullanıcı Adı: <strong>{tenant.code}</strong></span>
+                        </span>
+                      </div>
                     </td>
 
                     <td className="py-3.5 px-4">

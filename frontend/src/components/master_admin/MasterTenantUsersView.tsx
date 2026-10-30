@@ -177,14 +177,20 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
       {selectedTenant && (
         <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-black text-base text-white">{selectedTenant.name}</span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-950 text-emerald-300 border border-emerald-800">
                 {selectedTenant.plan}
               </span>
+              <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-emerald-400 border border-slate-700">
+                Giriş Kodu: @{selectedTenant.code}
+              </span>
             </div>
             <div className="text-xs text-slate-400 font-medium mt-0.5">
               Yetkili: <b className="text-slate-200">{selectedTenant.owner_name}</b> • Tel: {selectedTenant.phone} • Şehir: {selectedTenant.city}
+            </div>
+            <div className="text-[11px] text-emerald-400/90 font-medium mt-1">
+              💡 Personeller sisteme giriş yaparken Restoran Kullanıcı Adı olarak <strong>@{selectedTenant.code}</strong> girer; şifre veya PIN ise kullanıcının kim olduğunu belirler.
             </div>
           </div>
 

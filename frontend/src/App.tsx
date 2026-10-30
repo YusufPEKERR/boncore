@@ -117,7 +117,9 @@ export const App: React.FC = () => {
     return null;
   });
   const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
-  const [restaurantTitle, setRestaurantTitle] = useState<string>('BONCORE RESTORAN');
+  const [restaurantTitle, setRestaurantTitle] = useState<string>(() => {
+    return localStorage.getItem('boncore_active_restaurant_name') || 'BONCORE RESTORAN';
+  });
 
   // Verify token on startup if authenticated
   useEffect(() => {
@@ -379,7 +381,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleLoginSuccess = (user: StaffUser, token?: string) => {
+  const handleLoginSuccess = (user: StaffUser, token?: string, restaurant?: any) => {
     setCurrentUser(user);
     setIsAuthenticated(true);
     localStorage.setItem('boncore_auth', 'true');
@@ -387,12 +389,22 @@ export const App: React.FC = () => {
     if (token) {
       localStorage.setItem('boncore_token', token);
     }
+    if (restaurant && restaurant.name) {
+      setRestaurantTitle(restaurant.name);
+      try {
+        localStorage.setItem('boncore_active_restaurant_name', restaurant.name);
+      } catch {}
+    } else {
+      const saved = localStorage.getItem('boncore_active_restaurant_name');
+      if (saved) setRestaurantTitle(saved);
+    }
     loadInitialData();
     loadStaffUsers();
     setViewMode('app');
     setActiveTab('tables');
     window.location.hash = 'tables';
-    addToast(`Hoş geldiniz, ${user.name}!`, 'success');
+    const restSuffix = restaurant?.name ? ` (${restaurant.name})` : '';
+    addToast(`Hoş geldiniz, ${user.name}!${restSuffix}`, 'success');
   };
 
   const handleLogout = () => {

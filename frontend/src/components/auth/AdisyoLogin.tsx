@@ -15,24 +15,33 @@ import {
   MonitorCheck,
   Receipt,
   Sparkles,
+  Building2,
+  KeyRound,
 } from 'lucide-react';
 import { StaffUser } from '../../types';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
 
 interface AdisyoLoginProps {
-  onLoginSuccess: (user: StaffUser, token?: string) => void;
+  onLoginSuccess: (user: StaffUser, token?: string, restaurant?: any) => void;
   staffList?: StaffUser[];
   onBackToLanding?: () => void;
   onOpenMasterAdmin?: () => void;
   onMasterLoginSuccess?: (token: string, user: any) => void;
 }
 
-const QUICK_ACCOUNTS = [
-  { label: 'Yönetici / Müdür', username: 'admin', role: 'Tam Yetki', badgeColor: 'bg-emerald-50 text-brand-600 border-emerald-200' },
-  { label: 'Kasa Sorumlusu', username: 'kasiyer', role: 'Tahsilat & Z Raporu', badgeColor: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
-  { label: 'Salon Garsonu', username: 'garson', role: 'Masa & Sipariş', badgeColor: 'bg-blue-50 text-blue-600 border-blue-200' },
-  { label: 'Mutfak Şefi', username: 'sef', role: 'KDS Mutfak', badgeColor: 'bg-amber-50 text-amber-700 border-amber-200' },
+const DEMO_RESTAURANTS = [
+  { name: 'BonCore Kadıköy', code: 'boncore-kadikoy' },
+  { name: 'Moda Meyhane', code: 'moda-meyhane' },
+  { name: 'Roast & Brew', code: 'roast-brew' },
+  { name: 'Etiler Steak', code: 'etiler-steak' },
+];
+
+const ROLE_SHORTCUTS = [
+  { label: 'Müdür (1234 / 123456)', value: '123456', role: 'manager' },
+  { label: 'Kasiyer (PIN: 2222)', value: '2222', role: 'cashier' },
+  { label: 'Garson (PIN: 9999)', value: '9999', role: 'waiter' },
+  { label: 'Şef (PIN: 3333)', value: '3333', role: 'chef' },
 ];
 
 export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({ 
@@ -41,7 +50,9 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
   onOpenMasterAdmin,
   onMasterLoginSuccess
 }) => {
-  const [username, setUsername] = useState<string>('admin');
+  const [username, setUsername] = useState<string>(() => {
+    return localStorage.getItem('boncore_last_restaurant') || 'boncore-kadikoy';
+  });
   const [password, setPassword] = useState<string>('123456');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [remember, setRemember] = useState<boolean>(true);
@@ -57,7 +68,7 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim() || !password) {
-      setErrorMsg('Lütfen kullanıcı adı ve parolanızı girin.');
+      setErrorMsg('Lütfen restoran kullanıcı adını ve personel şifrenizi girin.');
       return;
     }
 
@@ -87,9 +98,15 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
     }
 
     try {
-      const res = await api.login(username.trim(), password, remember);
+      const res = await api.login(username.trim(), password.trim(), remember);
       sound.cashDrawer();
-      onLoginSuccess(res.user, res.access_token);
+      try {
+        localStorage.setItem('boncore_last_restaurant', username.trim());
+        if (res.restaurant?.name) {
+          localStorage.setItem('boncore_active_restaurant_name', res.restaurant.name);
+        }
+      } catch {}
+      onLoginSuccess(res.user, res.access_token, res.restaurant);
     } catch (err: any) {
       // Yedek Kontrol: Eğer kullanıcı Master Admin şifresiyle normal formdan girmeye çalıştıysa
       try {
@@ -109,7 +126,7 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
       } catch {}
 
       sound.warning();
-      setErrorMsg(err.message || 'Kullanıcı adı veya parola hatalı.');
+      setErrorMsg(err.message || 'Restoran kullanıcı adı veya personel şifresi hatalı.');
     } finally {
       setLoading(false);
     }
@@ -199,40 +216,72 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
               </div>
             </div>
 
-            {/* Quick Account Switcher for Instant Demo/Shift Access (Desktop view) */}
-            <div className="hidden lg:block pt-2 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                  Hızlı Hesap Seçimi (Tek Tıkla Doldur)
+            {/* Quick Restaurant & Role Switcher (Desktop view) */}
+            <div className="hidden lg:block pt-1 space-y-3">
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 block">
+                  1. Restoran Seçimi (Hızlı Doldur)
                 </span>
-                <span className="text-[11px] font-mono text-slate-500">
-                  Varsayılan Parola: <strong className="text-slate-900">123456</strong>
-                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {DEMO_RESTAURANTS.map((r) => {
+                    const isSelected = username.toLowerCase() === r.code.toLowerCase();
+                    return (
+                      <button
+                        key={r.code}
+                        type="button"
+                        onClick={() => {
+                          sound.beep();
+                          setUsername(r.code);
+                          setErrorMsg('');
+                        }}
+                        className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between cursor-pointer ${
+                          isSelected
+                            ? 'bg-emerald-50 border-emerald-600 text-emerald-900 ring-1 ring-emerald-500/30 font-black'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700 font-bold'
+                        }`}
+                      >
+                        <div className="min-w-0 pr-1">
+                          <div className="text-xs truncate">{r.name}</div>
+                          <div className="text-[10px] font-mono text-slate-400">@{r.code}</div>
+                        </div>
+                        <Building2 className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-emerald-600' : 'text-slate-400'}`} />
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-2.5">
-                {QUICK_ACCOUNTS.map((acc) => {
-                  const isSelected = username.toLowerCase() === acc.username;
-                  return (
-                    <button
-                      key={acc.username}
-                      type="button"
-                      onClick={() => handleQuickSelect(acc.username)}
-                      className={`p-3 rounded-2xl border text-left transition flex items-center justify-between cursor-pointer ${
-                        isSelected
-                          ? 'bg-indigo-50/90 border-indigo-600 text-slate-900 shadow-sm ring-1 ring-indigo-600/20'
-                          : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700 shadow-sm'
-                      }`}
-                    >
-                      <div className="min-w-0 pr-2">
-                        <div className="text-xs font-extrabold truncate">{acc.label}</div>
-                        <div className="text-[11px] font-mono text-slate-500">@{acc.username}</div>
-                      </div>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border shrink-0 ${acc.badgeColor}`}>
-                        {acc.role}
-                      </span>
-                    </button>
-                  );
-                })}
+
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                    2. Personel Görevi (Şifre / PIN)
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-medium">Şifre kullanıcıyı belirler</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {ROLE_SHORTCUTS.map((rc) => {
+                    const isSelected = password === rc.value;
+                    return (
+                      <button
+                        key={rc.label}
+                        type="button"
+                        onClick={() => {
+                          sound.beep();
+                          setPassword(rc.value);
+                          setErrorMsg('');
+                        }}
+                        className={`p-2 rounded-xl border text-left transition flex items-center justify-between cursor-pointer ${
+                          isSelected
+                            ? 'bg-indigo-50 border-indigo-600 text-indigo-900 ring-1 ring-indigo-500/30 font-black'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700 font-bold'
+                        }`}
+                      >
+                        <div className="text-xs truncate">{rc.label}</div>
+                        <KeyRound className={`w-3 h-3 shrink-0 ${isSelected ? 'text-indigo-600' : 'text-slate-400'}`} />
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
@@ -241,7 +290,7 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
           <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-200">
             <div className="flex items-center gap-2 font-semibold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>BonCore API & WebSocket Motoru Aktif</span>
+              <span>Multi-Tenant Restoran Kimlik Doğrulama Motoru</span>
             </div>
             <span className="font-medium">{nowTime.toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
           </div>
@@ -299,63 +348,60 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
 
             {/* Header */}
             <div className="flex items-center gap-3 lg:block lg:space-y-1.5">
-              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center shrink-0 lg:mb-3">
-                <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6" />
+              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-brand-600 to-emerald-500 text-white flex items-center justify-center shrink-0 lg:mb-3 shadow-md">
+                <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
               <div>
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Kullanıcı Girişi</h1>
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Restoran & Personel Girişi</h1>
                 <p className="text-xs text-slate-500 font-medium">
-                  Devam etmek için kullanıcı adınızı ve parolanızı girin.
+                  Restoran kullanıcı adınızı girin; şifreniz görevinizi otomatik belirler.
                 </p>
               </div>
             </div>
 
-            {/* Mobile Quick Account Pills */}
-            <div className="lg:hidden space-y-1.5">
-              <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold">
-                <span>HIZLI HESAP SEÇİMİ:</span>
-                <span className="font-mono">Şifre: <strong className="text-slate-900">123456</strong></span>
-              </div>
+            {/* Mobile Quick Restaurant & Role selector */}
+            <div className="lg:hidden space-y-2">
+              <div className="text-[10px] text-slate-500 font-bold uppercase">Restoran Seç:</div>
               <div className="grid grid-cols-2 gap-1.5">
-                {QUICK_ACCOUNTS.map((acc) => {
-                  const isSelected = username.toLowerCase() === acc.username;
-                  return (
-                    <button
-                      key={acc.username}
-                      type="button"
-                      onClick={() => handleQuickSelect(acc.username)}
-                      className={`p-2 rounded-xl border text-left transition flex items-center justify-between cursor-pointer ${
-                        isSelected
-                          ? 'bg-indigo-50 border-indigo-600 text-slate-900 shadow-sm'
-                          : 'bg-slate-50 border-slate-200 text-slate-700'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-extrabold truncate">{acc.label}</div>
-                        <div className="text-[10px] font-mono text-slate-500">@{acc.username}</div>
-                      </div>
-                    </button>
-                  );
-                })}
+                {DEMO_RESTAURANTS.slice(0, 2).map((r) => (
+                  <button
+                    key={r.code}
+                    type="button"
+                    onClick={() => {
+                      sound.beep();
+                      setUsername(r.code);
+                    }}
+                    className={`p-2 rounded-xl border text-xs font-bold transition text-left ${
+                      username.toLowerCase() === r.code.toLowerCase()
+                        ? 'bg-emerald-50 border-emerald-600 text-emerald-900'
+                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {r.name}
+                  </button>
+                ))}
               </div>
             </div>
 
             {/* Error Alert */}
             {errorMsg && (
-              <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-brand-700 text-xs font-bold flex items-center gap-2.5 animate-fadeIn">
-                <AlertCircle className="w-4 h-4 text-brand-600 shrink-0" />
+              <div className="p-3 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold flex items-center gap-2.5 animate-fadeIn">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
                 <span>{errorMsg}</span>
               </div>
             )}
 
             {/* Username & Password Form */}
-            <form onSubmit={handleSubmit} className="space-y-3.5 sm:space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700">
-                  Kullanıcı Adı
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-extrabold text-slate-800">
+                    🏢 Restoran Kullanıcı Adı (Giriş Kodu)
+                  </label>
+                  <span className="text-[10px] font-mono text-slate-400">Restoran Kimliği</span>
+                </div>
                 <div className="relative">
-                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
                     value={username}
@@ -363,19 +409,25 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                       setUsername(e.target.value);
                       setErrorMsg('');
                     }}
-                    placeholder="Örn: admin, kasiyer, garson"
+                    placeholder="Örn: boncore-kadikoy, moda-meyhane, roast-brew"
                     required
-                    className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-indigo-600 rounded-2xl pl-10 pr-4 py-3 sm:py-3.5 text-sm text-slate-900 placeholder-slate-400 font-semibold focus:outline-none transition"
+                    className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-emerald-600 rounded-2xl pl-10 pr-4 py-3 sm:py-3.5 text-sm text-slate-900 placeholder-slate-400 font-bold focus:outline-none transition shadow-2xs"
                   />
                 </div>
+                <p className="text-[10px] text-slate-400 font-medium">
+                  İşletmenizin BonCore sistemindeki kullanıcı adı / restoran kodu.
+                </p>
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700">
-                  Parola
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-extrabold text-slate-800">
+                    🔑 Personel Şifresi / PIN Kodu
+                  </label>
+                  <span className="text-[10px] font-mono text-slate-400">Kullanıcıyı Belirler</span>
+                </div>
                 <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
@@ -383,9 +435,9 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                       setPassword(e.target.value);
                       setErrorMsg('');
                     }}
-                    placeholder="••••••••"
+                    placeholder="Şifreniz veya 4 haneli PIN kodunuz"
                     required
-                    className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-indigo-600 rounded-2xl pl-10 pr-11 py-3 sm:py-3.5 text-sm text-slate-900 placeholder-slate-400 font-mono focus:outline-none transition"
+                    className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-emerald-600 rounded-2xl pl-10 pr-11 py-3 sm:py-3.5 text-sm text-slate-900 placeholder-slate-400 font-mono font-bold focus:outline-none transition shadow-2xs"
                   />
                   <button
                     type="button"
@@ -396,6 +448,12 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                
+                {/* Role Detection Info Pill */}
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 font-medium flex items-start gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                  <span>Girdiğiniz şifre veya PIN kodu, o restorandaki görevinizi (<strong>Müdür</strong>, <strong>Kasiyer</strong>, <strong>Garson</strong>, <strong>Şef</strong>) otomatik belirler.</span>
+                </div>
               </div>
 
               <div className="flex items-center justify-between text-xs pt-0.5">
@@ -404,21 +462,21 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                     type="checkbox"
                     checked={remember}
                     onChange={(e) => setRemember(e.target.checked)}
-                    className="w-4 h-4 rounded border-slate-300 bg-white text-indigo-600 focus:ring-0 accent-indigo-600"
+                    className="w-4 h-4 rounded border-slate-300 bg-white text-emerald-600 focus:ring-0 accent-emerald-600"
                   />
-                  <span>Beni Hatırla (7 Gün)</span>
+                  <span>Restoranı & Cihazı Hatırla</span>
                 </label>
                 <span className="text-[11px] text-slate-400 font-medium">
-                  PBKDF2 + Token
+                  Multi-Tenant PBKDF2
                 </span>
               </div>
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-indigo-600 via-blue-600 to-emerald-600 hover:from-indigo-500 hover:via-blue-500 hover:to-emerald-500 disabled:opacity-50 text-white font-black text-sm shadow-xl shadow-indigo-600/20 transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] mt-1"
+                className="w-full py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-brand-600 via-emerald-600 to-teal-600 hover:from-brand-700 hover:to-teal-700 disabled:opacity-50 text-white font-black text-sm shadow-xl shadow-emerald-600/20 transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] mt-1"
               >
-                <span>{loading ? 'GİRİŞ YAPILIYOR...' : 'SİSTEME GİRİŞ YAP'}</span>
+                <span>{loading ? 'KİMLİK DOĞRULANIYOR...' : 'RESTORANA GİRİŞ YAP'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
@@ -426,7 +484,7 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
             {/* Security Note */}
             <div className="pt-3 border-t border-slate-200 flex items-center justify-center gap-2 text-[11px] text-slate-500 font-medium">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span>Yetkili kullanıcı ve parola yönetimi &quot;Kullanıcılar&quot; panelinden yapılır.</span>
+              <span>Restoran ve kullanıcı yönetimi <strong>SaaS Master Admin</strong> panelinden yapılır.</span>
             </div>
           </div>
         </div>

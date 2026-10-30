@@ -19,7 +19,7 @@ export function getAuthHeaders(includeJson: boolean = true): Record<string, stri
 
 export const api = {
   // Auth (Username & Password + Token)
-  async login(username: string, password: string, remember: boolean = false): Promise<{ access_token: string; expires_at: number; user: StaffUser }> {
+  async login(username: string, password: string, remember: boolean = false): Promise<{ access_token: string; expires_at: number; user: StaffUser; restaurant?: any; is_master?: boolean }> {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

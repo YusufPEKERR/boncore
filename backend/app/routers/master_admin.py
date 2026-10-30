@@ -916,3 +916,38 @@ async def _ensure_demo_tenants_and_leads(db: AsyncSession):
         ]
         db.add_all(demo_invoices)
         await db.commit()
+
+    # Her demo restoranın en az bir yönetici ve personeli olduğundan emin ol
+    demo_staff_defs = [
+        (2, "Murat Yılmaz (Müdür)", "moda_admin", "123456", "2001", "manager"),
+        (2, "Caner Demir (Kasiyer)", "moda_kasiyer", "123456", "2002", "cashier"),
+        (2, "Ali Kaya (Garson)", "moda_garson", "123456", "2003", "waiter"),
+        (3, "Selin Aksoy (Yönetici)", "roast_admin", "123456", "3001", "manager"),
+        (3, "Ece Barista", "roast_barista", "123456", "3002", "cashier"),
+        (4, "Cemil Demir (Müdür)", "etiler_admin", "123456", "4001", "manager"),
+        (4, "Burak Şef", "etiler_chef", "123456", "4002", "chef"),
+        (5, "Burak Özdemir (Yönetici)", "alacati_admin", "123456", "5001", "manager"),
+        (6, "Fatih Çelik (Müdür)", "bursa_admin", "123456", "6001", "manager"),
+    ]
+    has_new_staff = False
+    for t_id, s_name, s_uname, s_pwd, s_pin, s_role in demo_staff_defs:
+        exist = await db.execute(select(StaffUser).where(StaffUser.restaurant_id == t_id, StaffUser.role == s_role))
+        if not exist.scalar_one_or_none():
+            p_check = await db.execute(select(StaffUser).where(StaffUser.pin_code == s_pin))
+            effective_pin = s_pin if not p_check.scalar_one_or_none() else f"{t_id}{s_pin[:3]}"
+            u_check = await db.execute(select(StaffUser).where(StaffUser.username == s_uname))
+            effective_uname = s_uname if not u_check.scalar_one_or_none() else f"{s_uname}_{t_id}"
+            new_s = StaffUser(
+                name=s_name,
+                username=effective_uname,
+                password_hash=hash_password(s_pwd),
+                pin_code=effective_pin,
+                role=s_role,
+                restaurant_id=t_id,
+                is_active=True
+            )
+            db.add(new_s)
+            has_new_staff = True
+
+    if has_new_staff:
+        await db.commit()
