@@ -60,6 +60,9 @@ class OrderItem(Base):
     void_reason = Column(String(255), nullable=True)
     voided_by = Column(String(100), nullable=True)
     is_treat = Column(Boolean, default=False) # Ürün bazlı ikram
+    discount_amount = Column(Float, default=0.0) # Ürün bazlı indirim tutarı
+    discount_rate = Column(Float, default=0.0) # Ürün bazlı indirim oranı (%)
+    discount_reason = Column(String(100), nullable=True) # Ürün bazlı indirim sebebi
 
     order = relationship("Order", back_populates="items")
     product = relationship("Product")

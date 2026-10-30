@@ -262,23 +262,67 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setTimeout(() => setStatusNotice(null), 3000);
   };
 
-  // Apply Discount
+  // Remove Item Discount
+  const handleRemoveItemDiscount = async (itemId: number) => {
+    setLoading(true);
+    sound.beep();
+    try {
+      await api.removeItemDiscount(itemId);
+      await loadOrderData();
+      showNotice('Ürün indirimi başarıyla iptal edildi.', false);
+    } catch (err: any) {
+      showNotice(err.message || 'İndirim iptal edilemedi.', true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Remove All Discounts
+  const handleRemoveAllDiscounts = async () => {
+    setLoading(true);
+    sound.beep();
+    try {
+      await api.removeAllDiscounts(order.id);
+      await loadOrderData();
+      showNotice('Tüm indirimler sıfırlandı.', false);
+    } catch (err: any) {
+      showNotice(err.message || 'İndirimler sıfırlanamadı.', true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Apply Discount (Product-based if items selected, else whole order)
   const handleApplyDiscount = async () => {
     const val = parseFloat(discountValue);
     if (isNaN(val) || val <= 0) return;
     setLoading(true);
     sound.beep();
     try {
-      await api.applyDiscount(
-        order.id,
-        discountType,
-        val,
-        'Kasa İndirimi',
-        cashierName
-      );
+      if (selectedItemIds.length > 0) {
+        // Apply discount directly to selected items!
+        await api.applyBatchItemDiscount(
+          order.id,
+          selectedItemIds,
+          discountType,
+          val,
+          'Kasa Ürün İndirimi',
+          cashierName
+        );
+        showNotice(`${selectedItemIds.length} ürüne indirim başarıyla uygulandı.`, false);
+      } else {
+        // Whole order discount
+        await api.applyDiscount(
+          order.id,
+          discountType,
+          val,
+          'Kasa Genel İndirimi',
+          cashierName
+        );
+        showNotice('Masa genel indirimi başarıyla uygulandı.', false);
+      }
       await loadOrderData();
       setIsDiscountModalOpen(false);
-      showNotice('İndirim başarıyla uygulandı.', false);
     } catch (err: any) {
       showNotice(err.message || 'İndirim uygulanamadı.', true);
     } finally {
@@ -513,6 +557,28 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <div className="text-[11px] text-gray-500 font-medium mt-0.5">
                       Ödenen: ₺{paidAmt.toFixed(2)}  ·  Kalan: ₺{remainingAmt.toFixed(2)}
                     </div>
+
+                    {/* Ürün İndirimi Göstergesi ve İptal Butonu */}
+                    {Boolean(it.discount_amount && it.discount_amount > 0) && (
+                      <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-dashed border-red-200">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-100 text-red-700 font-bold text-[11px]">
+                          🏷️ İndirim: -₺{(it.discount_amount || 0).toFixed(2)} {it.discount_rate ? `(%${it.discount_rate})` : ''}
+                        </span>
+                        {it.id && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveItemDiscount(it.id!);
+                            }}
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 px-2 py-0.5 rounded-md border border-red-300 transition shadow-2xs"
+                            title="Bu ürünün indirimini kaldır"
+                          >
+                            ✕ İndirimi İptal Et
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1086,7 +1152,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         <div className="fixed inset-0 z-60 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-sm p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <span className="font-bold text-base text-gray-800">İndirim Uygula</span>
+              <div>
+                <span className="font-bold text-base text-gray-800 block">
+                  {selectedItemIds.length > 0 ? `Ürün İndirimi (${selectedItemIds.length} Ürün Seçili)` : 'Masa İndirimi'}
+                </span>
+                <span className="text-xs text-gray-500">
+                  {selectedItemIds.length > 0 ? 'İndirim sadece seçtiğiniz ürün(ler)e uygulanacaktır.' : 'Sol listeden ürün seçerek ürün bazlı indirim yapabilirsiniz.'}
+                </span>
+              </div>
               <button 
                 onClick={() => setIsDiscountModalOpen(false)}
                 className="text-gray-400 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition"

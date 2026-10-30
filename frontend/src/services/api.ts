@@ -336,6 +336,69 @@ export const api = {
     return res.json();
   },
 
+  async applyItemDiscount(itemId: number, discountType: 'percentage' | 'fixed', value: number, reason?: string, operatorName?: string, managerPin?: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/orders/items/${itemId}/discount`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        discount_type: discountType,
+        value,
+        reason: reason || 'Ürün İndirimi',
+        operator_name: operatorName || 'Kasiyer',
+        manager_pin: managerPin
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Ürün indirimi uygulanamadı.');
+    }
+    return res.json();
+  },
+
+  async removeItemDiscount(itemId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/orders/items/${itemId}/remove-discount`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'İndirim iptal edilemedi.');
+    }
+    return res.json();
+  },
+
+  async applyBatchItemDiscount(orderId: number, itemIds: number[], discountType: 'percentage' | 'fixed', value: number, reason?: string, operatorName?: string, managerPin?: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/orders/${orderId}/batch-item-discount`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        item_ids: itemIds,
+        discount_type: discountType,
+        value,
+        reason: reason || 'Ürün İndirimi',
+        operator_name: operatorName || 'Kasiyer',
+        manager_pin: managerPin
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Seçili ürünlere indirim uygulanamadı.');
+    }
+    return res.json();
+  },
+
+  async removeAllDiscounts(orderId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/orders/${orderId}/remove-all-discounts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'İndirimler sıfırlanamadı.');
+    }
+    return res.json();
+  },
+
   async applyTreat(orderId: number, itemIds: number[] | null, reason: string, operatorName: string, managerPin?: string): Promise<any> {
     const res = await fetch(`${API_BASE}/orders/${orderId}/treat`, {
       method: 'POST',

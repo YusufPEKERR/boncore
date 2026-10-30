@@ -190,6 +190,21 @@ class ApplyDiscountRequest(BaseModel):
     operator_name: str
     manager_pin: Optional[str] = None
 
+class ApplyItemDiscountRequest(BaseModel):
+    discount_type: str # "percentage" or "fixed"
+    value: float
+    reason: Optional[str] = "Ürün İndirimi"
+    operator_name: Optional[str] = "Kasiyer"
+    manager_pin: Optional[str] = None
+
+class BatchItemDiscountRequest(BaseModel):
+    item_ids: list[int]
+    discount_type: str # "percentage" or "fixed"
+    value: float
+    reason: Optional[str] = "Ürün İndirimi"
+    operator_name: Optional[str] = "Kasiyer"
+    manager_pin: Optional[str] = None
+
 class ApplyTreatRequest(BaseModel):
     order_item_ids: Optional[List[int]] = None # If None, treat whole order
     reason: str = "Müessese İkramı"

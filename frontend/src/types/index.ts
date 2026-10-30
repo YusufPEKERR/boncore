@@ -148,6 +148,9 @@ export interface OrderItem {
   is_voided?: boolean;
   void_reason?: string;
   is_treat?: boolean;
+  discount_amount?: number;
+  discount_rate?: number;
+  discount_reason?: string;
 }
 
 export interface PaymentMethodConfig {

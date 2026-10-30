@@ -13,7 +13,9 @@ from app.models.payment import Payment
 from app.models.delivery import DeliveryOrder, Courier
 from app.schemas.all import (
     CreateOrderRequest, AddItemsRequest, HoldFireToggleRequest,
-    VoidItemRequest, ApplyDiscountRequest, ApplyTreatRequest, SplitEqualRequest
+    VoidItemRequest, ApplyDiscountRequest,
+    ApplyItemDiscountRequest,
+    BatchItemDiscountRequest, ApplyTreatRequest, SplitEqualRequest
 )
 from app.services.stock_service import StockService
 from app.websocket_hub import ws_hub
@@ -137,7 +139,10 @@ async def get_order_details(order_id: int, db: AsyncSession = Depends(get_db)):
                 "station": it.station,
                 "is_voided": it.is_voided,
                 "void_reason": it.void_reason,
-                "is_treat": it.is_treat
+                "is_treat": it.is_treat,
+                "discount_amount": getattr(it, "discount_amount", 0.0) or 0.0,
+                "discount_rate": getattr(it, "discount_rate", 0.0) or 0.0,
+                "discount_reason": getattr(it, "discount_reason", None)
             } for it in order.items
         ],
         "payments": [
@@ -502,6 +507,179 @@ async def apply_discount(order_id: int, payload: ApplyDiscountRequest, db: Async
 
     await ws_hub.broadcast_all("ORDER_UPDATED", {"order_id": order.id, "discount": order.discount_amount})
     return {"status": "success", "discount_amount": order.discount_amount, "grand_total": order.grand_total}
+
+def recalc_order_discounts_and_totals(order: Order):
+    items_discount_sum = sum(float(it.discount_amount or 0.0) for it in order.items if not it.is_voided)
+    order.discount_amount = round(items_discount_sum, 2)
+    order.grand_total = max(0.0, round((order.subtotal or 0.0) - (order.discount_amount or 0.0) - (order.treat_amount or 0.0) + (order.kuver_total or 0.0) + (order.service_charge or 0.0), 2))
+    order.remaining_total = max(0.0, round(order.grand_total - (order.paid_total or 0.0), 2))
+
+@router.post("/items/{item_id}/discount")
+async def apply_item_discount(item_id: int, payload: ApplyItemDiscountRequest, db: AsyncSession = Depends(get_db)):
+    stmt = select(OrderItem).where(OrderItem.id == item_id).options(selectinload(OrderItem.order).selectinload(Order.items))
+    res = await db.execute(stmt)
+    item = res.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Sipariş kalemi bulunamadı.")
+    if item.is_voided:
+        raise HTTPException(status_code=400, detail="İptal edilmiş ürüne indirim uygulanamaz.")
+
+    order = item.order
+    gross_item_total = float(item.unit_price or 0.0) * float(item.quantity or 1.0)
+    
+    if payload.discount_type == "percentage":
+        rate = max(0.0, min(100.0, float(payload.value)))
+        item.discount_rate = rate
+        item.discount_amount = round((gross_item_total * rate) / 100.0, 2)
+    else:
+        item.discount_rate = 0.0
+        item.discount_amount = min(gross_item_total, round(float(payload.value), 2))
+
+    item.discount_reason = payload.reason or "Ürün İndirimi"
+
+    recalc_order_discounts_and_totals(order)
+
+    audit = AuditLog(
+        action_type="APPLY_ITEM_DISCOUNT",
+        operator_name=payload.operator_name or "Kasiyer",
+        target_ref=f"{order.order_no} / Item {item.product_name}",
+        reason_code="URUN_INDIRIMI",
+        reason_text=payload.reason or "Ürün İndirimi",
+        details={
+            "item_id": item.id,
+            "product_name": item.product_name,
+            "discount_amount": item.discount_amount,
+            "discount_rate": item.discount_rate,
+            "discount_type": payload.discount_type
+        }
+    )
+    db.add(audit)
+    await db.commit()
+
+    await ws_hub.broadcast_all("ORDER_UPDATED", {"order_id": order.id, "discount": order.discount_amount})
+    return {
+        "status": "success",
+        "item_id": item.id,
+        "item_discount": item.discount_amount,
+        "item_rate": item.discount_rate,
+        "order_grand_total": order.grand_total,
+        "order_discount_amount": order.discount_amount
+    }
+
+@router.post("/items/{item_id}/remove-discount")
+async def remove_item_discount(item_id: int, db: AsyncSession = Depends(get_db)):
+    stmt = select(OrderItem).where(OrderItem.id == item_id).options(selectinload(OrderItem.order).selectinload(Order.items))
+    res = await db.execute(stmt)
+    item = res.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Sipariş kalemi bulunamadı.")
+
+    order = item.order
+    prev_discount = item.discount_amount or 0.0
+    item.discount_amount = 0.0
+    item.discount_rate = 0.0
+    item.discount_reason = None
+
+    recalc_order_discounts_and_totals(order)
+
+    audit = AuditLog(
+        action_type="REMOVE_ITEM_DISCOUNT",
+        operator_name="Yetkili",
+        target_ref=f"{order.order_no} / Item {item.product_name}",
+        reason_code="INDIRIM_IPTAL",
+        reason_text="Ürün indirimi iptal edildi",
+        details={"item_id": item.id, "product_name": item.product_name, "removed_amount": prev_discount}
+    )
+    db.add(audit)
+    await db.commit()
+
+    await ws_hub.broadcast_all("ORDER_UPDATED", {"order_id": order.id, "discount": order.discount_amount})
+    return {
+        "status": "success",
+        "message": f"{item.product_name} ürününün indirimi kaldırıldı.",
+        "order_grand_total": order.grand_total,
+        "order_discount_amount": order.discount_amount
+    }
+
+@router.post("/{order_id}/batch-item-discount")
+async def apply_batch_item_discount(order_id: int, payload: BatchItemDiscountRequest, db: AsyncSession = Depends(get_db)):
+    stmt = select(Order).where(Order.id == order_id).options(selectinload(Order.items))
+    res = await db.execute(stmt)
+    order = res.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Sipariş bulunamadı.")
+
+    target_items = [it for it in order.items if it.id in payload.item_ids and not it.is_voided]
+    if not target_items:
+        raise HTTPException(status_code=400, detail="İndirim uygulanacak geçerli ürün seçilmedi.")
+
+    for item in target_items:
+        gross_item_total = float(item.unit_price or 0.0) * float(item.quantity or 1.0)
+        if payload.discount_type == "percentage":
+            rate = max(0.0, min(100.0, float(payload.value)))
+            item.discount_rate = rate
+            item.discount_amount = round((gross_item_total * rate) / 100.0, 2)
+        else:
+            # Sabit tutar seçilen ürünlere eşit paylaştırılabilir veya her birine o tutar uygulanabilir
+            # Eğer birden fazla ürün varsa her ürüne girilen tutar veya paylaştırma:
+            # Kullanıcı ürün seçip 20 TL indirim dediyse, her seçili ürüne girilen tutar uygulanır (veya ürün başına)
+            item.discount_rate = 0.0
+            item.discount_amount = min(gross_item_total, round(float(payload.value), 2))
+        
+        item.discount_reason = payload.reason or "Ürün İndirimi"
+
+    recalc_order_discounts_and_totals(order)
+
+    audit = AuditLog(
+        action_type="BATCH_ITEM_DISCOUNT",
+        operator_name=payload.operator_name or "Kasiyer",
+        target_ref=order.order_no,
+        reason_code="TOPLU_URUN_INDIRIMI",
+        reason_text=payload.reason or "Ürün İndirimi",
+        details={"items_count": len(target_items), "type": payload.discount_type, "value": payload.value}
+    )
+    db.add(audit)
+    await db.commit()
+
+    await ws_hub.broadcast_all("ORDER_UPDATED", {"order_id": order.id, "discount": order.discount_amount})
+    return {
+        "status": "success",
+        "order_grand_total": order.grand_total,
+        "order_discount_amount": order.discount_amount
+    }
+
+@router.post("/{order_id}/remove-all-discounts")
+async def remove_all_discounts(order_id: int, db: AsyncSession = Depends(get_db)):
+    stmt = select(Order).where(Order.id == order_id).options(selectinload(Order.items))
+    res = await db.execute(stmt)
+    order = res.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Sipariş bulunamadı.")
+
+    for it in order.items:
+        it.discount_amount = 0.0
+        it.discount_rate = 0.0
+        it.discount_reason = None
+
+    order.discount_amount = 0.0
+    order.discount_rate = 0.0
+    order.discount_reason = None
+    order.grand_total = max(0.0, round((order.subtotal or 0.0) - (order.treat_amount or 0.0) + (order.kuver_total or 0.0) + (order.service_charge or 0.0), 2))
+    order.remaining_total = max(0.0, round(order.grand_total - (order.paid_total or 0.0), 2))
+
+    audit = AuditLog(
+        action_type="REMOVE_ALL_DISCOUNTS",
+        operator_name="Yetkili",
+        target_ref=order.order_no,
+        reason_code="INDIRIMLER_TEMIZLENDI",
+        reason_text="Tüm indirimler iptal edildi"
+    )
+    db.add(audit)
+    await db.commit()
+
+    await ws_hub.broadcast_all("ORDER_UPDATED", {"order_id": order.id, "discount": 0.0})
+    return {"status": "success", "order_grand_total": order.grand_total, "order_discount_amount": 0.0}
+
 
 @router.post("/{order_id}/treat")
 async def apply_treat(order_id: int, payload: ApplyTreatRequest, db: AsyncSession = Depends(get_db)):
@@ -1391,6 +1569,9 @@ async def get_closed_bills_report(
                 "total_price": round(float(it.total_price or 0.0), 2),
                 "is_voided": bool(it.is_voided),
                 "is_treat": bool(it.is_treat),
+                "discount_amount": round(float(getattr(it, "discount_amount", 0.0) or 0.0), 2),
+                "discount_rate": round(float(getattr(it, "discount_rate", 0.0) or 0.0), 2),
+                "discount_reason": getattr(it, "discount_reason", None),
                 "kitchen_note": it.kitchen_note,
                 "selected_modifiers": it.selected_modifiers or []
             }

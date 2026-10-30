@@ -1067,6 +1067,37 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                       </>
                     )}
                   </div>
+
+                  {/* Ürün İndirimi Göstergesi ve İptal Butonu */}
+                  {isSaved && Boolean(item.discount_amount && item.discount_amount > 0) && (
+                    <div className="flex items-center justify-between mt-1 text-[10px] bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 px-2 py-0.5 rounded border border-red-200 dark:border-red-900/50">
+                      <span className="font-bold flex items-center gap-1">
+                        🏷️ İndirim: -₺{(item.discount_amount || 0).toFixed(2)} {item.discount_rate ? `(%${item.discount_rate})` : ''}
+                      </span>
+                      {item.id && (
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            sound.beep();
+                            try {
+                              await api.removeItemDiscount(item.id!);
+                              if (activeOrderId) await loadOrder(activeOrderId);
+                              showToast(`${item.product_name} indirimi iptal edildi.`, 'success');
+                              onRefreshData();
+                            } catch (err: any) {
+                              showToast(err.message || 'İndirim iptal edilemedi.', 'error');
+                              sound.warning();
+                            }
+                          }}
+                          className="font-bold text-red-700 dark:text-red-300 hover:underline px-1.5 py-0.2 bg-red-100 dark:bg-red-900/60 rounded transition"
+                          title="Bu ürünün indirimini iptal et"
+                        >
+                          ✕ İptal
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex flex-col items-end justify-between self-stretch">
@@ -1123,8 +1154,33 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 </div>
               )}
               {discountTotal > 0 && (
-                <div className="flex justify-between text-red-600 dark:text-red-400">
-                  <span>Uygulanan İndirim:</span>
+                <div className="flex items-center justify-between text-red-600 dark:text-red-400">
+                  <div className="flex items-center gap-1.5">
+                    <span>Uygulanan İndirim:</span>
+                    {activeOrderId && (
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          sound.beep();
+                          try {
+                            await api.removeAllDiscounts(activeOrderId);
+                            setDiscountPercent(0);
+                            await loadOrder(activeOrderId);
+                            showToast('Tüm indirimler sıfırlandı.', 'success');
+                            onRefreshData();
+                          } catch (err: any) {
+                            showToast(err.message || 'İndirimler sıfırlanamadı.', 'error');
+                            sound.warning();
+                          }
+                        }}
+                        className="text-[9px] bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300 px-1.5 py-0.5 rounded font-bold hover:underline"
+                        title="Tüm indirimleri kaldır"
+                      >
+                        ✕ Sıfırla
+                      </button>
+                    )}
+                  </div>
                   <span className="font-mono font-bold">-₺{discountTotal.toFixed(2)}</span>
                 </div>
               )}
