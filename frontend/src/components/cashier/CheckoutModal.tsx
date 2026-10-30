@@ -99,8 +99,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Item paid amounts tracking (simulated for UI display per item)
   const [itemPaidMap, setItemPaidMap] = useState<Record<number, number>>({});
 
-  // Modals for 1/n, İndirim, and Tahsilat Geçmişi
-  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+  // Modals for 1/n and İndirim
   const [isDiscountModalOpen, setIsDiscountModalOpen] = useState<boolean>(false);
   const [isSplitNModalOpen, setIsSplitNModalOpen] = useState<boolean>(false);
   const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
@@ -636,22 +635,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         <section className="md:col-span-5 bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 shadow-xs p-4 flex flex-col gap-2.5 transition-colors">
           {/* Top Header: TOPLAM & Tahsilat Geçmişi & Total Amount */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between pb-2.5 border-b border-gray-100">
-              <h2 className="text-[15px] font-bold text-[#212529] tracking-tight flex items-center gap-2">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-slate-800">
+              <h2 className="text-[15px] font-bold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
                 <span>HESAP & ÖDEME</span>
               </h2>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => {
-                    sound.beep();
-                    setIsHistoryModalOpen(true);
-                  }}
-                  className="flex items-center gap-1 text-xs font-semibold text-gray-700 hover:text-[#338d35] transition cursor-pointer bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-200/60"
-                >
-                  <History className="w-3.5 h-3.5 text-[#338d35]" />
-                  <span>TAHSİLAT GEÇMİŞİ</span>
-                </button>
-              </div>
+              {order.payments && order.payments.length > 0 && (
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/80">
+                  {order.payments.length} Tahsilat
+                </span>
+              )}
             </div>
 
             {/* Üçlü Finansal Özet Kartı: Toplam Tutar, Ödenen, Kalan Bakiye */}
@@ -676,6 +668,43 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   ₺{order.remaining_total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                 </div>
               </div>
+            </div>
+
+            {/* Tahsilat Geçmişi: Hesap & Ödeme'nin hemen altında sıralanır */}
+            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-2.5 border border-slate-200/80 dark:border-slate-700/80 transition-colors">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-200">
+                <div className="flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Tahsilat Geçmişi</span>
+                </div>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold font-mono">
+                  {order.payments && order.payments.length > 0 ? `${order.payments.length} İşlem (₺${(order.paid_total || 0).toFixed(2)})` : 'Kayıt Yok'}
+                </span>
+              </div>
+
+              {order.payments && order.payments.length > 0 ? (
+                <div className="mt-1.5 space-y-1 max-h-24 overflow-y-auto custom-scrollbar pr-0.5">
+                  {order.payments.map((p, idx) => (
+                    <div key={idx} className="flex items-center justify-between py-1 px-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-700/70 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-800 dark:text-slate-200 text-[11px]">
+                          {p.method === 'cash' ? '💵 Nakit' : p.method === 'credit_card' ? '💳 Kredi Kartı' : p.method}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {p.created_at ? new Date(p.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : 'Az önce'}
+                        </span>
+                      </div>
+                      <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-xs">
+                        ₺{p.amount.toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-400 dark:text-slate-500 py-0.5 text-center font-medium">
+                  Bu masaya ait henüz bir tahsilat kaydı bulunmamaktadır.
+                </div>
+              )}
             </div>
 
             {/* Ödenecek Tutar Giriş ve Gösterge Alanı + Bitişik Hızlı Banknot Butonları */}
@@ -821,59 +850,59 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
           </div>
 
-          {/* Numeric Keypad Table Grid */}
-          <div className="flex-1 flex flex-col border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-2xs mt-0.5">
+          {/* Numeric Keypad Table Grid (Kompakt ve Dengeli Boyut) */}
+          <div className="border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-2xs mt-0.5">
             {/* Row 1: 7 | 8 | 9 | Tüm */}
-            <div className="flex-1 grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
+            <div className="grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
               {['7', '8', '9', 'Tüm'].map((k) => (
                 <button
                   key={k}
                   onClick={() => handleNumpad(k)}
-                  className="h-full flex items-center justify-center bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-medium text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
+                  className="h-10 sm:h-11 flex items-center justify-center bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-bold text-base sm:text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
                 >
-                  {k === 'Tüm' ? <span className="text-sm font-semibold text-gray-700">Tüm</span> : k}
+                  {k === 'Tüm' ? <span className="text-xs sm:text-sm font-bold text-gray-700 dark:text-slate-300">Tüm</span> : k}
                 </button>
               ))}
             </div>
 
             {/* Row 2: 4 | 5 | 6 | 1/n */}
-            <div className="flex-1 grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
+            <div className="grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
               {['4', '5', '6', '1/n'].map((k) => (
                 <button
                   key={k}
                   onClick={() => handleNumpad(k)}
-                  className="h-full flex items-center justify-center bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-medium text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
+                  className="h-10 sm:h-11 flex items-center justify-center bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-bold text-base sm:text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
                 >
-                  {k === '1/n' ? <span className="text-sm font-semibold text-gray-700">1/n</span> : k}
+                  {k === '1/n' ? <span className="text-xs sm:text-sm font-bold text-gray-700 dark:text-slate-300">1/n</span> : k}
                 </button>
               ))}
             </div>
 
             {/* Row 3: 1 | 2 | 3 | İndirim */}
-            <div className="flex-1 grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
+            <div className="grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
               {['1', '2', '3', 'İndirim'].map((k) => (
                 <button
                   key={k}
                   onClick={() => handleNumpad(k)}
-                  className="h-full flex items-center justify-center bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-medium text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
+                  className="h-10 sm:h-11 flex items-center justify-center bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-bold text-base sm:text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
                 >
-                  {k === 'İndirim' ? <span className="text-sm font-semibold text-gray-700">İndirim</span> : k}
+                  {k === 'İndirim' ? <span className="text-xs sm:text-sm font-bold text-gray-700 dark:text-slate-300">İndirim</span> : k}
                 </button>
               ))}
             </div>
 
             {/* Row 4: . | 0 | ← | Empty */}
-            <div className="flex-1 grid grid-cols-4">
+            <div className="grid grid-cols-4">
               {['.', '0', '←', ''].map((k, idx) => (
                 <button
                   key={idx}
                   onClick={() => k && handleNumpad(k)}
                   disabled={!k}
-                  className={`py-3.5 bg-white hover:bg-gray-50 active:bg-gray-100 border-r border-gray-200 last:border-r-0 text-center font-medium text-lg text-gray-800 transition ${
-                    k ? 'cursor-pointer' : 'cursor-default bg-gray-50/50'
+                  className={`h-10 sm:h-11 flex items-center justify-center bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-bold text-base sm:text-lg text-gray-800 dark:text-slate-100 transition ${
+                    k ? 'cursor-pointer' : 'cursor-default bg-gray-50/50 dark:bg-slate-900/40'
                   }`}
                 >
-                  {k === '←' ? <span className="text-xl font-bold">←</span> : k}
+                  {k === '←' ? <span className="text-lg font-bold">←</span> : k}
                 </button>
               ))}
             </div>
@@ -1089,61 +1118,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
         </section>
       </main>
-
-      {/* ================= MODAL 1: TAHSİLAT GEÇMİŞİ ================= */}
-      {isHistoryModalOpen && (
-        <div className="fixed inset-0 z-60 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-lg p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <div className="flex items-center gap-2 text-[#338d35] font-bold text-base">
-                <History className="w-5 h-5" />
-                <span>Tahsilat Geçmişi ({tableName})</span>
-              </div>
-              <button 
-                onClick={() => setIsHistoryModalOpen(false)}
-                className="text-gray-400 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="max-h-64 overflow-y-auto space-y-2">
-              {order.payments && order.payments.length > 0 ? (
-                order.payments.map((p, idx) => (
-                  <div key={idx} className="p-3 bg-gray-50 rounded-xl border border-gray-200 flex items-center justify-between text-xs">
-                    <div>
-                      <div className="font-bold text-gray-800 capitalize">
-                        {p.method === 'cash' ? 'Nakit' : p.method === 'credit_card' ? 'Kredi Kartı' : p.method}
-                      </div>
-                      <div className="text-gray-500 text-[11px]">
-                        {p.created_at ? new Date(p.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : 'Az önce'}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-mono font-bold text-emerald-600 text-sm">
-                        ₺{p.amount.toFixed(2)}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-8 text-gray-500 text-sm">
-                  Bu adisyon için henüz yapılmış bir tahsilat kaydı bulunmamaktadır.
-                </div>
-              )}
-            </div>
-
-            <div className="pt-2 border-t border-gray-100 flex justify-end">
-              <button
-                onClick={() => setIsHistoryModalOpen(false)}
-                className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition"
-              >
-                Kapat
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ================= MODAL 2: 1/n HESAP BÖLME ================= */}
       {isSplitNModalOpen && (
