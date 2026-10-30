@@ -875,11 +875,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           <div className="truncate">
             <div className="font-extrabold text-xs text-slate-900 dark:text-white truncate flex items-center gap-1.5">
               <span>{activeTable ? activeTable.name : 'Hızlı Satış'}</span>
-              {existingOrder && (existingOrder.paid_total || 0) > 0 && (
-                <span className="text-[9px] bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 px-1.5 py-0.2 rounded font-black">
-                  Ara Tahsilat
-                </span>
-              )}
+              
             </div>
             <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
               {activeOrderId ? `Adisyon #${existingOrder?.order_no || activeOrderId}` : 'Yeni Sipariş'}
@@ -931,11 +927,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               <h2 className="font-extrabold text-base text-slate-900 dark:text-white">
                 {activeTable ? activeTable.name : 'Hızlı Satış'}
               </h2>
-              {existingOrder && (existingOrder.paid_total || 0) > 0 && (
-                <span className="text-[10px] bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800/80 px-2 py-0.5 rounded-full font-bold flex items-center gap-1 shadow-2xs">
-                  <span>💳 Ara Tahsilat: ₺{(existingOrder.paid_total || 0).toFixed(2)}</span>
-                </span>
-              )}
+              
             </div>
           </div>
 
@@ -1224,24 +1216,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           {/* Top Total Row (Clickable to expand breakdown) - Ara Tahsilat Uyumlu: Toplam Tutar / Ödenen */}
           <div 
             onClick={() => setShowBreakdown(!showBreakdown)}
-            className={`flex items-center justify-between text-xs font-bold px-2 py-1.5 rounded-xl border transition cursor-pointer ${
-              existingOrder && (existingOrder.paid_total || 0) > 0
-                ? 'bg-amber-50/90 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800/80 shadow-2xs'
-                : 'hover:bg-slate-50 dark:hover:bg-slate-800 border-transparent'
-            }`}
+            className="flex items-center justify-between text-xs font-bold px-2 py-1.5 rounded-xl border border-transparent hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
             title="Hesap dökümünü göster/gizle"
           >
             <div className="flex flex-col">
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-600 dark:text-slate-400 font-bold">
-                  {existingOrder && (existingOrder.paid_total || 0) > 0 ? 'Toplam / Ödenen:' : 'Toplam Tutar'}
-                </span>
-                {existingOrder && (existingOrder.paid_total || 0) > 0 && (
-                  <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-black animate-pulse flex items-center gap-1 shadow-2xs">
-                    <span>💳 Ara Tahsilatlı</span>
-                  </span>
-                )}
-              </div>
+              <span className="text-slate-600 dark:text-slate-400 font-bold">
+                {existingOrder && (existingOrder.paid_total || 0) > 0 ? 'Toplam / Ödenen:' : 'Toplam Tutar'}
+              </span>
               {existingOrder && (existingOrder.paid_total || 0) > 0 && (
                 <span className="text-[10px] text-brand-600 dark:text-emerald-400 font-black font-mono mt-0.5">
                   Kalan: ₺{((existingOrder.remaining_total !== undefined ? existingOrder.remaining_total : Math.max(0, grandTotal - (existingOrder.paid_total || 0)))).toFixed(2)}
@@ -1267,10 +1248,9 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   ₺{grandTotal.toFixed(2)}
                 </span>
               )}
-              <ChevronUp className={`w-4 h-4 text-slate-400 transition-transform ${showBreakdown ? 'rotate-180 text-[#338d35]' : ''}`} />
+              <ChevronUp className={`w-4 h-4 text-slate-400 transition-transform ${showBreakdown ? 'rotate-180 text-brand-600' : ''}`} />
             </div>
           </div>
-
           {/* 3 Buttons Grid */}
           <div className="grid grid-cols-12 gap-1.5 pt-1">
             <button
