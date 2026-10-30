@@ -30,32 +30,16 @@ interface AdisyoLoginProps {
   onMasterLoginSuccess?: (token: string, user: any) => void;
 }
 
-const DEMO_RESTAURANTS = [
-  { name: 'BonCore Kadıköy', code: 'boncore-kadikoy' },
-  { name: 'Moda Meyhane', code: 'moda-meyhane' },
-  { name: 'Roast & Brew', code: 'roast-brew' },
-  { name: 'Etiler Steak', code: 'etiler-steak' },
-];
-
-const ROLE_SHORTCUTS = [
-  { label: 'Müdür (1234 / 123456)', value: '123456', role: 'manager' },
-  { label: 'Kasiyer (PIN: 2222)', value: '2222', role: 'cashier' },
-  { label: 'Garson (PIN: 9999)', value: '9999', role: 'waiter' },
-  { label: 'Şef (PIN: 3333)', value: '3333', role: 'chef' },
-];
-
 export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({ 
   onLoginSuccess, 
   onBackToLanding,
   onOpenMasterAdmin,
   onMasterLoginSuccess
 }) => {
-  const [username, setUsername] = useState<string>(() => {
-    return localStorage.getItem('boncore_last_restaurant') || 'boncore-kadikoy';
-  });
-  const [password, setPassword] = useState<string>('123456');
+  const [username, setUsername] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [remember, setRemember] = useState<boolean>(true);
+  const [remember, setRemember] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [nowTime, setNowTime] = useState<Date>(new Date());
@@ -100,12 +84,6 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
     try {
       const res = await api.login(username.trim(), password.trim(), remember);
       sound.cashDrawer();
-      try {
-        localStorage.setItem('boncore_last_restaurant', username.trim());
-        if (res.restaurant?.name) {
-          localStorage.setItem('boncore_active_restaurant_name', res.restaurant.name);
-        }
-      } catch {}
       onLoginSuccess(res.user, res.access_token, res.restaurant);
     } catch (err: any) {
       // Yedek Kontrol: Eğer kullanıcı Master Admin şifresiyle normal formdan girmeye çalıştıysa
@@ -130,13 +108,6 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleQuickSelect = (accUsername: string) => {
-    sound.beep();
-    setUsername(accUsername);
-    setPassword('123456');
-    setErrorMsg('');
   };
 
   return (
@@ -216,71 +187,58 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
               </div>
             </div>
 
-            {/* Quick Restaurant & Role Switcher (Desktop view) */}
+            {/* Enterprise Security & Compliance Highlights */}
             <div className="hidden lg:block pt-1 space-y-3">
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 block">
-                  1. Restoran Seçimi (Hızlı Doldur)
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  {DEMO_RESTAURANTS.map((r) => {
-                    const isSelected = username.toLowerCase() === r.code.toLowerCase();
-                    return (
-                      <button
-                        key={r.code}
-                        type="button"
-                        onClick={() => {
-                          sound.beep();
-                          setUsername(r.code);
-                          setErrorMsg('');
-                        }}
-                        className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between cursor-pointer ${
-                          isSelected
-                            ? 'bg-emerald-50 border-emerald-600 text-emerald-900 ring-1 ring-emerald-500/30 font-black'
-                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700 font-bold'
-                        }`}
-                      >
-                        <div className="min-w-0 pr-1">
-                          <div className="text-xs truncate">{r.name}</div>
-                          <div className="text-[10px] font-mono text-slate-400">@{r.code}</div>
-                        </div>
-                        <Building2 className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-emerald-600' : 'text-slate-400'}`} />
-                      </button>
-                    );
-                  })}
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 block">
+                Kurumsal Güvenlik & Mimari Standartları
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-bold text-slate-900">Uçtan Uca PBKDF2</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Personel PIN kodları ve parolaları tuzlanmış PBKDF2 kriptografik hash ile korunur.
+                  </p>
                 </div>
-              </div>
 
-              <div className="space-y-1.5 pt-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                    2. Personel Görevi (Şifre / PIN)
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-medium">Şifre kullanıcıyı belirler</span>
+                <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center">
+                      <Layers className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-bold text-slate-900">İzole Multi-Tenant</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Her restoranın finansal kayıtları, adisyonları ve stokları birbirinden tam bağımsızdır.
+                  </p>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {ROLE_SHORTCUTS.map((rc) => {
-                    const isSelected = password === rc.value;
-                    return (
-                      <button
-                        key={rc.label}
-                        type="button"
-                        onClick={() => {
-                          sound.beep();
-                          setPassword(rc.value);
-                          setErrorMsg('');
-                        }}
-                        className={`p-2 rounded-xl border text-left transition flex items-center justify-between cursor-pointer ${
-                          isSelected
-                            ? 'bg-indigo-50 border-indigo-600 text-indigo-900 ring-1 ring-indigo-500/30 font-black'
-                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700 font-bold'
-                        }`}
-                      >
-                        <div className="text-xs truncate">{rc.label}</div>
-                        <KeyRound className={`w-3 h-3 shrink-0 ${isSelected ? 'text-indigo-600' : 'text-slate-400'}`} />
-                      </button>
-                    );
-                  })}
+
+                <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+                      <KeyRound className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-bold text-slate-900">Otomatik Rol Tanıma</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Girdiğiniz şifre veya PIN kodu yetkinizi belirler (Müdür, Kasiyer, Garson, Mutfak).
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-bold text-slate-900">Denetim Günlüğü</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Tüm oturum açma, masa taşıma, indirim ve iptal işlemleri personel bazında kayıt altına alınır.
+                  </p>
                 </div>
               </div>
             </div>
@@ -359,30 +317,6 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
               </div>
             </div>
 
-            {/* Mobile Quick Restaurant & Role selector */}
-            <div className="lg:hidden space-y-2">
-              <div className="text-[10px] text-slate-500 font-bold uppercase">Restoran Seç:</div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {DEMO_RESTAURANTS.slice(0, 2).map((r) => (
-                  <button
-                    key={r.code}
-                    type="button"
-                    onClick={() => {
-                      sound.beep();
-                      setUsername(r.code);
-                    }}
-                    className={`p-2 rounded-xl border text-xs font-bold transition text-left ${
-                      username.toLowerCase() === r.code.toLowerCase()
-                        ? 'bg-emerald-50 border-emerald-600 text-emerald-900'
-                        : 'bg-slate-50 border-slate-200 text-slate-700'
-                    }`}
-                  >
-                    {r.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* Error Alert */}
             {errorMsg && (
               <div className="p-3 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold flex items-center gap-2.5 animate-fadeIn">
@@ -409,7 +343,8 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                       setUsername(e.target.value);
                       setErrorMsg('');
                     }}
-                    placeholder="Örn: boncore-kadikoy, moda-meyhane, roast-brew"
+                    placeholder="Restoran kullanıcı adınızı girin (Örn: boncore-kadikoy)"
+                    autoComplete="off"
                     required
                     className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-emerald-600 rounded-2xl pl-10 pr-4 py-3 sm:py-3.5 text-sm text-slate-900 placeholder-slate-400 font-bold focus:outline-none transition shadow-2xs"
                   />
@@ -435,7 +370,8 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                       setPassword(e.target.value);
                       setErrorMsg('');
                     }}
-                    placeholder="Şifreniz veya 4 haneli PIN kodunuz"
+                    placeholder="Personel şifreniz veya PIN kodunuz"
+                    autoComplete="new-password"
                     required
                     className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-emerald-600 rounded-2xl pl-10 pr-11 py-3 sm:py-3.5 text-sm text-slate-900 placeholder-slate-400 font-mono font-bold focus:outline-none transition shadow-2xs"
                   />

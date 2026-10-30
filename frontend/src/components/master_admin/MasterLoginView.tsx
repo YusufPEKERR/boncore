@@ -14,8 +14,8 @@ export const MasterLoginView: React.FC<MasterLoginViewProps> = ({
   onLoginSuccess,
   onBackToLanding
 }) => {
-  const [username, setUsername] = useState<string>('master');
-  const [password, setPassword] = useState<string>('masteradmin2026');
+  const [username, setUsername] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
 
@@ -60,13 +60,6 @@ export const MasterLoginView: React.FC<MasterLoginViewProps> = ({
     }
   };
 
-  const handleQuickMaster = () => {
-    sound.beep();
-    setUsername('master');
-    setPassword('masteradmin2026');
-    setErrorMsg('');
-  };
-
   return (
     <div className="min-h-screen w-full bg-slate-950 text-slate-100 flex items-center justify-center p-4 font-sans relative overflow-hidden select-none">
       
@@ -99,23 +92,6 @@ export const MasterLoginView: React.FC<MasterLoginViewProps> = ({
           </p>
         </div>
 
-        {/* Quick Credentials Info Box */}
-        <div 
-          onClick={handleQuickMaster}
-          className="p-3 rounded-2xl bg-emerald-950/40 border border-emerald-800/60 flex items-center justify-between cursor-pointer hover:bg-emerald-950/60 transition"
-        >
-          <div className="flex items-center gap-2">
-            <KeyRound className="w-4 h-4 text-emerald-400" />
-            <div className="text-xs">
-              <span className="font-bold text-emerald-300">Hızlı Master Giriş: </span>
-              <span className="font-mono text-emerald-200">master / masteradmin2026</span>
-            </div>
-          </div>
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-800/60 text-emerald-200">
-            Seç
-          </span>
-        </div>
-
         {errorMsg && (
           <div className="p-3 rounded-xl bg-red-950/60 border border-red-800/80 text-red-300 text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
@@ -134,9 +110,10 @@ export const MasterLoginView: React.FC<MasterLoginViewProps> = ({
               <input
                 type="text"
                 required
+                autoComplete="off"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="master veya admin"
+                placeholder="Master kullanıcı adınızı girin"
                 className="w-full pl-10 pr-3.5 py-3 rounded-xl bg-slate-800/90 border border-slate-700 text-white font-bold text-xs focus:outline-none focus:border-emerald-500"
               />
             </div>
@@ -151,9 +128,10 @@ export const MasterLoginView: React.FC<MasterLoginViewProps> = ({
               <input
                 type="password"
                 required
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
+                placeholder="Master güvenlik parolanızı girin"
                 className="w-full pl-10 pr-3.5 py-3 rounded-xl bg-slate-800/90 border border-slate-700 text-white font-bold text-xs focus:outline-none focus:border-emerald-500"
               />
             </div>
