@@ -127,9 +127,18 @@ async def settle_order_payment(payload: SettlePaymentRequest, db: AsyncSession =
     order.cashier_name = payload.cashier_name
 
     # Masayı kapatma ve ödemeyi tamamlama:
-    # Masa hem close_table=True olduğunda hem de kalan tutar 0'a düştüğünde (tam ödeme) kapatılır!
+    # Masa YALNIZCA kalan tutar sıfırlandığında (<= 0.05) kapatılabilir.
     is_fully_paid = order.remaining_total <= 0.05
-    should_close = payload.close_table or is_fully_paid
+
+    # Kullanıcı 'Öde ve Kapat' istedi fakat eksik ödeme yaptıysa kesinlikle hata fırlat ve masayı kapatma!
+    if payload.close_table and not is_fully_paid:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Eksik tutar girildi! Kalan bakiye: ₺{order.remaining_total:.2f}. Hesap tamamen ödenmeden masa kapatılamaz. Kısmi ödeme kaydetmek için lütfen 'Kaydet' butonunu kullanınız."
+        )
+
+    should_close = is_fully_paid
     table = order.table
 
     if should_close:

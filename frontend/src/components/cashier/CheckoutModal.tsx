@@ -148,6 +148,44 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
+  // Physical Keyboard Listener (Klavyeden tutar girme desteği)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement as HTMLElement | null;
+      // Eğer başka bir modal inputu aktifse engelleme
+      if (activeEl && activeEl.tagName === 'INPUT' && activeEl.id !== 'checkout-pay-input') {
+        return;
+      }
+
+      if (e.key >= '0' && e.key <= '9') {
+        sound.beep();
+        setPayAmount(prev => {
+          if (prev === '0.00' || prev === '0') return e.key;
+          return prev + e.key;
+        });
+      } else if (e.key === '.' || e.key === ',') {
+        sound.beep();
+        setPayAmount(prev => {
+          if (!prev.includes('.')) return prev + '.';
+          return prev;
+        });
+      } else if (e.key === 'Backspace') {
+        sound.beep();
+        setPayAmount(prev => {
+          if (prev.length <= 1) return '0.00';
+          return prev.slice(0, -1);
+        });
+      } else if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, payAmount]);
+
   if (!isOpen || !order) return null;
 
   // Selected items total sum
@@ -252,6 +290,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const handleProcessPayment = async (method: string = selectedMethod, shouldPrint: boolean = false, shouldCloseTable: boolean = true) => {
     const parsedAmount = parseFloat(payAmount);
     const amountToPay = isNaN(parsedAmount) ? 0 : parsedAmount;
+
+    // EKSİK TUTAR KORUMASI: Masayı kapatmak istiyor ama girilen tutar kalan borçtan küçük ise KESİNLİKLE HATA VER VE MASAYI KAPATMA!
+    if (shouldCloseTable) {
+      const remaining = Number((order.remaining_total || 0).toFixed(2));
+      const paying = Number(amountToPay.toFixed(2));
+      if (paying < remaining - 0.05) {
+        sound.warning();
+        const diff = (remaining - paying).toFixed(2);
+        showNotice(`⚠️ Eksik tutar girildi! Kalan borç: ₺${diff}. Hesap tamamen ödenmeden masa kapatılamaz. Kısmi ödeme kaydetmek için lütfen 'Kaydet' butonunu kullanınız.`, true);
+        return;
+      }
+    }
+
     if (amountToPay <= 0 && !shouldCloseTable && order.remaining_total > 0.05) {
       showNotice('Lütfen geçerli bir ödeme tutarı giriniz.', true);
       return;
@@ -492,40 +543,184 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </section>
 
         {/* ================= COLUMN 2: TOPLAM & NUMPAD (Center: 5 cols) ================= */}
-        <section className="md:col-span-5 bg-white rounded-2xl border border-gray-200 shadow-xs p-5 flex flex-col justify-between">
+        <section className="md:col-span-5 bg-white rounded-2xl border border-gray-200 shadow-xs p-4 sm:p-5 flex flex-col justify-between">
           {/* Top Header: TOPLAM & Tahsilat Geçmişi & Total Amount */}
-          <div>
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <h2 className="text-[15px] font-bold text-[#212529] tracking-tight">
-                TOPLAM
+          <div className="space-y-3">
+            <div className="flex items-center justify-between pb-2.5 border-b border-gray-100">
+              <h2 className="text-[15px] font-bold text-[#212529] tracking-tight flex items-center gap-2">
+                <span>HESAP & ÖDEME</span>
               </h2>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => {
                     sound.beep();
                     setIsHistoryModalOpen(true);
                   }}
-                  className="flex items-center gap-1 text-xs font-semibold text-gray-700 hover:text-[#d32f2f] transition cursor-pointer"
+                  className="flex items-center gap-1 text-xs font-semibold text-gray-700 hover:text-[#d32f2f] transition cursor-pointer bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-200/60"
                 >
-                  <History className="w-4 h-4 text-[#d32f2f]" />
+                  <History className="w-3.5 h-3.5 text-[#d32f2f]" />
                   <span>TAHSİLAT GEÇMİŞİ</span>
                 </button>
-                <span className="text-[15px] font-bold text-[#212529] font-mono">
-                  ₺{order.grand_total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
-                </span>
               </div>
             </div>
 
-            {/* Middle White Display Area with Ödenecek Tutar at bottom */}
-            <div className="h-36 flex flex-col justify-end items-end pb-3 pr-2">
-              <div className="text-right">
-                <span className="text-base md:text-lg font-bold text-[#212529] mr-2">
-                  Ödenecek Tutar:
-                </span>
-                <span className="text-xl md:text-2xl font-black text-[#111827] font-mono">
-                  ₺{payAmount}
-                </span>
+            {/* Üçlü Finansal Özet Kartı: Toplam Tutar, Ödenen, Kalan Bakiye */}
+            <div className="grid grid-cols-3 gap-2 text-center select-none">
+              <div className="bg-gray-50 p-2 rounded-xl border border-gray-200/70">
+                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Toplam</div>
+                <div className="text-xs sm:text-sm font-black text-gray-900 font-mono">
+                  ₺{order.grand_total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                </div>
               </div>
+
+              <div className="bg-emerald-50/70 p-2 rounded-xl border border-emerald-200/60">
+                <div className="text-[10px] text-emerald-700 font-bold uppercase tracking-wider">Ödenen</div>
+                <div className="text-xs sm:text-sm font-black text-emerald-600 font-mono">
+                  ₺{(order.paid_total || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                </div>
+              </div>
+
+              <div className="bg-rose-50/70 p-2 rounded-xl border border-rose-200/60">
+                <div className="text-[10px] text-rose-700 font-bold uppercase tracking-wider">Kalan Borç</div>
+                <div className="text-xs sm:text-sm font-black text-rose-600 font-mono">
+                  ₺{order.remaining_total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                </div>
+              </div>
+            </div>
+
+            {/* Ödenecek Tutar Giriş ve Gösterge Alanı (Klavyeden Yazılabilir + Anlık Hesap) */}
+            <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-3.5 shadow-md border border-slate-700 space-y-2">
+              <div className="flex items-center justify-between text-xs text-slate-300 font-semibold">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Ödenecek Tutar (Klavyeden Yazılabilir):</span>
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.beep();
+                      setPayAmount('0.00');
+                    }}
+                    className="text-[11px] px-2 py-0.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition cursor-pointer"
+                    title="Tutarı sıfırla"
+                  >
+                    Temizle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.beep();
+                      setSelectedItemIds([]);
+                      setPayAmount(order.remaining_total.toFixed(2));
+                    }}
+                    className="text-[11px] px-2.5 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition cursor-pointer shadow-xs"
+                    title="Kalan borcun tamamını yaz"
+                  >
+                    Tümü (₺{order.remaining_total.toFixed(2)})
+                  </button>
+                </div>
+              </div>
+
+              {/* Klavyeden doğrudan yazılabilen İnteraktif Giriş Kutusu */}
+              <div className="relative flex items-center bg-slate-950/80 rounded-xl px-3 py-1.5 border border-slate-700 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 transition">
+                <span className="text-xl sm:text-2xl font-black text-emerald-400 mr-2 select-none">₺</span>
+                <input
+                  id="checkout-pay-input"
+                  type="text"
+                  inputMode="decimal"
+                  value={payAmount}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^0-9.]/g, '');
+                    setPayAmount(val || '0.00');
+                  }}
+                  onFocus={(e) => {
+                    if (payAmount === '0.00' || payAmount === '0') {
+                      setPayAmount('');
+                    } else {
+                      e.target.select();
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!payAmount || payAmount === '.') {
+                      setPayAmount(order.remaining_total > 0 ? order.remaining_total.toFixed(2) : '0.00');
+                    }
+                  }}
+                  className="w-full bg-transparent text-right text-2xl sm:text-3xl font-black font-mono text-white focus:outline-none tracking-tight"
+                  placeholder="0.00"
+                />
+              </div>
+
+              {/* Akıllı Durum Rozeti: Kalan Tutar, Para Üstü veya Tam Kapanma Durumu */}
+              {(() => {
+                const numPay = parseFloat(payAmount) || 0;
+                const rem = order.remaining_total || 0;
+                const diff = roundTo2(numPay - rem);
+
+                function roundTo2(n: number) {
+                  return Math.round(n * 100) / 100;
+                }
+
+                if (numPay <= 0) {
+                  return (
+                    <div className="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-800/60 rounded-lg px-2.5 py-1 text-center font-bold flex items-center justify-center gap-1.5">
+                      <span>⚠️ Lütfen ödenecek bir tutar giriniz.</span>
+                    </div>
+                  );
+                }
+
+                if (diff < -0.05) {
+                  return (
+                    <div className="text-[11px] text-amber-300 bg-amber-950/50 border border-amber-800/80 rounded-lg px-2.5 py-1 text-center font-bold flex items-center justify-between">
+                      <span>⚠️ Kısmi Ödeme (Masa Açık Kalır)</span>
+                      <span className="font-mono">Kalan Borç: ₺{Math.abs(diff).toFixed(2)}</span>
+                    </div>
+                  );
+                }
+
+                if (Math.abs(diff) <= 0.05) {
+                  return (
+                    <div className="text-[11px] text-emerald-300 bg-emerald-950/50 border border-emerald-700/80 rounded-lg px-2.5 py-1 text-center font-bold flex items-center justify-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Tam Ödeme: Bu işlemle masa hesabı tamamen kapanacaktır.</span>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="text-[11px] text-cyan-200 bg-cyan-950/50 border border-cyan-700/80 rounded-lg px-2.5 py-1 text-center font-bold flex items-center justify-between">
+                    <span>💵 Para Üstü Verilecek:</span>
+                    <span className="font-mono text-sm text-cyan-300 font-black">₺{diff.toFixed(2)}</span>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Hızlı Tutar ve Banknot Butonları */}
+            <div className="grid grid-cols-5 gap-1.5 text-xs font-bold">
+              {[
+                { label: '₺50', val: 50 },
+                { label: '₺100', val: 100 },
+                { label: '₺200', val: 200 },
+                { label: '1/2', fn: () => (order.remaining_total / 2).toFixed(2) },
+                { label: 'Kalan', fn: () => order.remaining_total.toFixed(2) }
+              ].map((btn, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    sound.beep();
+                    if (btn.fn) {
+                      setPayAmount(btn.fn());
+                    } else if (btn.val) {
+                      setPayAmount(btn.val.toFixed(2));
+                    }
+                  }}
+                  className="py-1.5 px-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-200 transition active:scale-95 text-center cursor-pointer font-mono text-[11px] font-extrabold"
+                >
+                  {btn.label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -726,6 +921,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <Printer className="w-3.5 h-3.5" />
                       <span>ÖDE, YAZDIR VE KAPAT</span>
                     </button>
+
+                    {/* Eksik Tutar Durumunda Kısmi Tahsilat Butonu */}
+                    {parseFloat(payAmount) > 0 && parseFloat(payAmount) < order.remaining_total - 0.05 && (
+                      <button
+                        onClick={() => handleProcessPayment(selectedMethod, false, false)}
+                        disabled={loading}
+                        className="w-full py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 animate-fadeIn"
+                      >
+                        <span>ARA TAHSİLAT AL (MASA AÇIK KALIR)</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
