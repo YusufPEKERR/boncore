@@ -417,9 +417,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const tableName = table ? table.name : (order.table_name || 'MASA 100');
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#f4f5f7] text-[#212529] flex flex-col select-none font-sans overflow-hidden animate-fadeIn">
+    <div className="fixed inset-0 z-50 bg-[#f4f5f7] dark:bg-slate-950 text-[#212529] dark:text-slate-100 flex flex-col select-none font-sans overflow-hidden animate-fadeIn transition-colors">
       {/* ================= TOP HEADER BAR ================= */}
-      <header className="bg-white border-b border-gray-200/90 px-3 sm:px-6 py-2.5 sm:py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs shrink-0">
+      <header className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800/90 dark:border-slate-800 px-3 sm:px-6 py-2.5 sm:py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs shrink-0">
         {/* Left: Table & Waiter info + Mobile Close button */}
         <div className="flex items-center justify-between">
           <div>
@@ -503,11 +503,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       <main className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto md:overflow-hidden grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-5">
         
         {/* ================= COLUMN 1: PARÇALI ÖDE (Left: 4 cols) ================= */}
-        <section className="md:col-span-4 bg-white rounded-2xl border border-gray-200 shadow-xs p-4 flex flex-col justify-between max-h-80 md:max-h-none overflow-hidden">
+        <section className="md:col-span-4 bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 shadow-xs p-4 flex flex-col justify-between max-h-80 md:max-h-none overflow-hidden transition-colors">
           <div className="flex flex-col flex-1 overflow-hidden">
             {/* Header: PARÇALI ÖDE and Selected Total */}
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <h2 className="text-[15px] font-bold text-[#212529] tracking-tight">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-slate-800">
+              <h2 className="text-[15px] font-bold text-[#212529] dark:text-slate-100 tracking-tight">
                 PARÇALI ÖDE
               </h2>
               <span className="text-[15px] font-bold text-[#212529] font-mono">
@@ -517,7 +517,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             {/* Filter Pill: Ödenmemiş Olanlar */}
             <div className="flex justify-center my-2.5">
-              <span className="bg-[#e9ecef] text-[#495057] px-5 py-1 rounded-full text-xs font-semibold shadow-2xs">
+              <span className="bg-[#e9ecef] dark:bg-slate-800 text-[#495057] dark:text-slate-300 px-5 py-1 rounded-full text-xs font-semibold shadow-2xs">
                 Ödenmemiş Olanlar
               </span>
             </div>
@@ -541,12 +541,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   >
                     {/* Top Row: Qty - Name and Price + Hand icon */}
                     <div className="flex items-center justify-between">
-                      <span className="text-[13px] font-bold text-[#212529] truncate pr-2">
+                      <span className="text-[13px] font-bold text-[#212529] dark:text-slate-200 truncate pr-2">
                         {Number.isInteger(Number(it.quantity)) ? `${it.quantity} Adet` : `${Number(Number(it.quantity).toFixed(3))} Kg (${Math.round(Number(it.quantity) * 1000)} gr)`} - {it.product_name.toUpperCase()}
                         {it.variant_name && <span className="text-gray-500 text-xs ml-1 font-normal">({it.variant_name})</span>}
                       </span>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-[13px] font-bold text-[#212529] font-mono">
+                        <span className="text-[13px] font-bold text-[#212529] dark:text-slate-200 font-mono">
                           ₺{it.total_price.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                         </span>
                         <TouchHandIcon active={isSelected} />
@@ -632,34 +632,34 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             {/* Üçlü Finansal Özet Kartı: Toplam Tutar, Ödenen, Kalan Bakiye */}
             <div className="grid grid-cols-3 gap-2 text-center select-none">
-              <div className="bg-gray-50 p-2 rounded-xl border border-gray-200/70">
-                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Toplam</div>
-                <div className="text-xs sm:text-sm font-black text-gray-900 font-mono">
+              <div className="bg-gray-50 dark:bg-slate-800/80 p-2 rounded-xl border border-gray-200/70 dark:border-slate-700">
+                <div className="text-[10px] text-gray-500 dark:text-slate-400 font-bold uppercase tracking-wider">Toplam</div>
+                <div className="text-xs sm:text-sm font-black text-gray-900 dark:text-slate-100 font-mono">
                   ₺{order.grand_total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                 </div>
               </div>
 
-              <div className="bg-emerald-50/70 p-2 rounded-xl border border-emerald-200/60">
-                <div className="text-[10px] text-emerald-700 font-bold uppercase tracking-wider">Ödenen</div>
-                <div className="text-xs sm:text-sm font-black text-emerald-600 font-mono">
+              <div className="bg-emerald-50/70 dark:bg-emerald-950/40 p-2 rounded-xl border border-emerald-200/60 dark:border-emerald-800/50">
+                <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold uppercase tracking-wider">Ödenen</div>
+                <div className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono">
                   ₺{(order.paid_total || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                 </div>
               </div>
 
-              <div className="bg-rose-50/70 p-2 rounded-xl border border-rose-200/60">
-                <div className="text-[10px] text-rose-700 font-bold uppercase tracking-wider">Kalan Borç</div>
-                <div className="text-xs sm:text-sm font-black text-rose-600 font-mono">
+              <div className="bg-rose-50/70 dark:bg-rose-950/40 p-2 rounded-xl border border-rose-200/60 dark:border-rose-800/50">
+                <div className="text-[10px] text-rose-700 dark:text-rose-400 font-bold uppercase tracking-wider">Kalan Borç</div>
+                <div className="text-xs sm:text-sm font-black text-rose-600 dark:text-rose-400 font-mono">
                   ₺{order.remaining_total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                 </div>
               </div>
             </div>
 
-            {/* Ödenecek Tutar Giriş ve Gösterge Alanı (Klavyeden Yazılabilir + Anlık Hesap) */}
-            <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-3.5 shadow-md border border-slate-700 space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-300 font-semibold">
+            {/* Ödenecek Tutar Giriş ve Gösterge Alanı (Açık ve Koyu Tema Uyumlu) */}
+            <div className="bg-slate-50 dark:bg-slate-900/90 text-slate-800 dark:text-slate-100 rounded-2xl p-3.5 shadow-xs border border-slate-200/90 dark:border-slate-800 space-y-2.5 transition-colors">
+              <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 font-semibold">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Ödenecek Tutar (Klavyeden Yazılabilir):</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="font-bold text-slate-800 dark:text-slate-200">Ödenecek Tutar (Klavyeden Yazılabilir):</span>
                 </span>
                 <div className="flex items-center gap-1.5">
                   <button
@@ -668,7 +668,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       sound.beep();
                       setPayAmount('0.00');
                     }}
-                    className="text-[11px] px-2 py-0.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition cursor-pointer"
+                    className="text-[11px] px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-medium transition cursor-pointer shadow-2xs"
                     title="Tutarı sıfırla"
                   >
                     Temizle
@@ -680,7 +680,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       setSelectedItemIds([]);
                       setPayAmount(order.remaining_total.toFixed(2));
                     }}
-                    className="text-[11px] px-2.5 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition cursor-pointer shadow-xs"
+                    className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold transition cursor-pointer shadow-xs"
                     title="Kalan borcun tamamını yaz"
                   >
                     Tümü (₺{order.remaining_total.toFixed(2)})
@@ -689,8 +689,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
 
               {/* Klavyeden doğrudan yazılabilen İnteraktif Giriş Kutusu */}
-              <div className="relative flex items-center bg-slate-950/80 rounded-xl px-3 py-1.5 border border-slate-700 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 transition">
-                <span className="text-xl sm:text-2xl font-black text-emerald-400 mr-2 select-none">₺</span>
+              <div className="relative flex items-center bg-white dark:bg-slate-950 rounded-xl px-3.5 py-2 border-2 border-slate-200 dark:border-slate-700/80 focus-within:border-emerald-500 dark:focus-within:border-emerald-500 focus-within:ring-3 focus-within:ring-emerald-500/20 shadow-inner transition">
+                <span className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 mr-2 select-none">₺</span>
                 <input
                   id="checkout-pay-input"
                   type="text"
@@ -712,12 +712,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       setPayAmount(order.remaining_total > 0 ? order.remaining_total.toFixed(2) : '0.00');
                     }
                   }}
-                  className="w-full bg-transparent text-right text-2xl sm:text-3xl font-black font-mono text-white focus:outline-none tracking-tight"
+                  className="w-full bg-transparent text-right text-2xl sm:text-3xl font-black font-mono text-slate-900 dark:text-white focus:outline-none tracking-tight"
                   placeholder="0.00"
                 />
               </div>
 
-              {/* Akıllı Durum Rozeti: Kalan Tutar, Para Üstü veya Tam Kapanma Durumu */}
+              {/* Akıllı Durum Rozeti: Açık ve Koyu Tema ile Uyumlu */}
               {(() => {
                 const numPay = parseFloat(payAmount) || 0;
                 const rem = order.remaining_total || 0;
@@ -729,7 +729,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 if (numPay <= 0) {
                   return (
-                    <div className="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-800/60 rounded-lg px-2.5 py-1 text-center font-bold flex items-center justify-center gap-1.5">
+                    <div className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/80 rounded-lg px-2.5 py-1.5 text-center font-bold flex items-center justify-center gap-1.5">
                       <span>⚠️ Lütfen ödenecek bir tutar giriniz.</span>
                     </div>
                   );
@@ -737,26 +737,26 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 if (diff < -0.05) {
                   return (
-                    <div className="text-[11px] text-amber-300 bg-amber-950/50 border border-amber-800/80 rounded-lg px-2.5 py-1 text-center font-bold flex items-center justify-between">
-                      <span>⚠️ Kısmi Ödeme (Masa Açık Kalır)</span>
-                      <span className="font-mono">Kalan Borç: ₺{Math.abs(diff).toFixed(2)}</span>
+                    <div className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800/80 rounded-lg px-2.5 py-1.5 text-center font-bold flex items-center justify-between">
+                      <span className="font-bold">⚠️ Kısmi Ödeme (Masa Açık Kalır)</span>
+                      <span className="font-mono font-black">Kalan Borç: ₺{Math.abs(diff).toFixed(2)}</span>
                     </div>
                   );
                 }
 
                 if (Math.abs(diff) <= 0.05) {
                   return (
-                    <div className="text-[11px] text-emerald-300 bg-emerald-950/50 border border-emerald-700/80 rounded-lg px-2.5 py-1 text-center font-bold flex items-center justify-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <div className="text-[11px] text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-700/80 rounded-lg px-2.5 py-1.5 text-center font-bold flex items-center justify-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                       <span>Tam Ödeme: Bu işlemle masa hesabı tamamen kapanacaktır.</span>
                     </div>
                   );
                 }
 
                 return (
-                  <div className="text-[11px] text-cyan-200 bg-cyan-950/50 border border-cyan-700/80 rounded-lg px-2.5 py-1 text-center font-bold flex items-center justify-between">
-                    <span>💵 Para Üstü Verilecek:</span>
-                    <span className="font-mono text-sm text-cyan-300 font-black">₺{diff.toFixed(2)}</span>
+                  <div className="text-[11px] text-cyan-800 dark:text-cyan-200 bg-cyan-50 dark:bg-cyan-950/50 border border-cyan-300 dark:border-cyan-700/80 rounded-lg px-2.5 py-1.5 text-center font-bold flex items-center justify-between">
+                    <span className="font-bold">💵 Para Üstü Verilecek:</span>
+                    <span className="font-mono text-sm text-cyan-700 dark:text-cyan-300 font-black">₺{diff.toFixed(2)}</span>
                   </div>
                 );
               })()}
@@ -782,7 +782,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       setPayAmount(btn.val.toFixed(2));
                     }
                   }}
-                  className="py-1.5 px-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-200 transition active:scale-95 text-center cursor-pointer font-mono text-[11px] font-extrabold"
+                  className="py-1.5 px-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-100 border border-gray-200 dark:border-slate-700 transition active:scale-95 text-center cursor-pointer font-mono text-[11px] font-extrabold shadow-2xs"
                 >
                   {btn.label}
                 </button>
@@ -791,14 +791,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
 
           {/* Numeric Keypad Table Grid */}
-          <div className="border border-gray-200 rounded-xl overflow-hidden shadow-2xs">
+          <div className="border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-2xs">
             {/* Row 1: 7 | 8 | 9 | Tüm */}
-            <div className="grid grid-cols-4 border-b border-gray-200">
+            <div className="grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
               {['7', '8', '9', 'Tüm'].map((k) => (
                 <button
                   key={k}
                   onClick={() => handleNumpad(k)}
-                  className="py-3.5 bg-white hover:bg-gray-50 active:bg-gray-100 border-r border-gray-200 last:border-r-0 text-center font-medium text-lg text-gray-800 transition cursor-pointer"
+                  className="py-3.5 bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-medium text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
                 >
                   {k === 'Tüm' ? <span className="text-sm font-semibold text-gray-700">Tüm</span> : k}
                 </button>
@@ -806,12 +806,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
 
             {/* Row 2: 4 | 5 | 6 | 1/n */}
-            <div className="grid grid-cols-4 border-b border-gray-200">
+            <div className="grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
               {['4', '5', '6', '1/n'].map((k) => (
                 <button
                   key={k}
                   onClick={() => handleNumpad(k)}
-                  className="py-3.5 bg-white hover:bg-gray-50 active:bg-gray-100 border-r border-gray-200 last:border-r-0 text-center font-medium text-lg text-gray-800 transition cursor-pointer"
+                  className="py-3.5 bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-medium text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
                 >
                   {k === '1/n' ? <span className="text-sm font-semibold text-gray-700">1/n</span> : k}
                 </button>
@@ -819,12 +819,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
 
             {/* Row 3: 1 | 2 | 3 | İndirim */}
-            <div className="grid grid-cols-4 border-b border-gray-200">
+            <div className="grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
               {['1', '2', '3', 'İndirim'].map((k) => (
                 <button
                   key={k}
                   onClick={() => handleNumpad(k)}
-                  className="py-3.5 bg-white hover:bg-gray-50 active:bg-gray-100 border-r border-gray-200 last:border-r-0 text-center font-medium text-lg text-gray-800 transition cursor-pointer"
+                  className="py-3.5 bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-medium text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
                 >
                   {k === 'İndirim' ? <span className="text-sm font-semibold text-gray-700">İndirim</span> : k}
                 </button>
@@ -853,7 +853,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         <section className="md:col-span-3 bg-white rounded-2xl border border-gray-200 shadow-xs p-5 flex flex-col justify-between">
           <div>
             {/* Tab Bar: Ödeme Tipleri & Bahşiş ekle */}
-            <div className="flex border-b border-gray-200">
+            <div className="flex border-b border-gray-200 dark:border-slate-800">
               <button
                 onClick={() => { sound.beep(); setActiveRightTab('methods'); }}
                 className={`pb-2.5 px-3 text-sm font-bold transition cursor-pointer relative ${
