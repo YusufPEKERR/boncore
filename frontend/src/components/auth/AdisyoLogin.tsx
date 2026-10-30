@@ -6,6 +6,7 @@ import {
   EyeOff,
   ShieldCheck,
   ArrowRight,
+  ArrowLeft,
   Layers,
   CheckCircle2,
   AlertCircle,
@@ -22,6 +23,7 @@ import { api } from '../../services/api';
 interface AdisyoLoginProps {
   onLoginSuccess: (user: StaffUser, token?: string) => void;
   staffList?: StaffUser[];
+  onBackToLanding?: () => void;
 }
 
 const QUICK_ACCOUNTS = [
@@ -31,7 +33,7 @@ const QUICK_ACCOUNTS = [
   { label: 'Mutfak Şefi', username: 'sef', role: 'KDS Mutfak', badgeColor: 'bg-amber-50 text-amber-700 border-amber-200' },
 ];
 
-export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({ onLoginSuccess }) => {
+export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({ onLoginSuccess, onBackToLanding }) => {
   const [username, setUsername] = useState<string>('admin');
   const [password, setPassword] = useState<string>('123456');
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -224,6 +226,18 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({ onLoginSuccess }) => {
                 <span>{nowTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
             </div>
+
+            {/* Back to Landing Page link */}
+            {onBackToLanding && (
+              <button
+                type="button"
+                onClick={() => { sound.beep(); onBackToLanding(); }}
+                className="inline-flex items-center gap-1.5 text-xs font-black text-slate-500 hover:text-brand-600 transition cursor-pointer select-none mb-1 group"
+              >
+                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                <span>Tanıtım & Anasayfaya Dön</span>
+              </button>
+            )}
 
             {/* Header */}
             <div className="flex items-center gap-3 lg:block lg:space-y-1.5">

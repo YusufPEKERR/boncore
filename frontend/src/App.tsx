@@ -38,6 +38,7 @@ import { ReservationsView } from './components/modules/ReservationsView';
 import { CostProfitWizardView } from './components/modules/CostProfitWizardView';
 import { HotelFolioView } from './components/modules/HotelFolioView';
 import { KioskCfdView } from './components/modules/KioskCfdView';
+import { LandingPage } from './components/landing/LandingPage';
 
 import { Area, Category, Table, StaffUser } from './types';
 import { api } from './services/api';
@@ -76,6 +77,25 @@ export const App: React.FC = () => {
     const cached = localStorage.getItem('boncore_auth');
     return Boolean(token && cached === 'true');
   });
+
+  // Initial View Mode: 'landing' (Adisyo.com tarzı satış & pazarlama anasayfası), 'login', veya 'app' (POS kontrol paneli)
+  const getInitialViewMode = (): 'landing' | 'login' | 'app' => {
+    const hash = window.location.hash.replace('#', '').trim();
+    if (hash === 'login') return 'login';
+    if (hash === 'landing') return 'landing';
+    if (VALID_TABS.includes(hash)) {
+      const token = localStorage.getItem('boncore_token');
+      const cached = localStorage.getItem('boncore_auth');
+      if (token && cached === 'true') {
+        return 'app';
+      }
+      return 'login';
+    }
+    // Web sitesine ilk girildiğinde varsayılan olarak pazarlama anasayfası karşılar!
+    return 'landing';
+  };
+
+  const [viewMode, setViewMode] = useState<'landing' | 'login' | 'app'>(getInitialViewMode);
   const [currentUser, setCurrentUser] = useState<StaffUser | null>(() => {
     const cached = localStorage.getItem('boncore_user');
     if (cached) {
@@ -117,26 +137,39 @@ export const App: React.FC = () => {
   const [isQrallModalOpen, setIsQrallModalOpen] = useState<boolean>(false);
   const [isOkcModalOpen, setIsOkcModalOpen] = useState<boolean>(false);
 
-  // Sync activeTab to localStorage and URL hash
+  // Sync activeTab to localStorage and URL hash (only when in POS app mode)
   useEffect(() => {
     localStorage.setItem('boncore_active_tab', activeTab);
-    const currentHash = window.location.hash.replace('#', '');
-    if (currentHash !== activeTab) {
-      window.history.replaceState(null, '', '#' + activeTab);
+    if (viewMode === 'app') {
+      const currentHash = window.location.hash.replace('#', '');
+      if (currentHash !== activeTab) {
+        window.history.replaceState(null, '', '#' + activeTab);
+      }
     }
-  }, [activeTab]);
+  }, [activeTab, viewMode]);
 
   // Listen to browser back/forward or hash changes
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').trim();
-      if (hash && VALID_TABS.includes(hash) && hash !== activeTab) {
-        setActiveTab(hash);
+      if (hash === 'landing' || hash === '') {
+        setViewMode('landing');
+      } else if (hash === 'login') {
+        setViewMode('login');
+      } else if (VALID_TABS.includes(hash)) {
+        if (isAuthenticated) {
+          setViewMode('app');
+          if (hash !== activeTab) {
+            setActiveTab(hash);
+          }
+        } else {
+          setViewMode('login');
+        }
       }
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [activeTab]);
+  }, [activeTab, isAuthenticated]);
 
   // App Master Data
   const [areas, setAreas] = useState<Area[]>([]);
@@ -332,6 +365,9 @@ export const App: React.FC = () => {
     }
     loadInitialData();
     loadStaffUsers();
+    setViewMode('app');
+    setActiveTab('tables');
+    window.location.hash = 'tables';
     addToast(`Hoş geldiniz, ${user.name}!`, 'success');
   };
 
@@ -342,12 +378,65 @@ export const App: React.FC = () => {
     localStorage.removeItem('boncore_auth');
     localStorage.removeItem('boncore_user');
     localStorage.removeItem('boncore_selected_table');
+    setViewMode('landing');
+    window.location.hash = 'landing';
     addToast('Oturum güvenli bir şekilde kapatıldı.', 'info');
   };
 
-  // If not authenticated, render full BonCore POS Login page
-  if (!isAuthenticated) {
-    return <AdisyoLogin onLoginSuccess={handleLoginSuccess} />;
+  const handleOpenLogin = () => {
+    sound.beep();
+    if (isAuthenticated) {
+      setViewMode('app');
+      window.location.hash = activeTab || 'tables';
+    } else {
+      setViewMode('login');
+      window.location.hash = 'login';
+    }
+  };
+
+  const handleGoToLanding = () => {
+    sound.beep();
+    setViewMode('landing');
+    window.location.hash = 'landing';
+  };
+
+  const handleQuickDemoLogin = async () => {
+    try {
+      sound.cashDrawer();
+      const res = await api.login('admin', '123456', true);
+      handleLoginSuccess(res.user, res.access_token);
+    } catch {
+      setViewMode('login');
+      window.location.hash = 'login';
+    }
+  };
+
+  // 1. Landing Page (Adisyo.com Tarzı Satış & Pazarlama Anasayfası)
+  if (viewMode === 'landing') {
+    return (
+      <LandingPage
+        onOpenLogin={handleOpenLogin}
+        onGoToApp={() => {
+          sound.beep();
+          setViewMode('app');
+          window.location.hash = activeTab || 'tables';
+        }}
+        currentUser={currentUser}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onQuickDemoLogin={handleQuickDemoLogin}
+      />
+    );
+  }
+
+  // 2. Login Screen (Giriş Yap Sayfası)
+  if (viewMode === 'login' || !isAuthenticated) {
+    return (
+      <AdisyoLogin
+        onLoginSuccess={handleLoginSuccess}
+        onBackToLanding={handleGoToLanding}
+      />
+    );
   }
 
   // Count active buzzer calls
@@ -371,6 +460,7 @@ export const App: React.FC = () => {
         onToggleTheme={toggleTheme}
         restaurantTitle={restaurantTitle}
         onRefreshData={loadAreas}
+        onOpenLanding={handleGoToLanding}
       />
 
       {/* Slide-out Left Navigation Drawer */}
@@ -384,6 +474,7 @@ export const App: React.FC = () => {
         onOpenQrallModal={() => setIsQrallModalOpen(true)}
         onOpenOkcModal={() => setIsOkcModalOpen(true)}
         onLogout={handleLogout}
+        onOpenLanding={handleGoToLanding}
       />
 
       {/* Main View Area */}

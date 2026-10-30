@@ -4,7 +4,7 @@ import {
   ChefHat, Activity, Users, FileText, ShoppingBag, Gift, 
   ChevronDown, ChevronRight, Grid, DollarSign, Tag, UsersRound, 
   Percent, ShieldCheck, Warehouse, ArrowDownRight, Trash2, Sliders, User, 
-  BarChart3, Store, Award, LogOut 
+  BarChart3, Store, Award, LogOut, Globe 
 } from 'lucide-react';
 import { StaffUser } from '../../types';
 import { sound } from '../../services/sound';
@@ -19,6 +19,7 @@ interface AdisyoSidebarProps {
   onOpenQrallModal: () => void;
   onOpenOkcModal?: () => void;
   onLogout?: () => void;
+  onOpenLanding?: () => void;
 }
 
 export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
@@ -30,7 +31,8 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
   restaurantTitle = 'BONCORE RESTORAN',
   onOpenQrallModal,
   onOpenOkcModal,
-  onLogout
+  onLogout,
+  onOpenLanding
 }) => {
   const [isIntegrationsOpen, setIsIntegrationsOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem('boncore_menu_integrations_open');
@@ -573,6 +575,20 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <Settings className="w-3.5 h-3.5" />
               </button>
             </div>
+          )}
+
+          {onOpenLanding && (
+            <button
+              onClick={() => {
+                sound.beep();
+                onClose();
+                onOpenLanding();
+              }}
+              className="w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <Globe className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Tanıtım & Anasayfa</span>
+            </button>
           )}
 
           {onLogout && (

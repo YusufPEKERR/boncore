@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Menu, Grid, FileText, Bell, Headphones, LogOut, 
   Wifi, PhoneCall, RefreshCw, Volume2, VolumeX, 
-  Sun, Moon, User as UserIcon, MessageSquare, X, CheckCircle2, Sparkles 
+  Sun, Moon, User as UserIcon, MessageSquare, X, CheckCircle2, Sparkles, Globe 
 } from 'lucide-react';
 import { StaffUser } from '../../types';
 import { sound } from '../../services/sound';
@@ -21,6 +21,7 @@ interface HeaderProps {
   onToggleTheme: () => void;
   restaurantTitle?: string;
   onRefreshData?: () => void;
+  onOpenLanding?: () => void;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -45,7 +46,8 @@ export const Header: React.FC<HeaderProps> = ({
   theme,
   onToggleTheme,
   restaurantTitle = 'BONCORE RESTORAN',
-  onRefreshData
+  onRefreshData,
+  onOpenLanding
 }) => {
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
   const [supportMessage, setSupportMessage] = useState<string>('');
@@ -226,6 +228,18 @@ export const Header: React.FC<HeaderProps> = ({
         >
           {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
         </button>
+
+        {/* Anasayfa / Tanıtım Sitesi Button */}
+        {onOpenLanding && (
+          <button
+            onClick={() => { sound.beep(); onOpenLanding(); }}
+            className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 text-[11px] font-bold transition cursor-pointer shadow-2xs"
+            title="Tanıtım & Pazarlama Anasayfasına Git"
+          >
+            <Globe className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Anasayfa</span>
+          </button>
+        )}
 
         {/* Destek İste Pill Button */}
         <button
