@@ -92,7 +92,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Entered amount on numeric keypad
   const [payAmount, setPayAmount] = useState<string>('0.00');
-  const [isFreshInput, setIsFreshInput] = useState<boolean>(true);
 
   // Selected item IDs for partial payment (Parçalı Öde)
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
@@ -141,13 +140,54 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
       setOrder(data);
       setPayAmount(data.remaining_total > 0 ? data.remaining_total.toFixed(2) : '0.00');
-      setIsFreshInput(true);
-      setSelectedItemIds([]);
+            setSelectedItemIds([]);
     } catch (e) {
       console.warn('Failed to fetch order', e);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Append Digit with rule: Girilen tutar kalan borçtan büyükse 0 yap!
+  const handleAppendDigit = (digit: string) => {
+    setPayAmount(prev => {
+      const rem = order?.remaining_total || 0;
+      // Eğer ekranda tam kalan borç yazıyorsa veya 0/0.00 ise yeni rakamla başla
+      let nextVal = digit;
+      if (prev !== '0.00' && prev !== '0' && prev !== rem.toFixed(2)) {
+        nextVal = prev + digit;
+      }
+
+      const nextNum = parseFloat(nextVal);
+      // KULLANICI KURALI: Girilen sayı kalan borçtan büyükse ödenecek tutarı 0 yap!
+      if (!isNaN(nextNum) && nextNum > rem) {
+        sound.warning();
+        return '0.00';
+      }
+      return nextVal;
+    });
+  };
+
+  // Append Dot (.)
+  const handleAppendDot = () => {
+    setPayAmount(prev => {
+      const rem = order?.remaining_total || 0;
+      if (prev === rem.toFixed(2) || prev === '0.00' || prev === '0') {
+        return '0.';
+      }
+      if (!prev.includes('.')) {
+        return prev + '.';
+      }
+      return prev;
+    });
+  };
+
+  // Backspace (←)
+  const handleBackspace = () => {
+    setPayAmount(prev => {
+      if (prev.length <= 1 || prev === '0.00' || prev === '0') return '0.00';
+      return prev.slice(0, -1);
+    });
   };
 
   // Physical Keyboard Listener (Klavyeden tutar girme desteği)
@@ -156,40 +196,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeEl = document.activeElement as HTMLElement | null;
-      // Eğer başka bir modal inputu aktifse engelleme
       if (activeEl && activeEl.tagName === 'INPUT' && activeEl.id !== 'checkout-pay-input') {
         return;
       }
 
       if (e.key >= '0' && e.key <= '9') {
         sound.beep();
-        setPayAmount(prev => {
-          const prevNum = parseFloat(prev) || 0;
-          const keyNum = parseFloat(e.key);
-          // Kullanıcı kuralı: Eğer yeni giriş bekleniyorsa VEYA ekrandaki tutar girilen rakamdan büyükse sıfırla ve yeni rakamla başla
-          if (isFreshInput || prev === '0.00' || prev === '0' || prevNum > keyNum) {
-            setIsFreshInput(false);
-            return e.key;
-          }
-          return prev + e.key;
-        });
+        handleAppendDigit(e.key);
       } else if (e.key === '.' || e.key === ',') {
         sound.beep();
-        setPayAmount(prev => {
-          if (isFreshInput) {
-            setIsFreshInput(false);
-            return '0.';
-          }
-          if (!prev.includes('.')) return prev + '.';
-          return prev;
-        });
+        handleAppendDot();
       } else if (e.key === 'Backspace') {
         sound.beep();
-        setIsFreshInput(false);
-        setPayAmount(prev => {
-          if (prev.length <= 1) return '0.00';
-          return prev.slice(0, -1);
-        });
+        handleBackspace();
       } else if (e.key === 'Escape') {
         onClose();
       }
@@ -197,7 +216,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, payAmount, isFreshInput]);
+  }, [isOpen, order?.remaining_total]);
 
   if (!isOpen || !order) return null;
 
@@ -220,11 +239,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           .filter(it => it.id && next.includes(it.id))
           .reduce((s, it) => s + it.total_price, 0);
         setPayAmount(sum.toFixed(2));
-        setIsFreshInput(true);
-      } else {
+              } else {
         setPayAmount(order.remaining_total.toFixed(2));
-        setIsFreshInput(true);
-      }
+              }
       return next;
     });
   };
@@ -235,7 +252,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     if (key === 'Tüm') {
       setSelectedItemIds([]);
       setPayAmount(order.remaining_total.toFixed(2));
-      setIsFreshInput(true);
       return;
     }
     if (key === '1/n') {
@@ -247,36 +263,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       return;
     }
     if (key === '←') {
-      setIsFreshInput(false);
-      setPayAmount(prev => {
-        if (prev.length <= 1) return '0.00';
-        return prev.slice(0, -1);
-      });
+      handleBackspace();
       return;
     }
     if (key === '.') {
-      if (isFreshInput) {
-        setIsFreshInput(false);
-        setPayAmount('0.');
-        return;
-      }
-      if (!payAmount.includes('.')) {
-        setPayAmount(prev => prev + '.');
-      }
+      handleAppendDot();
       return;
     }
 
     // Digit 0-9
-    setPayAmount(prev => {
-      const prevNum = parseFloat(prev) || 0;
-      const keyNum = parseFloat(key);
-      // Kullanıcı kuralı: Eğer yeni giriş bekleniyorsa VEYA ekrandaki tutar girilen rakamdan büyükse sıfırla ve yeni rakamla başla
-      if (isFreshInput || prev === '0.00' || prev === '0' || prevNum > keyNum) {
-        setIsFreshInput(false);
-        return key;
-      }
-      return prev + key;
-    });
+    handleAppendDigit(key);
   };
 
   // Apply Split 1/n
@@ -695,8 +691,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     onClick={() => {
                       sound.beep();
                       setPayAmount('0.00');
-                      setIsFreshInput(true);
-                    }}
+                                          }}
                     className="text-[11px] px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-medium transition cursor-pointer shadow-2xs"
                     title="Tutarı sıfırla"
                   >
@@ -708,8 +703,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       sound.beep();
                       setSelectedItemIds([]);
                       setPayAmount(order.remaining_total.toFixed(2));
-                      setIsFreshInput(true);
-                    }}
+                                          }}
                     className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold transition cursor-pointer shadow-xs"
                     title="Kalan borcun tamamını yaz"
                   >
@@ -728,33 +722,26 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   value={payAmount}
                   onChange={(e) => {
                     const val = e.target.value.replace(/[^0-9.]/g, '');
-                    setIsFreshInput(false);
+                    const rem = order?.remaining_total || 0;
+                    const num = parseFloat(val);
+                    // KULLANICI KURALI: Girilen sayı kalan borçtan büyükse ödenecek tutarı 0 yap!
+                    if (!isNaN(num) && num > rem) {
+                      sound.warning();
+                      setPayAmount('0.00');
+                      return;
+                    }
                     setPayAmount(val || '0.00');
                   }}
                   onFocus={(e) => {
-                    setIsFreshInput(true);
                     if (payAmount === '0.00' || payAmount === '0') {
                       setPayAmount('');
                     } else {
                       e.target.select();
                     }
                   }}
-                  onKeyDown={(e) => {
-                    if (e.key >= '0' && e.key <= '9') {
-                      const prevNum = parseFloat(payAmount) || 0;
-                      const keyNum = parseFloat(e.key);
-                      if (isFreshInput || prevNum > keyNum) {
-                        e.preventDefault();
-                        sound.beep();
-                        setIsFreshInput(false);
-                        setPayAmount(e.key);
-                      }
-                    }
-                  }}
                   onBlur={() => {
                     if (!payAmount || payAmount === '.') {
                       setPayAmount(order.remaining_total > 0 ? order.remaining_total.toFixed(2) : '0.00');
-                      setIsFreshInput(true);
                     }
                   }}
                   className="w-full bg-transparent text-right text-2xl sm:text-3xl font-black font-mono text-slate-900 dark:text-white focus:outline-none tracking-tight"
