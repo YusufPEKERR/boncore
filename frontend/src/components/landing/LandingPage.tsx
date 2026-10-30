@@ -20,6 +20,7 @@ interface LandingPageProps {
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   onQuickDemoLogin?: () => void;
+  onOpenMasterAdmin?: () => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
@@ -28,7 +29,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   currentUser,
   theme,
   onToggleTheme,
-  onQuickDemoLogin
+  onQuickDemoLogin,
+  onOpenMasterAdmin
 }) => {
   const [isDemoModalOpen, setIsDemoModalOpen] = useState<boolean>(false);
 
@@ -92,6 +94,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       <LandingFooter
         onOpenLogin={onOpenLogin}
         onOpenDemo={handleOpenDemo}
+        onOpenMasterAdmin={onOpenMasterAdmin}
       />
 
       {/* Interactive 14-Day Free Demo / Lead Capture Modal */}

@@ -9,7 +9,7 @@ from app.seed_data import seed_initial_data, bootstrap_staff_credentials
 from app.security import get_optional_user
 
 # Import routers
-from app.routers import auth, tables, products, orders, kds, cashier, inventory, delivery, qr, fiscal, audit, ws, settings as app_settings, scale, adisyo_modules, app_update
+from app.routers import auth, tables, products, orders, kds, cashier, inventory, delivery, qr, fiscal, audit, ws, settings as app_settings, scale, adisyo_modules, app_update, master_admin
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("boncore.main")
@@ -39,6 +39,8 @@ async def lifespan(app: FastAPI):
                 sync_conn.execute(text("ALTER TABLE staff_users ADD COLUMN password_hash VARCHAR(255)"))
             if "last_login_at" not in user_cols:
                 sync_conn.execute(text("ALTER TABLE staff_users ADD COLUMN last_login_at DATETIME"))
+            if "restaurant_id" not in user_cols:
+                sync_conn.execute(text("ALTER TABLE staff_users ADD COLUMN restaurant_id INTEGER DEFAULT 1"))
             cat_cols = [c["name"] for c in inspector.get_columns("categories")]
             if "show_in_pos" not in cat_cols:
                 sync_conn.execute(text("ALTER TABLE categories ADD COLUMN show_in_pos BOOLEAN DEFAULT 1"))
@@ -105,6 +107,8 @@ app.include_router(scale.router, prefix=settings.API_V1_STR, dependencies=protec
 app.include_router(adisyo_modules.router, prefix=settings.API_V1_STR, dependencies=protected)
 app.include_router(app_update.router, prefix="/api")
 app.include_router(app_update.router, prefix=settings.API_V1_STR)
+app.include_router(master_admin.router, prefix="/api")
+app.include_router(master_admin.router, prefix=settings.API_V1_STR)
 app.include_router(ws.router)
 
 @app.get("/health")

@@ -9,6 +9,7 @@ from app.models.inventory import Warehouse, WarehouseStock, StockMovement
 from app.models.delivery import Courier, DeliveryOrder
 from app.models.audit import AuditLog
 from app.models.setting import RestaurantSetting
+from app.models.tenant import RestaurantTenant, TenantLead, TenantInvoice
 
 __all__ = [
     "Base",
@@ -33,5 +34,8 @@ __all__ = [
     "Courier",
     "DeliveryOrder",
     "AuditLog",
-    "RestaurantSetting"
+    "RestaurantSetting",
+    "RestaurantTenant",
+    "TenantLead",
+    "TenantInvoice"
 ]

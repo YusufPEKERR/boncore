@@ -20,45 +20,16 @@
       "Microsoft Print to PDF",
       "OneNote (Desktop)"
     ],
-    "last_seen": 1793302133.0515916,
+    "last_seen": 1793375242.6810899,
     "is_default": false,
     "admin_override": false
   },
-  "kasa_088aad": {
-    "id": "kasa_088aad",
+  "kasa_3fc3a1": {
+    "id": "kasa_3fc3a1",
     "alias_ids": [
-      "kasa_6df57d",
-      "kasa_95d6a2",
-      "kasa_088aad",
-      "kasa_0fbff8"
-    ],
-    "name": "Kasap",
-    "custom_name": "Kasap",
-    "local_ip": "192.168.0.120",
-    "version": "2.0.0",
-    "scale_connected": false,
-    "scale_ip": "192.168.0.15",
-    "custom_scale_ip": "192.168.0.15",
-    "scale_port": 20304,
-    "custom_scale_port": 20304,
-    "last_weight": 0.0,
-    "printers": [
-      "KİTCHEN",
-      "MUTFAK YAZICISI",
-      "MUTFAK-POS",
-      "Fax",
-      "Microsoft Print to PDF",
-      "Microsoft XPS Document Writer",
-      "OneNote for Windows 10"
-    ],
-    "last_seen": 1793317361.2038155,
-    "is_default": true,
-    "admin_override": false
-  },
-  "kasa_774d47": {
-    "id": "kasa_774d47",
-    "alias_ids": [
+      "kasa_3fc3a1",
       "kasa_691876",
+      "kasa_a81012",
       "kasa_774d47"
     ],
     "name": "Kasa 1",
@@ -79,8 +50,39 @@
       "Microsoft Print to PDF",
       "Microsoft XPS Document Writer"
     ],
-    "last_seen": 1793317363.3153763,
+    "last_seen": 1793368203.763373,
     "is_default": false,
+    "admin_override": false
+  },
+  "kasa_088aad": {
+    "id": "kasa_088aad",
+    "alias_ids": [
+      "kasa_95d6a2",
+      "kasa_6df57d",
+      "kasa_0fbff8",
+      "kasa_088aad"
+    ],
+    "name": "Kasap",
+    "custom_name": "Kasap",
+    "local_ip": "192.168.0.120",
+    "version": "2.0.0",
+    "scale_connected": false,
+    "scale_ip": "192.168.0.15",
+    "custom_scale_ip": "192.168.0.15",
+    "scale_port": 20304,
+    "custom_scale_port": 20304,
+    "last_weight": 0.0,
+    "printers": [
+      "KİTCHEN",
+      "MUTFAK YAZICISI",
+      "MUTFAK-POS",
+      "Fax",
+      "Microsoft Print to PDF",
+      "Microsoft XPS Document Writer",
+      "OneNote for Windows 10"
+    ],
+    "last_seen": 1793375245.0640614,
+    "is_default": true,
     "admin_override": false
   }
 }

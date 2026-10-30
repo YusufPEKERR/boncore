@@ -39,6 +39,8 @@ import { CostProfitWizardView } from './components/modules/CostProfitWizardView'
 import { HotelFolioView } from './components/modules/HotelFolioView';
 import { KioskCfdView } from './components/modules/KioskCfdView';
 import { LandingPage } from './components/landing/LandingPage';
+import { MasterAdminLayout } from './components/master_admin/MasterAdminLayout';
+import { MasterLoginView } from './components/master_admin/MasterLoginView';
 
 import { Area, Category, Table, StaffUser } from './types';
 import { api } from './services/api';
@@ -78,9 +80,20 @@ export const App: React.FC = () => {
     return Boolean(token && cached === 'true');
   });
 
-  // Initial View Mode: 'landing' (Adisyo.com tarzı satış & pazarlama anasayfası), 'login', veya 'app' (POS kontrol paneli)
-  const getInitialViewMode = (): 'landing' | 'login' | 'app' => {
+  // View Mode: 'landing', 'login', 'app', 'master_login', 'master_admin'
+  type ViewMode = 'landing' | 'login' | 'app' | 'master_login' | 'master_admin';
+
+  const [isMasterAuth, setIsMasterAuth] = useState<boolean>(() => {
+    return Boolean(localStorage.getItem('boncore_master_token'));
+  });
+
+  const getInitialViewMode = (): ViewMode => {
     const hash = window.location.hash.replace('#', '').trim();
+    if (hash === 'master_admin' || hash === 'master' || hash === 'admin') {
+      const masterToken = localStorage.getItem('boncore_master_token');
+      return masterToken ? 'master_admin' : 'master_login';
+    }
+    if (hash === 'master_login') return 'master_login';
     if (hash === 'login') return 'login';
     if (hash === 'landing') return 'landing';
     if (VALID_TABS.includes(hash)) {
@@ -95,7 +108,7 @@ export const App: React.FC = () => {
     return 'landing';
   };
 
-  const [viewMode, setViewMode] = useState<'landing' | 'login' | 'app'>(getInitialViewMode);
+  const [viewMode, setViewMode] = useState<ViewMode>(getInitialViewMode);
   const [currentUser, setCurrentUser] = useState<StaffUser | null>(() => {
     const cached = localStorage.getItem('boncore_user');
     if (cached) {
@@ -152,7 +165,18 @@ export const App: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').trim();
-      if (hash === 'landing' || hash === '') {
+      if (hash === 'master_admin' || hash === 'master' || hash === 'admin') {
+        const masterToken = localStorage.getItem('boncore_master_token');
+        if (masterToken) {
+          setIsMasterAuth(true);
+          setViewMode('master_admin');
+        } else {
+          setIsMasterAuth(false);
+          setViewMode('master_login');
+        }
+      } else if (hash === 'master_login') {
+        setViewMode('master_login');
+      } else if (hash === 'landing' || hash === '') {
         setViewMode('landing');
       } else if (hash === 'login') {
         setViewMode('login');
@@ -400,6 +424,36 @@ export const App: React.FC = () => {
     window.location.hash = 'landing';
   };
 
+  const handleOpenMasterAdmin = () => {
+    sound.beep();
+    const masterToken = localStorage.getItem('boncore_master_token');
+    if (masterToken) {
+      setIsMasterAuth(true);
+      setViewMode('master_admin');
+      window.location.hash = 'master_admin';
+    } else {
+      setIsMasterAuth(false);
+      setViewMode('master_login');
+      window.location.hash = 'master_login';
+    }
+  };
+
+  const handleMasterLoginSuccess = (token: string, user: any) => {
+    setIsMasterAuth(true);
+    setViewMode('master_admin');
+    window.location.hash = 'master_admin';
+    addToast('SaaS Master Admin paneline hoş geldiniz!', 'success');
+  };
+
+  const handleMasterLogout = () => {
+    sound.beep();
+    localStorage.removeItem('boncore_master_token');
+    setIsMasterAuth(false);
+    setViewMode('landing');
+    window.location.hash = 'landing';
+    addToast('Master Admin oturumu sonlandırıldı.', 'info');
+  };
+
   const handleQuickDemoLogin = async () => {
     try {
       sound.cashDrawer();
@@ -411,11 +465,44 @@ export const App: React.FC = () => {
     }
   };
 
-  // 1. Landing Page (Adisyo.com Tarzı Satış & Pazarlama Anasayfası)
+  // 1. SaaS Master Admin Views (Platform Süper Yönetici Paneli)
+  if (viewMode === 'master_admin') {
+    if (!isMasterAuth) {
+      return (
+        <MasterLoginView
+          onLoginSuccess={handleMasterLoginSuccess}
+          onBackToLanding={handleGoToLanding}
+        />
+      );
+    }
+    return (
+      <MasterAdminLayout
+        onLogout={handleMasterLogout}
+        onGoToLanding={handleGoToLanding}
+        onGoToPos={() => {
+          sound.beep();
+          setViewMode('app');
+          window.location.hash = activeTab || 'tables';
+        }}
+      />
+    );
+  }
+
+  if (viewMode === 'master_login') {
+    return (
+      <MasterLoginView
+        onLoginSuccess={handleMasterLoginSuccess}
+        onBackToLanding={handleGoToLanding}
+      />
+    );
+  }
+
+  // 2. Landing Page (Adisyo.com Tarzı Satış & Pazarlama Anasayfası)
   if (viewMode === 'landing') {
     return (
       <LandingPage
         onOpenLogin={handleOpenLogin}
+        onOpenMasterAdmin={handleOpenMasterAdmin}
         onGoToApp={() => {
           sound.beep();
           setViewMode('app');
@@ -429,7 +516,7 @@ export const App: React.FC = () => {
     );
   }
 
-  // 2. Login Screen (Giriş Yap Sayfası)
+  // 3. Login Screen (Giriş Yap Sayfası)
   if (viewMode === 'login' || !isAuthenticated) {
     return (
       <AdisyoLogin
@@ -475,6 +562,7 @@ export const App: React.FC = () => {
         onOpenOkcModal={() => setIsOkcModalOpen(true)}
         onLogout={handleLogout}
         onOpenLanding={handleGoToLanding}
+        onOpenMasterAdmin={handleOpenMasterAdmin}
       />
 
       {/* Main View Area */}

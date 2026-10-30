@@ -5,9 +5,10 @@ import { sound } from '../../services/sound';
 interface LandingFooterProps {
   onOpenLogin: () => void;
   onOpenDemo: () => void;
+  onOpenMasterAdmin?: () => void;
 }
 
-export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpenDemo }) => {
+export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpenDemo, onOpenMasterAdmin }) => {
   const scrollTo = (id: string) => {
     sound.beep();
     const el = document.getElementById(id);
@@ -143,6 +144,16 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
                   <span>→ Yönetim Girişi</span>
                 </button>
               </li>
+              {onOpenMasterAdmin && (
+                <li>
+                  <button 
+                    onClick={() => { sound.beep(); onOpenMasterAdmin(); }}
+                    className="text-amber-400 font-bold hover:text-amber-300 transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>🔐 SaaS Master Admin</span>
+                  </button>
+                </li>
+              )}
               <li>
                 <button 
                   onClick={() => { sound.beep(); onOpenDemo(); }}

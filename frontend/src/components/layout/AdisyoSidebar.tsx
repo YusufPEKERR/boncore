@@ -20,6 +20,7 @@ interface AdisyoSidebarProps {
   onOpenOkcModal?: () => void;
   onLogout?: () => void;
   onOpenLanding?: () => void;
+  onOpenMasterAdmin?: () => void;
 }
 
 export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
@@ -32,7 +33,8 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
   onOpenQrallModal,
   onOpenOkcModal,
   onLogout,
-  onOpenLanding
+  onOpenLanding,
+  onOpenMasterAdmin
 }) => {
   const [isIntegrationsOpen, setIsIntegrationsOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem('boncore_menu_integrations_open');
@@ -588,6 +590,20 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             >
               <Globe className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>Tanıtım & Anasayfa</span>
+            </button>
+          )}
+
+          {onOpenMasterAdmin && (
+            <button
+              onClick={() => {
+                sound.beep();
+                onClose();
+                onOpenMasterAdmin();
+              }}
+              className="w-full py-2 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>🔐 SaaS Master Panel</span>
             </button>
           )}
 

@@ -23,7 +23,7 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName || !phone || !companyName) {
       sound.warning();
@@ -34,10 +34,27 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({
     sound.cashDrawer();
     setLoading(true);
 
-    // Save lead to local storage / cache
+    try {
+      await fetch('/api/master/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: fullName.trim(),
+          phone: phone.trim(),
+          company_name: companyName.trim(),
+          business_type: businessType,
+          city: city.trim(),
+          notes: 'Web sitesi 14 gün ücretsiz deneme talebi'
+        })
+      });
+    } catch (err) {
+      console.warn('Backend lead post warning:', err);
+    }
+
+    // Also persist in local storage
     try {
       const existingLeads = JSON.parse(localStorage.getItem('boncore_demo_leads') || '[]');
-      existingLeads.push({
+      existingLeads.unshift({
         fullName,
         phone,
         companyName,
@@ -48,10 +65,8 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({
       localStorage.setItem('boncore_demo_leads', JSON.stringify(existingLeads));
     } catch {}
 
-    setTimeout(() => {
-      setLoading(false);
-      setSubmitted(true);
-    }, 600);
+    setLoading(false);
+    setSubmitted(true);
   };
 
   return (

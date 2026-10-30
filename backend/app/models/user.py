@@ -11,6 +11,7 @@ class StaffUser(Base):
     password_hash = Column(String(255), nullable=True)  # PBKDF2-SHA256 özet
     pin_code = Column(String(10), nullable=False, unique=True) # 4-digit PIN (yönetici onayları için)
     role = Column(String(50), nullable=False, default="waiter") # waiter, cashier, chef, manager, kitchen
+    restaurant_id = Column(Integer, nullable=True, default=1, index=True) # Hangi restorana ait olduğu (Multi-tenant)
     is_active = Column(Boolean, default=True)
     last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
