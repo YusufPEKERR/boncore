@@ -89,7 +89,7 @@ export const App: React.FC = () => {
 
   const getInitialViewMode = (): ViewMode => {
     const hash = window.location.hash.replace('#', '').trim();
-    if (hash === 'master_admin' || hash === 'master' || hash === 'admin') {
+    if (hash === 'master_admin' || hash === 'master' || hash === 'admin' || hash === 'masteradmin' || hash === 'superadmin') {
       const masterToken = localStorage.getItem('boncore_master_token');
       return masterToken ? 'master_admin' : 'master_login';
     }
@@ -165,7 +165,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').trim();
-      if (hash === 'master_admin' || hash === 'master' || hash === 'admin') {
+      if (hash === 'master_admin' || hash === 'master' || hash === 'admin' || hash === 'masteradmin' || hash === 'superadmin') {
         const masterToken = localStorage.getItem('boncore_master_token');
         if (masterToken) {
           setIsMasterAuth(true);
@@ -439,6 +439,10 @@ export const App: React.FC = () => {
   };
 
   const handleMasterLoginSuccess = (token: string, user: any) => {
+    try {
+      localStorage.setItem('boncore_master_token', token);
+      localStorage.setItem('boncore_master_user', JSON.stringify(user));
+    } catch {}
     setIsMasterAuth(true);
     setViewMode('master_admin');
     window.location.hash = 'master_admin';
@@ -522,6 +526,8 @@ export const App: React.FC = () => {
       <AdisyoLogin
         onLoginSuccess={handleLoginSuccess}
         onBackToLanding={handleGoToLanding}
+        onOpenMasterAdmin={handleOpenMasterAdmin}
+        onMasterLoginSuccess={handleMasterLoginSuccess}
       />
     );
   }

@@ -47,6 +47,10 @@ export const MasterLoginView: React.FC<MasterLoginViewProps> = ({
 
       const data = await res.json();
       sound.cashDrawer();
+      try {
+        localStorage.setItem('boncore_master_token', data.access_token);
+        localStorage.setItem('boncore_master_user', JSON.stringify(data.user));
+      } catch {}
       onLoginSuccess(data.access_token, data.user);
     } catch (err: any) {
       sound.warning();

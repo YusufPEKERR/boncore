@@ -24,6 +24,8 @@ interface AdisyoLoginProps {
   onLoginSuccess: (user: StaffUser, token?: string) => void;
   staffList?: StaffUser[];
   onBackToLanding?: () => void;
+  onOpenMasterAdmin?: () => void;
+  onMasterLoginSuccess?: (token: string, user: any) => void;
 }
 
 const QUICK_ACCOUNTS = [
@@ -33,7 +35,12 @@ const QUICK_ACCOUNTS = [
   { label: 'Mutfak Şefi', username: 'sef', role: 'KDS Mutfak', badgeColor: 'bg-amber-50 text-amber-700 border-amber-200' },
 ];
 
-export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({ onLoginSuccess, onBackToLanding }) => {
+export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({ 
+  onLoginSuccess, 
+  onBackToLanding,
+  onOpenMasterAdmin,
+  onMasterLoginSuccess
+}) => {
   const [username, setUsername] = useState<string>('admin');
   const [password, setPassword] = useState<string>('123456');
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -58,11 +65,49 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({ onLoginSuccess, onBack
     setLoading(true);
     setErrorMsg('');
 
+    const userClean = username.trim().toLowerCase();
+
+    // Otomatik SaaS Master Admin Tespiti
+    if (userClean === 'master' || userClean === 'superadmin') {
+      try {
+        const mRes = await fetch('/api/master/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: userClean, password: password.trim() })
+        });
+        if (mRes.ok) {
+          const mData = await mRes.json();
+          sound.cashDrawer();
+          if (onMasterLoginSuccess) {
+            onMasterLoginSuccess(mData.access_token, mData.user);
+            return;
+          }
+        }
+      } catch {}
+    }
+
     try {
       const res = await api.login(username.trim(), password, remember);
       sound.cashDrawer();
       onLoginSuccess(res.user, res.access_token);
     } catch (err: any) {
+      // Yedek Kontrol: Eğer kullanıcı Master Admin şifresiyle normal formdan girmeye çalıştıysa
+      try {
+        const mRes = await fetch('/api/master/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: username.trim(), password: password.trim() })
+        });
+        if (mRes.ok) {
+          const mData = await mRes.json();
+          sound.cashDrawer();
+          if (onMasterLoginSuccess) {
+            onMasterLoginSuccess(mData.access_token, mData.user);
+            return;
+          }
+        }
+      } catch {}
+
       sound.warning();
       setErrorMsg(err.message || 'Kullanıcı adı veya parola hatalı.');
     } finally {
@@ -227,17 +272,30 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({ onLoginSuccess, onBack
               </div>
             </div>
 
-            {/* Back to Landing Page link */}
-            {onBackToLanding && (
-              <button
-                type="button"
-                onClick={() => { sound.beep(); onBackToLanding(); }}
-                className="inline-flex items-center gap-1.5 text-xs font-black text-slate-500 hover:text-brand-600 transition cursor-pointer select-none mb-1 group"
-              >
-                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                <span>Tanıtım & Anasayfaya Dön</span>
-              </button>
-            )}
+            {/* Back to Landing Page link & SaaS Master Admin Switch */}
+            <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+              {onBackToLanding && (
+                <button
+                  type="button"
+                  onClick={() => { sound.beep(); onBackToLanding(); }}
+                  className="inline-flex items-center gap-1.5 text-xs font-black text-slate-500 hover:text-brand-600 transition cursor-pointer select-none group"
+                >
+                  <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                  <span>Tanıtım & Anasayfaya Dön</span>
+                </button>
+              )}
+
+              {onOpenMasterAdmin && (
+                <button
+                  type="button"
+                  onClick={() => { sound.beep(); onOpenMasterAdmin(); }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 border border-amber-300 text-xs font-black transition cursor-pointer select-none shadow-xs"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                  <span>🔐 SaaS Master Panel</span>
+                </button>
+              )}
+            </div>
 
             {/* Header */}
             <div className="flex items-center gap-3 lg:block lg:space-y-1.5">

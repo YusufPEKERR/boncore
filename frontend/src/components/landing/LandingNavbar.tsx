@@ -9,6 +9,7 @@ import { sound } from '../../services/sound';
 interface LandingNavbarProps {
   onOpenLogin: () => void;
   onOpenDemo: () => void;
+  onOpenMasterAdmin?: () => void;
   currentUser: StaffUser | null;
   onGoToApp: () => void;
   theme: 'dark' | 'light';
@@ -18,6 +19,7 @@ interface LandingNavbarProps {
 export const LandingNavbar: React.FC<LandingNavbarProps> = ({
   onOpenLogin,
   onOpenDemo,
+  onOpenMasterAdmin,
   currentUser,
   onGoToApp,
   theme,
@@ -130,6 +132,18 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({
               {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
             </button>
 
+            {/* SaaS Master Admin Butonu */}
+            {onOpenMasterAdmin && (
+              <button
+                onClick={() => { sound.beep(); onOpenMasterAdmin(); }}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold text-xs transition cursor-pointer shadow-xs"
+                title="SaaS Platform Süper Yönetici Paneli"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>SaaS Panel</span>
+              </button>
+            )}
+
             {/* Giriş Yap / Sisteme Git Butonu (Kullanıcının Özel İsteği) */}
             {currentUser ? (
               <button
@@ -219,6 +233,15 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({
               >
                 14 Gün Ücretsiz Dene
               </button>
+              {onOpenMasterAdmin && (
+                <button
+                  onClick={() => { setIsMobileMenuOpen(false); onOpenMasterAdmin(); }}
+                  className="w-full py-2.5 rounded-xl bg-amber-500/10 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 font-bold text-xs text-center flex items-center justify-center gap-1.5"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                  <span>🔐 SaaS Master Admin Paneli</span>
+                </button>
+              )}
             </div>
           </div>
         )}

@@ -50,6 +50,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       <LandingNavbar
         onOpenLogin={onOpenLogin}
         onOpenDemo={handleOpenDemo}
+        onOpenMasterAdmin={onOpenMasterAdmin}
         currentUser={currentUser}
         onGoToApp={onGoToApp}
         theme={theme}
