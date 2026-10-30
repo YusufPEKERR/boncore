@@ -536,7 +536,7 @@ export const App: React.FC = () => {
           onClick={() => { sound.beep(); setActiveTab('tables'); }}
           className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
             activeTab === 'tables'
-              ? 'text-rose-600 dark:text-rose-400 font-black'
+              ? 'text-[#338d35] dark:text-emerald-400 font-black'
               : 'text-slate-500 dark:text-slate-400 font-semibold'
           }`}
         >
@@ -547,7 +547,7 @@ export const App: React.FC = () => {
           onClick={() => { sound.beep(); setActiveTab('pos'); }}
           className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
             activeTab === 'pos'
-              ? 'text-rose-600 dark:text-rose-400 font-black'
+              ? 'text-[#338d35] dark:text-emerald-400 font-black'
               : 'text-slate-500 dark:text-slate-400 font-semibold'
           }`}
         >
@@ -558,7 +558,7 @@ export const App: React.FC = () => {
           onClick={() => { sound.beep(); setActiveTab('kds'); }}
           className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
             activeTab === 'kds'
-              ? 'text-rose-600 dark:text-rose-400 font-black'
+              ? 'text-[#338d35] dark:text-emerald-400 font-black'
               : 'text-slate-500 dark:text-slate-400 font-semibold'
           }`}
         >
@@ -569,7 +569,7 @@ export const App: React.FC = () => {
           onClick={() => { sound.beep(); setActiveTab('cashier'); }}
           className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
             activeTab === 'cashier'
-              ? 'text-rose-600 dark:text-rose-400 font-black'
+              ? 'text-[#338d35] dark:text-emerald-400 font-black'
               : 'text-slate-500 dark:text-slate-400 font-semibold'
           }`}
         >

@@ -456,7 +456,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="sm:hidden px-2.5 py-1.5 rounded-lg bg-red-50 text-[#d32f2f] text-xs font-bold flex items-center gap-1"
+            className="sm:hidden px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] text-xs font-bold flex items-center gap-1"
           >
             <X className="w-4 h-4" />
             <span>Kapat</span>
@@ -464,53 +464,53 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </div>
 
         {/* Right Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2 sm:gap-5 text-[#d32f2f] text-xs sm:text-[13px] font-semibold">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-5 text-[#338d35] text-xs sm:text-[13px] font-semibold">
           {/* Kaydet */}
           <button 
             onClick={() => handleProcessPayment(selectedMethod, false, false)}
-            className="flex items-center gap-1 px-2.5 py-1.5 sm:p-0 rounded-lg bg-red-50/70 sm:bg-transparent hover:text-red-700 transition cursor-pointer active:scale-95"
+            className="flex items-center gap-1 px-2.5 py-1.5 sm:p-0 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/40 sm:bg-transparent hover:text-[#28702a] transition cursor-pointer active:scale-95"
             title="Masayı kapatmadan tahsilatı kaydeder"
           >
-            <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#d32f2f]" />
+            <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#338d35]" />
             <span>Kaydet</span>
           </button>
 
           {/* Öde ve Kapat */}
           <button 
             onClick={() => handleProcessPayment(selectedMethod, false, true)}
-            className="flex items-center gap-1 px-2.5 py-1.5 sm:p-0 rounded-lg bg-red-50/70 sm:bg-transparent hover:text-red-700 transition cursor-pointer active:scale-95"
+            className="flex items-center gap-1 px-2.5 py-1.5 sm:p-0 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/40 sm:bg-transparent hover:text-[#28702a] transition cursor-pointer active:scale-95"
             title="Ödemeyi alır ve masayı kapatır"
           >
-            <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#d32f2f]" />
+            <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#338d35]" />
             <span>Öde ve Kapat</span>
           </button>
 
           {/* Öde ve Yazdır */}
           <button 
             onClick={() => handleProcessPayment(selectedMethod, true, false)}
-            className="flex items-center gap-1 px-2.5 py-1.5 sm:p-0 rounded-lg bg-red-50/70 sm:bg-transparent hover:text-red-700 transition cursor-pointer active:scale-95"
+            className="flex items-center gap-1 px-2.5 py-1.5 sm:p-0 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/40 sm:bg-transparent hover:text-[#28702a] transition cursor-pointer active:scale-95"
             title="Ödemeyi alır, fiş yazdırır, masayı kapatmaz"
           >
-            <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#d32f2f]" />
+            <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#338d35]" />
             <span>Öde ve Yazdır</span>
           </button>
 
           {/* Öde, Yazdır ve Kapat */}
           <button 
             onClick={() => handleProcessPayment(selectedMethod, true, true)}
-            className="flex items-center gap-1 px-2.5 py-1.5 sm:p-0 rounded-lg bg-[#d32f2f] text-white sm:bg-transparent sm:text-[#d32f2f] hover:text-red-700 transition cursor-pointer active:scale-95"
+            className="flex items-center gap-1 px-2.5 py-1.5 sm:p-0 rounded-lg bg-[#338d35] text-white sm:bg-transparent sm:text-[#338d35] hover:text-[#28702a] transition cursor-pointer active:scale-95"
             title="Ödemeyi alır, fiş yazdırır ve masayı kapatır"
           >
-            <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white sm:text-[#d32f2f]" />
+            <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white sm:text-[#338d35]" />
             <span>Öde, Yazdır ve Kapat</span>
           </button>
 
           {/* Ödeme Ekranını Kapat */}
           <button 
             onClick={onClose}
-            className="hidden sm:flex items-center gap-1.5 hover:text-red-700 transition cursor-pointer active:scale-95 ml-2"
+            className="hidden sm:flex items-center gap-1.5 hover:text-[#28702a] transition cursor-pointer active:scale-95 ml-2"
           >
-            <X className="w-4 h-4 text-[#d32f2f]" />
+            <X className="w-4 h-4 text-[#338d35]" />
             <span>Ödeme Ekranını Kapat</span>
           </button>
         </div>
@@ -559,7 +559,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     onClick={() => handleToggleItem(it.id)}
                     className={`py-2 px-3 rounded-xl border transition cursor-pointer select-none ${
                       isSelected 
-                        ? 'bg-red-50/80 border-red-300 shadow-2xs' 
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40/80 border-emerald-400 shadow-2xs' 
                         : 'border-transparent hover:border-gray-200 hover:bg-gray-50/80'
                     }`}
                   >
@@ -595,7 +595,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                               e.stopPropagation();
                               handleRemoveItemDiscount(it.id!);
                             }}
-                            className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 px-2 py-0.5 rounded-md border border-red-300 transition shadow-2xs"
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 hover:text-white bg-emerald-50 dark:bg-emerald-950/40 hover:bg-red-600 px-2 py-0.5 rounded-md border border-emerald-400 transition shadow-2xs"
                             title="Bu ürünün indirimini kaldır"
                           >
                             ✕ İndirimi İptal Et
@@ -616,7 +616,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 sound.beep();
                 setIsSplitNModalOpen(true);
               }}
-              className="bg-[#f4f5f7] hover:bg-[#eaecef] text-[#d32f2f] font-bold text-xs py-2.5 px-2 rounded-xl border border-gray-200/80 shadow-2xs transition cursor-pointer text-center"
+              className="bg-[#f4f5f7] hover:bg-[#eaecef] text-[#338d35] font-bold text-xs py-2.5 px-2 rounded-xl border border-gray-200/80 shadow-2xs transition cursor-pointer text-center"
             >
               Ürün Bazlı 1/n
             </button>
@@ -625,7 +625,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 sound.beep();
                 setIsDiscountModalOpen(true);
               }}
-              className="bg-[#f4f5f7] hover:bg-[#eaecef] text-[#d32f2f] font-bold text-xs py-2.5 px-2 rounded-xl border border-gray-200/80 shadow-2xs transition cursor-pointer text-center"
+              className="bg-[#f4f5f7] hover:bg-[#eaecef] text-[#338d35] font-bold text-xs py-2.5 px-2 rounded-xl border border-gray-200/80 shadow-2xs transition cursor-pointer text-center"
             >
               Ürün Bazlı İndirim
             </button>
@@ -646,9 +646,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     sound.beep();
                     setIsHistoryModalOpen(true);
                   }}
-                  className="flex items-center gap-1 text-xs font-semibold text-gray-700 hover:text-[#d32f2f] transition cursor-pointer bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-200/60"
+                  className="flex items-center gap-1 text-xs font-semibold text-gray-700 hover:text-[#338d35] transition cursor-pointer bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-200/60"
                 >
-                  <History className="w-3.5 h-3.5 text-[#d32f2f]" />
+                  <History className="w-3.5 h-3.5 text-[#338d35]" />
                   <span>TAHSİLAT GEÇMİŞİ</span>
                 </button>
               </div>
@@ -889,13 +889,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 onClick={() => { sound.beep(); setActiveRightTab('methods'); }}
                 className={`pb-2.5 px-3 text-sm font-bold transition cursor-pointer relative ${
                   activeRightTab === 'methods'
-                    ? 'text-[#d32f2f]'
+                    ? 'text-[#338d35]'
                     : 'text-gray-500 hover:text-gray-800'
                 }`}
               >
                 <span>Ödeme Tipleri</span>
                 {activeRightTab === 'methods' && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#d32f2f]" />
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#338d35]" />
                 )}
               </button>
 
@@ -903,13 +903,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 onClick={() => { sound.beep(); setActiveRightTab('tip'); }}
                 className={`pb-2.5 px-3 text-sm font-semibold transition cursor-pointer relative ${
                   activeRightTab === 'tip'
-                    ? 'text-[#d32f2f] font-bold'
+                    ? 'text-[#338d35] font-bold'
                     : 'text-gray-500 hover:text-gray-800'
                 }`}
               >
                 <span>Bahşiş ekle</span>
                 {activeRightTab === 'tip' && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#d32f2f]" />
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#338d35]" />
                 )}
               </button>
             </div>
@@ -926,18 +926,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     }}
                     className={`relative border rounded-xl p-5 bg-white transition active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-2 group ${
                       selectedMethod === 'cash'
-                        ? 'border-2 border-[#d32f2f] shadow-sm bg-red-50/20 ring-2 ring-red-500/20'
+                        ? 'border-2 border-[#338d35] shadow-sm bg-emerald-50 dark:bg-emerald-950/40/20 ring-2 ring-emerald-500/20'
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
                     {selectedMethod === 'cash' && (
-                      <span className="absolute top-2 right-2 w-5 h-5 bg-[#d32f2f] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-2xs">
+                      <span className="absolute top-2 right-2 w-5 h-5 bg-[#338d35] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-2xs">
                         ✓
                       </span>
                     )}
                     <CashStackIcon />
                     <span className={`font-bold text-sm transition ${
-                      selectedMethod === 'cash' ? 'text-[#d32f2f]' : 'text-[#212529]'
+                      selectedMethod === 'cash' ? 'text-[#338d35]' : 'text-[#212529]'
                     }`}>
                       Nakit
                     </span>
@@ -951,18 +951,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     }}
                     className={`relative border rounded-xl p-5 bg-white transition active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-2 group ${
                       selectedMethod === 'credit_card'
-                        ? 'border-2 border-[#d32f2f] shadow-sm bg-red-50/20 ring-2 ring-red-500/20'
+                        ? 'border-2 border-[#338d35] shadow-sm bg-emerald-50 dark:bg-emerald-950/40/20 ring-2 ring-emerald-500/20'
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
                     {selectedMethod === 'credit_card' && (
-                      <span className="absolute top-2 right-2 w-5 h-5 bg-[#d32f2f] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-2xs">
+                      <span className="absolute top-2 right-2 w-5 h-5 bg-[#338d35] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-2xs">
                         ✓
                       </span>
                     )}
                     <CreditCardLogosIcon />
                     <span className={`font-bold text-sm transition ${
-                      selectedMethod === 'credit_card' ? 'text-[#d32f2f]' : 'text-[#212529]'
+                      selectedMethod === 'credit_card' ? 'text-[#338d35]' : 'text-[#212529]'
                     }`}>
                       Kredi Kartı
                     </span>
@@ -976,18 +976,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     }}
                     className={`relative border rounded-xl p-5 bg-white transition active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-2 group ${
                       selectedMethod === 'open_account'
-                        ? 'border-2 border-[#d32f2f] shadow-sm bg-red-50/20 ring-2 ring-red-500/20'
+                        ? 'border-2 border-[#338d35] shadow-sm bg-emerald-50 dark:bg-emerald-950/40/20 ring-2 ring-emerald-500/20'
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
                     {selectedMethod === 'open_account' && (
-                      <span className="absolute top-2 right-2 w-5 h-5 bg-[#d32f2f] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-2xs">
+                      <span className="absolute top-2 right-2 w-5 h-5 bg-[#338d35] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-2xs">
                         ✓
                       </span>
                     )}
                     <OpenAccountHandshakeIcon />
                     <span className={`font-bold text-sm transition ${
-                      selectedMethod === 'open_account' ? 'text-[#d32f2f]' : 'text-[#212529]'
+                      selectedMethod === 'open_account' ? 'text-[#338d35]' : 'text-[#212529]'
                     }`}>
                       Açık Hesap
                     </span>
@@ -997,7 +997,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 {/* Info pill about selected method + Direct Action Buttons */}
                 <div className="bg-gray-50 border border-gray-200/80 rounded-xl p-3 text-center text-xs text-gray-600 font-medium space-y-2.5">
                   <div>
-                    Seçili Yöntem: <span className="font-bold text-[#d32f2f]">
+                    Seçili Yöntem: <span className="font-bold text-[#338d35]">
                       {selectedMethod === 'cash' ? 'Nakit' : selectedMethod === 'credit_card' ? 'Kredi Kartı' : 'Açık Hesap'}
                     </span>
                   </div>
@@ -1013,7 +1013,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <button
                       onClick={() => handleProcessPayment(selectedMethod, true, true)}
                       disabled={loading}
-                      className="w-full py-2.5 px-3 rounded-xl bg-[#d32f2f] hover:bg-red-700 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                      className="w-full py-2.5 px-3 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
                     >
                       <Printer className="w-3.5 h-3.5" />
                       <span>ÖDE, YAZDIR VE KAPAT</span>
@@ -1078,7 +1078,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         setPayAmount((order.remaining_total + tipAmount).toFixed(2));
                         setActiveRightTab('methods');
                       }}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition"
+                      className="px-4 py-2 bg-red-600 hover:bg-[#28702a] text-white rounded-xl text-xs font-bold transition"
                     >
                       Ekle
                     </button>
@@ -1095,7 +1095,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         <div className="fixed inset-0 z-60 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-lg p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <div className="flex items-center gap-2 text-[#d32f2f] font-bold text-base">
+              <div className="flex items-center gap-2 text-[#338d35] font-bold text-base">
                 <History className="w-5 h-5" />
                 <span>Tahsilat Geçmişi ({tableName})</span>
               </div>
@@ -1168,7 +1168,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <button
                   key={n}
                   onClick={() => handleApplySplitN(n)}
-                  className="p-3 bg-gray-50 hover:bg-red-50 hover:border-red-300 hover:text-[#d32f2f] rounded-xl border border-gray-200 text-center font-bold text-sm transition"
+                  className="p-3 bg-gray-50 hover:bg-emerald-50 dark:bg-emerald-950/40 hover:border-emerald-400 hover:text-[#338d35] rounded-xl border border-gray-200 text-center font-bold text-sm transition"
                 >
                   {n} Kişi
                 </button>
@@ -1239,7 +1239,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </button>
               <button
                 onClick={handleApplyDiscount}
-                className="py-2.5 bg-[#d32f2f] hover:bg-red-700 text-white rounded-xl text-xs font-bold transition"
+                className="py-2.5 bg-[#338d35] hover:bg-[#28702a] text-white rounded-xl text-xs font-bold transition"
               >
                 İndirimi Uygula
               </button>

@@ -268,7 +268,7 @@ export const DayEndReport: React.FC = () => {
                 sound.beep();
                 setIsCloseRegisterModalOpen(true);
               }}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black bg-red-600 hover:bg-red-700 text-white shadow-md shadow-red-600/20 transition animate-pulse"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black bg-[#338d35] hover:bg-[#28702a] text-white shadow-md shadow-red-600/20 transition animate-pulse"
             >
               <Lock className="w-3.5 h-3.5" />
               <span>Gün Sonunu Kapat (Z Al)</span>
@@ -769,7 +769,7 @@ export const DayEndReport: React.FC = () => {
                 <button
                   type="submit"
                   disabled={closeRegisterLoading}
-                  className="flex-1 py-2.5 rounded-xl font-black bg-red-600 hover:bg-red-700 text-white shadow-md transition disabled:opacity-50"
+                  className="flex-1 py-2.5 rounded-xl font-black bg-[#338d35] hover:bg-[#28702a] text-white shadow-md transition disabled:opacity-50"
                 >
                   {closeRegisterLoading ? 'Kapatılıyor...' : 'Onayla ve Z Raporu Al'}
                 </button>

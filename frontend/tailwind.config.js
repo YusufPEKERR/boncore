@@ -8,6 +8,12 @@ export default {
   theme: {
     extend: {
       colors: {
+        brand: {
+          DEFAULT: '#338d35',
+          hover: '#28702a',
+          light: '#eef7ee',
+          dark: '#143315',
+        },
         pos: {
           bg: '#0f172a',
           card: '#1e293b',

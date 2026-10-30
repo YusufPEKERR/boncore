@@ -605,7 +605,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
 
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 text-white font-black text-xs shadow-md transition active:scale-95 cursor-pointer"
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#338d35] to-emerald-600 hover:from-rose-500 hover:to-orange-500 text-white font-black text-xs shadow-md transition active:scale-95 cursor-pointer"
                 >
                   {editingUser ? 'Güncelle' : 'Kaydet'}
                 </button>

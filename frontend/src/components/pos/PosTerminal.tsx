@@ -892,7 +892,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             onClick={() => { sound.beep(); setMobilePosView('menu'); }}
             className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
               mobilePosView === 'menu'
-                ? 'bg-rose-600 text-white shadow-sm'
+                ? 'bg-[#338d35] text-white shadow-sm'
                 : 'text-slate-600 dark:text-slate-300'
             }`}
           >
@@ -902,13 +902,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             onClick={() => { sound.beep(); setMobilePosView('cart'); }}
             className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer ${
               mobilePosView === 'cart'
-                ? 'bg-rose-600 text-white shadow-sm'
+                ? 'bg-[#338d35] text-white shadow-sm'
                 : 'text-slate-600 dark:text-slate-300'
             }`}
           >
             <span>🧾 Adisyon</span>
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-              mobilePosView === 'cart' ? 'bg-white/20 text-white' : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+              mobilePosView === 'cart' ? 'bg-white/20 text-white' : 'bg-emerald-500/15 text-[#338d35] dark:text-emerald-400'
             }`}>
               {activeCartCount}
             </span>
@@ -1142,7 +1142,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               <span>Henüz ürün eklenmedi.</span>
               <button
                 onClick={() => setMobilePosView('menu')}
-                className="lg:hidden px-3 py-1.5 rounded-xl bg-rose-600 text-white font-bold text-xs"
+                className="lg:hidden px-3 py-1.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white font-bold text-xs"
               >
                 Ürün Ekle
               </button>
@@ -1267,7 +1267,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   ₺{grandTotal.toFixed(2)}
                 </span>
               )}
-              <ChevronUp className={`w-4 h-4 text-slate-400 transition-transform ${showBreakdown ? 'rotate-180 text-red-600' : ''}`} />
+              <ChevronUp className={`w-4 h-4 text-slate-400 transition-transform ${showBreakdown ? 'rotate-180 text-[#338d35]' : ''}`} />
             </div>
           </div>
 
@@ -1332,7 +1332,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             <button
               onClick={handleSaveOrSendOrder}
               disabled={loading || cartItems.length === 0}
-              className="col-span-3 py-3 px-1.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] disabled:opacity-50 text-white font-black text-xs shadow transition flex items-center justify-center cursor-pointer"
+              className="col-span-3 py-3 px-1.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] disabled:opacity-50 text-white font-black text-xs shadow transition flex items-center justify-center cursor-pointer"
             >
               <span>KAYDET</span>
             </button>
@@ -1503,7 +1503,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 {qty > 0 && (
                   <div 
                     onClick={(e) => e.stopPropagation()}
-                    className="absolute right-0 top-0 bottom-0 w-9 bg-[#c0392b] text-white flex flex-col items-center justify-between py-1 z-10 shadow-lg rounded-r-2xl animate-fadeIn"
+                    className="absolute right-0 top-0 bottom-0 w-9 bg-[#338d35] text-white flex flex-col items-center justify-between py-1 z-10 shadow-lg rounded-r-2xl animate-fadeIn"
                   >
                     <button
                       onClick={(e) => handleInlineIncrease(e, p)}
@@ -1558,7 +1558,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             <button
               onClick={handleSaveOrSendOrder}
               disabled={loading || cartItems.length === 0}
-              className="py-2.5 px-3.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] disabled:opacity-50 text-white font-black text-xs shrink-0"
+              className="py-2.5 px-3.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] disabled:opacity-50 text-white font-black text-xs shrink-0"
             >
               Kaydet
             </button>
@@ -1826,7 +1826,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               <button
                 type="button"
                 onClick={() => handleConfirmWeightModal('set')}
-                className="flex-1 py-3 px-4 rounded-2xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-lg transition cursor-pointer"
+                className="flex-1 py-3 px-4 rounded-2xl bg-[#338d35] hover:bg-[#28702a] text-white font-black text-xs shadow-lg transition cursor-pointer"
               >
                 {existingUnsavedWeightItem ? 'Miktarı Güncelle' : 'Adisyona Ekle'}
               </button>
@@ -2211,7 +2211,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           <div className="bg-white dark:bg-slate-900 border-2 border-rose-500 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
             <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-center border border-rose-500/30 shrink-0">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 text-[#338d35] dark:text-emerald-400 flex items-center justify-center border border-rose-500/30 shrink-0">
                   <AlertCircle className="w-6 h-6" />
                 </div>
                 <div>
@@ -2251,7 +2251,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <span className="inline-block px-2.5 py-1 rounded-xl bg-rose-600 text-white font-mono font-black text-xs">
+                      <span className="inline-block px-2.5 py-1 rounded-xl bg-[#338d35] text-white font-mono font-black text-xs">
                         Stok: {ing.current_stock} {ing.unit}
                       </span>
                       <div className="text-[10px] font-extrabold text-rose-600 dark:text-rose-400 mt-0.5">
@@ -2270,7 +2270,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             <button
               type="button"
               onClick={() => setBomStockWarningModal(null)}
-              className="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-lg transition cursor-pointer"
+              className="w-full py-3 rounded-2xl bg-[#338d35] hover:bg-[#28702a] text-white font-black text-xs shadow-lg transition cursor-pointer"
             >
               Anlaşıldı
             </button>

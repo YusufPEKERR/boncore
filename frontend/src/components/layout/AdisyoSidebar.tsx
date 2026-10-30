@@ -133,7 +133,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             onClick={() => handleNavClick('dashboard')}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
               activeTab === 'dashboard'
-                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
@@ -159,7 +159,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <button
                   onClick={() => handleNavClick('integration_menu')}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between ${
-                    activeTab === 'integration_menu' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    activeTab === 'integration_menu' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   <span>Ürün Eşleştirme Ekranı</span>
@@ -169,7 +169,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                   className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center justify-between"
                 >
                   <span>Entegrasyon İşlemleri</span>
-                  <span className="bg-red-600 text-white text-[8px] font-black px-1 py-0.2 rounded">Yeni</span>
+                  <span className="bg-[#338d35] text-white text-[8px] font-black px-1 py-0.2 rounded">Yeni</span>
                 </button>
               </div>
             )}
@@ -180,7 +180,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             onClick={() => handleNavClick('qr')}
             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
               activeTab === 'qr'
-                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
@@ -188,7 +188,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
               <Smartphone className="w-4 h-4 text-slate-500" />
               <span>Dijital Menü (QR)</span>
             </div>
-            <span className="bg-red-600 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-md">
+            <span className="bg-[#338d35] text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-md">
               Canlı
             </span>
           </button>
@@ -211,7 +211,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <button
                   onClick={() => handleNavClick('settings')}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'settings' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    activeTab === 'settings' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   Restaurant Tanımlamaları
@@ -219,7 +219,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <button
                   onClick={() => handleNavClick('table_definition')}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'table_definition' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    activeTab === 'table_definition' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   Masa / Bölgeler
@@ -227,7 +227,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <button
                   onClick={() => handleNavClick('product_definition')}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'product_definition' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    activeTab === 'product_definition' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   Menü / Ürünler
@@ -241,7 +241,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <button
                   onClick={() => handleNavClick('kitchen_groups')}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'kitchen_groups' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    activeTab === 'kitchen_groups' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   Mutfak Grupları
@@ -249,7 +249,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <button
                   onClick={() => handleNavClick('profile')}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'profile' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    activeTab === 'profile' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   Profil & Kullanıcı Bilgisi
@@ -263,7 +263,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             onClick={() => handleNavClick('tables')}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
               activeTab === 'tables' || activeTab === 'pos'
-                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
@@ -276,7 +276,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             onClick={() => handleNavClick('kds')}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
               activeTab === 'kds'
-                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
@@ -289,7 +289,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             onClick={() => handleNavClick('delivery')}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
               activeTab === 'delivery'
-                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
@@ -302,7 +302,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             onClick={() => handleNavClick('customers')}
             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
               activeTab === 'customers'
-                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
@@ -310,7 +310,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
               <Gift className="w-4 h-4 text-rose-500" />
               <span>Müşteri Sadakat & Cari</span>
             </div>
-            <span className="bg-rose-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded">CRM</span>
+            <span className="bg-[#338d35] text-white text-[8px] font-black px-1.5 py-0.5 rounded">CRM</span>
           </button>
 
           {/* Masa Rezervasyon */}
@@ -318,7 +318,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             onClick={() => handleNavClick('reservations')}
             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
               activeTab === 'reservations'
-                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
@@ -334,7 +334,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             onClick={() => handleNavClick('kiosk')}
             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
               activeTab === 'kiosk'
-                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
@@ -350,7 +350,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             onClick={() => handleNavClick('hotel')}
             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
               activeTab === 'hotel'
-                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
@@ -397,7 +397,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <button
                   onClick={() => handleNavClick('audit')}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'audit' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    activeTab === 'audit' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   Denetim İzi (Audit Log)
@@ -424,7 +424,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <button
                   onClick={() => handleNavClick('users')}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'users' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    activeTab === 'users' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   Kullanıcılar
@@ -432,7 +432,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <button
                   onClick={() => handleNavClick('rights')}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'rights' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    activeTab === 'rights' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   Yetki / İzin Ekranı
@@ -459,7 +459,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <button
                   onClick={() => handleNavClick('restaurant_statistics')}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'restaurant_statistics' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    activeTab === 'restaurant_statistics' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   Restaurant İstatistikleri
@@ -467,7 +467,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <button
                   onClick={() => handleNavClick('closed_bills_report')}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'closed_bills_report' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    activeTab === 'closed_bills_report' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   Kapatılan Adisyonlar
@@ -475,7 +475,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <button
                   onClick={() => handleNavClick('product_sales_report')}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'product_sales_report' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    activeTab === 'product_sales_report' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   Ürün Satış Raporu
@@ -483,7 +483,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <button
                   onClick={() => handleNavClick('day_end_report')}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'day_end_report' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    activeTab === 'day_end_report' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   Gün Sonu Raporu (Z)
@@ -491,7 +491,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 <button
                   onClick={() => handleNavClick('cost_profit')}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between ${
-                    activeTab === 'cost_profit' ? 'text-red-600 font-bold bg-red-50/80 dark:bg-red-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    activeTab === 'cost_profit' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   <span>Maliyet & Rapor Sihirbazı</span>
@@ -522,7 +522,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             onClick={() => handleNavClick('app_store')}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
               activeTab === 'app_store'
-                ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-bold border-l-4 border-red-600'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
@@ -542,7 +542,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
               <Award className="w-4 h-4 text-amber-500" />
               <span>Tavsiye Et ve Kazan</span>
             </div>
-            <span className="bg-red-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded">
+            <span className="bg-[#338d35] text-white text-[9px] font-black px-1.5 py-0.5 rounded">
               Yeni
             </span>
           </button>
@@ -553,7 +553,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
           {currentUser && (
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-rose-500 to-orange-500 text-white font-black text-xs flex items-center justify-center flex-shrink-0 shadow-sm">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#338d35] to-emerald-600 text-white font-black text-xs flex items-center justify-center flex-shrink-0 shadow-sm">
                   {currentUser.name.charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0">
@@ -582,7 +582,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 onClose();
                 onLogout();
               }}
-              className="w-full py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/50 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+              className="w-full py-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-[#338d35] dark:text-emerald-400 border border-rose-200 dark:border-rose-800/50 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Güvenli Çıkış Yap</span>

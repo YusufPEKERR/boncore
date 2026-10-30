@@ -1159,7 +1159,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                   <a
                     href="/api/scale/download-agent"
                     download="boncore-hardware-agent.zip"
-                    className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-xs shadow-md shadow-red-600/30 transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    className="px-4 py-2 rounded-xl bg-[#338d35] hover:bg-[#28702a] active:scale-95 text-white font-black text-xs shadow-md shadow-red-600/30 transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                   >
                     <Download className="w-4 h-4" />
                     <span>Kurulum Paketini İndir (.ZIP)</span>

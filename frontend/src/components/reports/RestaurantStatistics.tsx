@@ -1014,7 +1014,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                           <div
                             className={`w-full rounded-t-xl transition-all duration-300 group-hover:brightness-110 ${
                               isPeak 
-                                ? 'bg-gradient-to-t from-red-600 to-rose-400 shadow-md shadow-rose-500/20' 
+                                ? 'bg-gradient-to-t from-red-600 to-rose-400 shadow-md shadow-emerald-600/20' 
                                 : 'bg-slate-200 dark:bg-slate-800'
                             }`}
                             style={{ height: `${heightPercent}%` }}
@@ -1964,7 +1964,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={handleOpenAddStock}
-                    className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-black flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                    className="px-3.5 py-2 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white text-xs font-black flex items-center gap-1.5 shadow-sm transition cursor-pointer"
                   >
                     <Plus className="w-4 h-4" />
                     <span>Yeni Stok Ekle</span>
@@ -2298,7 +2298,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
               </button>
               <button
                 onClick={handleSaveStockItem}
-                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white text-xs font-black flex items-center gap-1.5 cursor-pointer"
               >
                 <Save className="w-3.5 h-3.5" />
                 <span>Kaydet</span>
