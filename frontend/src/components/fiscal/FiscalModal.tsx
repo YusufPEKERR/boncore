@@ -91,11 +91,15 @@ export const printThermalReceipt = async (doc: any) => {
 
     const totalWeight = design?.total_weight === 'bold' ? '700' : design?.total_weight === 'extrabold' ? '800' : '900';
 
+    // Çizgi ve Ayırıcı Kuralları (Düz Çizgi, Kalınlık)
+    const dividerStyle = design?.divider_style || 'solid';
+    const dividerThickness = design?.divider_thickness !== undefined ? design?.divider_thickness : 2;
+
     const headerTitle = design?.header_title || doc.company_title || 'BONCORE RESTORAN';
     const headerSub = design?.header_sub ? `<div class="center receipt-sub" style="margin-bottom:2px;">${design.header_sub}</div>` : '';
     const footerMsg = design?.footer_message || 'TEŞEKKÜR EDERİZ • AFİYET OLSUN!';
     const footerSub = design?.footer_sub ? `<div class="center receipt-sub" style="color:#555;margin-top:2px;">${design.footer_sub}</div>` : '';
-    const wifiInfo = design?.wifi_name ? `<div class="center receipt-sub" style="margin-top:3px;border-top:1px dashed #777;padding-top:2px;">📶 Wi-Fi: <b>${design.wifi_name}</b> ${design.wifi_password ? `(Şifre: <b>${design.wifi_password}</b>)` : ''}</div>` : '';
+    const wifiInfo = design?.wifi_name ? `<div class="center receipt-sub" style="margin-top:3px;border-top:${dividerThickness}px ${dividerStyle} #000;padding-top:2px;">📶 Wi-Fi: <b>${design.wifi_name}</b> ${design.wifi_password ? `(Şifre: <b>${design.wifi_password}</b>)` : ''}</div>` : '';
     const instagramInfo = design?.instagram ? `<div class="center receipt-sub">📷 Instagram: <b>${design.instagram}</b></div>` : '';
     const customNote = design?.custom_note ? `<div class="center receipt-sub" style="font-style:italic;margin-top:2px;">${design.custom_note}</div>` : '';
 
@@ -136,8 +140,8 @@ export const printThermalReceipt = async (doc: any) => {
     .receipt-body { font-size: ${bodyFontSize}; font-weight: ${bodyFontWeight}; }
     .receipt-sub { font-size: ${subFontSize}; font-weight: ${subFontWeight}; }
     .receipt-total { font-size: 14px; font-weight: ${totalWeight}; }
-    .divider { border-top: 1px dashed #000; margin: 6px 0; }
-    .double-divider { border-top: 2px solid #000; margin: 6px 0; }
+    .divider { border-top: ${dividerThickness}px ${dividerStyle} #000; margin: 6px 0; }
+    .double-divider { border-top: ${Math.max(dividerThickness, 2)}px solid #000; margin: 6px 0; }
     table { width: 100%; border-collapse: collapse; font-size: ${bodyFontSize}; font-weight: ${bodyFontWeight}; }
     th { border-bottom: 1px solid #000; padding-bottom: 3px; text-align: left; font-size: ${subFontSize}; font-weight: 700; }
     .row { display: flex; justify-content: space-between; margin: 2px 0; }

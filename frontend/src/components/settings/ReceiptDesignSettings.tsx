@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   Printer, FileText, CheckCircle2, RotateCcw, Eye, Sparkles, 
   Wifi, Instagram, MapPin, Hash, Users, Clock, QrCode, Sliders, 
-  Percent, Type, Bold, Building2
+  Percent, Type, Bold, Building2, Minus
 } from 'lucide-react';
 import { printThermalReceipt } from '../fiscal/FiscalModal';
 import { sound } from '../../services/sound';
@@ -23,6 +23,10 @@ export interface ReceiptDesignConfig {
   sub_size: 'xs' | 'small' | 'normal';               // Alt Yazı / Dipnot Boyutu
   sub_weight: FontWeight;                            // Alt Yazı Kalınlığı
   total_weight: 'bold' | 'extrabold' | 'black';      // Genel Toplam Kalınlığı
+
+  // Çizgi & Ayırıcı Formatı
+  divider_style: 'solid' | 'dashed' | 'double';      // Çizgi Türü (Varsayılan: 'solid' düz çizgi)
+  divider_thickness: number;                         // Çizgi Kalınlığı (px: 1, 2, 3, 4)
 
   show_vkn: boolean;                                 // VKN gösterilsin mi
   show_e_adisyon_title: boolean;                     // E-Adisyon Fişi başlığı gösterilsin mi
@@ -57,6 +61,8 @@ export const defaultReceiptDesign: ReceiptDesignConfig = {
   sub_size: 'small',
   sub_weight: 'normal',
   total_weight: 'black',
+  divider_style: 'solid',
+  divider_thickness: 2,
   show_vkn: true,
   show_e_adisyon_title: true,
   e_adisyon_title_text: 'E-ADİSYON FİŞİ',
@@ -109,6 +115,8 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
     sub_size: design.sub_size || 'small',
     sub_weight: design.sub_weight || 'normal',
     total_weight: design.total_weight || 'black',
+    divider_style: design.divider_style || 'solid',
+    divider_thickness: design.divider_thickness !== undefined ? design.divider_thickness : 2,
     show_vkn: design.show_vkn !== undefined ? design.show_vkn : true,
     show_e_adisyon_title: design.show_e_adisyon_title !== undefined ? design.show_e_adisyon_title : true,
     e_adisyon_title_text: design.e_adisyon_title_text || 'E-ADİSYON FİŞİ'
@@ -173,6 +181,12 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
     if (currentDesign.total_weight === 'extrabold') return '800';
     return '900';
   };
+
+  const getDividerBorder = () => ({
+    borderTopStyle: (currentDesign.divider_style || 'solid') as any,
+    borderTopWidth: `${currentDesign.divider_thickness ?? 2}px`,
+    borderColor: '#0f172a'
+  });
 
   // Sample data for preview and test printing
   const sampleDoc = {
@@ -549,6 +563,75 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                 ))}
               </div>
             </div>
+
+            {/* E) ÇİZGİ & AYIRICI FORMATI */}
+            <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-black text-slate-800 dark:text-slate-200">
+                  <Minus className="w-4 h-4 text-emerald-600" />
+                  <span>Fiş Ayırıcı Çizgileri (Düz Çizgi & Kalınlık)</span>
+                </div>
+                <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                  {currentDesign.divider_style === 'solid' ? 'DÜZ ÇİZGİ' : currentDesign.divider_style === 'dashed' ? 'KESİKLİ' : 'ÇİFT ÇİZGİ'} • {currentDesign.divider_thickness}px
+                </span>
+              </div>
+
+              {/* Çizgi Tipi Seçimi */}
+              <div>
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5">Çizgi Tipi:</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'solid', label: 'Düz Çizgi (Önerilen)', lineStyle: 'border-t-2 border-solid' },
+                    { id: 'dashed', label: 'Kesikli (-----)', lineStyle: 'border-t-2 border-dashed' },
+                    { id: 'double', label: 'Çift Çizgi (═)', lineStyle: 'border-t-4 border-double' }
+                  ].map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => { sound.beep(); handleUpdate('divider_style', s.id as any); }}
+                      className={`py-2 px-2 rounded-lg border text-xs font-bold transition cursor-pointer flex flex-col items-center gap-1.5 ${
+                        currentDesign.divider_style === s.id
+                          ? 'border-emerald-600 bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20 shadow-xs'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>{s.label}</span>
+                      <div className={`w-12 border-slate-700 dark:border-slate-300 ${s.lineStyle}`} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Çizgi Kalınlığı Seçimi */}
+              <div>
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5">Çizgi Kalınlığı:</span>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    { val: 1, label: '1 px (İnce)' },
+                    { val: 2, label: '2 px (Standart)' },
+                    { val: 3, label: '3 px (Kalın)' },
+                    { val: 4, label: '4 px (Çok Kalın)' }
+                  ].map((th) => (
+                    <button
+                      key={th.val}
+                      type="button"
+                      onClick={() => { sound.beep(); handleUpdate('divider_thickness', th.val); }}
+                      className={`py-2 px-1 rounded-lg border text-xs transition cursor-pointer flex flex-col items-center gap-1.5 ${
+                        currentDesign.divider_thickness === th.val
+                          ? 'border-emerald-600 bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20 font-black shadow-xs'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 font-normal'
+                      }`}
+                    >
+                      <span className="text-[11px]">{th.label}</span>
+                      <div 
+                        className="w-10 bg-slate-700 dark:bg-slate-300 rounded-full" 
+                        style={{ height: `${th.val}px` }} 
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* 3. Başlık Metni & Logo */}
@@ -879,7 +962,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               </div>
 
               {/* Double Divider */}
-              <div className="border-t-2 border-slate-900 my-2" />
+              <div style={{ borderTopWidth: `${Math.max(currentDesign.divider_thickness || 2, 2)}px`, borderTopStyle: 'solid', borderColor: '#0f172a' }} className="my-2" />
 
               {/* Meta Info Rows (Alt Yazı Boyutu ve Kalınlığı ile) */}
               <div 
@@ -906,8 +989,8 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                 )}
               </div>
 
-              {/* Dashed Divider */}
-              <div className="border-t border-dashed border-slate-400 my-2" />
+              {/* Ayırıcı Çizgi (Dinamik Format & Kalınlık) */}
+              <div style={getDividerBorder()} className="my-2" />
 
               {/* Items Table Header */}
               <div 
@@ -963,8 +1046,8 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                 </div>
               </div>
 
-              {/* Dashed Divider */}
-              <div className="border-t border-dashed border-slate-400 my-2" />
+              {/* Ayırıcı Çizgi (Dinamik Format & Kalınlık) */}
+              <div style={getDividerBorder()} className="my-2" />
 
               {/* Financial Subtotals */}
               <div 
@@ -995,7 +1078,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               </div>
 
               {/* Grand Total */}
-              <div className="border-t-2 border-slate-900 my-2" />
+              <div style={{ borderTopWidth: `${Math.max(currentDesign.divider_thickness || 2, 2)}px`, borderTopStyle: 'solid', borderColor: '#0f172a' }} className="my-2" />
               <div 
                 style={{ 
                   fontSize: '14px',
@@ -1010,7 +1093,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               {/* Payment Details */}
               {currentDesign.show_payment_details && (
                 <>
-                  <div className="border-t border-dashed border-slate-400 my-1.5" />
+                  <div style={getDividerBorder()} className="my-1.5" />
                   <div 
                     style={{ 
                       fontSize: getSubFontSize(),
@@ -1033,7 +1116,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               {/* Wi-Fi & Social Media */}
               {(currentDesign.wifi_name || currentDesign.instagram || currentDesign.custom_note) && (
                 <>
-                  <div className="border-t border-dashed border-slate-300 my-2" />
+                  <div style={getDividerBorder()} className="my-2" />
                   <div 
                     style={{ 
                       fontSize: getSubFontSize(),
@@ -1073,7 +1156,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               )}
 
               {/* Footer Messages with Sub Size and Weight */}
-              <div className="border-t-2 border-slate-900 my-2" />
+              <div style={{ borderTopWidth: `${Math.max(currentDesign.divider_thickness || 2, 2)}px`, borderTopStyle: 'solid', borderColor: '#0f172a' }} className="my-2" />
               <div className="text-center space-y-0.5 pt-1">
                 {currentDesign.footer_message && (
                   <div 

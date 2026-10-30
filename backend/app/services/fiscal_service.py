@@ -145,16 +145,16 @@ class FiscalService:
         }
         w = 42
         lines = []
-        lines.append("=" * w)
+        lines.append("━" * w)
         lines.append("     BONCORE RESTAURANT & LOUNGE".center(w))
         lines.append("     GIB E-ADISYON / BILGI FISI".center(w))
-        lines.append("=" * w)
+        lines.append("━" * w)
         lines.append(f"Masa: {getattr(order.table, 'name', 'Paket') if getattr(order, 'table', None) else 'Paket'}    Garson: {order.waiter_name}")
         lines.append(f"Tarih: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
         lines.append(f"Sipariş No: {order.order_no}")
-        lines.append("-" * w)
+        lines.append("─" * w)
         lines.append(f"{'URUN':<22}{'AD':>4}{'FIYAT':>8}{'TUTAR':>8}")
-        lines.append("-" * w)
+        lines.append("─" * w)
 
         for item in getattr(order, "items", []):
             if getattr(item, "is_voided", False):
@@ -171,7 +171,7 @@ class FiscalService:
             if item.kitchen_note:
                 lines.append(f"  * Not: {item.kitchen_note}")
 
-        lines.append("-" * w)
+        lines.append("─" * w)
         lines.append(f"{'Ara Toplam:':<28}{(order.subtotal or 0.0):>11.2f} TL")
         if (order.discount_amount or 0.0) > 0:
             lines.append(f"{'Indirim:':<28}{-(order.discount_amount or 0.0):>11.2f} TL")
@@ -182,19 +182,19 @@ class FiscalService:
         if (getattr(order, 'service_charge', 0.0) or 0.0) > 0:
             lines.append(f"{'Servis Bedeli:':<28}{(order.service_charge or 0.0):>11.2f} TL")
 
-        lines.append("=" * w)
+        lines.append("━" * w)
         lines.append(f"{'GENEL TOPLAM:':<26}{(order.grand_total or 0.0):>13.2f} TL")
         order_payments = getattr(order, "payments", []) or []
         if order_payments:
-            lines.append("-" * w)
+            lines.append("─" * w)
             for p in order_payments:
                 m_key = getattr(p, "payment_method", "cash")
                 m_label = f"ODEME ({method_map.get(m_key, str(m_key).upper())}):"
                 lines.append(f"{m_label:<26}{(p.amount or 0.0):>13.2f} TL")
-        lines.append("=" * w)
+        lines.append("━" * w)
         lines.append("     MALI DEGERI YOKTUR - BILGI FISIDIR".center(w))
         lines.append("           AFIYET OLSUN!".center(w))
-        lines.append("=" * w)
+        lines.append("━" * w)
 
         return "\n".join(lines)
 
