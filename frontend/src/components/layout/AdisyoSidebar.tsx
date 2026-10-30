@@ -563,7 +563,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                     {currentUser.name}
                   </div>
                   <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                    @{currentUser.username || 'personel'}
+                    {currentUser.role === 'manager' ? 'Müdür / Yönetici' : currentUser.role === 'cashier' ? 'Kasiyer' : currentUser.role === 'chef' ? 'Mutfak Şefi' : currentUser.role === 'courier' ? 'Kurye' : 'Garson'}
                   </div>
                 </div>
               </div>

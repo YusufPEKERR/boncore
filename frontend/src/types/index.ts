@@ -2,7 +2,7 @@ export interface StaffUser {
   id: number;
   name: string;
   username?: string;
-  role: 'waiter' | 'cashier' | 'chef' | 'manager' | 'kitchen';
+  role: 'waiter' | 'cashier' | 'chef' | 'manager' | 'kitchen' | 'courier' | string;
   pin_code?: string;
   is_active: boolean;
   last_login_at?: string;

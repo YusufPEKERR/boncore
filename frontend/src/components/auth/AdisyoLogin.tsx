@@ -317,9 +317,9 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-extrabold text-slate-800">
-                    🏢 Restoran Kullanıcı Adı (Giriş Kodu)
+                    🏢 Restoran Kullanıcı Adı
                   </label>
-                  <span className="text-[10px] font-mono text-slate-400">Restoran Kimliği</span>
+                  <span className="text-[10px] font-mono text-slate-400">İşletme Kimliği</span>
                 </div>
                 <div className="relative">
                   <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -330,21 +330,21 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                       setUsername(e.target.value);
                       setErrorMsg('');
                     }}
-                    placeholder="Restoran kullanıcı adınızı girin (Örn: boncore-kadikoy)"
+                    placeholder="Restoran kullanıcı adı (Örn: moda-meyhane)"
                     autoComplete="off"
                     required
                     className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-emerald-600 rounded-2xl pl-10 pr-4 py-3 sm:py-3.5 text-sm text-slate-900 placeholder-slate-400 font-bold focus:outline-none transition shadow-2xs"
                   />
                 </div>
                 <p className="text-[10px] text-slate-400 font-medium">
-                  İşletmenizin BonCore sistemindeki kullanıcı adı / restoran kodu.
+                  İşletmenizin BonCore sistemindeki kullanıcı adı. Personellerin ayrı bir kullanıcı adı yoktur.
                 </p>
               </div>
 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-extrabold text-slate-800">
-                    🔑 Personel Parolası
+                    🔑 Personel PIN Kodu veya Parolası
                   </label>
                 </div>
                 <div className="relative">
@@ -356,7 +356,7 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                       setPassword(e.target.value);
                       setErrorMsg('');
                     }}
-                    placeholder="Personel parolanızı girin"
+                    placeholder="4 haneli PIN kodu veya şifreniz"
                     autoComplete="new-password"
                     required
                     className="w-full bg-slate-50 border border-slate-300 focus:bg-white focus:border-emerald-600 rounded-2xl pl-10 pr-11 py-3 sm:py-3.5 text-sm text-slate-900 placeholder-slate-400 font-mono font-bold focus:outline-none transition shadow-2xs"
@@ -370,6 +370,9 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                <p className="text-[10px] text-slate-400 font-medium">
+                  Hangi personel olarak oturum açacaksanız onun 4 haneli PIN kodunu giriniz.
+                </p>
               </div>
 
               <div className="flex items-center justify-between text-xs pt-0.5">

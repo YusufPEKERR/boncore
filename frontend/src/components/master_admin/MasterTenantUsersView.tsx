@@ -207,7 +207,6 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
             <thead className="bg-slate-850 text-slate-400 font-bold uppercase tracking-wider text-[11px] border-b border-slate-800">
               <tr>
                 <th className="py-3.5 px-4">Personel Adı</th>
-                <th className="py-3.5 px-4">Kullanıcı Adı</th>
                 <th className="py-3.5 px-4">Görevi / Rolü</th>
                 <th className="py-3.5 px-4">PIN Kodu</th>
                 <th className="py-3.5 px-4">Durum</th>
@@ -218,13 +217,13 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
             <tbody className="divide-y divide-slate-800/80">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-slate-400">
+                  <td colSpan={6} className="text-center py-8 text-slate-400">
                     Kullanıcılar yükleniyor...
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-slate-500">
+                  <td colSpan={6} className="text-center py-8 text-slate-500">
                     Bu restorana ait kayıtlı kullanıcı bulunmuyor.
                   </td>
                 </tr>
@@ -233,10 +232,6 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
                   <tr key={u.id} className="hover:bg-slate-850/60 transition">
                     <td className="py-3.5 px-4">
                       <div className="font-black text-white text-sm">{u.name}</div>
-                    </td>
-
-                    <td className="py-3.5 px-4 font-mono font-bold text-emerald-400">
-                      @{u.username || 'belirtilmedi'}
                     </td>
 
                     <td className="py-3.5 px-4">
@@ -297,7 +292,7 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
                   <span>Şifre & PIN Değiştir</span>
                 </h3>
                 <p className="text-xs text-slate-400 font-medium mt-0.5">
-                  Kullanıcı: <b>{changingUser.name}</b> (@{changingUser.username})
+                  Personel: <b>{changingUser.name}</b>
                 </p>
               </div>
               <button onClick={() => setChangingUser(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-white">

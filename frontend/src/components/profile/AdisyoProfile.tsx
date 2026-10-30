@@ -194,15 +194,6 @@ export const AdisyoProfile: React.FC<AdisyoProfileProps> = ({ currentUser, onUse
                 />
               </div>
               <div>
-                <label className="text-slate-500 block mb-1">Giriş Kullanıcı Adı:</label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s+/g, ''))}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-slate-900 dark:text-white font-mono font-bold"
-                />
-              </div>
-              <div>
                 <label className="text-slate-500 block mb-1">E-Posta:</label>
                 <input
                   type="email"

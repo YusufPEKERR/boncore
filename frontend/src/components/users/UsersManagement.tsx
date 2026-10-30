@@ -339,11 +339,6 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                     <div className="min-w-0">
                       <div className="font-black text-sm text-slate-900 dark:text-white truncate flex items-center gap-2">
                         <span>{u.name}</span>
-                        {u.username && (
-                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                            @{u.username}
-                          </span>
-                        )}
                       </div>
                       <div className="text-[11px] text-slate-400 truncate">
                         {u.email || u.phone || 'Aktif Personel Hesabı'}
@@ -511,48 +506,36 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                 />
               </div>
 
-              {/* Field 2.5: Kullanıcı Adı & Giriş Parolası */}
+              {/* Field 3: Hızlı PIN Kodu & Parola */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                    Kullanıcı Adı (Giriş)*
+                    4 Haneli Hızlı PIN Kodu*
                   </label>
                   <input
                     type="text"
-                    value={formUsername}
-                    onChange={(e) => setFormUsername(e.target.value.toLowerCase().replace(/\s+/g, ''))}
-                    placeholder="Örn: garson2"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:border-brand-500"
+                    maxLength={4}
+                    value={formPin}
+                    onChange={(e) => setFormPin(e.target.value)}
+                    placeholder="Örn: 2001"
+                    required
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-slate-900 dark:text-white font-black text-sm tracking-widest focus:outline-none focus:border-brand-500"
                   />
+                  <p className="text-[9px] text-slate-400 mt-1">POS ve sipariş onayı için kullanılır.</p>
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                    {editingUser ? 'Yeni Parola (Opsiyonel)' : 'Giriş Parolası*'}
+                    {editingUser ? 'Yeni Parola (Opsiyonel)' : 'Giriş Parolası (Opsiyonel)'}
                   </label>
                   <input
                     type="password"
                     value={formPassword}
                     onChange={(e) => setFormPassword(e.target.value)}
-                    placeholder={editingUser ? 'Değiştirmek için yazın...' : 'En az 4 karakter'}
+                    placeholder={editingUser ? 'Değiştirmek için...' : 'İsteğe bağlı'}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-brand-500"
                   />
+                  <p className="text-[9px] text-slate-400 mt-1">Web paneli girişi için şifre.</p>
                 </div>
-              </div>
-
-              {/* Field 3: PIN Kodu* */}
-              <div>
-                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                  4 Haneli Hızlı Geçiş PIN Kodu*
-                </label>
-                <input
-                  type="text"
-                  maxLength={4}
-                  value={formPin}
-                  onChange={(e) => setFormPin(e.target.value)}
-                  placeholder="1234"
-                  required
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-slate-900 dark:text-white font-black text-sm tracking-widest focus:outline-none focus:border-brand-500"
-                />
               </div>
 
               {/* Optional Contact Fields */}
