@@ -126,7 +126,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
       {/* Toast Notification */}
       {toast && (
         <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-extrabold animate-slideDown ${
-          toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+          toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-brand-600 text-white'
         }`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
           <span>{toast.message}</span>
@@ -140,10 +140,10 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
             <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
               <span>Raporlar</span>
               <ChevronRight className="w-3.5 h-3.5" />
-              <span className="text-red-600 font-bold">Kapatılan Adisyonlar</span>
+              <span className="text-brand-600 font-bold">Kapatılan Adisyonlar</span>
             </div>
             <h1 className="text-xl md:text-2xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
-              <Receipt className="w-6 h-6 text-red-600" />
+              <Receipt className="w-6 h-6 text-brand-600" />
               <span>Kapatılan Adisyonlar & Geçmiş Fişler</span>
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-0.5">
@@ -156,7 +156,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
             onClick={() => { sound.beep(); loadClosedBills(); }}
             className="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-extrabold flex items-center gap-2 shadow-xs cursor-pointer self-start md:self-auto"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-red-600' : 'text-slate-500'}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-brand-600' : 'text-slate-500'}`} />
             <span>Listeyi Yenile</span>
           </button>
         </div>
@@ -167,7 +167,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between text-xs font-bold text-slate-400 mb-1">
             <span>KAPATILAN ADİSYON</span>
-            <Receipt className="w-4 h-4 text-red-500" />
+            <Receipt className="w-4 h-4 text-brand-500" />
           </div>
           <div className="text-xl sm:text-2xl font-black font-mono text-slate-900 dark:text-white">
             {reportData?.total_closed_count ?? 0} <span className="text-xs font-bold text-slate-400">Adet</span>
@@ -217,7 +217,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
               onClick={() => { sound.beep(); setDateRange(opt.value); }}
               className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition cursor-pointer ${
                 dateRange === opt.value
-                  ? 'bg-red-600 text-white shadow-xs'
+                  ? 'bg-brand-600 text-white shadow-xs'
                   : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
               }`}
             >
@@ -247,7 +247,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Masa adı, adisyon no, garson veya ürün ara..."
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs font-semibold text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-red-500"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs font-semibold text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-brand-500"
             />
           </div>
         </div>
@@ -291,7 +291,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
                         <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-extrabold ${
                           bill.status === 'paid'
                             ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400'
-                            : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                            : 'bg-emerald-50 dark:bg-emerald-950/60 text-brand-600 dark:text-emerald-400'
                         }`}>
                           {bill.status === 'paid' ? 'Ödendi / Kapalı' : 'İptal Edildi'}
                         </span>
@@ -300,7 +300,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
 
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-1.5 font-black text-slate-900 dark:text-white">
-                        <UtensilsCrossed className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                        <UtensilsCrossed className="w-3.5 h-3.5 text-brand-500 shrink-0" />
                         <span>{bill.table_name}</span>
                       </div>
                     </td>
@@ -408,7 +408,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
             {/* Modal Header */}
             <div className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-red-600/15 text-red-600 dark:text-red-400 flex items-center justify-center border border-red-500/30">
+                <div className="w-10 h-10 rounded-2xl bg-brand-600/15 text-brand-600 dark:text-emerald-400 flex items-center justify-center border border-brand-500/30">
                   <Receipt className="w-5 h-5" />
                 </div>
                 <div>
@@ -493,7 +493,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
                   </div>
                 )}
                 {selectedBill.discount_amount > 0 && (
-                  <div className="flex justify-between text-rose-600">
+                  <div className="flex justify-between text-brand-600">
                     <span>İndirim:</span>
                     <span className="font-mono font-bold">-₺{Number(selectedBill.discount_amount).toFixed(2)}</span>
                   </div>

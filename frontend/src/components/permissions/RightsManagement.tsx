@@ -478,7 +478,7 @@ export const RightsManagement: React.FC = () => {
 
             <button
               onClick={handleSave}
-              className="px-5 sm:px-6 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-md transition flex items-center gap-2 shrink-0 cursor-pointer"
+              className="px-5 sm:px-6 py-2.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white font-black text-xs shadow-md transition flex items-center gap-2 shrink-0 cursor-pointer"
             >
               <Save className="w-4 h-4" />
               <span>Kaydet</span>
@@ -495,7 +495,7 @@ export const RightsManagement: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Yetki veya grup ara..."
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-red-500"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-brand-500"
             />
           </div>
         </div>
@@ -565,20 +565,20 @@ export const RightsManagement: React.FC = () => {
               </div>
 
               {/* Blocked Items */}
-              <div className="bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/50 rounded-xl p-3 shadow-xs">
-                <div className="font-extrabold text-rose-700 dark:text-rose-400 mb-2 flex items-center justify-between pb-1.5 border-b border-rose-100 dark:border-rose-900/30">
+              <div className="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/50 rounded-xl p-3 shadow-xs">
+                <div className="font-extrabold text-brand-700 dark:text-emerald-400 mb-2 flex items-center justify-between pb-1.5 border-b border-emerald-100 dark:border-emerald-900/30">
                   <span className="flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-rose-500" />
+                    <Lock className="w-3.5 h-3.5 text-brand-500" />
                     <span>ENGELLENEN / KİLİTLİ İŞLEMLER ({permissions.filter(p => !p.roles[activeTestRole as keyof typeof p.roles]).length})</span>
                   </span>
-                  <span className="text-[10px] font-mono bg-rose-50 dark:bg-rose-950 text-rose-600 px-1.5 py-0.5 rounded">Engelli</span>
+                  <span className="text-[10px] font-mono bg-emerald-50 dark:bg-emerald-950 text-brand-600 px-1.5 py-0.5 rounded">Engelli</span>
                 </div>
                 <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 font-medium text-slate-700 dark:text-slate-300">
                   {permissions
                     .filter(p => !p.roles[activeTestRole as keyof typeof p.roles])
                     .map(p => (
-                      <div key={p.id} className="p-1.5 rounded-lg bg-rose-50/50 dark:bg-rose-950/20 text-[11px] flex items-start gap-1.5">
-                        <X className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+                      <div key={p.id} className="p-1.5 rounded-lg bg-emerald-50/50 dark:bg-emerald-950/20 text-[11px] flex items-start gap-1.5">
+                        <X className="w-3.5 h-3.5 text-brand-500 shrink-0 mt-0.5" />
                         <div>
                           <div className="font-bold text-slate-900 dark:text-white">{p.title}</div>
                           <div className="text-[10px] text-slate-400">{p.group}</div>
@@ -635,7 +635,7 @@ export const RightsManagement: React.FC = () => {
                               type="checkbox"
                               checked={isChecked}
                               onChange={() => handleToggle(p.id, r.key)}
-                              className="w-4 h-4 rounded text-red-600 focus:ring-red-500 cursor-pointer accent-red-600"
+                              className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500 cursor-pointer accent-brand-600"
                             />
                           </div>
                         );

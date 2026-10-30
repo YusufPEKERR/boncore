@@ -653,7 +653,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
         <div className={`absolute top-4 right-4 z-50 p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-2xl transition-all animate-slideDown ${
           toast.type === 'success' 
             ? 'bg-emerald-600/95 text-white border border-emerald-500' 
-            : 'bg-rose-600/95 text-white border border-rose-500'
+            : 'bg-brand-600/95 text-white border border-brand-500'
         }`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
           <span>{toast.message}</span>
@@ -679,7 +679,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
 
               <div className="truncate">
                 <div className="flex items-center gap-2">
-                  <ChefHat className="w-5 h-5 text-red-600 shrink-0" />
+                  <ChefHat className="w-5 h-5 text-brand-600 shrink-0" />
                   <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white truncate">
                     {isCreatingNew ? 'Yeni Ürün & Reçete Oluştur' : prodName || 'Ürün & Reçete Düzenle'}
                   </h2>
@@ -695,7 +695,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                 <button
                   type="button"
                   onClick={() => handleDeleteProduct(selectedProduct.id)}
-                  className="p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 font-bold text-xs transition cursor-pointer"
+                  className="p-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-brand-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/60 font-bold text-xs transition cursor-pointer"
                   title="Ürünü Sil"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -714,7 +714,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                 type="button"
                 onClick={handleSaveProductAndRecipe}
                 disabled={saving}
-                className="px-5 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                className="px-5 py-2.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 <Save className="w-4 h-4" />
                 <span>{saving ? 'Kaydediliyor...' : 'Kaydet'}</span>
@@ -742,7 +742,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                     className={`px-3 py-1.5 rounded-xl text-xs font-extrabold border transition flex items-center gap-1.5 cursor-pointer ${
                       prodIsAvailable
                         ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-400 dark:border-emerald-700 shadow-xs'
-                        : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-800'
+                        : 'bg-emerald-50 dark:bg-emerald-950/60 text-brand-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
                     }`}
                     title="Ürünün sipariş durumunu Aktif / Pasif olarak değiştir"
                   >
@@ -978,7 +978,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                       {recipeItems.length > 0 ? 'Stok (Stok / Malzeme)' : 'Stok'}
                     </span>
                     <span className={`text-sm sm:text-base font-black font-mono ${
-                      Number((calculatedBomStock !== null ? calculatedBomStock : prodStock) || 0) > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600'
+                      Number((calculatedBomStock !== null ? calculatedBomStock : prodStock) || 0) > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-brand-600'
                     }`}>
                       {Number((calculatedBomStock !== null ? calculatedBomStock : prodStock) || 0).toLocaleString('tr-TR')} {prodUnit || 'Adet'}
                     </span>
@@ -1019,7 +1019,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                             <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-white">
                               <div>{item.ingredient_name}</div>
                               {isOutOfStock && (
-                                <span className="inline-block mt-0.5 text-[10px] font-extrabold text-rose-600 dark:text-rose-400">
+                                <span className="inline-block mt-0.5 text-[10px] font-extrabold text-brand-600 dark:text-emerald-400">
                                   ⚠️ Stok Bitti! (Güncellenmeli veya Kaldırılmalı)
                                 </span>
                               )}
@@ -1042,7 +1042,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                             </td>
                             <td className={`py-2.5 px-2 text-right font-mono font-bold ${
                               isOutOfStock
-                                ? 'text-rose-600 dark:text-rose-400'
+                                ? 'text-brand-600 dark:text-emerald-400'
                                 : ingObj?.is_critical
                                 ? 'text-amber-600 dark:text-amber-400'
                                 : 'text-emerald-600 dark:text-emerald-400'
@@ -1059,7 +1059,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleRemoveRecipeItem(idx)}
-                                className="p-1 text-slate-400 hover:text-red-600 rounded transition cursor-pointer"
+                                className="p-1 text-slate-400 hover:text-brand-600 rounded transition cursor-pointer"
                                 title="Hammaddeyi Reçeteden Çıkar"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -1095,7 +1095,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                             Birim Fiyat: <strong className="font-mono text-slate-900 dark:text-white">₺{(selIng.cost_per_unit || 0).toFixed(2)} / {selIng.unit}</strong>
                           </span>
                           <span className="text-slate-300 dark:text-slate-600">•</span>
-                          <span className={selIng.current_stock <= 0 ? 'text-rose-600' : 'text-emerald-600 dark:text-emerald-400'}>
+                          <span className={selIng.current_stock <= 0 ? 'text-brand-600' : 'text-emerald-600 dark:text-emerald-400'}>
                             Stok: <strong className="font-mono">{Number(selIng.current_stock ?? 0).toLocaleString('tr-TR')} {selIng.unit}</strong>
                           </span>
                         </div>
@@ -1159,7 +1159,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                     type="button"
                     onClick={handleSaveProductAndRecipe}
                     disabled={saving}
-                    className="px-6 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                    className="px-6 py-2.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
                   >
                     <Save className="w-4 h-4" />
                     <span>{saving ? 'Kaydediliyor...' : 'Tüm Değişiklikleri Kaydet'}</span>
@@ -1179,7 +1179,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
             <div className="p-2.5 sm:p-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
               <button
                 onClick={handleOpenAddCategory}
-                className="w-full py-2 sm:py-2.5 px-3 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-extrabold text-xs border border-red-200 dark:border-red-900/60 flex items-center justify-center gap-1.5 transition cursor-pointer"
+                className="w-full py-2 sm:py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-brand-600 dark:text-emerald-400 font-extrabold text-xs border border-emerald-200 dark:border-emerald-900/60 flex items-center justify-center gap-1.5 transition cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 <span>Kategori Ekle ({categories.length})</span>
@@ -1204,10 +1204,10 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                     className={`p-2 sm:p-2.5 rounded-xl cursor-grab active:cursor-grabbing transition flex items-center justify-between gap-1.5 text-xs font-bold shrink-0 ${
                       isDragging ? 'opacity-40 scale-95' : ''
                     } ${
-                      isDragOver ? 'ring-2 ring-red-500 bg-red-50 dark:bg-red-950/40' : ''
+                      isDragOver ? 'ring-2 ring-brand-500 bg-emerald-50 dark:bg-emerald-950/40' : ''
                     } ${
                       isActive
-                        ? 'bg-slate-200 text-slate-950 dark:bg-slate-800 dark:text-white border-b-2 md:border-b-0 md:border-l-4 border-red-600 shadow-sm'
+                        ? 'bg-slate-200 text-slate-950 dark:bg-slate-800 dark:text-white border-b-2 md:border-b-0 md:border-l-4 border-brand-600 shadow-sm'
                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900'
                     }`}
                     title="Sıralamayı değiştirmek için sürükleyip bırakın"
@@ -1256,7 +1256,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                           e.stopPropagation();
                           handleDeleteCategory(cat.id, cat.name);
                         }}
-                        className="p-1 text-slate-400 hover:text-red-500 rounded transition shrink-0 cursor-pointer"
+                        className="p-1 text-slate-400 hover:text-brand-500 rounded transition shrink-0 cursor-pointer"
                         title="Kategoriyi Sil"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -1302,7 +1302,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Tüm ürünlerde ara..."
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-red-500"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-brand-500"
                   />
                 </div>
 
@@ -1313,7 +1313,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                     onClick={() => handleSortProductsAlphabetically('az')}
                     className={`px-2.5 py-1.5 rounded-xl text-xs font-extrabold border flex items-center gap-1 transition cursor-pointer ${
                       activeSortMode === 'az'
-                        ? 'bg-red-600 text-white border-red-600 shadow-xs'
+                        ? 'bg-brand-600 text-white border-brand-600 shadow-xs'
                         : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
                     }`}
                     title="Ürünleri A'dan Z'ye Sırala"
@@ -1326,7 +1326,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                     onClick={() => handleSortProductsAlphabetically('za')}
                     className={`px-2.5 py-1.5 rounded-xl text-xs font-extrabold border flex items-center gap-1 transition cursor-pointer ${
                       activeSortMode === 'za'
-                        ? 'bg-red-600 text-white border-red-600 shadow-xs'
+                        ? 'bg-brand-600 text-white border-brand-600 shadow-xs'
                         : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
                     }`}
                     title="Ürünleri Z'den A'ya Sırala"
@@ -1339,7 +1339,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
 
               <button
                 onClick={handleStartCreateNew}
-                className="px-3 sm:px-4 py-2 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-md transition flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                className="px-3 sm:px-4 py-2 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white font-black text-xs shadow-md transition flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 <span>Yeni Ürün & Reçete Ekle</span>
@@ -1362,10 +1362,10 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                   onDrop={(e) => handleProdDrop(e, p.id)}
                   onDragEnd={handleProdDragEnd}
                   onClick={() => handleSelectProduct(p)}
-                  className={`h-36 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-red-400 dark:hover:border-red-600 rounded-2xl p-4 flex flex-col justify-between shadow-sm hover:shadow-md transition relative group ${
+                  className={`h-36 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-400 dark:hover:border-brand-600 rounded-2xl p-4 flex flex-col justify-between shadow-sm hover:shadow-md transition relative group ${
                     !searchQuery.trim() ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
                   } ${isProdDragging ? 'opacity-40 scale-95' : ''} ${
-                    isProdDragOver ? 'ring-2 ring-red-500 bg-red-50/40 dark:bg-red-950/30' : ''
+                    isProdDragOver ? 'ring-2 ring-brand-500 bg-emerald-50/40 dark:bg-emerald-950/30' : ''
                   }`}
                   title={!searchQuery.trim() ? 'Sıralamayı değiştirmek için sürükleyip bırakın veya düzenlemek için tıklayın' : ''}
                 >
@@ -1384,11 +1384,11 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                         className={`px-2 py-0.5 rounded-full text-[10px] font-black transition cursor-pointer flex items-center gap-1 shrink-0 ${
                           isActiveOrderable
                             ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100'
-                            : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-300 dark:border-rose-800 hover:bg-rose-100'
+                            : 'bg-emerald-50 dark:bg-emerald-950/60 text-brand-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100'
                         }`}
                         title="Aktif / Pasif Durumunu Değiştir"
                       >
-                        <span className={`w-1.5 h-1.5 rounded-full ${isActiveOrderable ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                        <span className={`w-1.5 h-1.5 rounded-full ${isActiveOrderable ? 'bg-emerald-500' : 'bg-brand-500'}`} />
                         <span>{isActiveOrderable ? 'Aktif' : 'Pasif'}</span>
                       </button>
 
@@ -1436,7 +1436,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                           e.stopPropagation();
                           handleDeleteProduct(p.id);
                         }}
-                        className="p-1 hover:text-red-600 transition cursor-pointer" 
+                        className="p-1 hover:text-brand-600 transition cursor-pointer" 
                         title="Sil"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -1446,7 +1446,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
 
                   {/* Card Center: Product Name & Station */}
                   <div className="text-center my-auto">
-                    <h4 className="font-black text-sm text-slate-900 dark:text-white uppercase tracking-tight line-clamp-1 group-hover:text-red-600 transition">
+                    <h4 className="font-black text-sm text-slate-900 dark:text-white uppercase tracking-tight line-clamp-1 group-hover:text-brand-600 transition">
                       {p.name}
                     </h4>
                     <span className="text-[11px] font-semibold text-slate-400">
@@ -1461,7 +1461,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                     </span>
                     <span
                       className={`text-[11px] font-bold font-mono ${
-                        (p.stock_quantity ?? 0) <= 0 ? 'text-rose-600' : 'text-emerald-600 dark:text-emerald-400'
+                        (p.stock_quantity ?? 0) <= 0 ? 'text-brand-600' : 'text-emerald-600 dark:text-emerald-400'
                       }`}
                     >
                       {p.stock_quantity !== null && p.stock_quantity !== undefined
@@ -1551,7 +1551,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black shadow cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-black shadow cursor-pointer"
                 >
                   {editingCategory ? 'Kaydet' : 'Ekle'}
                 </button>

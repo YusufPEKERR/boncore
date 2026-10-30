@@ -396,7 +396,7 @@ export const AppStore: React.FC<AppStoreProps> = ({ onNavigateTab }) => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Modül veya entegrasyon ara..."
-            className="w-full pl-9 pr-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold focus:outline-none focus:border-rose-500"
+            className="w-full pl-9 pr-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold focus:outline-none focus:border-brand-500"
           />
         </div>
       </div>
@@ -407,7 +407,7 @@ export const AppStore: React.FC<AppStoreProps> = ({ onNavigateTab }) => {
           onClick={() => { sound.beep(); setActiveTab('store'); }}
           className={`py-3 flex items-center gap-2 border-b-2 transition cursor-pointer ${
             activeTab === 'store'
-              ? 'border-red-600 text-red-600 font-black'
+              ? 'border-brand-600 text-brand-600 font-black'
               : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
@@ -418,7 +418,7 @@ export const AppStore: React.FC<AppStoreProps> = ({ onNavigateTab }) => {
           onClick={() => { sound.beep(); setActiveTab('installed'); }}
           className={`py-3 flex items-center gap-2 border-b-2 transition cursor-pointer ${
             activeTab === 'installed'
-              ? 'border-red-600 text-red-600 font-black'
+              ? 'border-brand-600 text-brand-600 font-black'
               : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
@@ -453,7 +453,7 @@ export const AppStore: React.FC<AppStoreProps> = ({ onNavigateTab }) => {
         {/* Right Content Area (9 cols) */}
         <div className="lg:col-span-9 space-y-6">
           {/* Plan Promo Banner */}
-          <div className="p-6 rounded-3xl bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 grid grid-cols-1 md:grid-cols-12 gap-6">
+          <div className="p-6 rounded-3xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 grid grid-cols-1 md:grid-cols-12 gap-6">
             <div className="md:col-span-7 space-y-3">
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-black text-slate-900 dark:text-white">Adisyo Pro Kurumsal Paket</h3>
@@ -462,26 +462,26 @@ export const AppStore: React.FC<AppStoreProps> = ({ onNavigateTab }) => {
                 </span>
               </div>
               <div className="text-xs text-slate-600 dark:text-slate-300">
-                Mevcut Planınız: <span className="font-extrabold text-rose-600 dark:text-rose-400">{currentPlan}</span>
+                Mevcut Planınız: <span className="font-extrabold text-brand-600 dark:text-emerald-400">{currentPlan}</span>
               </div>
 
               <div className="grid grid-cols-2 gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-semibold">
-                <button onClick={() => onNavigateTab && onNavigateTab('customers')} className="text-left hover:text-rose-600 cursor-pointer">✓ Müşteri Sadakat & Cari (CRM)</button>
-                <button onClick={() => onNavigateTab && onNavigateTab('reservations')} className="text-left hover:text-rose-600 cursor-pointer">✓ Masa Rezervasyon Modülü</button>
-                <button onClick={() => onNavigateTab && onNavigateTab('cost_profit')} className="text-left hover:text-rose-600 cursor-pointer">✓ Maliyet, Kârlılık & Rapor Sihirbazı</button>
-                <button onClick={() => onNavigateTab && onNavigateTab('hotel')} className="text-left hover:text-rose-600 cursor-pointer">✓ Otel Yönetim (PMS Oda Folyo)</button>
-                <button onClick={() => onNavigateTab && onNavigateTab('kiosk')} className="text-left hover:text-rose-600 cursor-pointer">✓ Self-Servis Kiosk & CFD Ekranı</button>
-                <button onClick={() => onNavigateTab && onNavigateTab('settings')} className="text-left hover:text-rose-600 cursor-pointer">✓ CAS Terazi & Termal Yazıcı Köprüsü</button>
+                <button onClick={() => onNavigateTab && onNavigateTab('customers')} className="text-left hover:text-brand-600 cursor-pointer">✓ Müşteri Sadakat & Cari (CRM)</button>
+                <button onClick={() => onNavigateTab && onNavigateTab('reservations')} className="text-left hover:text-brand-600 cursor-pointer">✓ Masa Rezervasyon Modülü</button>
+                <button onClick={() => onNavigateTab && onNavigateTab('cost_profit')} className="text-left hover:text-brand-600 cursor-pointer">✓ Maliyet, Kârlılık & Rapor Sihirbazı</button>
+                <button onClick={() => onNavigateTab && onNavigateTab('hotel')} className="text-left hover:text-brand-600 cursor-pointer">✓ Otel Yönetim (PMS Oda Folyo)</button>
+                <button onClick={() => onNavigateTab && onNavigateTab('kiosk')} className="text-left hover:text-brand-600 cursor-pointer">✓ Self-Servis Kiosk & CFD Ekranı</button>
+                <button onClick={() => onNavigateTab && onNavigateTab('settings')} className="text-left hover:text-brand-600 cursor-pointer">✓ CAS Terazi & Termal Yazıcı Köprüsü</button>
               </div>
             </div>
 
             {/* Quick Launch Shortcuts */}
-            <div className="md:col-span-5 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-rose-200 dark:border-slate-800 space-y-2 text-xs">
+            <div className="md:col-span-5 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-emerald-200 dark:border-slate-800 space-y-2 text-xs">
               <div className="font-black text-slate-800 dark:text-slate-200 mb-1">Hızlı Modül Geçişi:</div>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => onNavigateTab && onNavigateTab('customers')}
-                  className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-300 font-bold text-left hover:bg-rose-100 transition cursor-pointer"
+                  className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-brand-600 dark:text-emerald-300 font-bold text-left hover:bg-emerald-100 transition cursor-pointer"
                 >
                   🎁 CRM & Veresiye
                 </button>
@@ -519,7 +519,7 @@ export const AppStore: React.FC<AppStoreProps> = ({ onNavigateTab }) => {
                   <div className="flex items-start gap-3">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
                       app.isInstalled
-                        ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/50 text-brand-600 dark:text-emerald-400'
                         : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                     }`}>
                       <Icon className="w-5 h-5" />
@@ -542,7 +542,7 @@ export const AppStore: React.FC<AppStoreProps> = ({ onNavigateTab }) => {
                       onClick={() => handleAppAction(app)}
                       className={`px-3 py-1.5 rounded-lg font-bold text-xs transition cursor-pointer ${
                         app.isInstalled
-                          ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-sm'
+                          ? 'bg-brand-600 hover:bg-brand-700 text-white shadow-sm'
                           : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200'
                       }`}
                     >

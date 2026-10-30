@@ -250,7 +250,7 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({ areas, onBuzze
 
             {/* Notification Toast */}
             {notice && (
-              <div className={`${notice.isError ? 'bg-rose-600' : 'bg-emerald-600'} text-white text-xs font-bold p-2 text-center animate-fadeIn z-20`}>
+              <div className={`${notice.isError ? 'bg-brand-600' : 'bg-emerald-600'} text-white text-xs font-bold p-2 text-center animate-fadeIn z-20`}>
                 {notice.message}
               </div>
             )}
@@ -282,7 +282,7 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({ areas, onBuzze
                   <div className="flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="font-extrabold text-sm text-white">{p.name}</span>
-                      {p.is_spicy && <span className="text-[9px] text-red-400 font-bold">🌶️</span>}
+                      {p.is_spicy && <span className="text-[9px] text-emerald-400 font-bold">🌶️</span>}
                       {p.is_vegan && <span className="text-[9px] text-emerald-400 font-bold">🌱</span>}
                     </div>
                     <p className="text-[10px] text-slate-400 line-clamp-2 mt-0.5">{p.description}</p>

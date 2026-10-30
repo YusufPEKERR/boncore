@@ -106,7 +106,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
         <div className={`p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-lg transition-all animate-slideDown ${
           toast.type === 'success' 
             ? 'bg-emerald-600/95 text-white border border-emerald-500' 
-            : 'bg-rose-600/95 text-white border border-rose-500'
+            : 'bg-brand-600/95 text-white border border-brand-500'
         }`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
           <span>{toast.message}</span>
@@ -132,13 +132,13 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
               onClick={() => { sound.beep(); onNavigateTab('day_end_report'); }}
               className="px-3.5 py-2.5 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 font-extrabold text-xs shadow-xs transition flex items-center gap-2 cursor-pointer"
             >
-              <FileText className="w-4 h-4 text-red-600" />
+              <FileText className="w-4 h-4 text-brand-600" />
               <span>DETAYLI GÜN SONU RAPORU</span>
             </button>
           )}
           <button
             onClick={handleCloseZReport}
-            className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-extrabold text-xs shadow-lg shadow-red-500/25 transition flex items-center gap-2 cursor-pointer"
+            className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-600 hover:from-brand-500 hover:to-brand-500 text-white font-extrabold text-xs shadow-lg shadow-brand-500/25 transition flex items-center gap-2 cursor-pointer"
           >
             <ShieldCheck className="w-4 h-4" />
             <span>GÜN SONU Z-RAPORU AL</span>
@@ -327,7 +327,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
                 <span>Gün Başı Kasa Avansı:</span>
                 <span>₺500.00</span>
               </div>
-              <div className="flex justify-between text-red-400">
+              <div className="flex justify-between text-emerald-400">
                 <span>Kasadan Çıkan Masraflar:</span>
                 <span>-₺{(zReportData || xReport)?.total_expenses?.toFixed(2)}</span>
               </div>

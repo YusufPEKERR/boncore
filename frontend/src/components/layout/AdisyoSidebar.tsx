@@ -110,7 +110,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             />
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-base text-slate-900 dark:text-white tracking-tight">BonCore <span className="text-rose-600 dark:text-rose-400">POS</span></span>
+                <span className="font-extrabold text-base text-slate-900 dark:text-white tracking-tight">BonCore <span className="text-brand-600 dark:text-emerald-400">POS</span></span>
                 <span className="text-[9px] font-bold text-slate-400 bg-slate-200/70 dark:bg-slate-800 px-1.5 py-0.2 rounded">v2.0</span>
               </div>
               <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide truncate max-w-[170px]">
@@ -307,7 +307,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             }`}
           >
             <div className="flex items-center gap-3">
-              <Gift className="w-4 h-4 text-rose-500" />
+              <Gift className="w-4 h-4 text-brand-500" />
               <span>Müşteri Sadakat & Cari</span>
             </div>
             <span className="bg-[#338d35] text-white text-[8px] font-black px-1.5 py-0.5 rounded">CRM</span>
@@ -582,7 +582,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 onClose();
                 onLogout();
               }}
-              className="w-full py-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-[#338d35] dark:text-emerald-400 border border-rose-200 dark:border-rose-800/50 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+              className="w-full py-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-[#338d35] dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Güvenli Çıkış Yap</span>

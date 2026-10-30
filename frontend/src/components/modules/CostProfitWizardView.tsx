@@ -182,7 +182,7 @@ export const CostProfitWizardView: React.FC = () => {
 
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="text-[11px] font-bold text-slate-400 uppercase">Kasa Masraf / Giderler</div>
-          <div className="text-xl font-black text-rose-600 dark:text-rose-400 mt-1">
+          <div className="text-xl font-black text-brand-600 dark:text-emerald-400 mt-1">
             ₺{(summary.total_expenses || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
           </div>
           <div className="text-[10px] text-slate-400 mt-0.5">İşletme Gider Çıkışları</div>
@@ -206,7 +206,7 @@ export const CostProfitWizardView: React.FC = () => {
             onClick={() => { sound.beep(); setActiveTab('cost_profit'); }}
             className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
               activeTab === 'cost_profit'
-                ? 'bg-rose-600 text-white shadow-sm'
+                ? 'bg-brand-600 text-white shadow-sm'
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
             }`}
           >
@@ -217,7 +217,7 @@ export const CostProfitWizardView: React.FC = () => {
             onClick={() => { sound.beep(); setActiveTab('wizard'); }}
             className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
               activeTab === 'wizard'
-                ? 'bg-rose-600 text-white shadow-sm'
+                ? 'bg-brand-600 text-white shadow-sm'
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
             }`}
           >
@@ -282,7 +282,7 @@ export const CostProfitWizardView: React.FC = () => {
                 type="checkbox"
                 checked={wizardOnlySold}
                 onChange={(e) => setWizardOnlySold(e.target.checked)}
-                className="rounded text-rose-600"
+                className="rounded text-brand-600"
               />
               <span>Sadece Satışı Olan Ürünleri Göster</span>
             </label>
@@ -362,7 +362,7 @@ export const CostProfitWizardView: React.FC = () => {
                         <div className="w-16 h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
                           <div
                             className={`h-full rounded-full ${
-                              p.margin_percent >= 60 ? 'bg-emerald-500' : p.margin_percent >= 40 ? 'bg-amber-500' : 'bg-rose-500'
+                              p.margin_percent >= 60 ? 'bg-emerald-500' : p.margin_percent >= 40 ? 'bg-amber-500' : 'bg-brand-500'
                             }`}
                             style={{ width: `${Math.min(100, Math.max(0, p.margin_percent))}%` }}
                           />

@@ -159,7 +159,7 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
                 onClick={() => { sound.beep(); setStation(st.id); }}
                 className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
                   station === st.id
-                    ? 'bg-red-600 text-white shadow-sm'
+                    ? 'bg-brand-600 text-white shadow-sm'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
@@ -175,7 +175,7 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
               title="Mutfak Gruplarını (KDS İstasyonlarını) Yönet"
               className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer shrink-0"
             >
-              <Settings className="w-3.5 h-3.5 text-red-500" />
+              <Settings className="w-3.5 h-3.5 text-brand-500" />
               <span>Mutfak Grupları</span>
             </button>
           )}
@@ -283,7 +283,7 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
               {/* Time Badge Row */}
               <div className="px-3.5 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
                 <span className={`px-2.5 py-1 rounded font-mono font-extrabold text-[11px] shadow-sm text-white ${
-                  isAllReady ? 'bg-emerald-600' : 'bg-[#c0392b]'
+                  isAllReady ? 'bg-emerald-600' : 'bg-[#338d35]'
                 }`}>
                   {isAllReady ? 'Tamamlandı' : 'Hazırlanıyor'} {getElapsedFormatted(o.created_at)}
                 </span>

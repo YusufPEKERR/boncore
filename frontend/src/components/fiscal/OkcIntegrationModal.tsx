@@ -45,7 +45,7 @@ export const OkcIntegrationModal: React.FC<OkcIntegrationModalProps> = ({
         <div className="overflow-y-auto p-6 md:p-8 space-y-5">
           {/* Megaphone Top Icon */}
           <div className="flex flex-col items-center text-center space-y-2">
-            <div className="w-14 h-14 rounded-2xl bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400 flex items-center justify-center shadow-md">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-950/50 text-brand-600 dark:text-emerald-400 flex items-center justify-center shadow-md">
               <Megaphone className="w-7 h-7" />
             </div>
             <h3 className="text-xl font-black text-slate-900 dark:text-white">
@@ -61,7 +61,7 @@ export const OkcIntegrationModal: React.FC<OkcIntegrationModalProps> = ({
 
             <div className="space-y-2 pt-1 text-xs">
               <div className="flex items-start gap-2">
-                <span className="text-red-600 flex-shrink-0">🏧</span>
+                <span className="text-brand-600 flex-shrink-0">🏧</span>
                 <span>Adisyo mevcut müşterilerine özel tüm yazar kasa entegrasyon hizmetlerinde %30 indirim sunuyor!</span>
               </div>
               <div className="flex items-start gap-2">
@@ -126,7 +126,7 @@ export const OkcIntegrationModal: React.FC<OkcIntegrationModalProps> = ({
 
             <button
               type="submit"
-              className="w-full py-3 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-lg transition"
+              className="w-full py-3 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white font-black text-xs shadow-lg transition"
             >
               Gönder
             </button>

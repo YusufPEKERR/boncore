@@ -91,7 +91,7 @@ export const ProductModifierModal: React.FC<ProductModifierModalProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-xl font-black text-slate-900 dark:text-white">{product.name}</h3>
-              {product.is_spicy && <span className="text-xs bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400 px-2 py-0.5 rounded-md font-bold">Acı</span>}
+              {product.is_spicy && <span className="text-xs bg-emerald-100 text-brand-600 dark:bg-brand-500/20 dark:text-emerald-400 px-2 py-0.5 rounded-md font-bold">Acı</span>}
               {product.is_vegan && <span className="text-xs bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 px-2 py-0.5 rounded-md font-bold">Vegan</span>}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{product.description || 'Seçenek ve modifikatörleri belirleyiniz.'}</p>
@@ -138,7 +138,7 @@ export const ProductModifierModal: React.FC<ProductModifierModalProps> = ({
                   {group.name}
                 </label>
                 {group.is_required && (
-                  <span className="text-[10px] bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400 px-1.5 py-0.5 rounded font-bold">
+                  <span className="text-[10px] bg-emerald-100 text-brand-600 dark:bg-brand-500/20 dark:text-emerald-400 px-1.5 py-0.5 rounded font-bold">
                     Zorunlu
                   </span>
                 )}
@@ -181,7 +181,7 @@ export const ProductModifierModal: React.FC<ProductModifierModalProps> = ({
                     onClick={() => handleToggleNegative(tag)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
                       isSelected
-                        ? 'bg-red-50 border-red-300 text-red-600 dark:bg-red-500/20 dark:border-red-500 dark:text-red-300'
+                        ? 'bg-emerald-50 border-emerald-300 text-brand-600 dark:bg-brand-500/20 dark:border-brand-500 dark:text-emerald-300'
                         : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/70 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900'
                     }`}
                   >

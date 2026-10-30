@@ -102,7 +102,7 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
             <select
               value={selectedBrand}
               onChange={(e) => setSelectedBrand(e.target.value)}
-              className="bg-[#c0392b] text-white px-3 py-1.5 rounded-lg font-bold focus:outline-none"
+              className="bg-[#338d35] text-white px-3 py-1.5 rounded-lg font-bold focus:outline-none"
             >
               <option value="all">Kanal Seç (Tümü)</option>
               <option value="yemeksepeti">Yemeksepeti</option>
@@ -172,7 +172,7 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
       )}
 
       {showWarningToast && (
-        <div className="fixed bottom-4 right-4 z-50 bg-[#e74c3c] text-white p-3.5 rounded-2xl shadow-xl flex items-center gap-3 text-xs font-bold animate-fadeIn max-w-md">
+        <div className="fixed bottom-4 right-4 z-50 bg-[#3ea840] text-white p-3.5 rounded-2xl shadow-xl flex items-center gap-3 text-xs font-bold animate-fadeIn max-w-md">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span className="flex-1">
             Herhangi bir seçim yapmadınız. "Entegrasyon Değiştir" butonundan tekrar seçim yapabilirsiniz.

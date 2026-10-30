@@ -231,7 +231,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
   const getRoleBadge = (role: string) => {
     switch (role) {
       case 'manager':
-        return <span className="px-2.5 py-0.5 rounded-full bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 text-xs font-black">Müdür / Yönetici</span>;
+        return <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-brand-600 dark:bg-emerald-950/40 dark:text-emerald-400 text-xs font-black">Müdür / Yönetici</span>;
       case 'cashier':
         return <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 text-xs font-black">Kasa / Kasiyer</span>;
       case 'waiter':
@@ -253,7 +253,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
         <div className={`p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-lg transition-all animate-slideDown ${
           toast.type === 'success' 
             ? 'bg-emerald-600/95 text-white border border-emerald-500' 
-            : 'bg-rose-600/95 text-white border border-rose-500'
+            : 'bg-brand-600/95 text-white border border-brand-500'
         }`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
           <span>{toast.message}</span>
@@ -276,7 +276,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
 
         <button
           onClick={handleOpenAdd}
-          className="px-4 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-md transition flex items-center gap-2"
+          className="px-4 py-2.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white font-black text-xs shadow-md transition flex items-center gap-2"
         >
           <UserPlus className="w-4 h-4" />
           <span>Yeni Kullanıcı Ekle</span>
@@ -292,7 +292,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="İsim, e-posta veya telefon ile ara..."
-            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-red-500"
+            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-brand-500"
           />
         </div>
 
@@ -333,7 +333,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                 <div key={u.id} className="grid grid-cols-12 p-4 items-center text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
                   {/* User Info */}
                   <div className="col-span-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500/15 to-orange-500/15 text-rose-600 dark:text-rose-400 font-black text-sm flex items-center justify-center border border-rose-500/20 flex-shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500/15 to-orange-500/15 text-brand-600 dark:text-emerald-400 font-black text-sm flex items-center justify-center border border-brand-500/20 flex-shrink-0">
                       {u.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0">
@@ -386,7 +386,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                     </button>
                     <button
                       onClick={() => handleDeleteUser(u.id)}
-                      className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                      className="p-2 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
                       title="Sil"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -431,7 +431,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
 
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition cursor-pointer"
+                className="p-1 text-brand-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -441,17 +441,17 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
             <form onSubmit={handleSaveUser} className="p-6 pt-2 space-y-4 text-xs">
               {/* Field 1: Görev Seçiniz* */}
               <div className="relative">
-                <label className="text-[11px] font-bold text-red-600 block mb-1">
+                <label className="text-[11px] font-bold text-brand-600 block mb-1">
                   Görev / Yetki Grubu Seçiniz*
                 </label>
 
                 <div
                   onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
-                  className="w-full pb-2 border-b-2 border-red-600 flex items-center justify-between cursor-pointer font-bold text-sm text-slate-900 dark:text-white"
+                  className="w-full pb-2 border-b-2 border-brand-600 flex items-center justify-between cursor-pointer font-bold text-sm text-slate-900 dark:text-white"
                 >
                   <span>{getRoleLabel(formRole)}</span>
                   {isRoleDropdownOpen ? (
-                    <ChevronUp className="w-4 h-4 text-red-600" />
+                    <ChevronUp className="w-4 h-4 text-brand-600" />
                   ) : (
                     <ChevronDown className="w-4 h-4 text-slate-400" />
                   )}
@@ -485,7 +485,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                           </div>
 
                           {opt.isUpgrade && (
-                            <span className="bg-[#c0392b] text-white text-[9px] font-black px-1.5 py-0.5 rounded">
+                            <span className="bg-[#338d35] text-white text-[9px] font-black px-1.5 py-0.5 rounded">
                               Pro
                             </span>
                           )}
@@ -507,7 +507,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="Örn: Ahmet Yılmaz"
                   required
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-brand-500"
                 />
               </div>
 
@@ -522,7 +522,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                     value={formUsername}
                     onChange={(e) => setFormUsername(e.target.value.toLowerCase().replace(/\s+/g, ''))}
                     placeholder="Örn: garson2"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:border-red-500"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:border-brand-500"
                   />
                 </div>
                 <div>
@@ -534,7 +534,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                     value={formPassword}
                     onChange={(e) => setFormPassword(e.target.value)}
                     placeholder={editingUser ? 'Değiştirmek için yazın...' : 'En az 4 karakter'}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-red-500"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-brand-500"
                   />
                 </div>
               </div>
@@ -551,7 +551,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                   onChange={(e) => setFormPin(e.target.value)}
                   placeholder="1234"
                   required
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-slate-900 dark:text-white font-black text-sm tracking-widest focus:outline-none focus:border-red-500"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-slate-900 dark:text-white font-black text-sm tracking-widest focus:outline-none focus:border-brand-500"
                 />
               </div>
 
@@ -566,7 +566,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                     value={formEmail}
                     onChange={(e) => setFormEmail(e.target.value)}
                     placeholder="personel@boncorepos.com"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-brand-500"
                   />
                 </div>
                 <div>
@@ -578,7 +578,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                     value={formPhone}
                     onChange={(e) => setFormPhone(e.target.value)}
                     placeholder="+90 532 000 00 00"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-brand-500"
                   />
                 </div>
               </div>
@@ -589,7 +589,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                   <button
                     type="button"
                     onClick={() => handleDeleteUser(editingUser.id)}
-                    className="text-red-600 hover:text-red-700 font-bold text-xs transition mr-auto cursor-pointer"
+                    className="text-brand-600 hover:text-brand-700 font-bold text-xs transition mr-auto cursor-pointer"
                   >
                     Sil
                   </button>
@@ -605,7 +605,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
 
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#338d35] to-emerald-600 hover:from-rose-500 hover:to-orange-500 text-white font-black text-xs shadow-md transition active:scale-95 cursor-pointer"
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#338d35] to-emerald-600 hover:from-brand-500 hover:to-orange-500 text-white font-black text-xs shadow-md transition active:scale-95 cursor-pointer"
                 >
                   {editingUser ? 'Güncelle' : 'Kaydet'}
                 </button>

@@ -182,10 +182,10 @@ export const ProductSalesReport: React.FC = () => {
           <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
             <span>Raporlar</span>
             <ChevronRight className="w-3.5 h-3.5" />
-            <span className="text-red-600 font-bold">Ürün Satış Raporu</span>
+            <span className="text-brand-600 font-bold">Ürün Satış Raporu</span>
           </div>
           <h1 className="text-xl md:text-2xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
-            <ShoppingBag className="w-6 h-6 text-red-600" />
+            <ShoppingBag className="w-6 h-6 text-brand-600" />
             Ürün Satış Raporu
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -203,7 +203,7 @@ export const ProductSalesReport: React.FC = () => {
             disabled={loading}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-red-600' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-brand-600' : ''}`} />
             <span>Yenile</span>
           </button>
 
@@ -249,7 +249,7 @@ export const ProductSalesReport: React.FC = () => {
                 }}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
                   dateRange === tab.id
-                    ? 'bg-red-600 text-white shadow-sm'
+                    ? 'bg-brand-600 text-white shadow-sm'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                 }`}
               >
@@ -266,7 +266,7 @@ export const ProductSalesReport: React.FC = () => {
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Ürün veya kategori ara..."
-              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-red-500 outline-none"
+              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500 outline-none"
             />
           </div>
         </div>
@@ -294,7 +294,7 @@ export const ProductSalesReport: React.FC = () => {
             </div>
             <button
               onClick={handleApplyCustomDates}
-              className="px-3 py-1 bg-red-600 text-white rounded-lg text-xs font-bold hover:bg-red-700 transition"
+              className="px-3 py-1 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition"
             >
               Filtrele
             </button>
@@ -443,7 +443,7 @@ export const ProductSalesReport: React.FC = () => {
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-red-600" />
+              <Layers className="w-4 h-4 text-brand-600" />
               Kategori Bazında Ciro Payları
             </h3>
             <span className="text-[11px] text-slate-400">
@@ -459,10 +459,10 @@ export const ProductSalesReport: React.FC = () => {
               >
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-slate-800 dark:text-slate-200 line-clamp-1">{cat.category}</span>
-                  <span className="font-mono font-extrabold text-red-600">%{cat.share.toFixed(1)}</span>
+                  <span className="font-mono font-extrabold text-brand-600">%{cat.share.toFixed(1)}</span>
                 </div>
                 <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-red-600 rounded-full" style={{ width: `${Math.min(100, cat.share)}%` }} />
+                  <div className="h-full bg-brand-600 rounded-full" style={{ width: `${Math.min(100, cat.share)}%` }} />
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span>₺{cat.turnover.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
@@ -508,7 +508,7 @@ export const ProductSalesReport: React.FC = () => {
               {loading ? (
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-slate-400">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-red-600" />
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-brand-600" />
                     Satış verileri yükleniyor...
                   </td>
                 </tr>
@@ -536,7 +536,7 @@ export const ProductSalesReport: React.FC = () => {
                             className="w-7 h-7 rounded-lg object-cover border border-slate-200 dark:border-slate-700" 
                           />
                         ) : (
-                          <div className="w-7 h-7 rounded-lg bg-red-50 dark:bg-red-950/40 text-red-600 flex items-center justify-center font-bold text-[10px]">
+                          <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-brand-600 flex items-center justify-center font-bold text-[10px]">
                             {item.product_name.slice(0, 2).toUpperCase()}
                           </div>
                         )}
@@ -576,7 +576,7 @@ export const ProductSalesReport: React.FC = () => {
                         </div>
                         <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                           <div 
-                            className="h-full bg-red-600 rounded-full transition-all"
+                            className="h-full bg-brand-600 rounded-full transition-all"
                             style={{ width: `${Math.min(100, item.share_percent * 2)}%` }}
                           />
                         </div>

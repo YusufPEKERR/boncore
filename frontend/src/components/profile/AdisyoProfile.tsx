@@ -140,7 +140,7 @@ export const AdisyoProfile: React.FC<AdisyoProfileProps> = ({ currentUser, onUse
         {/* Header */}
         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-rose-600 to-orange-500 text-white flex items-center justify-center shadow-md shadow-rose-500/20">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-brand-600 to-orange-500 text-white flex items-center justify-center shadow-md shadow-brand-500/20">
               <User className="w-6 h-6" />
             </div>
             <div>
@@ -155,7 +155,7 @@ export const AdisyoProfile: React.FC<AdisyoProfileProps> = ({ currentUser, onUse
             <div className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn ${
               notice.type === 'success'
                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800'
-                : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800'
+                : 'bg-emerald-50 text-brand-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800'
             }`}>
               {notice.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
               <span>{notice.text}</span>
@@ -171,7 +171,7 @@ export const AdisyoProfile: React.FC<AdisyoProfileProps> = ({ currentUser, onUse
               onClick={() => { sound.beep(); setActiveTab(tab.id); }}
               className={`py-3.5 text-xs font-bold whitespace-nowrap transition border-b-2 cursor-pointer ${
                 activeTab === tab.id
-                  ? 'border-rose-600 text-rose-600 dark:text-rose-400 font-black'
+                  ? 'border-brand-600 text-brand-600 dark:text-emerald-400 font-black'
                   : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -223,7 +223,7 @@ export const AdisyoProfile: React.FC<AdisyoProfileProps> = ({ currentUser, onUse
               <button
                 disabled={loading}
                 onClick={handleSaveUserInfo}
-                className="py-2.5 px-6 rounded-xl bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 disabled:opacity-50 text-white font-extrabold text-xs shadow transition cursor-pointer"
+                className="py-2.5 px-6 rounded-xl bg-gradient-to-r from-brand-600 to-orange-600 hover:from-brand-500 hover:to-orange-500 disabled:opacity-50 text-white font-extrabold text-xs shadow transition cursor-pointer"
               >
                 {loading ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}
               </button>
@@ -235,7 +235,7 @@ export const AdisyoProfile: React.FC<AdisyoProfileProps> = ({ currentUser, onUse
               {/* Password Change Card */}
               <form onSubmit={handleUpdatePassword} className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-4">
                 <div className="flex items-center gap-2 text-slate-900 dark:text-white font-black text-sm">
-                  <Lock className="w-4 h-4 text-rose-600" />
+                  <Lock className="w-4 h-4 text-brand-600" />
                   <span>Giriş Parolasını Değiştir</span>
                 </div>
                 <div>
@@ -271,7 +271,7 @@ export const AdisyoProfile: React.FC<AdisyoProfileProps> = ({ currentUser, onUse
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-2.5 px-6 rounded-xl bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 disabled:opacity-50 text-white font-extrabold text-xs shadow transition cursor-pointer"
+                  className="w-full py-2.5 px-6 rounded-xl bg-gradient-to-r from-brand-600 to-orange-600 hover:from-brand-500 hover:to-orange-500 disabled:opacity-50 text-white font-extrabold text-xs shadow transition cursor-pointer"
                 >
                   {loading ? 'Güncelleniyor...' : 'Giriş Parolasını Güncelle'}
                 </button>

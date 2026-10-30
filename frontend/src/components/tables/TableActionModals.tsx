@@ -81,7 +81,7 @@ export const MoveTableModal: React.FC<{
           )}
         </div>
 
-        {error && <div className="mb-3 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 p-2.5 rounded-xl font-bold">{error}</div>}
+        {error && <div className="mb-3 text-xs text-brand-600 dark:text-emerald-400 bg-emerald-50 dark:bg-brand-500/10 p-2.5 rounded-xl font-bold">{error}</div>}
 
         <button
           onClick={handleMove}
@@ -173,7 +173,7 @@ export const MergeTableModal: React.FC<{
           )}
         </div>
 
-        {error && <div className="mb-3 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 p-2.5 rounded-xl font-bold">{error}</div>}
+        {error && <div className="mb-3 text-xs text-brand-600 dark:text-emerald-400 bg-emerald-50 dark:bg-brand-500/10 p-2.5 rounded-xl font-bold">{error}</div>}
 
         <button
           onClick={handleMerge}
@@ -470,7 +470,7 @@ export const TransferItemsModal: React.FC<{
           </div>
         </div>
 
-        {error && <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 p-2.5 rounded-xl font-bold">{error}</div>}
+        {error && <div className="text-xs text-brand-600 dark:text-emerald-400 bg-emerald-50 dark:bg-brand-500/10 p-2.5 rounded-xl font-bold">{error}</div>}
 
         <button
           onClick={handleTransfer}

@@ -25,7 +25,7 @@ interface AdisyoLoginProps {
 }
 
 const QUICK_ACCOUNTS = [
-  { label: 'Yönetici / Müdür', username: 'admin', role: 'Tam Yetki', badgeColor: 'bg-rose-50 text-rose-600 border-rose-200' },
+  { label: 'Yönetici / Müdür', username: 'admin', role: 'Tam Yetki', badgeColor: 'bg-emerald-50 text-brand-600 border-emerald-200' },
   { label: 'Kasa Sorumlusu', username: 'kasiyer', role: 'Tahsilat & Z Raporu', badgeColor: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
   { label: 'Salon Garsonu', username: 'garson', role: 'Masa & Sipariş', badgeColor: 'bg-blue-50 text-blue-600 border-blue-200' },
   { label: 'Mutfak Şefi', username: 'sef', role: 'KDS Mutfak', badgeColor: 'bg-amber-50 text-amber-700 border-amber-200' },
@@ -81,7 +81,7 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({ onLoginSuccess }) => {
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -left-40 w-[520px] h-[520px] rounded-full bg-indigo-200/40 blur-[130px]" />
         <div className="absolute top-1/3 -right-32 w-[460px] h-[460px] rounded-full bg-emerald-200/35 blur-[130px]" />
-        <div className="absolute -bottom-40 left-1/3 w-[480px] h-[480px] rounded-full bg-rose-200/35 blur-[140px]" />
+        <div className="absolute -bottom-40 left-1/3 w-[480px] h-[480px] rounded-full bg-emerald-200/35 blur-[140px]" />
       </div>
 
       {/* Main Split Container (Pure White Card) */}
@@ -270,8 +270,8 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({ onLoginSuccess }) => {
 
             {/* Error Alert */}
             {errorMsg && (
-              <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2.5 animate-fadeIn">
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-brand-700 text-xs font-bold flex items-center gap-2.5 animate-fadeIn">
+                <AlertCircle className="w-4 h-4 text-brand-600 shrink-0" />
                 <span>{errorMsg}</span>
               </div>
             )}

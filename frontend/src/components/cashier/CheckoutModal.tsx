@@ -20,7 +20,7 @@ interface CheckoutModalProps {
 // 👆 Hand touch pointer icon matching reference image
 const TouchHandIcon = ({ active }: { active?: boolean }) => (
   <svg 
-    className={`w-5 h-5 transition-colors ${active ? 'text-red-600' : 'text-gray-700'}`} 
+    className={`w-5 h-5 transition-colors ${active ? 'text-brand-600' : 'text-gray-700'}`} 
     viewBox="0 0 24 24" 
     fill="currentColor"
   >
@@ -518,7 +518,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       {/* ================= STATUS NOTIFICATION TOAST ================= */}
       {statusNotice && (
-        <div className={`${isNoticeError ? 'bg-rose-600' : 'bg-emerald-600'} text-white text-xs font-bold py-1.5 px-4 text-center shadow-sm animate-slideDown shrink-0`}>
+        <div className={`${isNoticeError ? 'bg-brand-600' : 'bg-emerald-600'} text-white text-xs font-bold py-1.5 px-4 text-center shadow-sm animate-slideDown shrink-0`}>
           {statusNotice}
         </div>
       )}
@@ -584,8 +584,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                     {/* Ürün İndirimi Göstergesi ve İptal Butonu */}
                     {Boolean(it.discount_amount && it.discount_amount > 0) && (
-                      <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-dashed border-red-200">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-100 text-red-700 font-bold text-[11px]">
+                      <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-dashed border-emerald-200">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-brand-700 font-bold text-[11px]">
                           🏷️ İndirim: -₺{(it.discount_amount || 0).toFixed(2)} {it.discount_rate ? `(%${it.discount_rate})` : ''}
                         </span>
                         {it.id && (
@@ -595,7 +595,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                               e.stopPropagation();
                               handleRemoveItemDiscount(it.id!);
                             }}
-                            className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 hover:text-white bg-emerald-50 dark:bg-emerald-950/40 hover:bg-red-600 px-2 py-0.5 rounded-md border border-emerald-400 transition shadow-2xs"
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-600 hover:text-white bg-emerald-50 dark:bg-emerald-950/40 hover:bg-brand-600 px-2 py-0.5 rounded-md border border-emerald-400 transition shadow-2xs"
                             title="Bu ürünün indirimini kaldır"
                           >
                             ✕ İndirimi İptal Et
@@ -670,9 +670,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </div>
               </div>
 
-              <div className="bg-rose-50/70 dark:bg-rose-950/40 p-2 rounded-xl border border-rose-200/60 dark:border-rose-800/50">
-                <div className="text-[10px] text-rose-700 dark:text-rose-400 font-bold uppercase tracking-wider">Kalan Borç</div>
-                <div className="text-xs sm:text-sm font-black text-rose-600 dark:text-rose-400 font-mono">
+              <div className="bg-emerald-50/70 dark:bg-emerald-950/40 p-2 rounded-xl border border-emerald-200/60 dark:border-emerald-800/50">
+                <div className="text-[10px] text-brand-700 dark:text-emerald-400 font-bold uppercase tracking-wider">Kalan Borç</div>
+                <div className="text-xs sm:text-sm font-black text-brand-600 dark:text-emerald-400 font-mono">
                   ₺{order.remaining_total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                 </div>
               </div>
@@ -1070,7 +1070,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         const val = parseFloat(e.target.value) || 0;
                         setTipAmount(val);
                       }}
-                      className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm font-bold font-mono focus:outline-none focus:border-red-500"
+                      className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm font-bold font-mono focus:outline-none focus:border-brand-500"
                     />
                     <button
                       onClick={() => {
@@ -1078,7 +1078,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         setPayAmount((order.remaining_total + tipAmount).toFixed(2));
                         setActiveRightTab('methods');
                       }}
-                      className="px-4 py-2 bg-red-600 hover:bg-[#28702a] text-white rounded-xl text-xs font-bold transition"
+                      className="px-4 py-2 bg-brand-600 hover:bg-[#28702a] text-white rounded-xl text-xs font-bold transition"
                     >
                       Ekle
                     </button>
@@ -1203,7 +1203,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <button
                 onClick={() => setDiscountType('percentage')}
                 className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition ${
-                  discountType === 'percentage' ? 'bg-white text-red-600 shadow-2xs' : 'text-gray-600'
+                  discountType === 'percentage' ? 'bg-white text-brand-600 shadow-2xs' : 'text-gray-600'
                 }`}
               >
                 Yüzde (%)
@@ -1211,7 +1211,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <button
                 onClick={() => setDiscountType('fixed')}
                 className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition ${
-                  discountType === 'fixed' ? 'bg-white text-red-600 shadow-2xs' : 'text-gray-600'
+                  discountType === 'fixed' ? 'bg-white text-brand-600 shadow-2xs' : 'text-gray-600'
                 }`}
               >
                 Tutar (₺)
@@ -1226,7 +1226,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 type="number"
                 value={discountValue}
                 onChange={(e) => setDiscountValue(e.target.value)}
-                className="w-full border border-gray-300 rounded-xl p-2.5 text-lg font-bold font-mono text-center focus:outline-none focus:border-red-500"
+                className="w-full border border-gray-300 rounded-xl p-2.5 text-lg font-bold font-mono text-center focus:outline-none focus:border-brand-500"
               />
             </div>
 

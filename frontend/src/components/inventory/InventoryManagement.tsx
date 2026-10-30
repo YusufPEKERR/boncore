@@ -120,7 +120,7 @@ export const InventoryManagement: React.FC = () => {
         <div className={`p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-lg transition-all animate-slideDown ${
           toast.type === 'success' 
             ? 'bg-emerald-600/95 text-white border border-emerald-500' 
-            : 'bg-rose-600/95 text-white border border-rose-500'
+            : 'bg-brand-600/95 text-white border border-brand-500'
         }`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
           <span>{toast.message}</span>
@@ -223,7 +223,7 @@ export const InventoryManagement: React.FC = () => {
                     </td>
                     <td className="py-2.5 px-4">
                       {ing.current_stock <= 0 ? (
-                        <span className="px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-[10px] font-extrabold flex items-center gap-1 w-max">
+                        <span className="px-2.5 py-1 rounded-lg bg-brand-500/10 text-brand-600 dark:text-emerald-400 border border-brand-500/30 text-[10px] font-extrabold flex items-center gap-1 w-max">
                           <AlertTriangle className="w-3 h-3" /> TÜKENDİ (0)
                         </span>
                       ) : ing.is_critical ? (

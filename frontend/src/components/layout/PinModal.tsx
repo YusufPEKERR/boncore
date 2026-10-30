@@ -130,7 +130,7 @@ export const PinModal: React.FC<PinModalProps> = ({
         {/* Header */}
         <div className="p-5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-rose-600 to-orange-500 flex items-center justify-center text-white font-black text-base shadow-sm">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-600 to-orange-500 flex items-center justify-center text-white font-black text-base shadow-sm">
               <span>B</span>
             </div>
             <div>
@@ -211,7 +211,7 @@ export const PinModal: React.FC<PinModalProps> = ({
             </div>
 
             {errorMsg ? (
-              <span className="text-[11px] font-bold text-red-600">
+              <span className="text-[11px] font-bold text-brand-600">
                 {errorMsg}
               </span>
             ) : (
@@ -267,7 +267,7 @@ export const PinModal: React.FC<PinModalProps> = ({
                   onLogout();
                   onClose();
                 }}
-                className="w-full py-2 rounded-xl text-red-600 hover:bg-red-50 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                className="w-full py-2 rounded-xl text-brand-600 hover:bg-emerald-50 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>Oturumu Kapat (Giriş Ekranına Dön)</span>

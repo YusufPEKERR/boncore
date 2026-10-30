@@ -138,7 +138,7 @@ export const ReservationsView: React.FC = () => {
           </button>
           <button
             onClick={() => { sound.beep(); setIsAddModalOpen(true); }}
-            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-rose-600/20 transition cursor-pointer"
+            className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-brand-600/20 transition cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Yeni Rezervasyon Ekle</span>
@@ -180,7 +180,7 @@ export const ReservationsView: React.FC = () => {
             onClick={() => { sound.beep(); setStatusFilter(f.id); }}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer ${
               statusFilter === f.id
-                ? 'bg-rose-600 text-white'
+                ? 'bg-brand-600 text-white'
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
             }`}
           >
@@ -211,7 +211,7 @@ export const ReservationsView: React.FC = () => {
                     : res.status === 'seated'
                     ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
                     : res.status === 'cancelled'
-                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
+                    ? 'bg-emerald-100 text-brand-700 dark:bg-emerald-950 dark:text-emerald-300'
                     : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                 }`}>
                   {res.status === 'confirmed' ? 'Onaylı' : res.status === 'seated' ? 'Masada' : res.status === 'cancelled' ? 'İptal' : 'Tamamlandı'}
@@ -226,7 +226,7 @@ export const ReservationsView: React.FC = () => {
                 </div>
                 <div>
                   <div className="text-[10px] text-slate-400 font-bold">MASA</div>
-                  <div className="font-extrabold text-rose-600 dark:text-rose-400 mt-0.5">{res.table_name}</div>
+                  <div className="font-extrabold text-brand-600 dark:text-emerald-400 mt-0.5">{res.table_name}</div>
                 </div>
                 <div>
                   <div className="text-[10px] text-slate-400 font-bold">KİŞİ / KAPORA</div>
@@ -263,7 +263,7 @@ export const ReservationsView: React.FC = () => {
                 {res.status !== 'cancelled' && (
                   <button
                     onClick={() => handleStatusChange(res.id, 'cancelled')}
-                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 text-slate-600 hover:text-rose-600 font-bold transition cursor-pointer"
+                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-emerald-50 dark:bg-slate-800 text-slate-600 hover:text-brand-600 font-bold transition cursor-pointer"
                   >
                     İptal Et
                   </button>
@@ -271,7 +271,7 @@ export const ReservationsView: React.FC = () => {
               </div>
               <button
                 onClick={() => handleDelete(res.id)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                className="p-1.5 rounded-xl text-slate-400 hover:text-brand-600 transition cursor-pointer"
                 title="Sil"
               >
                 <Trash2 className="w-4 h-4" />
@@ -382,7 +382,7 @@ export const ReservationsView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-rose-600 text-white font-black"
+                  className="px-5 py-2 rounded-xl bg-brand-600 text-white font-black"
                 >
                   Rezervasyonu Oluştur
                 </button>

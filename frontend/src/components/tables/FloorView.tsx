@@ -172,7 +172,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
                     : isBillRequested
                     ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-400 text-blue-900 dark:text-blue-100'
                     : isOccupied
-                    ? 'bg-[#fce8e6] dark:bg-red-950/40 border-red-200 dark:border-red-900/60 text-slate-900 dark:text-white'
+                    ? 'bg-[#fce8e6] dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900/60 text-slate-900 dark:text-white'
                     : isReserved
                     ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-900/60 text-amber-900 dark:text-amber-100'
                     : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 text-slate-800 dark:text-slate-200 hover:border-slate-300'
@@ -242,7 +242,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
                           <span className="text-slate-400 font-normal mx-0.5">/</span>
                           <span className="text-emerald-600 dark:text-emerald-400">₺{table.active_order.paid_total.toFixed(2)}</span>
                         </div>
-                        <span className="text-[10px] font-extrabold text-rose-600 dark:text-rose-400 font-mono mt-0.5">
+                        <span className="text-[10px] font-extrabold text-brand-600 dark:text-emerald-400 font-mono mt-0.5">
                           Kalan: ₺{((table.active_order.remaining_total !== undefined ? table.active_order.remaining_total : table.active_order.grand_total - table.active_order.paid_total)).toFixed(2)}
                         </span>
                       </div>

@@ -171,7 +171,7 @@ export const Header: React.FC<HeaderProps> = ({
             title="Masalardan Çağrı Var!"
           >
             <Bell className="w-4 h-4" />
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white font-bold text-[9px] w-4 h-4 rounded-full flex items-center justify-center shadow">
+            <span className="absolute -top-1 -right-1 bg-brand-500 text-white font-bold text-[9px] w-4 h-4 rounded-full flex items-center justify-center shadow">
               {buzzerCount}
             </span>
           </button>
@@ -230,7 +230,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Destek İste Pill Button */}
         <button
           onClick={() => { sound.beep(); setIsSupportOpen(true); }}
-          className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-[#338d35] dark:text-emerald-400 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-[11px] font-bold transition cursor-pointer"
+          className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-[#338d35] dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-[11px] font-bold transition cursor-pointer"
         >
           <Headphones className="w-3.5 h-3.5" />
           <span>Destek</span>
@@ -259,7 +259,7 @@ export const Header: React.FC<HeaderProps> = ({
         {onLogout && (
           <button
             onClick={() => { sound.beep(); onLogout(); }}
-            className="p-2 rounded-xl bg-slate-100 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-emerald-950/50 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+            className="p-2 rounded-xl bg-slate-100 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-emerald-950/50 text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-emerald-400 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
             title="Güvenli Çıkış Yap"
           >
             <LogOut className="w-4 h-4" />
@@ -317,12 +317,12 @@ export const Header: React.FC<HeaderProps> = ({
                   value={supportMessage}
                   onChange={(e) => setSupportMessage(e.target.value)}
                   placeholder="Yaşadığınız sorunu veya talebinizi kısaca açıklayınız..."
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl p-3 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl p-3 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                   required
                 />
                 <button
                   type="submit"
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-[#338d35] to-emerald-600 hover:from-rose-500 hover:to-orange-500 text-white font-extrabold text-xs shadow-md shadow-rose-600/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-[#338d35] to-emerald-600 hover:from-brand-500 hover:to-orange-500 text-white font-extrabold text-xs shadow-md shadow-brand-600/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <MessageSquare className="w-4 h-4" />
                   <span>Talebi Müşteri Temsilcisine İlet</span>

@@ -162,7 +162,7 @@ export const CustomersLoyaltyView: React.FC = () => {
             <h1 className="text-2xl font-black text-slate-900 dark:text-white">
               Müşteri Sadakat (CRM), Cari & Kampanya Yönetimi
             </h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white uppercase">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-brand-600 text-white uppercase">
               Adisyo Pro CRM
             </span>
           </div>
@@ -181,7 +181,7 @@ export const CustomersLoyaltyView: React.FC = () => {
           </button>
           <button
             onClick={() => { sound.beep(); setIsAddModalOpen(true); }}
-            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-rose-600/20 transition cursor-pointer"
+            className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-brand-600/20 transition cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Yeni Müşteri / Cari Kart</span>
@@ -220,12 +220,12 @@ export const CustomersLoyaltyView: React.FC = () => {
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
           <div>
             <div className="text-[11px] font-bold text-slate-400 uppercase">Açık Veresiye (Cari Alacak)</div>
-            <div className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1">
+            <div className="text-2xl font-black text-brand-600 dark:text-emerald-400 mt-1">
               ₺{(summary.total_credit_receivable || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
             </div>
-            <div className="text-[11px] text-rose-500 font-semibold mt-0.5">Tahsilat Bekleyen Bakiye</div>
+            <div className="text-[11px] text-brand-500 font-semibold mt-0.5">Tahsilat Bekleyen Bakiye</div>
           </div>
-          <div className="w-11 h-11 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 flex items-center justify-center">
+          <div className="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-brand-600 flex items-center justify-center">
             <Wallet className="w-5 h-5" />
           </div>
         </div>
@@ -251,7 +251,7 @@ export const CustomersLoyaltyView: React.FC = () => {
             onClick={() => { sound.beep(); setActiveTab('customers'); }}
             className={`px-4 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer ${
               activeTab === 'customers'
-                ? 'bg-rose-600 text-white shadow-sm'
+                ? 'bg-brand-600 text-white shadow-sm'
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
             }`}
           >
@@ -261,7 +261,7 @@ export const CustomersLoyaltyView: React.FC = () => {
             onClick={() => { sound.beep(); setActiveTab('credit'); }}
             className={`px-4 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer ${
               activeTab === 'credit'
-                ? 'bg-rose-600 text-white shadow-sm'
+                ? 'bg-brand-600 text-white shadow-sm'
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
             }`}
           >
@@ -271,7 +271,7 @@ export const CustomersLoyaltyView: React.FC = () => {
             onClick={() => { sound.beep(); setActiveTab('campaigns'); }}
             className={`px-4 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer ${
               activeTab === 'campaigns'
-                ? 'bg-rose-600 text-white shadow-sm'
+                ? 'bg-brand-600 text-white shadow-sm'
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
             }`}
           >
@@ -287,7 +287,7 @@ export const CustomersLoyaltyView: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Müşteri adı, telefon veya not ara..."
-              className="w-full pl-9 pr-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold focus:outline-none focus:border-rose-500"
+              className="w-full pl-9 pr-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold focus:outline-none focus:border-brand-500"
             />
           </div>
         )}
@@ -320,7 +320,7 @@ export const CustomersLoyaltyView: React.FC = () => {
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                       <strong>Koşul:</strong> {camp.rule}
                     </p>
-                    <p className="text-xs text-rose-600 dark:text-rose-400 font-bold mt-0.5">
+                    <p className="text-xs text-brand-600 dark:text-emerald-400 font-bold mt-0.5">
                       <strong>Ödül:</strong> {camp.reward}
                     </p>
                   </div>
@@ -391,7 +391,7 @@ export const CustomersLoyaltyView: React.FC = () => {
                     <td className="py-3.5 px-4">
                       <span className={`font-black text-sm ${
                         c.balance < 0
-                          ? 'text-rose-600 dark:text-rose-400'
+                          ? 'text-brand-600 dark:text-emerald-400'
                           : c.balance > 0
                           ? 'text-emerald-600 dark:text-emerald-400'
                           : 'text-slate-500'
@@ -399,7 +399,7 @@ export const CustomersLoyaltyView: React.FC = () => {
                         ₺{c.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                       </span>
                       {c.balance < 0 && (
-                        <div className="text-[10px] text-rose-500 font-bold">Borçlu (Veresiye)</div>
+                        <div className="text-[10px] text-brand-500 font-bold">Borçlu (Veresiye)</div>
                       )}
                     </td>
                     <td className="py-3.5 px-4">
@@ -415,13 +415,13 @@ export const CustomersLoyaltyView: React.FC = () => {
                           setSelectedCustomer(c);
                           setTxType(c.balance < 0 ? 'pay_debt' : 'earn_points');
                         }}
-                        className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900 text-rose-600 dark:text-rose-300 font-extrabold text-xs transition cursor-pointer"
+                        className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900 text-brand-600 dark:text-emerald-300 font-extrabold text-xs transition cursor-pointer"
                       >
                         Cari / Puan İşlemi
                       </button>
                       <button
                         onClick={() => handleDeleteCustomer(c.id)}
-                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                        className="p-1.5 rounded-xl text-slate-400 hover:text-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
                         title="Sil"
                       >
                         <Trash2 className="w-4 h-4 inline" />
@@ -519,7 +519,7 @@ export const CustomersLoyaltyView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-rose-600 text-white font-black"
+                  className="px-5 py-2 rounded-xl bg-brand-600 text-white font-black"
                 >
                   Kaydet
                 </button>
@@ -554,7 +554,7 @@ export const CustomersLoyaltyView: React.FC = () => {
                   type="button"
                   onClick={() => setTxType('add_debt')}
                   className={`p-2.5 rounded-xl font-bold border text-center cursor-pointer ${
-                    txType === 'add_debt' ? 'bg-rose-600 text-white border-rose-600' : 'border-slate-200 dark:border-slate-700'
+                    txType === 'add_debt' ? 'bg-brand-600 text-white border-brand-600' : 'border-slate-200 dark:border-slate-700'
                   }`}
                 >
                   Veresiye Borç Yaz (-)
@@ -612,7 +612,7 @@ export const CustomersLoyaltyView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-rose-600 text-white font-black"
+                  className="px-5 py-2 rounded-xl bg-brand-600 text-white font-black"
                 >
                   İşlemi Onayla
                 </button>

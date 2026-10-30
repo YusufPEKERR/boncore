@@ -31,7 +31,7 @@ export const AuditLogViewer: React.FC = () => {
   const getActionBadge = (action: string) => {
     switch (action) {
       case 'VOID_ITEM':
-        return <span className="bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30 px-2 py-0.5 rounded text-[10px] font-bold">ÜRÜN İPTALİ</span>;
+        return <span className="bg-brand-500/10 text-brand-600 dark:text-emerald-400 border border-brand-500/30 px-2 py-0.5 rounded text-[10px] font-bold">ÜRÜN İPTALİ</span>;
       case 'APPLY_DISCOUNT':
         return <span className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded text-[10px] font-bold">İNDİRİM</span>;
       case 'APPLY_TREAT':
@@ -55,7 +55,7 @@ export const AuditLogViewer: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
-            <ShieldAlert className="w-6 h-6 text-red-500" />
+            <ShieldAlert className="w-6 h-6 text-brand-500" />
             <span>Güvenlik & Denetim Logları (Audit Trail)</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">

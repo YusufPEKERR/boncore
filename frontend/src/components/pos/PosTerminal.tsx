@@ -856,7 +856,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         <div className={`absolute top-4 right-4 z-50 p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-2xl transition-all animate-slideDown ${
           toast.type === 'success' 
             ? 'bg-emerald-600/95 text-white border border-emerald-500' 
-            : 'bg-rose-600/95 text-white border border-rose-500'
+            : 'bg-brand-600/95 text-white border border-brand-500'
         }`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />}
           <span>{toast.message}</span>
@@ -961,7 +961,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   setCartItems(prev => prev.filter(i => !!i.id));
                 }
               }}
-              className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-slate-200/50"
+              className="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-slate-200/50"
               title="Temizle"
             >
               <Trash2 className="w-4 h-4" />
@@ -996,7 +996,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 }}
                 className={`py-2.5 px-2 flex items-start justify-between rounded-xl transition ${
                   item.is_voided 
-                    ? 'opacity-40 line-through bg-red-50/50 dark:bg-red-950/20' 
+                    ? 'opacity-40 line-through bg-emerald-50/50 dark:bg-emerald-950/20' 
                     : !isSaved && isWeight
                     ? 'hover:bg-amber-50/70 dark:hover:bg-slate-800/70 cursor-pointer'
                     : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
@@ -1032,7 +1032,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
                   {/* Negative modifiers info */}
                   {item.negative_modifiers && item.negative_modifiers.length > 0 && (
-                    <div className="text-[10px] text-red-500 pl-4 space-y-0.5 mt-0.5">
+                    <div className="text-[10px] text-brand-500 pl-4 space-y-0.5 mt-0.5">
                       {item.negative_modifiers.map((nm, nmIdx) => (
                         <div key={nmIdx}>- {nm}</div>
                       ))}
@@ -1082,7 +1082,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
                   {/* Ürün İndirimi Göstergesi ve İptal Butonu */}
                   {isSaved && Boolean(item.discount_amount && item.discount_amount > 0) && (
-                    <div className="flex items-center justify-between mt-1 text-[10px] bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 px-2 py-0.5 rounded border border-red-200 dark:border-red-900/50">
+                    <div className="flex items-center justify-between mt-1 text-[10px] bg-emerald-50 dark:bg-emerald-950/40 text-brand-600 dark:text-emerald-400 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-900/50">
                       <span className="font-bold flex items-center gap-1">
                         🏷️ İndirim: -₺{(item.discount_amount || 0).toFixed(2)} {item.discount_rate ? `(%${item.discount_rate})` : ''}
                       </span>
@@ -1102,7 +1102,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                               sound.warning();
                             }
                           }}
-                          className="font-bold text-red-700 dark:text-red-300 hover:underline px-1.5 py-0.2 bg-red-100 dark:bg-red-900/60 rounded transition"
+                          className="font-bold text-brand-700 dark:text-emerald-300 hover:underline px-1.5 py-0.2 bg-emerald-100 dark:bg-emerald-900/60 rounded transition"
                           title="Bu ürünün indirimini iptal et"
                         >
                           ✕ İptal
@@ -1128,7 +1128,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                         setIsVoidModalOpen(true);
                       }
                     }}
-                    className="text-slate-300 hover:text-red-500 p-1 transition"
+                    className="text-slate-300 hover:text-brand-500 p-1 transition"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -1166,7 +1166,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 </div>
               )}
               {discountTotal > 0 && (
-                <div className="flex items-center justify-between text-red-600 dark:text-red-400">
+                <div className="flex items-center justify-between text-brand-600 dark:text-emerald-400">
                   <div className="flex items-center gap-1.5">
                     <span>Uygulanan İndirim:</span>
                     {activeOrderId && (
@@ -1186,7 +1186,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                             sound.warning();
                           }
                         }}
-                        className="text-[9px] bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300 px-1.5 py-0.5 rounded font-bold hover:underline"
+                        className="text-[9px] bg-emerald-100 dark:bg-emerald-900/60 text-brand-700 dark:text-emerald-300 px-1.5 py-0.5 rounded font-bold hover:underline"
                         title="Tüm indirimleri kaldır"
                       >
                         ✕ Sıfırla
@@ -1212,7 +1212,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                     <span>✓ Yapılan Ara Tahsilat:</span>
                     <span className="font-mono font-black">₺{(existingOrder.paid_total || 0).toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-rose-600 dark:text-rose-400 font-black">
+                  <div className="flex justify-between text-brand-600 dark:text-emerald-400 font-black">
                     <span>Kalan Borç Tutar:</span>
                     <span className="font-mono">₺{((existingOrder.remaining_total !== undefined ? existingOrder.remaining_total : Math.max(0, grandTotal - (existingOrder.paid_total || 0)))).toFixed(2)}</span>
                   </div>
@@ -1243,7 +1243,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 )}
               </div>
               {existingOrder && (existingOrder.paid_total || 0) > 0 && (
-                <span className="text-[10px] text-rose-600 dark:text-rose-400 font-black font-mono mt-0.5">
+                <span className="text-[10px] text-brand-600 dark:text-emerald-400 font-black font-mono mt-0.5">
                   Kalan: ₺{((existingOrder.remaining_total !== undefined ? existingOrder.remaining_total : Math.max(0, grandTotal - (existingOrder.paid_total || 0)))).toFixed(2)}
                 </span>
               )}
@@ -1351,7 +1351,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Ürün veya Barkod Ara..."
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-1.5 sm:py-2 text-xs md:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-red-500"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-1.5 sm:py-2 text-xs md:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-brand-500"
             />
           </div>
 
@@ -1365,7 +1365,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               }}
               className={`px-2 py-1.5 rounded-xl border text-xs font-extrabold flex items-center gap-1 transition cursor-pointer ${
                 posSortMode === 'az'
-                  ? 'bg-red-600 text-white border-red-600'
+                  ? 'bg-brand-600 text-white border-brand-600'
                   : 'text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700'
               }`}
               title="Ürünleri A'dan Z'ye Sırala"
@@ -1382,7 +1382,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               }}
               className={`px-2 py-1.5 rounded-xl border text-xs font-extrabold flex items-center gap-1 transition cursor-pointer ${
                 posSortMode === 'za'
-                  ? 'bg-red-600 text-white border-red-600'
+                  ? 'bg-brand-600 text-white border-brand-600'
                   : 'text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700'
               }`}
               title="Ürünleri Z'den A'ya Sırala"
@@ -1449,7 +1449,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   }}
                   className={`px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-extrabold uppercase tracking-tight transition whitespace-nowrap shrink-0 ${
                     isCatActive
-                      ? 'bg-slate-200 text-slate-900 dark:bg-slate-700 dark:text-white border-b-2 border-red-600'
+                      ? 'bg-slate-200 text-slate-900 dark:bg-slate-700 dark:text-white border-b-2 border-brand-600'
                       : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900'
                   }`}
                 >
@@ -1475,7 +1475,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 }`}
               >
                 <div className={qty > 0 ? 'pr-8' : 'pr-2'}>
-                  <h4 className="font-extrabold text-xs md:text-sm text-slate-900 dark:text-white uppercase tracking-tight leading-snug group-hover:text-red-600 transition line-clamp-2">
+                  <h4 className="font-extrabold text-xs md:text-sm text-slate-900 dark:text-white uppercase tracking-tight leading-snug group-hover:text-brand-600 transition line-clamp-2">
                     {p.name}
                   </h4>
                 </div>
@@ -1485,11 +1485,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                     ₺{p.base_price.toFixed(2)}{isWeight ? '/Kg' : ''}
                   </span>
                   {isPassive ? (
-                    <span className="text-[9px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/50 px-1.5 py-0.5 rounded">
+                    <span className="text-[9px] font-bold text-brand-600 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded">
                       Pasif
                     </span>
                   ) : p.stock_quantity !== undefined && p.stock_quantity !== null ? (
-                    <span className={p.stock_quantity <= 0 ? 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded truncate text-rose-600 bg-rose-50 dark:bg-rose-950/50' : 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded truncate text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50'}>
+                    <span className={p.stock_quantity <= 0 ? 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded truncate text-brand-600 bg-emerald-50 dark:bg-emerald-950/50' : 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded truncate text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50'}>
                       {Number(Number(p.stock_quantity).toFixed(2))} {p.unit || 'Adet'}
                     </span>
                   ) : p.variants && p.variants.length > 0 ? (
@@ -1660,7 +1660,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 onClick={() => setWeightActiveField('kg')}
                 className={`p-3 rounded-2xl border-2 transition cursor-pointer ${
                   weightActiveField === 'kg'
-                    ? 'border-red-600 bg-red-50/40 dark:bg-red-950/20'
+                    ? 'border-brand-600 bg-emerald-50/40 dark:bg-emerald-950/20'
                     : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800'
                 }`}
               >
@@ -1692,7 +1692,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 onClick={() => setWeightActiveField('gram')}
                 className={`p-3 rounded-2xl border-2 transition cursor-pointer ${
                   weightActiveField === 'gram'
-                    ? 'border-red-600 bg-red-50/40 dark:bg-red-950/20'
+                    ? 'border-brand-600 bg-emerald-50/40 dark:bg-emerald-950/20'
                     : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800'
                 }`}
               >
@@ -1748,12 +1748,12 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                       onClick={() => handleSelectPresetKg(preset.kg)}
                       className={`py-2 px-1.5 rounded-xl border text-center transition cursor-pointer ${
                         isSelected
-                          ? 'bg-red-600 text-white border-red-600 shadow-sm'
+                          ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
                           : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
                       }`}
                     >
                       <div className="font-extrabold text-xs leading-tight">{preset.label}</div>
-                      <div className={`text-[9px] font-mono ${isSelected ? 'text-red-100' : 'text-slate-400'}`}>
+                      <div className={`text-[9px] font-mono ${isSelected ? 'text-emerald-100' : 'text-slate-400'}`}>
                         {preset.sub}
                       </div>
                     </button>
@@ -1773,7 +1773,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                     key === '00' ? 'col-span-2' : ''
                   } ${
                     key === 'C' || key === '⌫'
-                      ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800/60'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-brand-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60'
                       : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white border-slate-200 dark:border-slate-700'
                   }`}
                 >
@@ -1856,7 +1856,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               </button>
               <button
                 onClick={handleSaveOrderNote}
-                className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs transition"
+                className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-black text-xs transition"
               >
                 Kaydet
               </button>
@@ -1879,10 +1879,10 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   <button
                     key={d.id || i}
                     onClick={() => handleApplyDiscountSubmit(d.value, d.name, d.type)}
-                    className="p-2.5 bg-slate-50 hover:bg-red-50 dark:bg-slate-800 dark:hover:bg-red-950/40 border border-slate-200 dark:border-slate-700 hover:border-red-400 rounded-xl text-left transition flex items-center justify-between gap-1"
+                    className="p-2.5 bg-slate-50 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 hover:border-emerald-400 rounded-xl text-left transition flex items-center justify-between gap-1"
                   >
                     <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{d.name}</span>
-                    <span className="font-mono font-black text-red-600 text-xs shrink-0">
+                    <span className="font-mono font-black text-brand-600 text-xs shrink-0">
                       {d.type === 'fixed' ? `₺${d.value}` : `%${d.value}`}
                     </span>
                   </button>
@@ -2036,7 +2036,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
-                <h3 className="text-base font-black text-red-600 dark:text-red-400">Ürün İptal & İade</h3>
+                <h3 className="text-base font-black text-brand-600 dark:text-emerald-400">Ürün İptal & İade</h3>
                 <p className="text-xs text-slate-500 font-semibold">{selectedItemForVoid.product_name}</p>
               </div>
               <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
@@ -2064,7 +2064,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                       }}
                       className={`p-2 rounded-xl text-left font-bold transition border ${
                         voidReasonCode === r.code
-                          ? 'bg-red-50 dark:bg-red-950/60 border-red-500 text-red-600 dark:text-red-300'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 border-brand-500 text-brand-600 dark:text-emerald-300'
                           : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
                       }`}
                     >
@@ -2113,7 +2113,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 type="button"
                 onClick={handleConfirmVoid}
                 disabled={loading}
-                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs shadow-md transition disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-black text-xs shadow-md transition disabled:opacity-50"
               >
                 {loading ? 'İptal Ediliyor...' : 'İptali Onayla'}
               </button>
@@ -2208,14 +2208,14 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       {/* Reçete (BOM) Stoğu Biten Ürün Uyarı Modalı */}
       {bomStockWarningModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn font-sans">
-          <div className="bg-white dark:bg-slate-900 border-2 border-rose-500 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
+          <div className="bg-white dark:bg-slate-900 border-2 border-brand-500 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
             <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 text-[#338d35] dark:text-emerald-400 flex items-center justify-center border border-rose-500/30 shrink-0">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 text-[#338d35] dark:text-emerald-400 flex items-center justify-center border border-brand-500/30 shrink-0">
                   <AlertCircle className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-rose-600 dark:text-rose-400 leading-tight">
+                  <h3 className="text-base font-black text-brand-600 dark:text-emerald-400 leading-tight">
                     Reçetedeki Malzeme Stoğu Bitti!
                   </h3>
                   <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mt-0.5">
@@ -2240,13 +2240,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 {bomStockWarningModal.missingIngredients.map((ing, i) => (
                   <div
                     key={i}
-                    className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/70 flex items-center justify-between gap-2"
+                    className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 flex items-center justify-between gap-2"
                   >
                     <div>
-                      <div className="font-black text-xs sm:text-sm text-rose-700 dark:text-rose-300">
+                      <div className="font-black text-xs sm:text-sm text-brand-700 dark:text-emerald-300">
                         {ing.ingredient_name}
                       </div>
-                      <div className="text-[11px] font-semibold text-rose-600/80 dark:text-rose-400/80">
+                      <div className="text-[11px] font-semibold text-brand-600/80 dark:text-emerald-400/80">
                         Sipariş İçin Gerekli: <strong className="font-mono">{ing.required_amount} {ing.unit}</strong>
                       </div>
                     </div>
@@ -2254,7 +2254,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                       <span className="inline-block px-2.5 py-1 rounded-xl bg-[#338d35] text-white font-mono font-black text-xs">
                         Stok: {ing.current_stock} {ing.unit}
                       </span>
-                      <div className="text-[10px] font-extrabold text-rose-600 dark:text-rose-400 mt-0.5">
+                      <div className="text-[10px] font-extrabold text-brand-600 dark:text-emerald-400 mt-0.5">
                         {ing.current_stock <= 0 ? 'STOK BİTTİ!' : 'YETERSİZ STOK!'}
                       </div>
                     </div>

@@ -191,7 +191,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
         <div className={`absolute top-4 right-4 z-50 p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-2xl transition-all animate-slideDown ${
           toast.type === 'success' 
             ? 'bg-emerald-600/95 text-white border border-emerald-500' 
-            : 'bg-rose-600/95 text-white border border-rose-500'
+            : 'bg-brand-600/95 text-white border border-brand-500'
         }`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
           <span>{toast.message}</span>
@@ -204,7 +204,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
         <div className="p-2.5 sm:p-3.5 border-b border-slate-200 dark:border-slate-800">
           <button
             onClick={handleOpenAddArea}
-            className="w-full py-2 sm:py-2.5 px-3 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-black text-xs border border-red-200 dark:border-red-900/60 flex items-center justify-center gap-1.5 transition"
+            className="w-full py-2 sm:py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-brand-600 dark:text-emerald-400 font-black text-xs border border-emerald-200 dark:border-emerald-900/60 flex items-center justify-center gap-1.5 transition"
           >
             <Plus className="w-4 h-4" />
             <span>Yeni Bölge Ekle</span>
@@ -221,7 +221,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
                 onClick={() => { sound.beep(); setActiveAreaId(area.id); }}
                 className={`p-2.5 sm:p-3 rounded-xl cursor-pointer transition flex items-center justify-between gap-2 text-xs font-bold shrink-0 ${
                   isActive
-                    ? 'bg-slate-200 text-slate-950 dark:bg-slate-800 dark:text-white border-b-2 md:border-b-0 md:border-l-4 border-red-600 shadow-sm'
+                    ? 'bg-slate-200 text-slate-950 dark:bg-slate-800 dark:text-white border-b-2 md:border-b-0 md:border-l-4 border-brand-600 shadow-sm'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900'
                 }`}
               >
@@ -243,7 +243,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
                   </button>
                   <button
                     onClick={(e) => handleDeleteArea(area, e)}
-                    className="p-1 text-slate-400 hover:text-red-600 rounded"
+                    className="p-1 text-slate-400 hover:text-brand-600 rounded"
                     title="Bölge Sil"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -270,7 +270,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Masa ara..."
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-red-500"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-brand-500"
               />
             </div>
           </div>
@@ -287,7 +287,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
 
             <button
               onClick={handleOpenAddTable}
-              className="px-3 sm:px-4 py-2 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black text-xs shadow-md transition flex items-center gap-1.5 whitespace-nowrap"
+              className="px-3 sm:px-4 py-2 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white font-black text-xs shadow-md transition flex items-center gap-1.5 whitespace-nowrap"
             >
               <Plus className="w-4 h-4" />
               <span>Yeni Masa</span>
@@ -333,7 +333,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
                   </button>
                   <button
                     onClick={() => handleDeleteTable(t)}
-                    className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                    className="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                     title="Sil"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -380,7 +380,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black shadow"
+                  className="flex-1 py-2.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white font-black shadow"
                 >
                   {editingArea ? 'Güncelle' : 'Kaydet'}
                 </button>
@@ -437,7 +437,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
                       onClick={() => setTableShapeInput(s.id as any)}
                       className={`py-2 rounded-xl border text-xs font-bold transition ${
                         tableShapeInput === s.id
-                          ? 'bg-red-600 text-white border-red-500 shadow'
+                          ? 'bg-brand-600 text-white border-brand-500 shadow'
                           : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
                       }`}
                     >
@@ -457,7 +457,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black shadow"
+                  className="flex-1 py-2.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white font-black shadow"
                 >
                   {editingTable ? 'Güncelle' : 'Kaydet'}
                 </button>
@@ -516,7 +516,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
               </div>
 
               <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300">
-                Oluşturulacak masalar: <span className="font-mono font-bold text-red-600">{bulkPrefix}{bulkStartNum} ... {bulkPrefix}{Number(bulkStartNum) + Number(bulkCount) - 1}</span>
+                Oluşturulacak masalar: <span className="font-mono font-bold text-brand-600">{bulkPrefix}{bulkStartNum} ... {bulkPrefix}{Number(bulkStartNum) + Number(bulkCount) - 1}</span>
               </div>
 
               <div className="flex gap-2 pt-3">
@@ -529,7 +529,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-[#c0392b] hover:bg-[#a93226] text-white font-black shadow"
+                  className="flex-1 py-2.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white font-black shadow"
                 >
                   Toplu Oluştur ({bulkCount} Masa)
                 </button>

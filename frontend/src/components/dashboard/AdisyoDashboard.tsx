@@ -118,7 +118,7 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
       {/* Live Operational Day & Time Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 flex items-center justify-center font-bold">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-brand-600 flex items-center justify-center font-bold">
             <Clock className="w-5 h-5" />
           </div>
           <div>
@@ -150,7 +150,7 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
             className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer"
             title="Verileri Yenile"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-red-600' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-brand-600' : ''}`} />
           </button>
         </div>
       </div>
@@ -207,7 +207,7 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
 
         {/* 4. Bugünkü toplam gider tutarı */}
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm flex items-center gap-4 hover:shadow transition">
-          <div className="w-12 h-12 rounded-xl bg-rose-600 text-white flex items-center justify-center flex-shrink-0 shadow-md shadow-rose-600/20">
+          <div className="w-12 h-12 rounded-xl bg-brand-600 text-white flex items-center justify-center flex-shrink-0 shadow-md shadow-brand-600/20">
             <ArrowLeftRight className="w-6 h-6" />
           </div>
           <div className="flex-1 min-w-0">
@@ -276,14 +276,14 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
 
         <button
           onClick={() => { sound.beep(); onNavigateTab?.('day_end_report'); }}
-          className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-red-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
+          className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-brand-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
         >
-          <div className="w-9 h-9 rounded-xl bg-red-50 dark:bg-red-950/60 text-red-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
+          <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-brand-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
             <BarChart2 className="w-4 h-4" />
           </div>
           <div className="min-w-0">
             <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Gün Sonu (Z)</div>
-            <div className="text-[10px] text-red-600 font-bold">Mali Kapanış</div>
+            <div className="text-[10px] text-brand-600 font-bold">Mali Kapanış</div>
           </div>
         </button>
       </div>

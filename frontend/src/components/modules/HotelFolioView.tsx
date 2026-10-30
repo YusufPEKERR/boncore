@@ -125,11 +125,11 @@ export const HotelFolioView: React.FC = () => {
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
           <div>
             <div className="text-[11px] font-bold text-slate-400 uppercase">Açık Folyo Bakiyesi (Restoran)</div>
-            <div className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1">
+            <div className="text-2xl font-black text-brand-600 dark:text-emerald-400 mt-1">
               ₺{(summary.total_folio_balance || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
             </div>
           </div>
-          <div className="w-11 h-11 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 flex items-center justify-center">
+          <div className="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-brand-600 flex items-center justify-center">
             <Receipt className="w-5 h-5" />
           </div>
         </div>
@@ -155,7 +155,7 @@ export const HotelFolioView: React.FC = () => {
             <div className="space-y-3">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-rose-600 to-orange-500 text-white font-black text-base flex items-center justify-center shadow-sm">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand-600 to-orange-500 text-white font-black text-base flex items-center justify-center shadow-sm">
                     {room.room_no}
                   </div>
                   <div>
@@ -167,7 +167,7 @@ export const HotelFolioView: React.FC = () => {
                 </div>
                 <div className="text-right">
                   <div className="text-[10px] font-bold text-slate-400 uppercase">Folyo Bakiye</div>
-                  <div className="text-lg font-black text-rose-600 dark:text-rose-400">
+                  <div className="text-lg font-black text-brand-600 dark:text-emerald-400">
                     ₺{room.folio_balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                   </div>
                 </div>
@@ -199,7 +199,7 @@ export const HotelFolioView: React.FC = () => {
             <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800 text-xs gap-2">
               <button
                 onClick={() => { sound.beep(); setSelectedRoom(room); }}
-                className="flex-1 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black flex items-center justify-center gap-1.5 transition cursor-pointer"
+                className="flex-1 py-2 px-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-black flex items-center justify-center gap-1.5 transition cursor-pointer"
               >
                 <PlusCircle className="w-4 h-4" />
                 <span>Odaya Adisyon Yansıt</span>
@@ -260,7 +260,7 @@ export const HotelFolioView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-rose-600 text-white font-black"
+                  className="px-5 py-2 rounded-xl bg-brand-600 text-white font-black"
                 >
                   Folyoya İşle
                 </button>

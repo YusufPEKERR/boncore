@@ -43,7 +43,7 @@ const ICON_OPTIONS = [
 ];
 
 const COLOR_OPTIONS = [
-  { id: 'red', label: 'Kırmızı', bg: 'bg-red-600', soft: 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900' },
+  { id: 'red', label: 'Kırmızı', bg: 'bg-brand-600', soft: 'bg-emerald-50 dark:bg-emerald-950/40 text-brand-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900' },
   { id: 'amber', label: 'Turuncu / Kehribar', bg: 'bg-amber-500', soft: 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-900' },
   { id: 'blue', label: 'Mavi', bg: 'bg-blue-600', soft: 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-900' },
   { id: 'purple', label: 'Mor', bg: 'bg-purple-600', soft: 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-900' },
@@ -370,7 +370,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
       {/* Toast Notification */}
       {toast && (
         <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-extrabold animate-slideDown ${
-          toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+          toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-brand-600 text-white'
         }`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
           <span>{toast.message}</span>
@@ -383,10 +383,10 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
           <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
             <span>Tanımlamalar</span>
             <ChevronRight className="w-3.5 h-3.5" />
-            <span className="text-red-600 font-bold">Mutfak Grupları (KDS)</span>
+            <span className="text-brand-600 font-bold">Mutfak Grupları (KDS)</span>
           </div>
           <h1 className="text-xl md:text-2xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
-            <ChefHat className="w-6 h-6 text-red-600" />
+            <ChefHat className="w-6 h-6 text-brand-600" />
             <span>Mutfak Grupları & KDS İstasyon Yönetimi</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-0.5">
@@ -409,7 +409,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
           <button
             type="button"
             onClick={handleOpenAddModal}
-            className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-extrabold flex items-center gap-2 shadow-md shadow-red-600/20 cursor-pointer active:scale-95 transition"
+            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-extrabold flex items-center gap-2 shadow-md shadow-brand-600/20 cursor-pointer active:scale-95 transition"
           >
             <Plus className="w-4 h-4" />
             <span>Yeni Mutfak Grubu Ekle</span>
@@ -422,7 +422,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between text-xs font-bold text-slate-400 mb-1">
             <span>TOPLAM MUTFAK GRUBU</span>
-            <Layers className="w-4 h-4 text-red-500" />
+            <Layers className="w-4 h-4 text-brand-500" />
           </div>
           <div className="text-xl sm:text-2xl font-black font-mono text-slate-900 dark:text-white">
             {groups.length} <span className="text-xs font-bold text-slate-400">Bölüm</span>
@@ -467,13 +467,13 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
           <span>Mutfak (KDS) Üst Menü Önizlemesi (Sürükleyerek Sıralayabilirsiniz):</span>
         </div>
         <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold gap-1 overflow-x-auto no-scrollbar">
-          <span className="px-2.5 py-1 rounded-lg bg-red-600 text-white shadow-xs">Tümü</span>
+          <span className="px-2.5 py-1 rounded-lg bg-brand-600 text-white shadow-xs">Tümü</span>
           {groups.filter(g => g.is_active).map((g) => (
             <span
               key={g.id}
               className="px-2.5 py-1 rounded-lg text-slate-700 dark:text-slate-300 bg-white/70 dark:bg-slate-900/60 flex items-center gap-1.5 whitespace-nowrap"
             >
-              {renderStationIcon(g.icon, 'w-3.5 h-3.5 text-red-500')}
+              {renderStationIcon(g.icon, 'w-3.5 h-3.5 text-brand-500')}
               <span>{g.name}</span>
             </span>
           ))}
@@ -483,7 +483,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
       {/* Kitchen Groups Cards Grid */}
       {loading ? (
         <div className="py-16 flex flex-col items-center justify-center text-slate-400 gap-3">
-          <RefreshCw className="w-8 h-8 animate-spin text-red-600" />
+          <RefreshCw className="w-8 h-8 animate-spin text-brand-600" />
           <span className="text-xs font-bold">Mutfak grupları yükleniyor...</span>
         </div>
       ) : (
@@ -524,7 +524,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
                 }}
                 className={`bg-white dark:bg-slate-900 border rounded-3xl p-5 shadow-xs transition-all flex flex-col justify-between gap-4 ${
                   isBeingDragged
-                    ? 'opacity-40 scale-95 border-dashed border-red-400'
+                    ? 'opacity-40 scale-95 border-dashed border-emerald-400'
                     : isDragTarget
                     ? 'border-2 border-blue-500 ring-2 ring-blue-400/20'
                     : group.is_active
@@ -589,7 +589,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
                         className={`px-3 py-1.5 rounded-xl text-[11px] font-extrabold border flex items-center gap-1.5 transition cursor-pointer ${
                           group.is_active
                             ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
-                            : 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+                            : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-brand-700 dark:text-emerald-300'
                         }`}
                       >
                         {group.is_active ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
@@ -649,7 +649,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
                               type="button"
                               onClick={() => handleQuickUnassignCategory(group, gc.id, gc.name)}
                               title={`"${gc.name}" kategorisini bu bölümden kaldır`}
-                              className="p-0.5 rounded hover:bg-rose-100 dark:hover:bg-rose-950 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                              className="p-0.5 rounded hover:bg-emerald-100 dark:hover:bg-emerald-950 text-slate-400 hover:text-brand-600 transition cursor-pointer"
                             >
                               <X className="w-3 h-3" />
                             </button>
@@ -688,7 +688,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
                     <button
                       type="button"
                       onClick={() => handleDeleteGroup(group)}
-                      className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 transition cursor-pointer"
+                      className="p-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 text-brand-600 dark:text-emerald-400 transition cursor-pointer"
                       title="Mutfak Grubunu Sil"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -713,7 +713,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
           >
             <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <ChefHat className="w-5 h-5 text-red-400" />
+                <ChefHat className="w-5 h-5 text-emerald-400" />
                 <h3 className="text-base font-black">
                   {editingGroup ? `Mutfak Grubunu Düzenle: ${editingGroup.name}` : 'Yeni Mutfak Grubu (KDS İstasyonu) Ekle'}
                 </h3>
@@ -739,7 +739,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
                     placeholder="Örn: Mutfak, Izgara, Bar, Tatlı, Taş Fırın"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white focus:outline-none focus:border-red-500"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white focus:outline-none focus:border-brand-500"
                   />
                 </div>
 
@@ -856,7 +856,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
                     type="checkbox"
                     checked={formSoundAlert}
                     onChange={(e) => setFormSoundAlert(e.target.checked)}
-                    className="w-4 h-4 accent-red-600 rounded cursor-pointer"
+                    className="w-4 h-4 accent-brand-600 rounded cursor-pointer"
                   />
                 </label>
 
@@ -885,7 +885,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-extrabold flex items-center gap-1.5 shadow-md cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold flex items-center gap-1.5 shadow-md cursor-pointer disabled:opacity-50"
                 >
                   <Save className="w-4 h-4" />
                   <span>{saving ? 'Kaydediliyor...' : 'Kaydet'}</span>
@@ -952,7 +952,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
                         setSelectedCategoryIds([]);
                         setSelectedProductIds([]);
                       }}
-                      className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 font-extrabold hover:bg-rose-100 cursor-pointer"
+                      className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-brand-600 dark:text-emerald-400 font-extrabold hover:bg-emerald-100 cursor-pointer"
                     >
                       Tümünü Kaldır
                     </button>

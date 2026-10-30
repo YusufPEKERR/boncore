@@ -195,10 +195,10 @@ export const DayEndReport: React.FC = () => {
           <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
             <span>Raporlar</span>
             <ChevronRight className="w-3.5 h-3.5" />
-            <span className="text-red-600 font-bold">Gün Sonu Raporu (Z)</span>
+            <span className="text-brand-600 font-bold">Gün Sonu Raporu (Z)</span>
           </div>
           <h1 className="text-xl md:text-2xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
-            <Receipt className="w-6 h-6 text-red-600" />
+            <Receipt className="w-6 h-6 text-brand-600" />
             Mali Gün Sonu Raporu (Z Raporu)
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -227,7 +227,7 @@ export const DayEndReport: React.FC = () => {
             disabled={loading}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-red-600' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-brand-600' : ''}`} />
             <span>Yenile</span>
           </button>
 
@@ -268,7 +268,7 @@ export const DayEndReport: React.FC = () => {
                 sound.beep();
                 setIsCloseRegisterModalOpen(true);
               }}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black bg-[#338d35] hover:bg-[#28702a] text-white shadow-md shadow-red-600/20 transition animate-pulse"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black bg-[#338d35] hover:bg-[#28702a] text-white shadow-md shadow-brand-600/20 transition animate-pulse"
             >
               <Lock className="w-3.5 h-3.5" />
               <span>Gün Sonunu Kapat (Z Al)</span>
@@ -413,7 +413,7 @@ export const DayEndReport: React.FC = () => {
             }}
             className={`px-3 py-2 rounded-xl transition whitespace-nowrap ${
               activeTab === t.id
-                ? 'bg-red-600 text-white shadow-sm'
+                ? 'bg-brand-600 text-white shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
@@ -520,7 +520,7 @@ export const DayEndReport: React.FC = () => {
                 <span>(+) Kasa Nakit Girişleri</span>
                 <span className="font-mono">₺{report?.cash_flow.cash_in.toFixed(2)}</span>
               </div>
-              <div className="flex items-center justify-between p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 text-rose-900 dark:text-rose-200 font-bold">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200 font-bold">
                 <span>(-) Kasa Çıkışları / Masraflar</span>
                 <span className="font-mono">-₺{report?.cash_flow.cash_out.toFixed(2)}</span>
               </div>
@@ -549,7 +549,7 @@ export const DayEndReport: React.FC = () => {
                       <div className="font-bold text-slate-800 dark:text-slate-200">{exp.category}</div>
                       <div className="text-[10px] text-slate-400">{exp.description}</div>
                     </div>
-                    <span className={`font-mono font-extrabold ${exp.type === 'in' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    <span className={`font-mono font-extrabold ${exp.type === 'in' ? 'text-emerald-600' : 'text-brand-600'}`}>
                       {exp.type === 'in' ? '+' : '-'}₺{exp.amount.toFixed(2)}
                     </span>
                   </div>
@@ -565,7 +565,7 @@ export const DayEndReport: React.FC = () => {
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-red-600" />
+              <ShieldCheck className="w-4 h-4 text-brand-600" />
               Yasal Mali KDV Dağılım Tablosu (Gelir İdaresi Standartları)
             </h3>
             <span className="text-xs text-slate-400">KDV Matrah & Vergi Dökümü</span>
@@ -587,21 +587,21 @@ export const DayEndReport: React.FC = () => {
                   <td className="py-3.5 px-4 font-bold text-blue-600">%1 KDV</td>
                   <td className="py-3.5 px-4 text-slate-400">Temel Gıda / Ekmek / Paket Fırın</td>
                   <td className="py-3.5 px-4 text-right font-mono font-bold">₺{report?.vat_breakdown.vat_1.base.toFixed(2)}</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-bold text-red-600">₺{report?.vat_breakdown.vat_1.tax.toFixed(2)}</td>
+                  <td className="py-3.5 px-4 text-right font-mono font-bold text-brand-600">₺{report?.vat_breakdown.vat_1.tax.toFixed(2)}</td>
                   <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900 dark:text-white">₺{report?.vat_breakdown.vat_1.total.toFixed(2)}</td>
                 </tr>
                 <tr>
                   <td className="py-3.5 px-4 font-bold text-emerald-600">%10 KDV</td>
                   <td className="py-3.5 px-4 text-slate-400">Restoran Yeme-İçme Hizmetleri</td>
                   <td className="py-3.5 px-4 text-right font-mono font-bold">₺{report?.vat_breakdown.vat_10.base.toFixed(2)}</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-bold text-red-600">₺{report?.vat_breakdown.vat_10.tax.toFixed(2)}</td>
+                  <td className="py-3.5 px-4 text-right font-mono font-bold text-brand-600">₺{report?.vat_breakdown.vat_10.tax.toFixed(2)}</td>
                   <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900 dark:text-white">₺{report?.vat_breakdown.vat_10.total.toFixed(2)}</td>
                 </tr>
                 <tr>
                   <td className="py-3.5 px-4 font-bold text-amber-600">%20 KDV</td>
                   <td className="py-3.5 px-4 text-slate-400">Alkollü İçecekler / Özel Tüketim</td>
                   <td className="py-3.5 px-4 text-right font-mono font-bold">₺{report?.vat_breakdown.vat_20.base.toFixed(2)}</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-bold text-red-600">₺{report?.vat_breakdown.vat_20.tax.toFixed(2)}</td>
+                  <td className="py-3.5 px-4 text-right font-mono font-bold text-brand-600">₺{report?.vat_breakdown.vat_20.tax.toFixed(2)}</td>
                   <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900 dark:text-white">₺{report?.vat_breakdown.vat_20.total.toFixed(2)}</td>
                 </tr>
                 <tr className="bg-slate-50 dark:bg-slate-800/80 font-black text-sm">
@@ -611,7 +611,7 @@ export const DayEndReport: React.FC = () => {
                   <td className="py-4 px-4 text-right font-mono text-slate-900 dark:text-white">
                     ₺{report?.vat_breakdown.total_base.toFixed(2)}
                   </td>
-                  <td className="py-4 px-4 text-right font-mono text-red-600">
+                  <td className="py-4 px-4 text-right font-mono text-brand-600">
                     ₺{report?.vat_breakdown.total_tax.toFixed(2)}
                   </td>
                   <td className="py-4 px-4 text-right font-mono text-emerald-600 dark:text-emerald-400 text-base">
@@ -710,7 +710,7 @@ export const DayEndReport: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5 animate-scaleUp">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-red-600 font-black text-sm">
+              <div className="flex items-center gap-2 text-brand-600 font-black text-sm">
                 <Lock className="w-5 h-5" />
                 <span>Gün Sonu Kapatma Onayı (Z Al)</span>
               </div>
@@ -736,7 +736,7 @@ export const DayEndReport: React.FC = () => {
                   value={managerName}
                   onChange={e => setManagerName(e.target.value)}
                   required
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-semibold outline-none focus:ring-2 focus:ring-red-500"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-semibold outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
 
@@ -750,7 +750,7 @@ export const DayEndReport: React.FC = () => {
                   onChange={e => setManagerPin(e.target.value)}
                   placeholder="PIN giriniz (9999)"
                   required
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-center tracking-widest text-lg font-bold outline-none focus:ring-2 focus:ring-red-500"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-center tracking-widest text-lg font-bold outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
 
@@ -878,7 +878,7 @@ export const DayEndReport: React.FC = () => {
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-2xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-2 text-slate-900 dark:text-white font-extrabold text-sm">
-                <Archive className="w-5 h-5 text-red-600" />
+                <Archive className="w-5 h-5 text-brand-600" />
                 <span>Geçmiş Z Raporları Arşivi ({zHistory.length})</span>
               </div>
               <button onClick={() => setIsHistoryModalOpen(false)} className="text-slate-400 hover:text-slate-800">

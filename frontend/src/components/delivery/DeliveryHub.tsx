@@ -207,7 +207,7 @@ export const DeliveryHub: React.FC<DeliveryHubProps> = ({ categories = [] }) => 
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => handleSimulateOnlineOrder('yemeksepeti')}
-            className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs shadow-md transition cursor-pointer"
+            className="px-3 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-extrabold text-xs shadow-md transition cursor-pointer"
           >
             + Yemeksepeti Siparişi Gönder
           </button>
@@ -429,7 +429,7 @@ export const DeliveryHub: React.FC<DeliveryHubProps> = ({ categories = [] }) => 
       {/* Toast Notification Banner */}
       {toast && (
         <div className={`fixed bottom-6 right-6 text-white font-bold text-xs py-3 px-5 rounded-2xl shadow-2xl flex items-center gap-2 animate-bounce z-50 ${
-          toast.type === 'success' ? 'bg-emerald-600' : 'bg-rose-600'
+          toast.type === 'success' ? 'bg-emerald-600' : 'bg-brand-600'
         }`}>
           {toast.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
           <span>{toast.message}</span>

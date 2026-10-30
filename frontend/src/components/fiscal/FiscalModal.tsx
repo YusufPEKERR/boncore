@@ -281,7 +281,7 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
                 <div>Ara Toplam: <span className="font-mono font-bold">₺{fiscalDoc.subtotal.toFixed(2)}</span></div>
                 {fiscalDoc.kuver > 0 && <div>Kuver Bedeli: <span className="font-mono font-bold">₺{fiscalDoc.kuver.toFixed(2)}</span></div>}
                 {fiscalDoc.service_charge > 0 && <div>Servis Bedeli: <span className="font-mono font-bold">₺{fiscalDoc.service_charge.toFixed(2)}</span></div>}
-                {fiscalDoc.discount > 0 && <div className="text-red-600">İndirim: <span className="font-mono font-bold">-₺{fiscalDoc.discount.toFixed(2)}</span></div>}
+                {fiscalDoc.discount > 0 && <div className="text-brand-600">İndirim: <span className="font-mono font-bold">-₺{fiscalDoc.discount.toFixed(2)}</span></div>}
                 <div>Hesaplanan KDV (%10): <span className="font-mono">₺{fiscalDoc.vat_summary.vat_10.tax.toFixed(2)}</span></div>
                 <div className="text-base font-black text-slate-950 pt-1 border-t">
                   GENEL TOPLAM: <span className="font-mono">₺{fiscalDoc.grand_total.toFixed(2)}</span>
@@ -334,7 +334,7 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
               onClick={handleDownloadPdf}
               className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold flex items-center gap-2 transition cursor-pointer"
             >
-              <FileText className="w-4 h-4 text-rose-400" />
+              <FileText className="w-4 h-4 text-emerald-400" />
               <span>PDF İndir</span>
             </button>
           </div>

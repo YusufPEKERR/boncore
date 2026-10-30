@@ -93,7 +93,7 @@ export const KioskCfdView: React.FC<KioskCfdViewProps> = ({ categories }) => {
             <h1 className="text-2xl font-black text-slate-900 dark:text-white">
               Self-Servis Kiosk & Müşteri Çağrı Ekranı (CFD)
             </h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white uppercase">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-brand-600 text-white uppercase">
               Adisyo Kiosk + CFD
             </span>
           </div>
@@ -107,7 +107,7 @@ export const KioskCfdView: React.FC<KioskCfdViewProps> = ({ categories }) => {
             onClick={() => { sound.beep(); setMode('kiosk'); }}
             className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition cursor-pointer ${
               mode === 'kiosk'
-                ? 'bg-rose-600 text-white shadow-md'
+                ? 'bg-brand-600 text-white shadow-md'
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'
             }`}
           >
@@ -190,7 +190,7 @@ export const KioskCfdView: React.FC<KioskCfdViewProps> = ({ categories }) => {
                   onClick={() => { sound.beep(); setSelectedCatId(cat.id); }}
                   className={`px-4 py-2.5 rounded-2xl text-xs font-black whitespace-nowrap transition cursor-pointer ${
                     (activeCategory && activeCategory.id === cat.id)
-                      ? 'bg-rose-600 text-white shadow-md'
+                      ? 'bg-brand-600 text-white shadow-md'
                       : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800'
                   }`}
                 >
@@ -205,19 +205,19 @@ export const KioskCfdView: React.FC<KioskCfdViewProps> = ({ categories }) => {
                 <button
                   key={prod.id}
                   onClick={() => addToCart(prod)}
-                  className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-rose-500 shadow-sm hover:shadow-md transition text-left flex flex-col justify-between gap-3 cursor-pointer group"
+                  className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-brand-500 shadow-sm hover:shadow-md transition text-left flex flex-col justify-between gap-3 cursor-pointer group"
                 >
                   <div>
-                    <div className="font-black text-sm text-slate-900 dark:text-white group-hover:text-rose-600 transition">
+                    <div className="font-black text-sm text-slate-900 dark:text-white group-hover:text-brand-600 transition">
                       {prod.name}
                     </div>
                     <div className="text-[11px] text-slate-400 mt-0.5">Dokun & Sepete Ekle</div>
                   </div>
                   <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
-                    <span className="font-black text-base text-rose-600 dark:text-rose-400">
+                    <span className="font-black text-base text-brand-600 dark:text-emerald-400">
                       ₺{(prod.base_price || 0).toFixed(2)}
                     </span>
-                    <span className="w-7 h-7 rounded-xl bg-rose-50 dark:bg-rose-950 text-rose-600 flex items-center justify-center">
+                    <span className="w-7 h-7 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-brand-600 flex items-center justify-center">
                       <Plus className="w-4 h-4" />
                     </span>
                   </div>
@@ -234,13 +234,13 @@ export const KioskCfdView: React.FC<KioskCfdViewProps> = ({ categories }) => {
                 <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-[11px] font-bold">
                   <button
                     onClick={() => setOrderType('dine_in')}
-                    className={`px-2.5 py-1 rounded-lg cursor-pointer ${orderType === 'dine_in' ? 'bg-rose-600 text-white' : ''}`}
+                    className={`px-2.5 py-1 rounded-lg cursor-pointer ${orderType === 'dine_in' ? 'bg-brand-600 text-white' : ''}`}
                   >
                     Restoranda
                   </button>
                   <button
                     onClick={() => setOrderType('takeaway')}
-                    className={`px-2.5 py-1 rounded-lg cursor-pointer ${orderType === 'takeaway' ? 'bg-rose-600 text-white' : ''}`}
+                    className={`px-2.5 py-1 rounded-lg cursor-pointer ${orderType === 'takeaway' ? 'bg-brand-600 text-white' : ''}`}
                   >
                     Paket Al-Götür
                   </button>
@@ -268,7 +268,7 @@ export const KioskCfdView: React.FC<KioskCfdViewProps> = ({ categories }) => {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="font-extrabold text-slate-900 dark:text-white truncate">{item.product.name}</div>
-                        <div className="text-[11px] text-rose-600 font-bold">₺{((item.product.base_price || 0) * item.qty).toFixed(2)}</div>
+                        <div className="text-[11px] text-brand-600 font-bold">₺{((item.product.base_price || 0) * item.qty).toFixed(2)}</div>
                       </div>
                       <div className="flex items-center gap-2">
                         <button
@@ -294,7 +294,7 @@ export const KioskCfdView: React.FC<KioskCfdViewProps> = ({ categories }) => {
             <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-slate-800">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-500">Ödenecek Toplam</span>
-                <span className="text-2xl font-black text-rose-600 dark:text-rose-400">
+                <span className="text-2xl font-black text-brand-600 dark:text-emerald-400">
                   ₺{totalAmount.toFixed(2)}
                 </span>
               </div>
@@ -323,12 +323,12 @@ export const KioskCfdView: React.FC<KioskCfdViewProps> = ({ categories }) => {
             <p className="text-xs text-slate-500">Siparişiniz doğrudan mutfak ekranına (KDS) iletildi.</p>
             <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800">
               <div className="text-[11px] font-bold text-slate-400 uppercase">Sıra Numaranız</div>
-              <div className="text-4xl font-black text-rose-600 font-mono mt-1">{lastTicket.queue_number}</div>
+              <div className="text-4xl font-black text-brand-600 font-mono mt-1">{lastTicket.queue_number}</div>
               <div className="text-xs font-bold text-slate-500 mt-1">Ödenen: ₺{lastTicket.total.toFixed(2)}</div>
             </div>
             <button
               onClick={() => setLastTicket(null)}
-              className="w-full py-3 rounded-2xl bg-rose-600 text-white font-black text-xs cursor-pointer"
+              className="w-full py-3 rounded-2xl bg-brand-600 text-white font-black text-xs cursor-pointer"
             >
               Yeni Kiosk Siparişi
             </button>

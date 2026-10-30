@@ -43,7 +43,7 @@ export const QrallPosModal: React.FC<QrallPosModalProps> = ({ isOpen, onClose, o
           {/* Top Promo Carousel Card (Matching Frame 040) */}
           <div className="p-6 rounded-2xl bg-gradient-to-b from-slate-50 to-white dark:from-slate-800 dark:to-slate-850 border border-slate-200 dark:border-slate-700 text-center space-y-4">
             <div className="flex items-center justify-center gap-1.5 text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">
-              <span className="w-4 h-4 rounded bg-red-600 text-white flex items-center justify-center text-[10px] font-mono">Q</span>
+              <span className="w-4 h-4 rounded bg-brand-600 text-white flex items-center justify-center text-[10px] font-mono">Q</span>
               <span>QRall POS</span>
             </div>
 
@@ -51,9 +51,9 @@ export const QrallPosModal: React.FC<QrallPosModalProps> = ({ isOpen, onClose, o
 
             {/* Visual Promo Grid */}
             <div className="grid grid-cols-2 gap-4 max-w-sm mx-auto">
-              <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl text-center">
-                <div className="text-xl font-black text-red-600 dark:text-red-400 font-mono">%5</div>
-                <div className="text-[10px] text-red-700 dark:text-red-300 font-bold">+ KDV İşlem Başına</div>
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 rounded-xl text-center">
+                <div className="text-xl font-black text-brand-600 dark:text-emerald-400 font-mono">%5</div>
+                <div className="text-[10px] text-brand-700 dark:text-emerald-300 font-bold">+ KDV İşlem Başına</div>
               </div>
 
               <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 rounded-xl text-center">
@@ -64,7 +64,7 @@ export const QrallPosModal: React.FC<QrallPosModalProps> = ({ isOpen, onClose, o
 
             <button
               type="button"
-              className="px-6 py-2.5 rounded-full bg-[#c0392b] hover:bg-[#a93226] text-white font-extrabold text-xs shadow-md transition"
+              className="px-6 py-2.5 rounded-full bg-[#338d35] hover:bg-[#28702a] text-white font-extrabold text-xs shadow-md transition"
             >
               Başvuruyu Başlat &gt;
             </button>
@@ -79,7 +79,7 @@ export const QrallPosModal: React.FC<QrallPosModalProps> = ({ isOpen, onClose, o
               Masada, Gel-Al ve Adrese Teslim siparişlerinde ödeme, sipariş sırasında tamamlanır. Müşteriniz doğrudan sizden sipariş verir; yemek platformlarının %35'e varan komisyonları yerine kazancınız sizde kalır.
             </p>
 
-            <div className="p-3.5 rounded-xl bg-red-50/70 dark:bg-red-950/30 border border-red-100 dark:border-red-900/40 text-xs font-bold text-red-900 dark:text-red-200 space-y-1">
+            <div className="p-3.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 text-xs font-bold text-emerald-900 dark:text-emerald-200 space-y-1">
               <div>Komisyon: %5 + KDV</div>
               <div>Hakediş ödemeleri: Her ayın 1'i ve 15'i</div>
             </div>

@@ -9,10 +9,21 @@ export default {
     extend: {
       colors: {
         brand: {
+          50: '#edf7ed',
+          100: '#d7ebd8',
+          200: '#b2d7b4',
+          300: '#87bf8b',
+          400: '#5da762',
+          500: '#338d35',
           DEFAULT: '#338d35',
+          600: '#338d35',
+          700: '#28702a',
+          800: '#1e5420',
+          900: '#143815',
+          950: '#0a1d0b',
           hover: '#28702a',
-          light: '#eef7ee',
-          dark: '#143315',
+          light: '#edf7ed',
+          dark: '#0a1d0b',
         },
         pos: {
           bg: '#0f172a',
@@ -23,7 +34,7 @@ export default {
           warning: '#f59e0b',
           danger: '#ef4444',
           tableEmpty: '#10b981',
-          tableOccupied: '#ef4444',
+          tableOccupied: '#338d35',
           tableBill: '#3b82f6',
           tableReserved: '#eab308',
           tableCall: '#a855f7',
