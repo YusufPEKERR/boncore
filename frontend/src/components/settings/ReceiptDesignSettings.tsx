@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   Printer, FileText, CheckCircle2, RotateCcw, Eye, Sparkles, 
   Wifi, Instagram, MapPin, Hash, Users, Clock, QrCode, Sliders, 
-  Percent, Type, Bold
+  Percent, Type, Bold, Building2
 } from 'lucide-react';
 import { printThermalReceipt } from '../fiscal/FiscalModal';
 import { sound } from '../../services/sound';
@@ -23,6 +23,10 @@ export interface ReceiptDesignConfig {
   sub_size: 'xs' | 'small' | 'normal';               // Alt Yazı / Dipnot Boyutu
   sub_weight: FontWeight;                            // Alt Yazı Kalınlığı
   total_weight: 'bold' | 'extrabold' | 'black';      // Genel Toplam Kalınlığı
+
+  show_vkn: boolean;                                 // VKN gösterilsin mi
+  show_e_adisyon_title: boolean;                     // E-Adisyon Fişi başlığı gösterilsin mi
+  e_adisyon_title_text: string;                      // E-Adisyon başlık metni
 
   font_size?: 'small' | 'medium' | 'large';          // Geriye dönük uyumluluk
   show_order_no: boolean;
@@ -53,6 +57,9 @@ export const defaultReceiptDesign: ReceiptDesignConfig = {
   sub_size: 'small',
   sub_weight: 'normal',
   total_weight: 'black',
+  show_vkn: true,
+  show_e_adisyon_title: true,
+  e_adisyon_title_text: 'E-ADİSYON FİŞİ',
   font_size: 'medium',
   show_order_no: true,
   show_table_name: true,
@@ -101,7 +108,10 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
     body_weight: design.body_weight || 'normal',
     sub_size: design.sub_size || 'small',
     sub_weight: design.sub_weight || 'normal',
-    total_weight: design.total_weight || 'black'
+    total_weight: design.total_weight || 'black',
+    show_vkn: design.show_vkn !== undefined ? design.show_vkn : true,
+    show_e_adisyon_title: design.show_e_adisyon_title !== undefined ? design.show_e_adisyon_title : true,
+    e_adisyon_title_text: design.e_adisyon_title_text || 'E-ADİSYON FİŞİ'
   };
 
   const handleUpdate = <K extends keyof ReceiptDesignConfig>(key: K, value: ReceiptDesignConfig[K]) => {
@@ -577,6 +587,21 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                 />
               </div>
 
+              {currentDesign.show_e_adisyon_title && (
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Fiş Türü Başlığı (Varsayılan: E-ADİSYON FİŞİ):
+                  </label>
+                  <input
+                    type="text"
+                    value={currentDesign.e_adisyon_title_text}
+                    onChange={(e) => handleUpdate('e_adisyon_title_text', e.target.value)}
+                    placeholder="E-ADİSYON FİŞİ"
+                    className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              )}
+
               {/* Logo Switch */}
               <div className="pt-2 flex items-center justify-between">
                 <div>
@@ -607,6 +632,8 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
+                { key: 'show_vkn', label: 'Vergi Kimlik No (VKN)', icon: Building2, desc: `Adres & Şirket Bilgilerindeki VKN (${restaurantInfo?.taxNumber || localStorage.getItem('boncore_tax_number') || '3779901422'})` },
+                { key: 'show_e_adisyon_title', label: "'E-Adisyon Fişi' İbaresi", icon: FileText, desc: 'Fiş türü / E-Adisyon başlık yazısı' },
                 { key: 'show_order_no', label: 'Belge / Sipariş No', icon: Hash, desc: 'EAD... belge numarası' },
                 { key: 'show_table_name', label: 'Masa / Alan Adı', icon: FileText, desc: 'Siparişin ait olduğu masa' },
                 { key: 'show_waiter_name', label: 'Garson & Kasiyer Adı', icon: Users, desc: 'Siparişi alan ve ödeyen' },
@@ -822,16 +849,20 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                   </div>
                 )}
 
-                {/* Alt Yazı: VKN */}
-                <div 
-                  style={{ 
-                    fontSize: getSubFontSize(),
-                    fontWeight: getSubFontWeight()
-                  }}
-                  className="text-slate-600"
-                >
-                  VKN: {restaurantInfo?.taxNumber || '3779901422'} • E-ADİSYON FİŞİ
-                </div>
+                {/* Alt Yazı: VKN & Fiş Türü / E-Adisyon Başlığı */}
+                {(currentDesign.show_vkn || currentDesign.show_e_adisyon_title) && (
+                  <div 
+                    style={{ 
+                      fontSize: getSubFontSize(),
+                      fontWeight: getSubFontWeight()
+                    }}
+                    className="text-slate-600"
+                  >
+                    {currentDesign.show_vkn && `VKN: ${restaurantInfo?.taxNumber || localStorage.getItem('boncore_tax_number') || '3779901422'}`}
+                    {currentDesign.show_vkn && currentDesign.show_e_adisyon_title && ' • '}
+                    {currentDesign.show_e_adisyon_title && (currentDesign.e_adisyon_title_text || 'E-ADİSYON FİŞİ')}
+                  </div>
+                )}
 
                 {/* Alt Yazı: Belge No */}
                 {currentDesign.show_order_no && (

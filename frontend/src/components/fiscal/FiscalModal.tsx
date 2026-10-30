@@ -99,6 +99,21 @@ export const printThermalReceipt = async (doc: any) => {
     const instagramInfo = design?.instagram ? `<div class="center receipt-sub">📷 Instagram: <b>${design.instagram}</b></div>` : '';
     const customNote = design?.custom_note ? `<div class="center receipt-sub" style="font-style:italic;margin-top:2px;">${design.custom_note}</div>` : '';
 
+    // VKN ve E-Adisyon Fişi başlığı dinamik gösterimi (Adres & Şirket Bilgilerinden)
+    const vknValue = doc.vkn || localStorage.getItem('boncore_tax_number') || '3779901422';
+    const showVkn = design?.show_vkn !== false;
+    const showEAdisyon = design?.show_e_adisyon_title !== false;
+    const eAdisyonTitle = design?.e_adisyon_title_text || 'E-ADİSYON FİŞİ';
+
+    let vknAndTitleLine = '';
+    if (showVkn && showEAdisyon) {
+      vknAndTitleLine = `<div class="center receipt-sub">VKN: ${vknValue} • ${eAdisyonTitle}</div>`;
+    } else if (showVkn) {
+      vknAndTitleLine = `<div class="center receipt-sub">VKN: ${vknValue}</div>`;
+    } else if (showEAdisyon) {
+      vknAndTitleLine = `<div class="center receipt-sub">${eAdisyonTitle}</div>`;
+    }
+
     const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -133,7 +148,7 @@ export const printThermalReceipt = async (doc: any) => {
   <div class="center receipt-header">${headerTitle}</div>
   ${headerSub}
   ${design?.show_address_phone !== false && doc.address ? `<div class="center receipt-sub">${doc.address}</div>` : ''}
-  <div class="center receipt-sub">VKN: ${doc.vkn || '1234567890'} • E-ADİSYON FİŞİ</div>
+  ${vknAndTitleLine}
   ${design?.show_order_no !== false ? `<div class="center receipt-sub">Belge No: ${doc.doc_no || '-'}</div>` : ''}
   <div class="double-divider"></div>
   ${design?.show_table_name !== false || design?.show_date_time !== false ? `

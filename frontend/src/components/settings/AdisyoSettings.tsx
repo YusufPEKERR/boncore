@@ -459,6 +459,8 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     localStorage.setItem('boncore_discounts', JSON.stringify(discounts));
     localStorage.setItem('boncore_payment_methods', JSON.stringify(paymentMethods));
     localStorage.setItem('boncore_receipt_design', JSON.stringify(receiptDesign));
+    localStorage.setItem('boncore_tax_number', taxNumber);
+    localStorage.setItem('boncore_restaurant_name', restaurantName);
 
     // Save to SQLite Database
     try {
