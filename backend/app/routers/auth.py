@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.config import settings
-from app.database import get_db
+from app.database import get_db, get_master_db, get_tenant_sessionmaker, clean_tenant_code
 from app.models.user import StaffUser
 from app.models.tenant import RestaurantTenant
 from app.schemas.all import (
@@ -76,11 +76,12 @@ def _serialize_user(u: StaffUser, include_pin: bool = True) -> dict:
 
 
 @router.post("/login")
-async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+async def login(payload: LoginRequest, request: Request, master_db: AsyncSession = Depends(get_master_db)):
     """
     Restoran kullanıcı adı + personel şifresi/PIN kodu ile giriş.
     Restoran kullanıcı adı işletmeyi seçer, girilen şifre veya PIN ise o restorandaki
     personelin kim olduğunu (Müdür, Kasiyer, Garson, Şef) belirler.
+    Her restoran tamamen izole kendi SQLite veritabanından doğrulanır.
     """
     username = payload.username.strip()
     clean_pwd = payload.password.strip()
@@ -93,101 +94,132 @@ async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depe
             detail=f"Çok fazla hatalı deneme. Lütfen {max(1, wait // 60)} dakika sonra tekrar deneyin.",
         )
 
-    # 1. Aşama: Restoran Kullanıcı Adı / Kodu ile Arama (Multi-tenant Giriş)
+    # 1. Aşama: Master Admin Kontrolü
+    if username.lower() in ["master", "superadmin"] and clean_pwd in ["masteradmin2026", "boncore2026master", "123456"]:
+        token, exp = create_access_token(999999, "master_admin", remember=payload.remember, restaurant_code="master")
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "expires_at": exp,
+            "user": {
+                "id": 999999,
+                "name": "SaaS Platform Yöneticisi",
+                "username": "master",
+                "role": "master_admin",
+                "is_master": True
+            },
+            "is_master": True
+        }
+
+    # 2. Aşama: Restoran Kullanıcı Adı / Kodu ile Master DB Araması
     t_stmt = select(RestaurantTenant).where(
         (func.lower(RestaurantTenant.code) == username.lower()) |
         (func.replace(func.lower(RestaurantTenant.code), "-", "") == username.lower().replace("-", "").replace(" ", "")) |
         (func.lower(RestaurantTenant.name) == username.lower())
     )
-    t_res = await db.execute(t_stmt)
+    t_res = await master_db.execute(t_stmt)
     tenant = t_res.scalar_one_or_none()
 
     matched_user = None
+    target_tenant = tenant
 
-    if tenant:
-        if tenant.status == "suspended":
+    # Eğer doğrudan restoran adı girilmediyse, doğrudan kullanıcı adı girilmiş olabilir (Örn: 'moda_admin', 'admin', 'roast_barista')
+    if not target_tenant:
+        all_tenants_res = await master_db.execute(select(RestaurantTenant).where(RestaurantTenant.status != "deleted"))
+        all_tenants = all_tenants_res.scalars().all()
+
+        # Önce kullanıcı adı prefix ipucuna bak (örn: moda_ -> moda-meyhane)
+        sorted_tenants = list(all_tenants)
+        clean_u = username.lower()
+        if clean_u.startswith("moda_"):
+            sorted_tenants = [t for t in all_tenants if t.code == "moda-meyhane"] + [t for t in all_tenants if t.code != "moda-meyhane"]
+        elif clean_u.startswith("roast_"):
+            sorted_tenants = [t for t in all_tenants if t.code == "roast-brew"] + [t for t in all_tenants if t.code != "roast-brew"]
+        elif clean_u.startswith("etiler_"):
+            sorted_tenants = [t for t in all_tenants if t.code == "etiler-steak"] + [t for t in all_tenants if t.code != "etiler-steak"]
+
+        for cand_t in sorted_tenants:
+            t_sm = get_tenant_sessionmaker(cand_t.code)
+            try:
+                async with t_sm() as t_session:
+                    res = await t_session.execute(select(StaffUser).where(
+                        (func.lower(StaffUser.username) == username.lower()) |
+                        (StaffUser.pin_code == clean_pwd)
+                    ))
+                    users_cand = res.scalars().all()
+                    for u in users_cand:
+                        if func.lower(u.username) == username.lower() if u.username else False:
+                            if verify_password(clean_pwd, u.password_hash) or (u.pin_code and str(u.pin_code).strip() == clean_pwd):
+                                matched_user = u
+                                target_tenant = cand_t
+                                break
+                    if matched_user:
+                        break
+            except Exception:
+                pass
+
+    if target_tenant and not matched_user:
+        if target_tenant.status == "suspended":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"'{tenant.name}' restoranının aboneliği askıya alınmıştır. Lütfen platform yöneticisi ile iletişime geçin.",
+                detail=f"'{target_tenant.name}' restoranının aboneliği askıya alınmıştır. Lütfen platform yöneticisi ile iletişime geçin.",
             )
 
-        # Bu restorana bağlı tüm personelleri tara
-        u_stmt = select(StaffUser).where(
-            StaffUser.restaurant_id == tenant.id,
-            StaffUser.is_active == True
+        # Bu restoranın İZOLE VERİTABANINA bağlan
+        t_sm = get_tenant_sessionmaker(target_tenant.code)
+        async with t_sm() as t_session:
+            u_stmt = select(StaffUser).where(StaffUser.is_active == True)
+            u_res = await t_session.execute(u_stmt)
+            tenant_users = u_res.scalars().all()
+
+            for u in tenant_users:
+                if verify_password(clean_pwd, u.password_hash) or (u.pin_code and str(u.pin_code).strip() == clean_pwd):
+                    matched_user = u
+                    # Update last_login_at in tenant's own DB
+                    u.last_login_at = datetime.utcnow()
+                    await t_session.commit()
+                    break
+
+            if not matched_user:
+                attempts.append(time.time())
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=f"Girilen şifre veya PIN kodu '{target_tenant.name}' restoranına kayıtlı hiçbir personele ait değil."
+                )
+
+    if not matched_user or not target_tenant:
+        attempts.append(time.time())
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"'{username}' adına kayıtlı bir restoran veya kullanıcı bulunamadı. Lütfen restoran kullanıcı adını kontrol edin."
         )
-        u_res = await db.execute(u_stmt)
-        tenant_users = u_res.scalars().all()
-
-        # Şifre veya PIN kodu hangi personele aitse o kullanıcı olarak giriş yapılır
-        for u in tenant_users:
-            if verify_password(clean_pwd, u.password_hash) or (u.pin_code and str(u.pin_code).strip() == clean_pwd):
-                matched_user = u
-                break
-
-        if not matched_user:
-            attempts.append(time.time())
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Girilen şifre veya PIN kodu '{tenant.name}' restoranına kayıtlı hiçbir personele ait değil."
-            )
-
-    else:
-        # 2. Aşama: Doğrudan Personel Kullanıcı Adı veya Master Admin Kontrolü (Geriye Dönük Uyumluluk)
-        direct_res = await db.execute(select(StaffUser).where(func.lower(StaffUser.username) == username.lower()))
-        direct_user = direct_res.scalar_one_or_none()
-
-        if direct_user and (verify_password(clean_pwd, direct_user.password_hash) or (direct_user.pin_code and str(direct_user.pin_code).strip() == clean_pwd)):
-            matched_user = direct_user
-            if direct_user.restaurant_id:
-                tenant = await db.get(RestaurantTenant, direct_user.restaurant_id)
-        elif username.lower() in ["master", "superadmin"] and clean_pwd in ["masteradmin2026", "boncore2026master", "123456"]:
-            # Master Admin otomatik köprüsü
-            token, exp = create_access_token(999999, "master_admin", remember=payload.remember)
-            return {
-                "access_token": token,
-                "token_type": "bearer",
-                "expires_at": exp,
-                "user": {
-                    "id": 999999,
-                    "name": "SaaS Platform Yöneticisi",
-                    "username": "master",
-                    "role": "master_admin",
-                    "is_master": True
-                },
-                "is_master": True
-            }
-        else:
-            attempts.append(time.time())
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"'{username}' adına kayıtlı bir restoran veya kullanıcı bulunamadı. Lütfen restoran kullanıcı adını kontrol edin."
-            )
 
     if not matched_user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kullanıcı hesabı pasif durumda. Yöneticinize başvurun.")
 
     _failed_attempts.pop(key, None)
-    matched_user.last_login_at = datetime.utcnow()
-    await db.commit()
 
-    token, exp = create_access_token(matched_user.id, matched_user.role, remember=payload.remember)
+    token, exp = create_access_token(
+        matched_user.id, 
+        matched_user.role, 
+        remember=payload.remember,
+        restaurant_code=target_tenant.code,
+        restaurant_id=target_tenant.id
+    )
     
     resp_payload = {
         "access_token": token,
         "token_type": "bearer",
         "expires_at": exp,
         "user": _serialize_user(matched_user, include_pin=False),
-    }
-
-    if tenant:
-        resp_payload["restaurant"] = {
-            "id": tenant.id,
-            "name": tenant.name,
-            "code": tenant.code,
-            "plan": tenant.plan,
-            "status": tenant.status
+        "restaurant": {
+            "id": target_tenant.id,
+            "name": target_tenant.name,
+            "code": target_tenant.code,
+            "plan": target_tenant.plan,
+            "status": target_tenant.status
         }
+    }
 
     return resp_payload
 

@@ -8,7 +8,7 @@ from sqlalchemy.future import select
 from sqlalchemy import func, update, delete
 from sqlalchemy.orm import selectinload
 
-from app.database import get_db
+from app.database import get_master_db as get_db, get_master_db, get_tenant_sessionmaker, clean_tenant_code, _tenant_engines, Base
 from app.models.tenant import RestaurantTenant, TenantLead, TenantInvoice
 from app.models.user import StaffUser
 from app.models.order import Order
@@ -358,69 +358,71 @@ async def delete_tenant(tenant_id: int, db: AsyncSession = Depends(get_db)):
 @router.get("/tenants/{tenant_id}/users")
 async def list_tenant_users(tenant_id: int, db: AsyncSession = Depends(get_db)):
     """
-    Lists all staff users for a given restaurant tenant.
+    Lists all staff users for a given restaurant tenant from its isolated database.
     """
     tenant = await db.get(RestaurantTenant, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="Restoran bulunamadı.")
 
-    stmt = select(StaffUser).where(StaffUser.restaurant_id == tenant_id).order_by(StaffUser.id.asc())
-    res = await db.execute(stmt)
-    users = res.scalars().all()
+    t_sm = get_tenant_sessionmaker(tenant.code)
+    async with t_sm() as t_db:
+        stmt = select(StaffUser).order_by(StaffUser.id.asc())
+        res = await t_db.execute(stmt)
+        users = res.scalars().all()
 
-    # If tenant has no users yet (e.g. legacy tenant #1), check unassigned users
-    if not users and tenant_id == 1:
-        stmt_unassigned = select(StaffUser).order_by(StaffUser.id.asc())
-        res_u = await db.execute(stmt_unassigned)
-        users = res_u.scalars().all()
-
-    return [
-        {
-            "id": u.id,
-            "name": u.name,
-            "username": u.username,
-            "pin_code": u.pin_code,
-            "role": u.role,
-            "is_active": u.is_active,
-            "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
-            "created_at": u.created_at.isoformat() if u.created_at else None
-        }
-        for u in users
-    ]
+        return [
+            {
+                "id": u.id,
+                "name": u.name,
+                "username": u.username,
+                "pin_code": u.pin_code,
+                "role": u.role,
+                "is_active": u.is_active,
+                "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+                "created_at": u.created_at.isoformat() if u.created_at else None
+            }
+            for u in users
+        ]
 
 
 @router.post("/tenants/{tenant_id}/users")
 async def create_tenant_user(tenant_id: int, req: TenantUserCreateRequest, db: AsyncSession = Depends(get_db)):
     """
-    Creates a new user under the specified restaurant tenant.
+    Creates a new user under the specified restaurant tenant's isolated database.
     """
-    clean_username = req.username.strip().lower()
-    exist = await db.execute(select(StaffUser).where(StaffUser.username == clean_username))
-    if exist.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Bu kullanıcı adı zaten başka bir kullanıcı tarafından kullanılıyor.")
+    tenant = await db.get(RestaurantTenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Restoran bulunamadı.")
 
-    pin = req.pin_code or str((tenant_id * 179 + len(clean_username) * 31 + 1000) % 9000 + 1000)
+    t_sm = get_tenant_sessionmaker(tenant.code)
+    async with t_sm() as t_db:
+        clean_username = req.username.strip().lower()
+        exist = await t_db.execute(select(StaffUser).where(StaffUser.username == clean_username))
+        if exist.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Bu kullanıcı adı bu restoranda zaten kullanılıyor.")
 
-    new_user = StaffUser(
-        name=req.name.strip(),
-        username=clean_username,
-        password_hash=hash_password(req.password.strip()),
-        pin_code=pin,
-        role=req.role or "waiter",
-        restaurant_id=tenant_id,
-        is_active=True
-    )
-    db.add(new_user)
-    await db.commit()
-    await db.refresh(new_user)
+        pin = req.pin_code or str((tenant_id * 179 + len(clean_username) * 31 + 1000) % 9000 + 1000)
 
-    return {
-        "success": True,
-        "message": f"Kullanıcı {new_user.name} oluşturuldu.",
-        "user_id": new_user.id,
-        "username": new_user.username,
-        "pin_code": new_user.pin_code
-    }
+        new_user = StaffUser(
+            name=req.name.strip(),
+            username=clean_username,
+            password_hash=hash_password(req.password.strip()),
+            pin_code=pin,
+            role=req.role or "waiter",
+            restaurant_id=tenant_id,
+            is_active=True
+        )
+        t_db.add(new_user)
+        await t_db.commit()
+        await t_db.refresh(new_user)
+
+        return {
+            "success": True,
+            "message": f"Kullanıcı {new_user.name} oluşturuldu.",
+            "user_id": new_user.id,
+            "username": new_user.username,
+            "pin_code": new_user.pin_code
+        }
 
 
 @router.put("/tenants/{tenant_id}/users/{user_id}/password")
@@ -433,31 +435,72 @@ async def change_tenant_user_password(
     """
     Master Admin can directly change/reset password or PIN of any restaurant's staff member!
     """
-    user = await db.get(StaffUser, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
+    tenant = await db.get(RestaurantTenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Restoran bulunamadı.")
 
-    if req.new_password and req.new_password.strip():
-        user.password_hash = hash_password(req.new_password.strip())
+    t_sm = get_tenant_sessionmaker(tenant.code)
+    async with t_sm() as t_db:
+        user = await t_db.get(StaffUser, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
 
-    if req.new_pin and req.new_pin.strip():
-        # Check PIN unique
-        clean_pin = req.new_pin.strip()
-        pin_exist = await db.execute(select(StaffUser).where(StaffUser.pin_code == clean_pin, StaffUser.id != user_id))
-        if pin_exist.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="Bu PIN kodu başka bir kullanıcıya ait.")
-        user.pin_code = clean_pin
+        if req.new_password and req.new_password.strip():
+            user.password_hash = hash_password(req.new_password.strip())
 
-    await db.commit()
-    logger.info(f"Master Admin changed password/PIN for user {user.username} (ID: {user_id})")
+        if req.new_pin and req.new_pin.strip():
+            clean_pin = req.new_pin.strip()
+            pin_exist = await t_db.execute(select(StaffUser).where(StaffUser.pin_code == clean_pin, StaffUser.id != user_id))
+            if pin_exist.scalar_one_or_none():
+                raise HTTPException(status_code=400, detail="Bu PIN kodu bu restoranda başka bir kullanıcıya ait.")
+            user.pin_code = clean_pin
 
-    return {
-        "success": True,
-        "message": f"{user.name} kullanıcısının şifresi/PIN kodu başarıyla güncellendi."
-    }
+        await t_db.commit()
+        logger.info(f"Master Admin changed password/PIN for user {user.username} (ID: {user_id}) in tenant {tenant.code}")
+
+        return {
+            "success": True,
+            "message": f"{user.name} kullanıcısının şifresi/PIN kodu başarıyla güncellendi."
+        }
 
 
 @router.put("/tenants/{tenant_id}/users/{user_id}")
+async def update_tenant_user(
+    tenant_id: int,
+    user_id: int,
+    req: TenantUserUpdateRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update username, role or active status for a tenant user.
+    """
+    tenant = await db.get(RestaurantTenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Restoran bulunamadı.")
+
+    t_sm = get_tenant_sessionmaker(tenant.code)
+    async with t_sm() as t_db:
+        user = await t_db.get(StaffUser, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
+
+        if req.username:
+            clean_uname = req.username.strip().lower()
+            if clean_uname != user.username:
+                exist = await t_db.execute(select(StaffUser).where(StaffUser.username == clean_uname, StaffUser.id != user_id))
+                if exist.scalar_one_or_none():
+                    raise HTTPException(status_code=400, detail="Bu kullanıcı adı zaten mevcut.")
+                user.username = clean_uname
+
+        if req.name is not None:
+            user.name = req.name.strip()
+        if req.role is not None:
+            user.role = req.role
+        if req.is_active is not None:
+            user.is_active = req.is_active
+
+        await t_db.commit()
+        return {"success": True, "message": f"{user.name} güncellendi."}
 async def update_tenant_user(
     tenant_id: int,
     user_id: int,

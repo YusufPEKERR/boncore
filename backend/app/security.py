@@ -77,10 +77,23 @@ def _b64d(data: str) -> bytes:
     return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
 
 
-def create_access_token(user_id: int, role: str, remember: bool = False) -> tuple[str, int]:
+def create_access_token(
+    user_id: int, 
+    role: str, 
+    remember: bool = False,
+    restaurant_code: str = "boncore-kadikoy",
+    restaurant_id: Optional[int] = None
+) -> tuple[str, int]:
     ttl = REMEMBER_TTL_SECONDS if remember else TOKEN_TTL_SECONDS
     exp = int(time.time()) + ttl
-    payload = _b64e(json.dumps({"sub": user_id, "role": role, "exp": exp}, separators=(",", ":")).encode())
+    token_dict = {
+        "sub": user_id, 
+        "role": role, 
+        "rc": restaurant_code,
+        "rid": restaurant_id,
+        "exp": exp
+    }
+    payload = _b64e(json.dumps(token_dict, separators=(",", ":")).encode())
     signature = _b64e(hmac.new(SECRET_KEY, payload.encode(), hashlib.sha256).digest())
     return f"{payload}.{signature}", exp
 
@@ -95,6 +108,17 @@ def decode_access_token(token: str) -> Optional[dict]:
         if int(data.get("exp", 0)) < int(time.time()):
             return None
         return data
+    except Exception:
+        return None
+
+
+def decode_access_token_fast(token: str) -> Optional[dict]:
+    """
+    Hızlı payload okuma (veritabanı çözümlemesi için erken rota tespiti).
+    """
+    try:
+        payload, _ = token.split(".", 1)
+        return json.loads(_b64d(payload))
     except Exception:
         return None
 

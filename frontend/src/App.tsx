@@ -329,10 +329,7 @@ export const App: React.FC = () => {
     try {
       const settingsData = await api.getSettings();
       if (settingsData && settingsData.restaurant_name) {
-        const cleanTitle = String(settingsData.restaurant_name).includes('FATİH ÇİFTLİĞİ')
-          ? 'BONCORE RESTORAN'
-          : String(settingsData.restaurant_name);
-        setRestaurantTitle(cleanTitle);
+        setRestaurantTitle(String(settingsData.restaurant_name));
       }
     } catch (e) {
       // Ignore settings load error on startup
@@ -410,10 +407,12 @@ export const App: React.FC = () => {
   const handleLogout = () => {
     setIsAuthenticated(false);
     setCurrentUser(null);
+    api.logout();
     localStorage.removeItem('boncore_token');
     localStorage.removeItem('boncore_auth');
     localStorage.removeItem('boncore_user');
     localStorage.removeItem('boncore_selected_table');
+    localStorage.removeItem('boncore_active_restaurant_name');
     setViewMode('landing');
     window.location.hash = 'landing';
     addToast('Oturum güvenli bir şekilde kapatıldı.', 'info');

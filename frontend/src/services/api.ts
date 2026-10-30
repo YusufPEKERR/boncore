@@ -13,6 +13,10 @@ export function getAuthHeaders(includeJson: boolean = true): Record<string, stri
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
+    const rCode = localStorage.getItem('boncore_restaurant_code');
+    if (rCode) {
+      headers['X-Restaurant-Code'] = rCode;
+    }
   } catch {}
   return headers;
 }
@@ -33,7 +37,20 @@ export const api = {
     if (data.access_token) {
       localStorage.setItem('boncore_token', data.access_token);
     }
+    if (data.restaurant?.code) {
+      localStorage.setItem('boncore_restaurant_code', data.restaurant.code);
+      localStorage.setItem('boncore_active_restaurant_name', data.restaurant.name);
+    }
     return data;
+  },
+
+  logout() {
+    try {
+      localStorage.removeItem('boncore_token');
+      localStorage.removeItem('boncore_restaurant_code');
+      localStorage.removeItem('boncore_active_restaurant_name');
+      localStorage.removeItem('boncore_current_user');
+    } catch {}
   },
 
   async getMe(): Promise<StaffUser> {

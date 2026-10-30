@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.database import engine, Base, AsyncSessionLocal
+from app.database import engine, Base, AsyncSessionLocal, master_engine, MasterSessionLocal, get_tenant_sessionmaker
 from app.cache import cache_manager
 from app.seed_data import seed_initial_data, bootstrap_staff_credentials
 from app.security import get_optional_user
@@ -22,7 +22,11 @@ async def lifespan(app: FastAPI):
     # Init Cache
     await cache_manager.init(settings.REDIS_URL)
 
-    # Create tables
+    # Create Master tables in master.db
+    async with master_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    # Create & migrate tenant tables in boncore-kadikoy.db
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         def migrate_schema(sync_conn):
@@ -51,7 +55,12 @@ async def lifespan(app: FastAPI):
                 sync_conn.execute(text("ALTER TABLE products ADD COLUMN order_index INTEGER DEFAULT 0"))
         await conn.run_sync(migrate_schema)
 
-    # Seed initial data
+    # Seed initial demo tenants and leads in master DB
+    async with MasterSessionLocal() as session:
+        from app.routers.master_admin import _ensure_demo_tenants_and_leads
+        await _ensure_demo_tenants_and_leads(session)
+
+    # Seed initial data for primary tenant
     async with AsyncSessionLocal() as session:
         await seed_initial_data(session)
 
