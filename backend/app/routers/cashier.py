@@ -215,6 +215,103 @@ async def settle_order_payment(payload: SettlePaymentRequest, db: AsyncSession =
         "fiscal_doc": fiscal_doc
     }
 
+@router.delete("/payments/{payment_id}")
+async def delete_payment(payment_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Deletes an individual payment record, updates order paid_total/remaining_total,
+    and broadcasts the update.
+    """
+    stmt = select(Payment).where(Payment.id == payment_id)
+    res = await db.execute(stmt)
+    payment = res.scalar_one_or_none()
+    if not payment:
+        raise HTTPException(status_code=404, detail="Tahsilat kaydı bulunamadı.")
+
+    order_id = payment.order_id
+    deleted_amount = payment.amount
+    deleted_method = payment.payment_method
+
+    # Load order with table
+    o_stmt = (
+        select(Order)
+        .options(selectinload(Order.payments), selectinload(Order.table))
+        .where(Order.id == order_id)
+    )
+    o_res = await db.execute(o_stmt)
+    order = o_res.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Bağlı sipariş bulunamadı.")
+
+    # Delete payment
+    await db.delete(payment)
+    await db.flush()
+
+    # Recalculate remaining payments for this order
+    rp_stmt = select(Payment).where(Payment.order_id == order_id)
+    rp_res = await db.execute(rp_stmt)
+    remaining_payments = rp_res.scalars().all()
+
+    new_paid_total = round(sum(p.amount for p in remaining_payments), 2)
+    order.paid_total = min(order.grand_total, new_paid_total)
+    order.remaining_total = max(0.0, round((order.grand_total or 0.0) - order.paid_total, 2))
+
+    # If the order was closed/paid and now has remaining balance, reopen it!
+    table = order.table
+    if not table and order.table_id:
+        t_stmt = select(Table).where(Table.id == order.table_id)
+        t_res = await db.execute(t_stmt)
+        table = t_res.scalar_one_or_none()
+
+    if order.status == "paid" and order.remaining_total > 0.05:
+        order.status = "open"
+        order.closed_at = None
+        if table:
+            table.status = "occupied"
+            table.current_order_id = order.id
+
+    # Record Audit Log
+    audit = AuditLog(
+        action_type="PAYMENT_DELETED",
+        operator_name=order.cashier_name or "Kasiyer",
+        target_ref=f"Order #{order.id} / Payment #{payment_id}",
+        reason_code="PAYMENT_CANCEL",
+        reason_text=f"Tahsilat silindi: ₺{deleted_amount:.2f} ({deleted_method})",
+        details={
+            "payment_id": payment_id,
+            "order_id": order_id,
+            "amount": deleted_amount,
+            "method": deleted_method,
+            "new_paid_total": order.paid_total,
+            "new_remaining_total": order.remaining_total
+        }
+    )
+    db.add(audit)
+
+    await db.commit()
+
+    # Broadcast updates via WebSocket
+    await ws_hub.broadcast_all("ORDER_PAID", {
+        "order_id": order.id,
+        "is_fully_paid": order.remaining_total <= 0.05,
+        "remaining_total": order.remaining_total,
+        "paid_total": order.paid_total,
+        "table_id": order.table_id
+    })
+
+    if table:
+        await ws_hub.broadcast_all("TABLE_STATUS_CHANGED", {
+            "table_id": table.id,
+            "status": table.status,
+            "order_id": table.current_order_id
+        })
+
+    return {
+        "status": "success",
+        "message": f"₺{deleted_amount:.2f} tutarındaki tahsilat kaydı başarıyla silindi.",
+        "paid_total": order.paid_total,
+        "remaining_total": order.remaining_total
+    }
+
 @router.post("/expenses")
 async def create_cash_expense(payload: CashExpenseRequest, db: AsyncSession = Depends(get_db)):
     """

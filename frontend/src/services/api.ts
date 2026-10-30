@@ -438,6 +438,17 @@ export const api = {
     }
   },
 
+  async deletePayment(paymentId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/cashier/payments/${paymentId}`, {
+      method: 'DELETE'
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Tahsilat kaydı silinemedi.');
+    }
+    return res.json();
+  },
+
   async getActiveRegister(): Promise<any> {
     const res = await fetch(`${API_BASE}/cashier/active-register`);
     return res.json();

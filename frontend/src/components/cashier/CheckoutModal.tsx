@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Save, Printer, X, History, ArrowLeft, Check, Percent, Tag, 
-  Users, ChevronRight, AlertCircle, CheckCircle2 
+  Users, ChevronRight, AlertCircle, CheckCircle2, Trash2 
 } from 'lucide-react';
 import { Table, Order, PaymentItem, PaymentMethodConfig } from '../../types';
 import { api } from '../../services/api';
@@ -429,6 +429,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
+  // Delete an individual payment record (Ara tahsilat iptali)
+  const handleDeletePayment = async (paymentId: number, amount: number) => {
+    if (!window.confirm(`₺${amount.toFixed(2)} tutarındaki bu tahsilatı silmek istediğinize emin misiniz? Masa kalan borcu yeniden hesaplanacaktır.`)) {
+      return;
+    }
+    setLoading(true);
+    sound.beep();
+    try {
+      await api.deletePayment(paymentId);
+      showNotice(`₺${amount.toFixed(2)} tutarındaki tahsilat kaydı başarıyla silindi.`, false);
+      await loadOrderData();
+    } catch (err: any) {
+      showNotice(err.message || 'Tahsilat silinemedi.', true);
+      sound.warning();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Save changes without closing
   const handleSaveOnly = () => {
     sound.beep();
@@ -694,9 +713,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           {p.created_at ? new Date(p.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : 'Az önce'}
                         </span>
                       </div>
-                      <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-xs">
-                        ₺{p.amount.toFixed(2)}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-xs">
+                          ₺{p.amount.toFixed(2)}
+                        </span>
+                        {p.id && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePayment(p.id!, p.amount)}
+                            disabled={loading}
+                            className="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer active:scale-95 disabled:opacity-50"
+                            title="Bu tahsilatı sil"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
