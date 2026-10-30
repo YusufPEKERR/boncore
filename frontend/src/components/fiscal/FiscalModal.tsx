@@ -78,14 +78,26 @@ export const printThermalReceipt = async (doc: any) => {
     }
     const paperWidth = design?.paper_width === '58mm' ? '58mm' : '80mm';
     const bodyWidth = design?.paper_width === '58mm' ? '52mm' : '74mm';
-    const fontSize = design?.font_size === 'small' ? '10px' : design?.font_size === 'large' ? '13px' : '11px';
+    
+    // Tipografi kuralları
+    const headerFontSize = design?.header_size === 'xlarge' ? '17px' : design?.header_size === 'medium' ? '13px' : '15px';
+    const headerFontWeight = design?.header_weight === 'black' ? '900' : design?.header_weight === 'bold' ? '700' : design?.header_weight === 'semibold' ? '600' : '400';
+
+    const bodyFontSize = design?.body_size === 'large' ? '12.5px' : design?.body_size === 'small' ? '10px' : '11px';
+    const bodyFontWeight = design?.body_weight === 'black' ? '900' : design?.body_weight === 'bold' ? '700' : design?.body_weight === 'semibold' ? '600' : '400';
+
+    const subFontSize = design?.sub_size === 'normal' ? '10.5px' : design?.sub_size === 'xs' ? '8.5px' : '9.5px';
+    const subFontWeight = design?.sub_weight === 'black' ? '900' : design?.sub_weight === 'bold' ? '700' : design?.sub_weight === 'semibold' ? '600' : '400';
+
+    const totalWeight = design?.total_weight === 'bold' ? '700' : design?.total_weight === 'extrabold' ? '800' : '900';
+
     const headerTitle = design?.header_title || doc.company_title || 'BONCORE RESTORAN';
-    const headerSub = design?.header_sub ? `<div class="center" style="font-size:10px;margin-bottom:2px;">${design.header_sub}</div>` : '';
+    const headerSub = design?.header_sub ? `<div class="center receipt-sub" style="margin-bottom:2px;">${design.header_sub}</div>` : '';
     const footerMsg = design?.footer_message || 'TEŞEKKÜR EDERİZ • AFİYET OLSUN!';
-    const footerSub = design?.footer_sub ? `<div class="center" style="font-size:9px;color:#555;margin-top:2px;">${design.footer_sub}</div>` : '';
-    const wifiInfo = design?.wifi_name ? `<div class="center" style="font-size:9px;margin-top:3px;border-top:1px dashed #777;padding-top:2px;">📶 Wi-Fi: <b>${design.wifi_name}</b> ${design.wifi_password ? `(Şifre: <b>${design.wifi_password}</b>)` : ''}</div>` : '';
-    const instagramInfo = design?.instagram ? `<div class="center" style="font-size:9px;">📷 Instagram: <b>${design.instagram}</b></div>` : '';
-    const customNote = design?.custom_note ? `<div class="center" style="font-size:9px;font-style:italic;margin-top:2px;">${design.custom_note}</div>` : '';
+    const footerSub = design?.footer_sub ? `<div class="center receipt-sub" style="color:#555;margin-top:2px;">${design.footer_sub}</div>` : '';
+    const wifiInfo = design?.wifi_name ? `<div class="center receipt-sub" style="margin-top:3px;border-top:1px dashed #777;padding-top:2px;">📶 Wi-Fi: <b>${design.wifi_name}</b> ${design.wifi_password ? `(Şifre: <b>${design.wifi_password}</b>)` : ''}</div>` : '';
+    const instagramInfo = design?.instagram ? `<div class="center receipt-sub">📷 Instagram: <b>${design.instagram}</b></div>` : '';
+    const customNote = design?.custom_note ? `<div class="center receipt-sub" style="font-style:italic;margin-top:2px;">${design.custom_note}</div>` : '';
 
     const html = `<!DOCTYPE html>
 <html>
@@ -100,38 +112,42 @@ export const printThermalReceipt = async (doc: any) => {
       margin: 0 auto;
       padding: 4px;
       color: #000;
-      font-size: ${fontSize};
+      font-size: ${bodyFontSize};
       line-height: 1.35;
     }
     .center { text-align: center; }
     .bold { font-weight: 700; }
+    .receipt-header { font-size: ${headerFontSize}; font-weight: ${headerFontWeight}; }
+    .receipt-body { font-size: ${bodyFontSize}; font-weight: ${bodyFontWeight}; }
+    .receipt-sub { font-size: ${subFontSize}; font-weight: ${subFontWeight}; }
+    .receipt-total { font-size: 14px; font-weight: ${totalWeight}; }
     .divider { border-top: 1px dashed #000; margin: 6px 0; }
     .double-divider { border-top: 2px solid #000; margin: 6px 0; }
-    table { width: 100%; border-collapse: collapse; font-size: ${fontSize}; }
-    th { border-bottom: 1px solid #000; padding-bottom: 3px; text-align: left; font-size: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: ${bodyFontSize}; font-weight: ${bodyFontWeight}; }
+    th { border-bottom: 1px solid #000; padding-bottom: 3px; text-align: left; font-size: ${subFontSize}; font-weight: 700; }
     .row { display: flex; justify-content: space-between; margin: 2px 0; }
   </style>
 </head>
 <body>
   ${design?.show_logo !== false ? '<div class="center" style="margin-bottom:4px;"><img src="/logo.png" style="max-height:36px;filter:grayscale(100%);" alt="Logo" onerror="this.style.display=\'none\'" /></div>' : ''}
-  <div class="center bold" style="font-size:14px;">${headerTitle}</div>
+  <div class="center receipt-header">${headerTitle}</div>
   ${headerSub}
-  ${design?.show_address_phone !== false && doc.address ? `<div class="center" style="font-size:9px;">${doc.address}</div>` : ''}
-  <div class="center" style="font-size:10px;">VKN: ${doc.vkn || '1234567890'} • E-ADİSYON FİŞİ</div>
-  ${design?.show_order_no !== false ? `<div class="center" style="font-size:10px;">Belge No: ${doc.doc_no || '-'}</div>` : ''}
+  ${design?.show_address_phone !== false && doc.address ? `<div class="center receipt-sub">${doc.address}</div>` : ''}
+  <div class="center receipt-sub">VKN: ${doc.vkn || '1234567890'} • E-ADİSYON FİŞİ</div>
+  ${design?.show_order_no !== false ? `<div class="center receipt-sub">Belge No: ${doc.doc_no || '-'}</div>` : ''}
   <div class="double-divider"></div>
   ${design?.show_table_name !== false || design?.show_date_time !== false ? `
-  <div class="row">
+  <div class="row receipt-sub">
     ${design?.show_table_name !== false ? `<span><b>Masa:</b> ${doc.table_name || 'Hızlı Satış'}</span>` : '<span></span>'}
     ${design?.show_date_time !== false ? `<span><b>Tarih:</b> ${doc.date || ''}</span>` : '<span></span>'}
   </div>` : ''}
   ${design?.show_waiter_name !== false || design?.show_date_time !== false ? `
-  <div class="row">
+  <div class="row receipt-sub">
     ${design?.show_waiter_name !== false ? `<span><b>Garson:</b> ${doc.waiter_name || '-'}</span>` : '<span></span>'}
     ${design?.show_date_time !== false ? `<span><b>Saat:</b> ${doc.time || ''}</span>` : '<span></span>'}
   </div>` : ''}
   ${design?.show_waiter_name !== false && doc.cashier_name ? `
-  <div class="row">
+  <div class="row receipt-sub">
     <span><b>Kasiyer:</b> ${doc.cashier_name}</span>
     <span></span>
   </div>` : ''}
@@ -145,19 +161,19 @@ export const printThermalReceipt = async (doc: any) => {
         <th style="width:20%;text-align:right;">TUTAR</th>
       </tr>
     </thead>
-    <tbody>
+    <tbody class="receipt-body">
       ${itemsRows}
     </tbody>
   </table>
   <div class="divider"></div>
-  <div class="row"><span>Ara Toplam:</span><b>₺${Number(doc.subtotal || 0).toFixed(2)}</b></div>
-  ${doc.kuver > 0 ? `<div class="row"><span>Kuver Bedeli:</span><b>₺${Number(doc.kuver).toFixed(2)}</b></div>` : ''}
-  ${doc.service_charge > 0 ? `<div class="row"><span>Servis Bedeli:</span><b>₺${Number(doc.service_charge).toFixed(2)}</b></div>` : ''}
-  ${doc.discount > 0 ? `<div class="row"><span>İndirim:</span><b>-₺${Number(doc.discount).toFixed(2)}</b></div>` : ''}
-  ${doc.treat > 0 ? `<div class="row"><span>İkram:</span><b>-₺${Number(doc.treat).toFixed(2)}</b></div>` : ''}
-  ${design?.show_vat_breakdown !== false ? `<div class="row"><span>KDV (%10 Dahil):</span><span>₺${Number(doc.vat_summary?.vat_10?.tax || 0).toFixed(2)}</span></div>` : ''}
+  <div class="row receipt-sub"><span>Ara Toplam:</span><b>₺${Number(doc.subtotal || 0).toFixed(2)}</b></div>
+  ${doc.kuver > 0 ? `<div class="row receipt-sub"><span>Kuver Bedeli:</span><b>₺${Number(doc.kuver).toFixed(2)}</b></div>` : ''}
+  ${doc.service_charge > 0 ? `<div class="row receipt-sub"><span>Servis Bedeli:</span><b>₺${Number(doc.service_charge).toFixed(2)}</b></div>` : ''}
+  ${doc.discount > 0 ? `<div class="row receipt-sub"><span>İndirim:</span><b>-₺${Number(doc.discount).toFixed(2)}</b></div>` : ''}
+  ${doc.treat > 0 ? `<div class="row receipt-sub"><span>İkram:</span><b>-₺${Number(doc.treat).toFixed(2)}</b></div>` : ''}
+  ${design?.show_vat_breakdown !== false ? `<div class="row receipt-sub"><span>KDV (%10 Dahil):</span><span>₺${Number(doc.vat_summary?.vat_10?.tax || 0).toFixed(2)}</span></div>` : ''}
   <div class="double-divider"></div>
-  <div class="row" style="font-size:14px;font-weight:900;">
+  <div class="row receipt-total">
     <span>GENEL TOPLAM:</span>
     <span>₺${Number(doc.grand_total || 0).toFixed(2)}</span>
   </div>
@@ -166,8 +182,8 @@ export const printThermalReceipt = async (doc: any) => {
   ${instagramInfo}
   ${customNote}
   <div class="double-divider"></div>
-  ${design?.show_qr_code !== false ? `<div class="center" style="font-size:9px;word-break:break-all;">ETTN: ${doc.ettn || ''}</div>` : ''}
-  <div class="center bold" style="font-size:10px;margin-top:4px;">${footerMsg}</div>
+  ${design?.show_qr_code !== false ? `<div class="center receipt-sub" style="word-break:break-all;">ETTN: ${doc.ettn || ''}</div>` : ''}
+  <div class="center receipt-sub" style="font-weight:700;margin-top:4px;">${footerMsg}</div>
   ${footerSub}
 </body>
 </html>`;

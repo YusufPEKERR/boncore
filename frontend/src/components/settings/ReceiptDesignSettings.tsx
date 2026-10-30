@@ -1,17 +1,30 @@
 import React, { useState } from 'react';
 import { 
   Printer, FileText, CheckCircle2, RotateCcw, Eye, Sparkles, 
-  Wifi, Instagram, Phone, MapPin, Hash, Users, Clock, QrCode, Sliders, Percent
+  Wifi, Instagram, MapPin, Hash, Users, Clock, QrCode, Sliders, 
+  Percent, Type, Bold
 } from 'lucide-react';
 import { printThermalReceipt } from '../fiscal/FiscalModal';
 import { sound } from '../../services/sound';
+
+export type FontWeight = 'normal' | 'semibold' | 'bold' | 'black';
 
 export interface ReceiptDesignConfig {
   header_title: string;
   header_sub: string;
   show_logo: boolean;
   paper_width: '80mm' | '58mm';
-  font_size: 'small' | 'medium' | 'large';
+
+  // Tipografi (Yazı Boyutları ve Kalınlıkları)
+  header_size: 'medium' | 'large' | 'xlarge';       // Büyük Yazı / Başlık Boyutu
+  header_weight: FontWeight;                         // Büyük Yazı Kalınlığı
+  body_size: 'small' | 'medium' | 'large';           // Gövde / Ürün Listesi Boyutu
+  body_weight: FontWeight;                           // Gövde / Ürün Listesi Kalınlığı
+  sub_size: 'xs' | 'small' | 'normal';               // Alt Yazı / Dipnot Boyutu
+  sub_weight: FontWeight;                            // Alt Yazı Kalınlığı
+  total_weight: 'bold' | 'extrabold' | 'black';      // Genel Toplam Kalınlığı
+
+  font_size?: 'small' | 'medium' | 'large';          // Geriye dönük uyumluluk
   show_order_no: boolean;
   show_table_name: boolean;
   show_waiter_name: boolean;
@@ -33,6 +46,13 @@ export const defaultReceiptDesign: ReceiptDesignConfig = {
   header_sub: 'Lezzet & Keyif Noktası',
   show_logo: true,
   paper_width: '80mm',
+  header_size: 'large',
+  header_weight: 'bold',
+  body_size: 'medium',
+  body_weight: 'normal',
+  sub_size: 'small',
+  sub_weight: 'normal',
+  total_weight: 'black',
   font_size: 'medium',
   show_order_no: true,
   show_table_name: true,
@@ -71,9 +91,22 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
 }) => {
   const [printSuccess, setPrintSuccess] = useState<boolean>(false);
 
+  // Fallbacks for older cached configs
+  const currentDesign: ReceiptDesignConfig = {
+    ...defaultReceiptDesign,
+    ...design,
+    header_size: design.header_size || 'large',
+    header_weight: design.header_weight || 'bold',
+    body_size: design.body_size || 'medium',
+    body_weight: design.body_weight || 'normal',
+    sub_size: design.sub_size || 'small',
+    sub_weight: design.sub_weight || 'normal',
+    total_weight: design.total_weight || 'black'
+  };
+
   const handleUpdate = <K extends keyof ReceiptDesignConfig>(key: K, value: ReceiptDesignConfig[K]) => {
     onChange({
-      ...design,
+      ...currentDesign,
       [key]: value
     });
   };
@@ -85,13 +118,59 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
     }
   };
 
+  // Helper values for preview
+  const getHeaderFontSize = () => {
+    if (currentDesign.header_size === 'xlarge') return '17px';
+    if (currentDesign.header_size === 'medium') return '13px';
+    return '15px';
+  };
+
+  const getHeaderFontWeight = () => {
+    if (currentDesign.header_weight === 'black') return '900';
+    if (currentDesign.header_weight === 'bold') return '700';
+    if (currentDesign.header_weight === 'semibold') return '600';
+    return '400';
+  };
+
+  const getBodyFontSize = () => {
+    if (currentDesign.body_size === 'large') return '12.5px';
+    if (currentDesign.body_size === 'small') return '10px';
+    return '11px';
+  };
+
+  const getBodyFontWeight = () => {
+    if (currentDesign.body_weight === 'black') return '900';
+    if (currentDesign.body_weight === 'bold') return '700';
+    if (currentDesign.body_weight === 'semibold') return '600';
+    return '400';
+  };
+
+  const getSubFontSize = () => {
+    if (currentDesign.sub_size === 'normal') return '10.5px';
+    if (currentDesign.sub_size === 'xs') return '8.5px';
+    return '9.5px';
+  };
+
+  const getSubFontWeight = () => {
+    if (currentDesign.sub_weight === 'black') return '900';
+    if (currentDesign.sub_weight === 'bold') return '700';
+    if (currentDesign.sub_weight === 'semibold') return '600';
+    return '400';
+  };
+
+  const getTotalWeight = () => {
+    if (currentDesign.total_weight === 'bold') return '700';
+    if (currentDesign.total_weight === 'extrabold') return '800';
+    return '900';
+  };
+
   // Sample data for preview and test printing
   const sampleDoc = {
     doc_no: 'EAD20261030000124',
     ettn: 'a9b2c3d4-e5f6-7890-abcd-ef1234567890',
     date: new Date().toLocaleDateString('tr-TR'),
     time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-    company_title: design.header_title || restaurantInfo?.name || 'BONCORE RESTORAN',
+    company_title: currentDesign.header_title || restaurantInfo?.name || 'BONCORE RESTORAN',
     vkn: restaurantInfo?.taxNumber || '3779901422',
     table_name: 'Bahçe 04',
     waiter_name: 'Ahmet K.',
@@ -113,7 +192,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
       { method: 'Nakit', amount: 470.00 },
       { method: 'Kredi Kartı', amount: 500.00 }
     ],
-    receipt_design: design
+    receipt_design: currentDesign
   };
 
   const handleTestPrint = async () => {
@@ -126,6 +205,13 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
       console.error('Test print failed', e);
     }
   };
+
+  const weightOptions: { id: FontWeight; label: string; tag: string }[] = [
+    { id: 'normal', label: 'Normal', tag: '400' },
+    { id: 'semibold', label: 'Yarı Kalın', tag: '600' },
+    { id: 'bold', label: 'Kalın', tag: '700' },
+    { id: 'black', label: 'Ekstra Kalın', tag: '900' }
+  ];
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -141,7 +227,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-600 text-white font-black uppercase">Canlı Önizlemeli</span>
             </h3>
             <p className="text-xs text-slate-600 dark:text-slate-300">
-              Yazıcıdan çıkacak adisyon fişlerinin kağıt genişliği, yazı boyutu, başlık, logo, QR kod ve alt mesajlarını buradan özelleştirin.
+              Fiş boyutu, büyük başlıklar, alt yazılar ve her boyuttaki yazının kalınlığını (font weight) ayrı ayrı belirleyin.
             </p>
           </div>
         </div>
@@ -176,92 +262,291 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
         </div>
       )}
 
-      {/* Main Two-Column Layout: Left Controls (7 cols) & Right Live Preview (5 cols) */}
+      {/* Main Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
         {/* ================= LEFT CONTROLS (7 cols) ================= */}
         <div className="lg:col-span-7 space-y-5">
 
-          {/* 1. Kağıt & Yazı Tipi Formatı */}
+          {/* 1. Kağıt Genişliği */}
           <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
             <div className="flex items-center gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800">
               <Sliders className="w-4 h-4 text-brand-600 dark:text-emerald-400" />
               <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                1. Kağıt & Yazı Formatı
+                1. Kağıt Genişliği
               </h4>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Paper Width Selection */}
-              <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
-                  Termal Kağıt Genişliği:
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { sound.beep(); handleUpdate('paper_width', '80mm'); }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
-                      design.paper_width === '80mm'
-                        ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20'
-                        : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
-                    }`}
-                  >
-                    <span className="text-sm font-black">80 mm</span>
-                    <span className="text-[10px] font-normal opacity-80">Standart POS Rulo</span>
-                  </button>
+            <div>
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">
+                Termal Kağıt Rulo Genişliği:
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => { sound.beep(); handleUpdate('paper_width', '80mm'); }}
+                  className={`py-2.5 px-4 rounded-xl border text-xs font-bold transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                    currentDesign.paper_width === '80mm'
+                      ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20'
+                      : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <span className="text-sm font-black">80 mm Termal Rulo</span>
+                  <span className="text-[10px] font-normal opacity-80">Standart Masaüstü POS & Mutfak Yazıcısı</span>
+                </button>
 
-                  <button
-                    type="button"
-                    onClick={() => { sound.beep(); handleUpdate('paper_width', '58mm'); }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
-                      design.paper_width === '58mm'
-                        ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20'
-                        : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
-                    }`}
-                  >
-                    <span className="text-sm font-black">58 mm</span>
-                    <span className="text-[10px] font-normal opacity-80">Kompakt / Mobil</span>
-                  </button>
+                <button
+                  type="button"
+                  onClick={() => { sound.beep(); handleUpdate('paper_width', '58mm'); }}
+                  className={`py-2.5 px-4 rounded-xl border text-xs font-bold transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                    currentDesign.paper_width === '58mm'
+                      ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20'
+                      : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <span className="text-sm font-black">58 mm Termal Rulo</span>
+                  <span className="text-[10px] font-normal opacity-80">Kompakt Mobil & Bluetooth El Terminali</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Tipografi: Büyük Yazı, Gövde ve Alt Yazı Boyut & Kalınlık Seçimleri */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-5">
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Type className="w-4 h-4 text-brand-600 dark:text-emerald-400" />
+                <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                  2. Yazı Boyutları & Kalınlıkları (Tipografi)
+                </h4>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                Ayrı Ayrı Ayarlanabilir
+              </span>
+            </div>
+
+            {/* A) BÜYÜK YAZI / BAŞLIK */}
+            <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-black text-slate-800 dark:text-slate-200">
+                  <Bold className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Büyük Yazı (İşletme Adı & Başlıklar)</span>
                 </div>
+                <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                  {currentDesign.header_size.toUpperCase()} • {currentDesign.header_weight.toUpperCase()}
+                </span>
               </div>
 
-              {/* Font Size Selection */}
+              {/* Header Size */}
               <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
-                  Fiş Yazı Boyutu:
-                </label>
-                <div className="grid grid-cols-3 gap-1.5">
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5">Yazı Boyutu:</span>
+                <div className="grid grid-cols-3 gap-2">
                   {[
-                    { id: 'small', label: 'Küçük', desc: 'Sıkışık' },
-                    { id: 'medium', label: 'Standart', desc: 'Önerilen' },
-                    { id: 'large', label: 'Büyük', desc: 'Okunaklı' }
+                    { id: 'medium', label: 'Normal', px: '13px' },
+                    { id: 'large', label: 'Büyük (Önerilen)', px: '15px' },
+                    { id: 'xlarge', label: 'Çok Büyük', px: '17px' }
                   ].map((s) => (
                     <button
                       key={s.id}
                       type="button"
-                      onClick={() => { sound.beep(); handleUpdate('font_size', s.id as any); }}
-                      className={`py-2 px-1.5 rounded-xl border text-xs font-bold transition cursor-pointer flex flex-col items-center justify-center ${
-                        design.font_size === s.id
-                          ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20'
-                          : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+                      onClick={() => { sound.beep(); handleUpdate('header_size', s.id as any); }}
+                      className={`py-1.5 px-2 rounded-lg border text-xs font-bold transition cursor-pointer flex flex-col items-center ${
+                        currentDesign.header_size === s.id
+                          ? 'border-emerald-600 bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20 shadow-xs'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
                       }`}
                     >
                       <span>{s.label}</span>
-                      <span className="text-[9px] font-normal opacity-70">{s.desc}</span>
+                      <span className="text-[9px] font-mono opacity-70">{s.px}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Header Weight */}
+              <div>
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5">Yazı Kalınlığı:</span>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {weightOptions.map((w) => (
+                    <button
+                      key={w.id}
+                      type="button"
+                      onClick={() => { sound.beep(); handleUpdate('header_weight', w.id); }}
+                      className={`py-1.5 px-1 rounded-lg border text-xs transition cursor-pointer text-center ${
+                        currentDesign.header_weight === w.id
+                          ? 'border-emerald-600 bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20 font-black shadow-xs'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 font-normal'
+                      }`}
+                      style={{ fontWeight: w.id === 'black' ? 900 : w.id === 'bold' ? 700 : w.id === 'semibold' ? 600 : 400 }}
+                    >
+                      <span className="block text-[11px]">{w.label}</span>
+                      <span className="text-[9px] font-mono opacity-70">({w.tag})</span>
                     </button>
                   ))}
                 </div>
               </div>
             </div>
+
+            {/* B) GÖVDE YAZILARI (Ürünler, Fiyatlar, Kalemler) */}
+            <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-black text-slate-800 dark:text-slate-200">
+                  <FileText className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Gövde Yazıları (Ürün Adları, Miktar & Fiyatlar)</span>
+                </div>
+                <span className="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400">
+                  {currentDesign.body_size.toUpperCase()} • {currentDesign.body_weight.toUpperCase()}
+                </span>
+              </div>
+
+              {/* Body Size */}
+              <div>
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5">Yazı Boyutu:</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'small', label: 'Küçük', px: '10px' },
+                    { id: 'medium', label: 'Standart', px: '11px' },
+                    { id: 'large', label: 'Büyük', px: '12.5px' }
+                  ].map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => { sound.beep(); handleUpdate('body_size', s.id as any); }}
+                      className={`py-1.5 px-2 rounded-lg border text-xs font-bold transition cursor-pointer flex flex-col items-center ${
+                        currentDesign.body_size === s.id
+                          ? 'border-blue-600 bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/20 shadow-xs'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>{s.label}</span>
+                      <span className="text-[9px] font-mono opacity-70">{s.px}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Body Weight */}
+              <div>
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5">Yazı Kalınlığı:</span>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {weightOptions.map((w) => (
+                    <button
+                      key={w.id}
+                      type="button"
+                      onClick={() => { sound.beep(); handleUpdate('body_weight', w.id); }}
+                      className={`py-1.5 px-1 rounded-lg border text-xs transition cursor-pointer text-center ${
+                        currentDesign.body_weight === w.id
+                          ? 'border-blue-600 bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/20 font-black shadow-xs'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 font-normal'
+                      }`}
+                      style={{ fontWeight: w.id === 'black' ? 900 : w.id === 'bold' ? 700 : w.id === 'semibold' ? 600 : 400 }}
+                    >
+                      <span className="block text-[11px]">{w.label}</span>
+                      <span className="text-[9px] font-mono opacity-70">({w.tag})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* C) ALT YAZI & DİPNOTLAR (Slogan, Tarih, VKN, Wi-Fi, Fiş Altı Mesajı) */}
+            <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-black text-slate-800 dark:text-slate-200">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Alt Yazı & Dipnotlar (Açıklama, Tarih, VKN, Wi-Fi, Teşekkür)</span>
+                </div>
+                <span className="text-[10px] font-mono font-bold text-purple-600 dark:text-purple-400">
+                  {currentDesign.sub_size.toUpperCase()} • {currentDesign.sub_weight.toUpperCase()}
+                </span>
+              </div>
+
+              {/* Sub Size */}
+              <div>
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5">Yazı Boyutu:</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'xs', label: 'Minik', px: '8.5px' },
+                    { id: 'small', label: 'Kompakt (Önerilen)', px: '9.5px' },
+                    { id: 'normal', label: 'Standart', px: '10.5px' }
+                  ].map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => { sound.beep(); handleUpdate('sub_size', s.id as any); }}
+                      className={`py-1.5 px-2 rounded-lg border text-xs font-bold transition cursor-pointer flex flex-col items-center ${
+                        currentDesign.sub_size === s.id
+                          ? 'border-purple-600 bg-white dark:bg-slate-900 text-purple-700 dark:text-purple-300 ring-2 ring-purple-500/20 shadow-xs'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>{s.label}</span>
+                      <span className="text-[9px] font-mono opacity-70">{s.px}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sub Weight */}
+              <div>
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5">Yazı Kalınlığı:</span>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {weightOptions.map((w) => (
+                    <button
+                      key={w.id}
+                      type="button"
+                      onClick={() => { sound.beep(); handleUpdate('sub_weight', w.id); }}
+                      className={`py-1.5 px-1 rounded-lg border text-xs transition cursor-pointer text-center ${
+                        currentDesign.sub_weight === w.id
+                          ? 'border-purple-600 bg-white dark:bg-slate-900 text-purple-700 dark:text-purple-300 ring-2 ring-purple-500/20 font-black shadow-xs'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 font-normal'
+                      }`}
+                      style={{ fontWeight: w.id === 'black' ? 900 : w.id === 'bold' ? 700 : w.id === 'semibold' ? 600 : 400 }}
+                    >
+                      <span className="block text-[11px]">{w.label}</span>
+                      <span className="text-[9px] font-mono opacity-70">({w.tag})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* D) GENEL TOPLAM KALINLIĞI */}
+            <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+              <div>
+                <div className="text-xs font-black text-slate-800 dark:text-slate-200">Genel Toplam Tutar Kalınlığı</div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">Fişteki "GENEL TOPLAM" satırının vurgu seviyesi</div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {[
+                  { id: 'bold', label: 'Kalın (700)' },
+                  { id: 'extrabold', label: 'Çok Kalın (800)' },
+                  { id: 'black', label: 'Ultra Siyah (900)' }
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => { sound.beep(); handleUpdate('total_weight', t.id as any); }}
+                    className={`py-1.5 px-2.5 rounded-lg border text-xs transition cursor-pointer ${
+                      currentDesign.total_weight === t.id
+                        ? 'border-emerald-600 bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20 font-black shadow-xs'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
-          {/* 2. Başlık ve Üst Bilgiler */}
+          {/* 3. Başlık Metni & Logo */}
           <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
             <div className="flex items-center gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800">
               <FileText className="w-4 h-4 text-brand-600 dark:text-emerald-400" />
               <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                2. Fiş Başlığı & Üst Bilgiler
+                3. Fiş Başlığı & Üst Bilgiler
               </h4>
             </div>
 
@@ -272,7 +557,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                 </label>
                 <input
                   type="text"
-                  value={design.header_title}
+                  value={currentDesign.header_title}
                   onChange={(e) => handleUpdate('header_title', e.target.value)}
                   placeholder={restaurantInfo?.name || "BONCORE RESTORAN"}
                   className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold focus:outline-none focus:border-emerald-500"
@@ -285,7 +570,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                 </label>
                 <input
                   type="text"
-                  value={design.header_sub}
+                  value={currentDesign.header_sub}
                   onChange={(e) => handleUpdate('header_sub', e.target.value)}
                   placeholder="Lezzet & Keyif Noktası"
                   className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
@@ -301,7 +586,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={design.show_logo}
+                    checked={currentDesign.show_logo}
                     onChange={(e) => handleUpdate('show_logo', e.target.checked)}
                     className="sr-only peer"
                   />
@@ -311,12 +596,12 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
             </div>
           </div>
 
-          {/* 3. Fiş Üzerinde Gösterilecek Alanlar (Toggles) */}
+          {/* 4. Görüntülenecek Alanlar (Toggles) */}
           <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
             <div className="flex items-center gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800">
               <Eye className="w-4 h-4 text-brand-600 dark:text-emerald-400" />
               <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                3. Görüntülenecek Alanlar
+                4. Görüntülenecek Alanlar
               </h4>
             </div>
 
@@ -332,7 +617,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                 { key: 'show_qr_code', label: 'GİB / E-Adisyon QR Kodu', icon: QrCode, desc: 'Mali karekod alanı' },
               ].map((item) => {
                 const IconComponent = item.icon;
-                const isChecked = Boolean(design[item.key as keyof ReceiptDesignConfig]);
+                const isChecked = Boolean(currentDesign[item.key as keyof ReceiptDesignConfig]);
 
                 return (
                   <div 
@@ -359,7 +644,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                     <input
                       type="checkbox"
                       checked={isChecked}
-                      onChange={() => {}} // Controlled by container onClick
+                      onChange={() => {}}
                       className="w-4 h-4 text-emerald-600 rounded-sm focus:ring-emerald-500"
                     />
                   </div>
@@ -368,12 +653,12 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
             </div>
           </div>
 
-          {/* 4. Fiş Altı (Footer) & İletişim Notları */}
+          {/* 5. Fiş Altı (Footer) & İletişim Notları */}
           <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
             <div className="flex items-center gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800">
               <Sparkles className="w-4 h-4 text-brand-600 dark:text-emerald-400" />
               <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                4. Fiş Altı (Footer) & İletişim Bilgileri
+                5. Fiş Altı (Footer) & İletişim Bilgileri
               </h4>
             </div>
 
@@ -384,7 +669,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                 </label>
                 <input
                   type="text"
-                  value={design.footer_message}
+                  value={currentDesign.footer_message}
                   onChange={(e) => handleUpdate('footer_message', e.target.value)}
                   placeholder="TEŞEKKÜR EDERİZ • AFİYET OLSUN!"
                   className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold focus:outline-none focus:border-emerald-500"
@@ -397,7 +682,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                 </label>
                 <input
                   type="text"
-                  value={design.footer_sub}
+                  value={currentDesign.footer_sub}
                   onChange={(e) => handleUpdate('footer_sub', e.target.value)}
                   placeholder="Mali değeri yoktur, bilgilendirme fişidir."
                   className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
@@ -412,7 +697,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                   </label>
                   <input
                     type="text"
-                    value={design.wifi_name}
+                    value={currentDesign.wifi_name}
                     onChange={(e) => handleUpdate('wifi_name', e.target.value)}
                     placeholder="BonCore_Guest"
                     className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
@@ -426,7 +711,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                   </label>
                   <input
                     type="text"
-                    value={design.wifi_password}
+                    value={currentDesign.wifi_password}
                     onChange={(e) => handleUpdate('wifi_password', e.target.value)}
                     placeholder="afiyetolsun"
                     className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
@@ -441,7 +726,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                 </label>
                 <input
                   type="text"
-                  value={design.instagram}
+                  value={currentDesign.instagram}
                   onChange={(e) => handleUpdate('instagram', e.target.value)}
                   placeholder="@boncore_restoran"
                   className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
@@ -454,7 +739,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                 </label>
                 <textarea
                   rows={2}
-                  value={design.custom_note}
+                  value={currentDesign.custom_note}
                   onChange={(e) => handleUpdate('custom_note', e.target.value)}
                   placeholder="Ör: Hafta içi her gün 12:00-15:00 arası tatlılarda %20 indirim!"
                   className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 resize-none"
@@ -471,8 +756,8 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               <Eye className="w-4 h-4 text-emerald-600" />
               <span>CANLI TERMAL FİŞ ÖNİZLEMESİ</span>
             </div>
-            <span className="text-[11px] font-mono font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
-              {design.paper_width} • {design.font_size === 'small' ? 'Küçük' : design.font_size === 'large' ? 'Büyük' : 'Standart'}
+            <span className="text-[11px] font-mono font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+              {currentDesign.paper_width}
             </span>
           </div>
 
@@ -480,15 +765,14 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
           <div className="bg-slate-200 dark:bg-slate-800/80 p-3 sm:p-5 rounded-2xl flex justify-center shadow-inner overflow-hidden">
             <div 
               style={{
-                width: design.paper_width === '58mm' ? '250px' : '330px',
-                fontSize: design.font_size === 'small' ? '10px' : design.font_size === 'large' ? '13px' : '11px',
+                width: currentDesign.paper_width === '58mm' ? '250px' : '330px',
                 lineHeight: '1.35'
               }}
               className="bg-white text-slate-900 font-mono p-4 sm:p-5 rounded-sm shadow-xl transition-all duration-300 select-text border-t-4 border-dashed border-slate-300 relative"
             >
-              {/* Paper Top Sawtooth Effect */}
+              {/* Top Header & Business Title */}
               <div className="text-center space-y-1 mb-2">
-                {design.show_logo && (
+                {currentDesign.show_logo && (
                   <div className="flex justify-center mb-1">
                     <img 
                       src="/logo.png" 
@@ -498,43 +782,93 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                     />
                   </div>
                 )}
-                <div className="font-black text-sm uppercase tracking-wide">
-                  {design.header_title || restaurantInfo?.name || 'BONCORE RESTORAN'}
+                
+                {/* Büyük Yazı / Başlık */}
+                <div 
+                  style={{ 
+                    fontSize: getHeaderFontSize(),
+                    fontWeight: getHeaderFontWeight()
+                  }}
+                  className="uppercase tracking-wide"
+                >
+                  {currentDesign.header_title || restaurantInfo?.name || 'BONCORE RESTORAN'}
                 </div>
-                {design.header_sub && (
-                  <div className="text-[10px] text-slate-600 font-medium">{design.header_sub}</div>
+
+                {/* Alt Yazı: Slogan */}
+                {currentDesign.header_sub && (
+                  <div 
+                    style={{ 
+                      fontSize: getSubFontSize(),
+                      fontWeight: getSubFontWeight()
+                    }}
+                    className="text-slate-600"
+                  >
+                    {currentDesign.header_sub}
+                  </div>
                 )}
-                {design.show_address_phone && (
-                  <div className="text-[9px] text-slate-500 pt-0.5">
+
+                {/* Alt Yazı: Adres & Telefon */}
+                {currentDesign.show_address_phone && (
+                  <div 
+                    style={{ 
+                      fontSize: getSubFontSize(),
+                      fontWeight: getSubFontWeight()
+                    }}
+                    className="text-slate-500 pt-0.5"
+                  >
                     {restaurantInfo?.address || 'Moda Cad. No:84 Kadıköy / İstanbul'}
                     <br />
                     Tel: {restaurantInfo?.phone || '+90 216 444 37 79'}
                   </div>
                 )}
-                <div className="text-[9px] text-slate-600">
+
+                {/* Alt Yazı: VKN */}
+                <div 
+                  style={{ 
+                    fontSize: getSubFontSize(),
+                    fontWeight: getSubFontWeight()
+                  }}
+                  className="text-slate-600"
+                >
                   VKN: {restaurantInfo?.taxNumber || '3779901422'} • E-ADİSYON FİŞİ
                 </div>
-                {design.show_order_no && (
-                  <div className="text-[9px] text-slate-500">Belge No: EAD20261030000124</div>
+
+                {/* Alt Yazı: Belge No */}
+                {currentDesign.show_order_no && (
+                  <div 
+                    style={{ 
+                      fontSize: getSubFontSize(),
+                      fontWeight: getSubFontWeight()
+                    }}
+                    className="text-slate-500"
+                  >
+                    Belge No: EAD20261030000124
+                  </div>
                 )}
               </div>
 
               {/* Double Divider */}
               <div className="border-t-2 border-slate-900 my-2" />
 
-              {/* Meta Info Rows */}
-              <div className="space-y-0.5 text-[10px]">
-                {design.show_table_name && (
+              {/* Meta Info Rows (Alt Yazı Boyutu ve Kalınlığı ile) */}
+              <div 
+                style={{ 
+                  fontSize: getSubFontSize(),
+                  fontWeight: getSubFontWeight()
+                }}
+                className="space-y-0.5"
+              >
+                {currentDesign.show_table_name && (
                   <div className="flex justify-between">
                     <span><b>Masa:</b> Bahçe 04</span>
-                    {design.show_date_time && <span><b>Tarih:</b> {new Date().toLocaleDateString('tr-TR')}</span>}
+                    {currentDesign.show_date_time && <span><b>Tarih:</b> {new Date().toLocaleDateString('tr-TR')}</span>}
                   </div>
                 )}
                 <div className="flex justify-between">
-                  {design.show_waiter_name && <span><b>Garson:</b> Ahmet K.</span>}
-                  {design.show_date_time && <span><b>Saat:</b> {new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>}
+                  {currentDesign.show_waiter_name && <span><b>Garson:</b> Ahmet K.</span>}
+                  {currentDesign.show_date_time && <span><b>Saat:</b> {new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>}
                 </div>
-                {design.show_waiter_name && (
+                {currentDesign.show_waiter_name && (
                   <div className="flex justify-between">
                     <span><b>Kasiyer:</b> Kasiyer</span>
                   </div>
@@ -545,44 +879,56 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               <div className="border-t border-dashed border-slate-400 my-2" />
 
               {/* Items Table Header */}
-              <div className="flex justify-between font-bold border-b border-slate-300 pb-1 text-[10px]">
+              <div 
+                style={{ 
+                  fontSize: getSubFontSize(),
+                  fontWeight: '700'
+                }}
+                className="flex justify-between border-b border-slate-300 pb-1"
+              >
                 <span style={{ width: '45%' }}>ÜRÜN</span>
                 <span style={{ width: '15%', textAlign: 'center' }}>ADET</span>
                 <span style={{ width: '20%', textAlign: 'right' }}>BİRİM</span>
                 <span style={{ width: '20%', textAlign: 'right' }}>TUTAR</span>
               </div>
 
-              {/* Sample Items */}
-              <div className="space-y-1.5 py-1 text-[10px]">
+              {/* Sample Items with Body Size & Weight */}
+              <div 
+                style={{ 
+                  fontSize: getBodyFontSize(),
+                  fontWeight: getBodyFontWeight()
+                }}
+                className="space-y-1.5 py-1"
+              >
                 <div>
-                  <div className="flex justify-between font-semibold">
+                  <div className="flex justify-between">
                     <span style={{ width: '45%' }}>Dana Antrikot</span>
                     <span style={{ width: '15%', textAlign: 'center' }}>1</span>
                     <span style={{ width: '20%', textAlign: 'right' }}>480.00</span>
-                    <span style={{ width: '20%', textAlign: 'right' }} className="font-bold">480.00</span>
+                    <span style={{ width: '20%', textAlign: 'right' }}>480.00</span>
                   </div>
-                  <div className="text-[9px] text-slate-500 pl-1">(Orta Pişmiş)</div>
+                  <div style={{ fontSize: getSubFontSize() }} className="text-slate-500 pl-1">(Orta Pişmiş)</div>
                 </div>
 
-                <div className="flex justify-between font-semibold">
+                <div className="flex justify-between">
                   <span style={{ width: '45%' }}>Gavurdağı Salata</span>
                   <span style={{ width: '15%', textAlign: 'center' }}>1</span>
                   <span style={{ width: '20%', textAlign: 'right' }}>160.00</span>
-                  <span style={{ width: '20%', textAlign: 'right' }} className="font-bold">160.00</span>
+                  <span style={{ width: '20%', textAlign: 'right' }}>160.00</span>
                 </div>
 
-                <div className="flex justify-between font-semibold">
+                <div className="flex justify-between">
                   <span style={{ width: '45%' }}>Yayık Ayranı</span>
                   <span style={{ width: '15%', textAlign: 'center' }}>2</span>
                   <span style={{ width: '20%', textAlign: 'right' }}>45.00</span>
-                  <span style={{ width: '20%', textAlign: 'right' }} className="font-bold">90.00</span>
+                  <span style={{ width: '20%', textAlign: 'right' }}>90.00</span>
                 </div>
 
-                <div className="flex justify-between font-semibold">
+                <div className="flex justify-between">
                   <span style={{ width: '45%' }}>Fıstıklı Katmer</span>
                   <span style={{ width: '15%', textAlign: 'center' }}>1</span>
                   <span style={{ width: '20%', textAlign: 'right' }}>220.00</span>
-                  <span style={{ width: '20%', textAlign: 'right' }} className="font-bold">220.00</span>
+                  <span style={{ width: '20%', textAlign: 'right' }}>220.00</span>
                 </div>
               </div>
 
@@ -590,7 +936,13 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               <div className="border-t border-dashed border-slate-400 my-2" />
 
               {/* Financial Subtotals */}
-              <div className="space-y-0.5 text-[10px]">
+              <div 
+                style={{ 
+                  fontSize: getSubFontSize(),
+                  fontWeight: getSubFontWeight()
+                }}
+                className="space-y-0.5"
+              >
                 <div className="flex justify-between">
                   <span>Ara Toplam:</span>
                   <b>₺950.00</b>
@@ -603,8 +955,8 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
                   <span>İndirim:</span>
                   <b>-₺50.00</b>
                 </div>
-                {design.show_vat_breakdown && (
-                  <div className="flex justify-between text-[9px] text-slate-500">
+                {currentDesign.show_vat_breakdown && (
+                  <div className="flex justify-between text-slate-500">
                     <span>KDV (%10 Dahil):</span>
                     <span>₺88.18</span>
                   </div>
@@ -613,16 +965,28 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
 
               {/* Grand Total */}
               <div className="border-t-2 border-slate-900 my-2" />
-              <div className="flex justify-between text-sm font-black py-0.5">
+              <div 
+                style={{ 
+                  fontSize: '14px',
+                  fontWeight: getTotalWeight()
+                }}
+                className="flex justify-between py-0.5"
+              >
                 <span>GENEL TOPLAM:</span>
                 <span>₺970.00</span>
               </div>
 
               {/* Payment Details */}
-              {design.show_payment_details && (
+              {currentDesign.show_payment_details && (
                 <>
                   <div className="border-t border-dashed border-slate-400 my-1.5" />
-                  <div className="space-y-0.5 text-[10px]">
+                  <div 
+                    style={{ 
+                      fontSize: getSubFontSize(),
+                      fontWeight: getSubFontWeight()
+                    }}
+                    className="space-y-0.5"
+                  >
                     <div className="flex justify-between font-bold">
                       <span>✓ ÖDEME (Nakit):</span>
                       <span>₺470.00</span>
@@ -636,23 +1000,29 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               )}
 
               {/* Wi-Fi & Social Media */}
-              {(design.wifi_name || design.instagram || design.custom_note) && (
+              {(currentDesign.wifi_name || currentDesign.instagram || currentDesign.custom_note) && (
                 <>
                   <div className="border-t border-dashed border-slate-300 my-2" />
-                  <div className="text-[9px] text-center space-y-0.5 bg-slate-50 p-1.5 rounded-sm border border-slate-200">
-                    {design.wifi_name && (
+                  <div 
+                    style={{ 
+                      fontSize: getSubFontSize(),
+                      fontWeight: getSubFontWeight()
+                    }}
+                    className="text-center space-y-0.5 bg-slate-50 p-1.5 rounded-sm border border-slate-200"
+                  >
+                    {currentDesign.wifi_name && (
                       <div>
-                        📶 <b>Wi-Fi:</b> {design.wifi_name} {design.wifi_password ? `(Şifre: ${design.wifi_password})` : ''}
+                        📶 <b>Wi-Fi:</b> {currentDesign.wifi_name} {currentDesign.wifi_password ? `(Şifre: ${currentDesign.wifi_password})` : ''}
                       </div>
                     )}
-                    {design.instagram && (
+                    {currentDesign.instagram && (
                       <div>
-                        📷 <b>Instagram:</b> {design.instagram}
+                        📷 <b>Instagram:</b> {currentDesign.instagram}
                       </div>
                     )}
-                    {design.custom_note && (
+                    {currentDesign.custom_note && (
                       <div className="italic text-slate-600 mt-0.5">
-                        {design.custom_note}
+                        {currentDesign.custom_note}
                       </div>
                     )}
                   </div>
@@ -660,35 +1030,42 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               )}
 
               {/* QR Code Area */}
-              {design.show_qr_code && (
+              {currentDesign.show_qr_code && (
                 <div className="my-3 text-center flex flex-col items-center">
                   <div className="w-16 h-16 border-2 border-slate-900 p-1 bg-white flex items-center justify-center">
                     <QrCode className="w-14 h-14 text-slate-900" />
                   </div>
-                  <div className="text-[8px] text-slate-500 font-mono mt-0.5 break-all">
+                  <div style={{ fontSize: getSubFontSize() }} className="text-slate-500 font-mono mt-0.5 break-all">
                     ETTN: a9b2c3d4-e5f6-7890-abcd-ef1234567890
                   </div>
                 </div>
               )}
 
-              {/* Footer Messages */}
+              {/* Footer Messages with Sub Size and Weight */}
               <div className="border-t-2 border-slate-900 my-2" />
               <div className="text-center space-y-0.5 pt-1">
-                {design.footer_message && (
-                  <div className="font-black text-[10px] tracking-wide uppercase">
-                    {design.footer_message}
+                {currentDesign.footer_message && (
+                  <div 
+                    style={{ 
+                      fontSize: getSubFontSize(),
+                      fontWeight: currentDesign.sub_weight === 'normal' ? '700' : getSubFontWeight()
+                    }}
+                    className="tracking-wide uppercase"
+                  >
+                    {currentDesign.footer_message}
                   </div>
                 )}
-                {design.footer_sub && (
-                  <div className="text-[9px] text-slate-500">
-                    {design.footer_sub}
+                {currentDesign.footer_sub && (
+                  <div 
+                    style={{ 
+                      fontSize: getSubFontSize(),
+                      fontWeight: getSubFontWeight()
+                    }}
+                    className="text-slate-500"
+                  >
+                    {currentDesign.footer_sub}
                   </div>
                 )}
-              </div>
-
-              {/* Paper Bottom Jagged Teeth Effect */}
-              <div className="absolute -bottom-2 left-0 right-0 h-2 bg-transparent overflow-hidden">
-                <div className="w-full h-full bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-transparent via-transparent to-slate-200" />
               </div>
             </div>
           </div>
