@@ -41,14 +41,26 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       }));
   }, [categories]);
 
-  const [activeCategoryId, setActiveCategoryId] = useState<number>(visibleCategories[0]?.id || categories[0]?.id || 1);
+  const allOrderableProducts = useMemo(() => {
+    const map = new Map<number, Product>();
+    visibleCategories.forEach(c => {
+      (c.products || []).forEach(p => {
+        if (!map.has(p.id) && (p.show_in_pos ?? true) !== false) {
+          map.set(p.id, p);
+        }
+      });
+    });
+    return Array.from(map.values());
+  }, [visibleCategories]);
+
+  const [activeCategoryId, setActiveCategoryId] = useState<number | 'ALL'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<Product[] | null>(null);
   const [posSortMode, setPosSortMode] = useState<'custom' | 'az' | 'za'>('custom');
 
   useEffect(() => {
-    if (visibleCategories.length > 0 && !visibleCategories.some(c => c.id === activeCategoryId)) {
-      setActiveCategoryId(visibleCategories[0].id);
+    if (activeCategoryId !== 'ALL' && visibleCategories.length > 0 && !visibleCategories.some(c => c.id === activeCategoryId)) {
+      setActiveCategoryId('ALL');
     }
   }, [visibleCategories, activeCategoryId]);
 
@@ -187,6 +199,9 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
   // Load existing order
   useEffect(() => {
+    setActiveCategoryId('ALL');
+    setSearchQuery('');
+    setSearchResults(null);
     setDiscountPercent(0);
     if (activeTable?.active_order?.id && activeTable.status !== 'empty') {
       loadOrder(activeTable.active_order.id);
@@ -265,9 +280,20 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     setSearchResults(matched);
   }, [searchQuery, visibleCategories]);
 
-  const currentCategory = visibleCategories.find(c => c.id === activeCategoryId) || visibleCategories[0];
+  const currentCategory = activeCategoryId === 'ALL'
+    ? null
+    : (visibleCategories.find(c => c.id === activeCategoryId) || visibleCategories[0]);
+
   const displayedProducts = useMemo(() => {
-    const baseList = searchResults !== null ? searchResults : (currentCategory?.products || []);
+    let baseList: Product[];
+    if (searchResults !== null) {
+      baseList = searchResults;
+    } else if (activeCategoryId === 'ALL') {
+      baseList = allOrderableProducts;
+    } else {
+      baseList = currentCategory?.products || [];
+    }
+
     if (posSortMode === 'az') {
       return [...baseList].sort((a, b) => a.name.localeCompare(b.name, 'tr', { sensitivity: 'base' }));
     }
@@ -275,7 +301,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return [...baseList].sort((a, b) => b.name.localeCompare(a.name, 'tr', { sensitivity: 'base' }));
     }
     return baseList;
-  }, [searchResults, currentCategory, posSortMode]);
+  }, [searchResults, activeCategoryId, allOrderableProducts, currentCategory, posSortMode]);
 
   // Helper to count quantity of product in cart
   const getProductQuantityInCart = (productId: number) => {
@@ -1404,9 +1430,10 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 sound.beep();
                 setSearchQuery('');
                 setSearchResults(null);
+                setActiveCategoryId('ALL');
               }}
               className="p-2 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition"
-              title="Yenile"
+              title="Yenile (Tümü)"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
@@ -1416,6 +1443,29 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         {/* 2-Row Horizontal Category Grid */}
         <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-2 sm:p-3 overflow-x-auto shrink-0">
           <div className="flex flex-nowrap sm:flex-wrap gap-1.5 sm:max-h-24 overflow-x-auto sm:overflow-y-auto no-scrollbar">
+            {/* TÜMÜ (Tüm Sipariş Verilebilir Ürünler) */}
+            <button
+              onClick={() => {
+                sound.beep();
+                setSearchQuery('');
+                setSearchResults(null);
+                setActiveCategoryId('ALL');
+              }}
+              className={`px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-tight transition whitespace-nowrap shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                activeCategoryId === 'ALL' && searchResults === null
+                  ? 'bg-slate-200 text-slate-900 dark:bg-slate-700 dark:text-white border-b-2 border-brand-600 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900'
+              }`}
+            >
+              <span>TÜMÜ</span>
+              <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-md ${
+                activeCategoryId === 'ALL' && searchResults === null
+                  ? 'bg-slate-300 dark:bg-slate-600 text-slate-900 dark:text-white font-black'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold'
+              }`}>
+                {allOrderableProducts.length}
+              </span>
+            </button>
             {visibleCategories.map((cat) => {
               const isCatActive = activeCategoryId === cat.id && searchResults === null;
               return (
@@ -1515,6 +1565,12 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               </div>
             );
           })}
+
+          {displayedProducts.length === 0 && (
+            <div className="col-span-full py-20 text-center text-slate-400">
+              <p className="text-sm font-bold">Bu alanda gösterilecek sipariş verilebilir ürün bulunamadı.</p>
+            </div>
+          )}
         </div>
 
         {/* Sticky Mobile Bottom Cart Summary Bar in Menu View (< lg) */}
