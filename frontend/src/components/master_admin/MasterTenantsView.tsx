@@ -132,7 +132,8 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || 'Güncelleme başarısız.');
       }
-      alert('Restoran bilgileri ve kullanıcı adı başarıyla güncellendi!');
+      const data = await res.json().catch(() => ({}));
+      alert(`Restoran bilgileri ve kullanıcı adı başarıyla "@${data.tenant?.code || editingTenant.code}" olarak güncellendi!`);
       setEditingTenant(null);
       onRefresh();
     } catch (err: any) {

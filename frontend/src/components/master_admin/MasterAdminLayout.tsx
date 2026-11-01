@@ -42,11 +42,12 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
   const loadAllMasterData = async () => {
     setLoading(true);
     try {
+      const t = Date.now();
       const [statsRes, tenantsRes, leadsRes, invRes] = await Promise.all([
-        fetch('/api/master/stats'),
-        fetch('/api/master/tenants'),
-        fetch('/api/master/leads'),
-        fetch('/api/master/invoices')
+        fetch(`/api/master/stats?_t=${t}`, { cache: 'no-store' }),
+        fetch(`/api/master/tenants?_t=${t}`, { cache: 'no-store' }),
+        fetch(`/api/master/leads?_t=${t}`, { cache: 'no-store' }),
+        fetch(`/api/master/invoices?_t=${t}`, { cache: 'no-store' })
       ]);
 
       if (statsRes.ok) setStats(await statsRes.json());

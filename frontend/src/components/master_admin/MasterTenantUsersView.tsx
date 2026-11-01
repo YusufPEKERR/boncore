@@ -51,7 +51,7 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
   const loadTenantUsers = async (tenantId: number) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/master/tenants/${tenantId}/users`);
+      const res = await fetch(`/api/master/tenants/${tenantId}/users?_t=${Date.now()}`, { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         setUsers(data);
@@ -81,8 +81,13 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || 'Kullanıcı adı güncellenemedi.');
       }
+      const data = await res.json();
+      const updatedCode = data.tenant?.code || newTenantCode.trim().toLowerCase();
+      if (selectedTenant) {
+        selectedTenant.code = updatedCode;
+      }
       sound.cashDrawer();
-      alert(`✅ Restoran giriş kullanıcı adı başarıyla "@${newTenantCode.trim().toLowerCase()}" olarak güncellendi!`);
+      alert(`✅ Restoran giriş kullanıcı adı başarıyla "@${updatedCode}" olarak güncellendi!`);
       setIsChangingTenantCode(false);
       onRefresh?.();
     } catch (err: any) {
