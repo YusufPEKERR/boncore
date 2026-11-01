@@ -30,6 +30,7 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
   // New Tenant Form state
   const [newForm, setNewForm] = useState({
     name: '',
+    code: '',
     owner_name: '',
     phone: '',
     email: '',
@@ -44,10 +45,25 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
     admin_password: '123456',
     notes: ''
   });
+  const [codeManuallyEdited, setCodeManuallyEdited] = useState<boolean>(false);
+
+  const slugify = (text: string) => {
+    const tr: Record<string, string> = { 'ç': 'c', 'ğ': 'g', 'ı': 'i', 'ö': 'o', 'ş': 's', 'ü': 'u', 'Ç': 'c', 'Ğ': 'g', 'İ': 'i', 'Ö': 'o', 'Ş': 's', 'Ü': 'u' };
+    return text.split('').map(char => tr[char] || char).join('').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  };
+
+  const handleNameChange = (val: string) => {
+    if (!codeManuallyEdited) {
+      setNewForm(prev => ({ ...prev, name: val, code: slugify(val) }));
+    } else {
+      setNewForm(prev => ({ ...prev, name: val }));
+    }
+  };
 
   const filteredTenants = tenants.filter(t => {
     const matchesSearch = 
       t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (t.code && t.code.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (t.owner_name && t.owner_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (t.phone && t.phone.includes(searchTerm)) ||
       (t.city && t.city.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -71,12 +87,19 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
       const res = await fetch('/api/master/tenants', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newForm)
+        body: JSON.stringify({
+          ...newForm,
+          code: newForm.code ? newForm.code.trim().toLowerCase() : slugify(newForm.name)
+        })
       });
-      if (!res.ok) throw new Error('Restoran eklenemedi.');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Restoran eklenemedi.');
+      }
       const data = await res.json();
-      alert(`Restoran oluşturuldu!\nYönetici Kullanıcı Adı: ${data.admin_username}\nŞifre: ${data.admin_password}\nPIN: ${data.pin_code}`);
+      alert(`Restoran oluşturuldu!\nRestoran Giriş Kodu: ${data.code}\nYönetici Kullanıcı Adı: ${data.admin_username}\nŞifre: ${data.admin_password}\nPIN: ${data.pin_code}`);
       setIsAddModalOpen(false);
+      setCodeManuallyEdited(false);
       onRefresh();
     } catch (err: any) {
       alert(err.message || 'Hata oluştu.');
@@ -93,6 +116,7 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          code: editingTenant.code?.trim().toLowerCase(),
           name: editingTenant.name,
           owner_name: editingTenant.owner_name,
           phone: editingTenant.phone,
@@ -104,7 +128,11 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
           notes: editingTenant.notes
         })
       });
-      if (!res.ok) throw new Error('Güncelleme başarısız.');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Güncelleme başarısız.');
+      }
+      alert('Restoran bilgileri ve kullanıcı adı başarıyla güncellendi!');
       setEditingTenant(null);
       onRefresh();
     } catch (err: any) {
@@ -327,10 +355,31 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                     type="text"
                     required
                     value={newForm.name}
-                    onChange={(e) => setNewForm({ ...newForm, name: e.target.value })}
+                    onChange={(e) => handleNameChange(e.target.value)}
                     placeholder="Örn: Bebek Balıkçısı"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:border-emerald-500 font-bold"
                   />
+                </div>
+
+                <div>
+                  <label className="block mb-1 text-emerald-400 flex items-center justify-between">
+                    <span>Restoran Kullanıcı Adı (Giriş Kodu) *</span>
+                    <span className="text-[10px] text-slate-400 font-normal">Girişte kullanılır</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono font-bold">@</span>
+                    <input
+                      type="text"
+                      required
+                      value={newForm.code}
+                      onChange={(e) => {
+                        setCodeManuallyEdited(true);
+                        setNewForm({ ...newForm, code: e.target.value.toLowerCase().replace(/[^a-z0-9\-_]/g, '') });
+                      }}
+                      placeholder="bebek-balikcisi"
+                      className="w-full pl-7 pr-3.5 py-2.5 rounded-xl bg-slate-800 border border-emerald-500/50 text-emerald-300 font-mono font-bold focus:border-emerald-400 focus:outline-none"
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -478,14 +527,40 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
             </div>
 
             <form onSubmit={handleUpdateTenant} className="space-y-4 text-xs font-bold text-slate-300">
-              <div>
-                <label className="block mb-1">Restoran Adı</label>
-                <input
-                  type="text"
-                  value={editingTenant.name}
-                  onChange={(e) => setEditingTenant({ ...editingTenant, name: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block mb-1">Restoran Adı</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingTenant.name}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, name: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block mb-1 text-emerald-400 flex items-center justify-between">
+                    <span>Giriş Kullanıcı Adı</span>
+                    <span className="text-[10px] text-slate-400 font-normal">Girişte kullanılır</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono font-bold">@</span>
+                    <input
+                      type="text"
+                      required
+                      value={editingTenant.code || ''}
+                      onChange={(e) => setEditingTenant({ ...editingTenant, code: e.target.value.toLowerCase().replace(/[^a-z0-9\-_]/g, '') })}
+                      className="w-full pl-7 pr-3.5 py-2.5 rounded-xl bg-slate-800 border border-emerald-500/50 text-emerald-300 font-mono font-bold focus:border-emerald-400 focus:outline-none"
+                      placeholder="restoran-kodu"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-slate-400 bg-slate-850 p-2.5 rounded-xl border border-slate-800">
+                💡 <strong>Kullanıcı Adı Bilgisi:</strong> Personeller giriş ekranında kullanıcı adı olarak 
+                <strong className="text-emerald-400 ml-1">@{editingTenant.code}</strong> girer; şifre veya PIN kodu ise kullanıcının yetkisini belirler. Değiştirdiğinizde işletmenin veritabanı kesintisiz olarak yeni kullanıcı adına taşınır.
               </div>
 
               <div className="grid grid-cols-2 gap-3">

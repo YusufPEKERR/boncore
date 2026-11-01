@@ -45,6 +45,7 @@ class TenantCreateRequest(BaseModel):
     admin_password: Optional[str] = "123456"
 
 class TenantUpdateRequest(BaseModel):
+    code: Optional[str] = None
     name: Optional[str] = None
     owner_name: Optional[str] = None
     phone: Optional[str] = None
@@ -322,13 +323,38 @@ async def create_tenant(req: TenantCreateRequest, db: AsyncSession = Depends(get
 @router.put("/tenants/{tenant_id}")
 async def update_tenant(tenant_id: int, req: TenantUpdateRequest, db: AsyncSession = Depends(get_db)):
     """
-    Updates tenant details, subscription plan, status, pricing.
+    Updates tenant details, subscription plan, status, pricing, and restaurant login username (code).
     """
     tenant = await db.get(RestaurantTenant, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="Restoran bulunamadı.")
 
+    # Restoran Giriş Kullanıcı Adı (Code/Slug) Değişikliği
+    if req.code:
+        new_code = clean_tenant_code(req.code)
+        if not new_code:
+            raise HTTPException(status_code=400, detail="Geçersiz restoran kullanıcı adı.")
+        if new_code in ["master", "superadmin", "admin"]:
+            raise HTTPException(status_code=400, detail="Bu kullanıcı adı sistem tarafından ayrılmıştır.")
+        
+        old_code = tenant.code
+        if new_code != old_code:
+            collision = await db.execute(
+                select(RestaurantTenant).where(
+                    RestaurantTenant.code == new_code,
+                    RestaurantTenant.id != tenant_id
+                )
+            )
+            if collision.scalar_one_or_none():
+                raise HTTPException(status_code=400, detail=f"'{new_code}' kullanıcı adı başka bir restoran tarafından kullanılmaktadır.")
+
+            from app.database import rename_tenant_db
+            await rename_tenant_db(old_code, new_code)
+            tenant.code = new_code
+
     for field, val in req.dict(exclude_unset=True).items():
+        if field == "code":
+            continue
         if val is not None:
             setattr(tenant, field, val)
 

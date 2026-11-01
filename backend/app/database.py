@@ -53,13 +53,52 @@ DEFAULT_TENANT_CODE = "boncore-kadikoy"
 def clean_tenant_code(code: Optional[str]) -> str:
     if not code:
         return DEFAULT_TENANT_CODE
-    cleaned = code.strip().lower()
+    tr_map = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+    cleaned = code.strip().translate(tr_map).lower()
+    cleaned = cleaned.replace(" ", "-")
     cleaned = re.sub(r"[^a-z0-9\-_]", "", cleaned)
     return cleaned or DEFAULT_TENANT_CODE
 
 def get_tenant_db_path(tenant_code: str) -> str:
     clean_code = clean_tenant_code(tenant_code)
     return os.path.join(_TENANTS_DIR, f"{clean_code}.db").replace("\\", "/")
+
+async def rename_tenant_db(old_code: str, new_code: str):
+    """
+    Restoran kullanıcı adı / kodunu değiştirirken eski SQLite veritabanını
+    yeni dosya adına taşır ve SQLAlchemy bağlantı havuzunu güvenle sıfırlar.
+    """
+    old_clean = clean_tenant_code(old_code)
+    new_clean = clean_tenant_code(new_code)
+    if old_clean == new_clean:
+        return
+
+    # 1. Eski motordaki havuzu dispose et
+    if old_clean in _tenant_engines:
+        try:
+            await _tenant_engines[old_clean].dispose()
+        except Exception:
+            pass
+        _tenant_engines.pop(old_clean, None)
+    _tenant_sessionmakers.pop(old_clean, None)
+
+    # 2. Disk üzerindeki veritabanı dosyasını taşı / kopyala
+    old_path = get_tenant_db_path(old_clean)
+    new_path = get_tenant_db_path(new_clean)
+
+    if os.path.exists(old_path) and not os.path.exists(new_path):
+        import shutil
+        try:
+            os.rename(old_path, new_path)
+        except Exception:
+            try:
+                shutil.copy2(old_path, new_path)
+                try:
+                    os.remove(old_path)
+                except Exception:
+                    pass
+            except Exception:
+                pass
 
 def get_tenant_sessionmaker(tenant_code: Optional[str]) -> async_sessionmaker:
     clean_code = clean_tenant_code(tenant_code)

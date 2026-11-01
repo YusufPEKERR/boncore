@@ -237,6 +237,7 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
               tenants={tenants}
               selectedTenantId={selectedTenantIdForUsers}
               onSelectTenant={(id) => setSelectedTenantIdForUsers(id)}
+              onRefresh={loadAllMasterData}
             />
           )}
 

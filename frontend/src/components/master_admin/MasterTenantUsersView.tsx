@@ -9,12 +9,14 @@ interface MasterTenantUsersViewProps {
   tenants: any[];
   selectedTenantId: number | null;
   onSelectTenant: (id: number) => void;
+  onRefresh?: () => void;
 }
 
 export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
   tenants,
   selectedTenantId,
-  onSelectTenant
+  onSelectTenant,
+  onRefresh
 }) => {
   const currentTenantId = selectedTenantId || (tenants.length > 0 ? tenants[0].id : 1);
   const selectedTenant = tenants.find(t => t.id === currentTenantId) || tenants[0];
@@ -27,6 +29,10 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
   const [newPassword, setNewPassword] = useState<string>('123456');
   const [newPin, setNewPin] = useState<string>('1234');
   const [saveLoading, setSaveLoading] = useState<boolean>(false);
+
+  // Tenant Username Change Modal
+  const [isChangingTenantCode, setIsChangingTenantCode] = useState<boolean>(false);
+  const [newTenantCode, setNewTenantCode] = useState<string>('');
 
   // New User Modal
   const [isNewUserModalOpen, setIsNewUserModalOpen] = useState<boolean>(false);
@@ -54,6 +60,36 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
       console.warn('Failed to load users for tenant', e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveTenantCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTenantCode.trim()) {
+      alert('Lütfen geçerli bir kullanıcı adı girin.');
+      return;
+    }
+    sound.beep();
+    setSaveLoading(true);
+    try {
+      const res = await fetch(`/api/master/tenants/${currentTenantId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: newTenantCode.trim().toLowerCase() })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Kullanıcı adı güncellenemedi.');
+      }
+      sound.cashDrawer();
+      alert(`✅ Restoran giriş kullanıcı adı başarıyla "@${newTenantCode.trim().toLowerCase()}" olarak güncellendi!`);
+      setIsChangingTenantCode(false);
+      onRefresh?.();
+    } catch (err: any) {
+      sound.warning();
+      alert(err.message || 'Hata oluştu.');
+    } finally {
+      setSaveLoading(false);
     }
   };
 
@@ -182,9 +218,23 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
               <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-950 text-emerald-300 border border-emerald-800">
                 {selectedTenant.plan}
               </span>
-              <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-emerald-400 border border-slate-700">
-                Giriş Kodu: @{selectedTenant.code}
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-emerald-400 border border-slate-700">
+                  Giriş Kullanıcı Adı: @{selectedTenant.code}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.beep();
+                    setNewTenantCode(selectedTenant.code || '');
+                    setIsChangingTenantCode(true);
+                  }}
+                  className="px-2 py-0.5 rounded-lg bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white text-[11px] font-black transition cursor-pointer border border-emerald-500/40"
+                  title="Restoranın giriş kullanıcı adını değiştir"
+                >
+                  Kullanıcı Adını Değiştir ✏️
+                </button>
+              </div>
             </div>
             <div className="text-xs text-slate-400 font-medium mt-0.5">
               Yetkili: <b className="text-slate-200">{selectedTenant.owner_name}</b> • Tel: {selectedTenant.phone} • Şehir: {selectedTenant.city}
@@ -455,6 +505,68 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
                   className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black"
                 >
                   Kullanıcıyı Kaydet
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Restoran Giriş Kullanıcı Adını Değiştir */}
+      {isChangingTenantCode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md select-none">
+          <div className="relative w-full max-w-md bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl p-6 sm:p-7 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div>
+                <h3 className="text-base font-black text-white flex items-center gap-2">
+                  <KeyRound className="w-5 h-5 text-emerald-400" />
+                  <span>Restoran Kullanıcı Adını Değiştir</span>
+                </h3>
+                <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                  {selectedTenant?.name} işletmesinin sisteme giriş kullanıcı adını güncelleyin.
+                </p>
+              </div>
+              <button 
+                onClick={() => setIsChangingTenantCode(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTenantCode} className="space-y-4 text-xs font-bold text-slate-300">
+              <div>
+                <label className="block mb-1 text-emerald-400">Yeni Restoran Kullanıcı Adı (Giriş Kodu)</label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono font-bold">@</span>
+                  <input
+                    type="text"
+                    required
+                    value={newTenantCode}
+                    onChange={(e) => setNewTenantCode(e.target.value.toLowerCase().replace(/[^a-z0-9\-_]/g, ''))}
+                    placeholder="ornek-restoran"
+                    className="w-full pl-8 pr-4 py-2.5 rounded-xl bg-slate-800 border border-emerald-500/50 text-emerald-300 font-mono font-bold focus:border-emerald-400 focus:outline-none text-sm"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1.5">
+                  Personeller giriş yaparken bu kullanıcı adını yazar. Değiştirdiğinizde restoran veritabanı kesintisiz olarak yeni kullanıcı adına taşınır.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsChangingTenantCode(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300"
+                >
+                  Vazgeç
+                </button>
+                <button
+                  type="submit"
+                  disabled={saveLoading}
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black flex items-center gap-2"
+                >
+                  {saveLoading ? 'Kaydediliyor...' : 'Değişikliği Kaydet'}
                 </button>
               </div>
             </form>
