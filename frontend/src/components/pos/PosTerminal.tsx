@@ -4,7 +4,7 @@ import {
   Tag, Zap, RefreshCw, 
   ChevronUp, AlertCircle, FileText, 
   Utensils, DollarSign, X, CheckCircle2, CreditCard, Banknote, Scale,
-  ArrowDownAZ, ArrowUpZA 
+  ArrowDownAZ, ArrowUpZA, Clock 
 } from 'lucide-react';
 import { Category, Product, OrderItem, Table, Order, StaffUser } from '../../types';
 import { sound } from '../../services/sound';
@@ -86,6 +86,37 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   // Çoklu Kasa & Terazi İstasyonu State'i
   const [scaleTerminals, setScaleTerminals] = useState<Array<{ id: string; name: string; is_online: boolean; is_default: boolean }>>([]);
   const [selectedTerminalId, setSelectedTerminalId] = useState<string>(() => localStorage.getItem('boncore_pos_terminal_id') || '');
+
+  // Live Timer for table elapsed time
+  const [posNow, setPosNow] = useState<number>(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setPosNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const getTableElapsedFormatted = (openedAt?: string) => {
+    if (!openedAt) return '';
+    const normalized = /[Zz]|[+-]\d{2}:\d{2}$/.test(openedAt) ? openedAt : `${openedAt}Z`;
+    const start = new Date(normalized).getTime();
+    if (isNaN(start)) return '';
+    const diffSec = Math.max(0, Math.floor((posNow - start) / 1000));
+    const days = Math.floor(diffSec / 86400);
+    const hours = Math.floor((diffSec % 86400) / 3600);
+    const mins = Math.floor((diffSec % 3600) / 60);
+    const secs = diffSec % 60;
+
+    const parts: string[] = [];
+    if (days > 0) {
+      parts.push(`${days} gün`);
+      parts.push(`${hours} saat`);
+    } else if (hours > 0) {
+      parts.push(`${hours} saat`);
+    }
+    parts.push(`${mins} dk`);
+    parts.push(`${String(secs).padStart(2, '0')} sn`);
+
+    return parts.join(' ');
+  };
 
   useEffect(() => {
     localHardware.getTerminals().then(res => {
@@ -901,7 +932,12 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           <div className="truncate">
             <div className="font-extrabold text-xs text-slate-900 dark:text-white truncate flex items-center gap-1.5">
               <span>{activeTable ? activeTable.name : 'Hızlı Satış'}</span>
-              
+              {activeTable && (activeTable.active_order?.created_at || activeTable.opened_at) && (
+                <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded flex items-center gap-1">
+                  <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                  <span>{getTableElapsedFormatted(activeTable.active_order?.created_at || activeTable.opened_at)}</span>
+                </span>
+              )}
             </div>
             <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
               {activeOrderId ? `Adisyon #${existingOrder?.order_no || activeOrderId}` : 'Yeni Sipariş'}
@@ -953,7 +989,12 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               <h2 className="font-extrabold text-base text-slate-900 dark:text-white">
                 {activeTable ? activeTable.name : 'Hızlı Satış'}
               </h2>
-              
+              {activeTable && (activeTable.active_order?.created_at || activeTable.opened_at) && (
+                <span className="font-mono text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg flex items-center gap-1.5" title="Masa Açılış Süresi">
+                  <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>{getTableElapsedFormatted(activeTable.active_order?.created_at || activeTable.opened_at)}</span>
+                </span>
+              )}
             </div>
           </div>
 

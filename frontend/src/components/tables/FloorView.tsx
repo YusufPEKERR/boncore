@@ -53,9 +53,22 @@ export const FloorView: React.FC<FloorViewProps> = ({
     const start = new Date(normalized).getTime();
     if (isNaN(start)) return 'Yeni Açıldı';
     const diffSec = Math.max(0, Math.floor((currentNow - start) / 1000));
-    const mins = Math.floor(diffSec / 60);
+    const days = Math.floor(diffSec / 86400);
+    const hours = Math.floor((diffSec % 86400) / 3600);
+    const mins = Math.floor((diffSec % 3600) / 60);
     const secs = diffSec % 60;
-    return `${mins} dk ${String(secs).padStart(2, '0')} sn`;
+
+    const parts: string[] = [];
+    if (days > 0) {
+      parts.push(`${days} gün`);
+      parts.push(`${hours} saat`);
+    } else if (hours > 0) {
+      parts.push(`${hours} saat`);
+    }
+    parts.push(`${mins} dk`);
+    parts.push(`${String(secs).padStart(2, '0')} sn`);
+
+    return parts.join(' ');
   };
 
   useEffect(() => {
@@ -269,8 +282,9 @@ export const FloorView: React.FC<FloorViewProps> = ({
                 {/* Card Bottom: Elapsed Timer */}
                 <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                   {isOccupied ? (
-                    <span className="font-mono text-slate-600 dark:text-slate-300">
-                      {getTableElapsedFormatted(table.active_order?.created_at || table.opened_at)}
+                    <span className="font-mono text-slate-600 dark:text-slate-300 flex items-center gap-1 truncate" title="Masa Açılış Süresi">
+                      <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                      <span className="truncate">{getTableElapsedFormatted(table.active_order?.created_at || table.opened_at)}</span>
                     </span>
                   ) : (
                     <span className="text-[10px] text-slate-400">{currentArea?.name}</span>
