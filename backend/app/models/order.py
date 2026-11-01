@@ -53,6 +53,7 @@ class OrderItem(Base):
     fired_at = Column(DateTime, nullable=True) # Mutfağa ateşlendiği an
     status = Column(String(30), default="pending") # pending, preparing, ready, served, voided
     station = Column(String(50), default="kitchen") # kitchen, bar, pastry, grill
+    added_by = Column(String(100), nullable=True, default="Garson") # Siparişi giren personel adı
     created_at = Column(DateTime, default=datetime.utcnow)
     ready_at = Column(DateTime, nullable=True)
     served_at = Column(DateTime, nullable=True)

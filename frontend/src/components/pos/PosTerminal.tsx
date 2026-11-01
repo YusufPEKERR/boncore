@@ -4,7 +4,7 @@ import {
   Tag, Zap, RefreshCw, 
   ChevronUp, AlertCircle, FileText, 
   Utensils, DollarSign, X, CheckCircle2, CreditCard, Banknote, Scale,
-  ArrowDownAZ, ArrowUpZA, Clock 
+  ArrowDownAZ, ArrowUpZA, Clock, User 
 } from 'lucide-react';
 import { Category, Product, OrderItem, Table, Order, StaffUser } from '../../types';
 import { sound } from '../../services/sound';
@@ -541,7 +541,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         selected_modifiers: [],
         negative_modifiers: [],
         course_stage: 1,
-        is_hold: false
+        is_hold: false,
+        added_by: currentUser?.name || 'Garson'
       };
       setCartItems(prev => [...prev, newItem]);
     }
@@ -596,7 +597,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         selected_modifiers: [],
         negative_modifiers: [],
         course_stage: 1,
-        is_hold: false
+        is_hold: false,
+        added_by: currentUser?.name || 'Garson'
       };
       setCartItems(prev => [...prev, newItem]);
     }
@@ -649,7 +651,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return;
     }
     sound.beep();
-    setCartItems(prev => [...prev, item]);
+    setCartItems(prev => [...prev, { ...item, added_by: currentUser?.name || 'Garson' }]);
     setSelectedProductForModal(null);
   };
 
@@ -1078,6 +1080,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                         {item.variant_name}
                       </span>
                     )}
+                    <span 
+                      className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 shrink-0"
+                      title="Siparişi Giren Personel"
+                    >
+                      <User className="w-2.5 h-2.5 text-slate-400" />
+                      <span>{item.added_by || existingOrder?.waiter_name || currentUser?.name || 'Garson'}</span>
+                    </span>
                   </div>
 
                   {/* Modifiers info */}

@@ -137,6 +137,7 @@ async def get_order_details(order_id: int, db: AsyncSession = Depends(get_db)):
                 "is_hold": it.is_hold,
                 "status": it.status,
                 "station": it.station,
+                "added_by": getattr(it, "added_by", None) or order.waiter_name or "Garson",
                 "is_voided": it.is_voided,
                 "void_reason": it.void_reason,
                 "is_treat": it.is_treat,
@@ -268,6 +269,7 @@ async def create_new_order(payload: CreateOrderRequest, db: AsyncSession = Depen
             is_hold=it.is_hold,
             status="pending" if not it.is_hold else "hold",
             station=station,
+            added_by=it.added_by or payload.waiter_name or "Garson",
             created_at=datetime.utcnow()
         )
         db.add(order_item)
@@ -366,6 +368,7 @@ async def add_items_to_order(order_id: int, payload: AddItemsRequest, db: AsyncS
             is_hold=it.is_hold,
             status="pending" if not it.is_hold else "hold",
             station=station,
+            added_by=it.added_by or payload.waiter_name or "Garson",
             created_at=datetime.utcnow()
         )
         db.add(order_item)
@@ -1572,6 +1575,7 @@ async def get_closed_bills_report(
                 "discount_amount": round(float(getattr(it, "discount_amount", 0.0) or 0.0), 2),
                 "discount_rate": round(float(getattr(it, "discount_rate", 0.0) or 0.0), 2),
                 "discount_reason": getattr(it, "discount_reason", None),
+                "added_by": getattr(it, "added_by", None) or o.waiter_name or "Garson",
                 "kitchen_note": it.kitchen_note,
                 "selected_modifiers": it.selected_modifiers or []
             }

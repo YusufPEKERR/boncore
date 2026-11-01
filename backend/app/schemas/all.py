@@ -158,6 +158,7 @@ class OrderItemInput(BaseModel):
     kitchen_note: Optional[str] = None
     course_stage: int = 1 # 1: 1. Kurs, 2: 2. Kurs, 3: Tatlı
     is_hold: bool = False # True ise mutfağa henüz gönderilmedi
+    added_by: Optional[str] = None # Siparişi giren personel adı
 
 class CreateOrderRequest(BaseModel):
     table_id: Optional[int] = None

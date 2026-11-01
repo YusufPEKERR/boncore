@@ -1,5 +1,5 @@
 {
-  "req_id": "27f0cfd1-9454-4d35-8791-752ae42b47d4",
+  "req_id": "791b644d-d050-4a1b-b45a-78f524a93096",
   "success": true,
   "weight": 0.0,
   "unit": "kg",
@@ -15,8 +15,9 @@
   "message": "1/1 yazıcıdan çıktı alındı.",
   "results": [
     {
-      "printer": "MUTFAK-POS",
+      "printer": "KİTCHEN",
       "success": true
     }
-  ]
+  ],
+  "restaurant_code": "boncore-kadikoy"
 }

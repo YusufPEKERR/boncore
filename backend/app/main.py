@@ -1,3 +1,4 @@
+import os
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
@@ -53,7 +54,26 @@ async def lifespan(app: FastAPI):
                 sync_conn.execute(text("ALTER TABLE products ADD COLUMN show_in_pos BOOLEAN DEFAULT 1"))
             if "order_index" not in prod_cols:
                 sync_conn.execute(text("ALTER TABLE products ADD COLUMN order_index INTEGER DEFAULT 0"))
+            item_cols = [c["name"] for c in inspector.get_columns("order_items")]
+            if "added_by" not in item_cols:
+                sync_conn.execute(text("ALTER TABLE order_items ADD COLUMN added_by VARCHAR(100) DEFAULT 'Garson'"))
         await conn.run_sync(migrate_schema)
+
+        # Migrate all existing tenant databases
+        import sqlite3, glob
+        tenant_dbs = glob.glob(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "tenants", "*.db")) + glob.glob(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "*.db"))
+        for t_db in tenant_dbs:
+            try:
+                conn_sqlite = sqlite3.connect(t_db)
+                c = conn_sqlite.cursor()
+                c.execute("PRAGMA table_info(order_items)")
+                cols_info = [r[1] for r in c.fetchall()]
+                if cols_info and "added_by" not in cols_info:
+                    c.execute("ALTER TABLE order_items ADD COLUMN added_by VARCHAR(100) DEFAULT 'Garson'")
+                    conn_sqlite.commit()
+                conn_sqlite.close()
+            except Exception:
+                pass
 
     # Seed initial demo tenants and leads in master DB
     async with MasterSessionLocal() as session:

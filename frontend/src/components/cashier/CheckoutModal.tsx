@@ -583,10 +583,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   >
                     {/* Top Row: Qty - Name and Price + Hand icon */}
                     <div className="flex items-center justify-between">
-                      <span className="text-[13px] font-bold text-[#212529] dark:text-slate-200 truncate pr-2">
-                        {Number.isInteger(Number(it.quantity)) ? `${it.quantity} Adet` : `${Number(Number(it.quantity).toFixed(3))} Kg (${Math.round(Number(it.quantity) * 1000)} gr)`} - {it.product_name.toUpperCase()}
-                        {it.variant_name && <span className="text-gray-500 text-xs ml-1 font-normal">({it.variant_name})</span>}
-                      </span>
+                      <div className="flex items-center gap-1.5 truncate pr-2">
+                        <span className="text-[13px] font-bold text-[#212529] dark:text-slate-200 truncate">
+                          {Number.isInteger(Number(it.quantity)) ? `${it.quantity} Adet` : `${Number(Number(it.quantity).toFixed(3))} Kg (${Math.round(Number(it.quantity) * 1000)} gr)`} - {it.product_name.toUpperCase()}
+                          {it.variant_name && <span className="text-gray-500 text-xs ml-1 font-normal">({it.variant_name})</span>}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 shrink-0" title="Siparişi Giren Personel">
+                          👤 {it.added_by || order.waiter_name || 'Garson'}
+                        </span>
+                      </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <span className="text-[13px] font-bold text-[#212529] dark:text-slate-200 font-mono">
                           ₺{it.total_price.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}

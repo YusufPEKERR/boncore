@@ -153,6 +153,7 @@ export interface OrderItem {
   discount_amount?: number;
   discount_rate?: number;
   discount_reason?: string;
+  added_by?: string;
 }
 
 export interface PaymentMethodConfig {
