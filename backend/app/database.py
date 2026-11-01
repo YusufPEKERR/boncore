@@ -50,14 +50,27 @@ _tenant_sessionmakers: Dict[str, async_sessionmaker] = {}
 
 DEFAULT_TENANT_CODE = "boncore-kadikoy"
 
+def get_primary_tenant_code() -> str:
+    try:
+        import sqlite3
+        if os.path.exists(_MASTER_DB_PATH):
+            conn = sqlite3.connect(_MASTER_DB_PATH)
+            row = conn.execute("SELECT code FROM restaurant_tenants ORDER BY id ASC LIMIT 1").fetchone()
+            conn.close()
+            if row and row[0]:
+                return row[0]
+    except Exception:
+        pass
+    return DEFAULT_TENANT_CODE
+
 def clean_tenant_code(code: Optional[str]) -> str:
     if not code:
-        return DEFAULT_TENANT_CODE
+        return get_primary_tenant_code()
     tr_map = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
     cleaned = code.strip().translate(tr_map).lower()
     cleaned = cleaned.replace(" ", "-")
     cleaned = re.sub(r"[^a-z0-9\-_]", "", cleaned)
-    return cleaned or DEFAULT_TENANT_CODE
+    return cleaned or get_primary_tenant_code()
 
 def get_tenant_db_path(tenant_code: str) -> str:
     clean_code = clean_tenant_code(tenant_code)
@@ -182,4 +195,9 @@ async def get_db(request: Request = None) -> AsyncGenerator[AsyncSession, None]:
 
 # Geriye dönük uyumluluk exports
 engine = master_engine
-AsyncSessionLocal = get_tenant_sessionmaker(DEFAULT_TENANT_CODE)
+
+class _DynamicTenantSessionLocal:
+    def __call__(self):
+        return get_tenant_sessionmaker(None)()
+
+AsyncSessionLocal = _DynamicTenantSessionLocal()

@@ -118,6 +118,7 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
         body: JSON.stringify({
           code: editingTenant.code?.trim().toLowerCase(),
           name: editingTenant.name,
+          display_name: editingTenant.display_name ?? editingTenant.name,
           owner_name: editingTenant.owner_name,
           phone: editingTenant.phone,
           email: editingTenant.email,
@@ -247,11 +248,16 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                         <span>{tenant.city || 'İstanbul'}</span>
                         {tenant.tax_number && <span>• VKN: {tenant.tax_number}</span>}
                       </div>
-                      <div className="flex items-center gap-2 mt-1.5">
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                         <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 inline-flex items-center gap-1">
                           <Building2 className="w-2.5 h-2.5" />
-                          <span>Giriş Kullanıcı Adı: <strong>{tenant.code}</strong></span>
+                          <span>Giriş Kodu: <strong>@{tenant.code}</strong></span>
                         </span>
+                        {tenant.display_name && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700 inline-flex items-center gap-1" title="POS ekranında Menü altında ve fişte görünen başlık">
+                            <span>POS Başlığı: <strong className="text-emerald-300">{tenant.display_name}</strong></span>
+                          </span>
+                        )}
                       </div>
                     </td>
 
@@ -557,6 +563,25 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* POS Ekranında ve Adisyonda Görünen Başlık (Görseldeki Alttaki İsim) */}
+              <div className="p-3.5 rounded-2xl bg-emerald-950/20 border border-emerald-500/40 space-y-1.5">
+                <label className="block text-emerald-300 font-black text-xs flex items-center justify-between">
+                  <span>🏪 POS Ekranı & Adisyon Başlığı (Menü Altındaki İsim)</span>
+                  <span className="text-[10px] text-emerald-400 font-bold">Canlı Ekrana Yansır</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingTenant.display_name ?? editingTenant.name ?? ''}
+                  onChange={(e) => setEditingTenant({ ...editingTenant, display_name: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-850 border border-emerald-500/60 text-white font-black text-xs focus:border-emerald-400 focus:outline-none"
+                  placeholder="Örn: FATİH ÇİFTLİĞİ"
+                />
+                <p className="text-[11px] text-slate-400 font-medium">
+                  POS ekranının sol üst köşesinde (<strong>BonCore POS</strong> logosunun hemen altında) ve adisyon fişlerinin tepesinde görünen isimdir.
+                </p>
               </div>
 
               <div className="text-[11px] text-slate-400 bg-slate-850 p-2.5 rounded-xl border border-slate-800">

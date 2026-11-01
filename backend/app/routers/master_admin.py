@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_master_db as get_db, get_master_db, get_tenant_sessionmaker, clean_tenant_code, _tenant_engines, Base
 from app.models.tenant import RestaurantTenant, TenantLead, TenantInvoice
+from app.models.setting import RestaurantSetting
 from app.models.user import StaffUser
 from app.models.order import Order
 from app.security import hash_password, verify_password, create_access_token
@@ -28,6 +29,7 @@ class MasterLoginRequest(BaseModel):
 
 class TenantCreateRequest(BaseModel):
     name: str
+    display_name: Optional[str] = None
     code: Optional[str] = None
     owner_name: Optional[str] = None
     phone: Optional[str] = None
@@ -47,6 +49,7 @@ class TenantCreateRequest(BaseModel):
 class TenantUpdateRequest(BaseModel):
     code: Optional[str] = None
     name: Optional[str] = None
+    display_name: Optional[str] = None
     owner_name: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
@@ -195,10 +198,11 @@ async def get_master_stats(db: AsyncSession = Depends(get_db)):
 
 # --- Tenants Management ---
 @router.get("/tenants")
-async def list_tenants(db: AsyncSession = Depends(get_db)):
+async def list_tenants(response: Response, db: AsyncSession = Depends(get_db)):
     """
-    Returns list of all restaurant tenants with their user count and active status.
+    Returns list of all restaurant tenants with their user count, display name and active status.
     """
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     await _ensure_demo_tenants_and_leads(db)
     stmt = select(RestaurantTenant).order_by(RestaurantTenant.id.asc())
     res = await db.execute(stmt)
@@ -209,12 +213,27 @@ async def list_tenants(db: AsyncSession = Depends(get_db)):
     res_uc = await db.execute(user_counts_stmt)
     uc_map = {row[0]: row[1] for row in res_uc.all() if row[0] is not None}
 
+    import json
     output = []
     for t in tenants:
+        display_name = t.name
+        try:
+            t_sm = get_tenant_sessionmaker(t.code)
+            async with t_sm() as t_db:
+                res_rn = await t_db.execute(select(RestaurantSetting).where(RestaurantSetting.key == "restaurant_name"))
+                s_rn = res_rn.scalar_one_or_none()
+                if s_rn and s_rn.value:
+                    val = json.loads(s_rn.value)
+                    if val and str(val).strip():
+                        display_name = str(val).strip()
+        except Exception:
+            pass
+
         output.append({
             "id": t.id,
             "code": t.code,
             "name": t.name,
+            "display_name": display_name,
             "owner_name": t.owner_name,
             "phone": t.phone,
             "email": t.email,
@@ -353,7 +372,7 @@ async def update_tenant(tenant_id: int, req: TenantUpdateRequest, db: AsyncSessi
             tenant.code = new_code
 
     for field, val in req.dict(exclude_unset=True).items():
-        if field == "code":
+        if field in ["code", "display_name"]:
             continue
         if val is not None:
             setattr(tenant, field, val)
@@ -362,7 +381,72 @@ async def update_tenant(tenant_id: int, req: TenantUpdateRequest, db: AsyncSessi
     await db.commit()
     await db.refresh(tenant)
 
-    return {"success": True, "tenant": tenant}
+    # POS Ekranında ve Adisyonda Görünen Başlık (Alttaki İsim) Senkronizasyonu
+    target_display_name = None
+    if req.display_name and req.display_name.strip():
+        target_display_name = req.display_name.strip()
+    elif req.name and req.name.strip():
+        target_display_name = req.name.strip()
+
+    if target_display_name:
+        try:
+            from app.websocket_hub import ws_hub
+            import json
+
+            t_sm = get_tenant_sessionmaker(tenant.code)
+            async with t_sm() as t_db:
+                # 1. restaurant_name ayarını güncelle
+                stmt_rn = select(RestaurantSetting).where(RestaurantSetting.key == "restaurant_name")
+                res_rn = await t_db.execute(stmt_rn)
+                setting_rn = res_rn.scalar_one_or_none()
+                json_val = json.dumps(target_display_name, ensure_ascii=False)
+                if setting_rn:
+                    setting_rn.value = json_val
+                else:
+                    t_db.add(RestaurantSetting(key="restaurant_name", value=json_val))
+
+                # 2. receipt_design içindeki header_title da güncellensin
+                stmt_rec = select(RestaurantSetting).where(RestaurantSetting.key == "receipt_design")
+                res_rec = await t_db.execute(stmt_rec)
+                setting_rec = res_rec.scalar_one_or_none()
+                if setting_rec:
+                    try:
+                        rec_obj = json.loads(setting_rec.value)
+                        if isinstance(rec_obj, dict):
+                            rec_obj["header_title"] = target_display_name
+                            setting_rec.value = json.dumps(rec_obj, ensure_ascii=False)
+                    except Exception:
+                        pass
+
+                # 3. İletişim bilgileri
+                if req.phone:
+                    res_ph = await t_db.execute(select(RestaurantSetting).where(RestaurantSetting.key == "phone"))
+                    s_ph = res_ph.scalar_one_or_none()
+                    if s_ph:
+                        s_ph.value = json.dumps(req.phone.strip(), ensure_ascii=False)
+                    else:
+                        t_db.add(RestaurantSetting(key="phone", value=json.dumps(req.phone.strip(), ensure_ascii=False)))
+
+                if req.city:
+                    res_ct = await t_db.execute(select(RestaurantSetting).where(RestaurantSetting.key == "city"))
+                    s_ct = res_ct.scalar_one_or_none()
+                    if s_ct:
+                        s_ct.value = json.dumps(req.city.strip(), ensure_ascii=False)
+                    else:
+                        t_db.add(RestaurantSetting(key="city", value=json.dumps(req.city.strip(), ensure_ascii=False)))
+
+                await t_db.commit()
+
+            # Açık POS ekranlarına canlı WebSocket yayını gönder
+            await ws_hub.broadcast_all("SETTINGS_UPDATED", {"restaurant_name": target_display_name})
+        except Exception as e:
+            logger.warning(f"Could not sync restaurant_name to tenant database: {e}")
+
+    return {
+        "success": True, 
+        "tenant": tenant,
+        "display_name": target_display_name or tenant.name
+    }
 
 
 @router.delete("/tenants/{tenant_id}")

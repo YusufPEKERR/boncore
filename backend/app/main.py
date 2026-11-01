@@ -33,30 +33,36 @@ async def lifespan(app: FastAPI):
         def migrate_schema(sync_conn):
             from sqlalchemy import inspect, text
             inspector = inspect(sync_conn)
-            cols = [c["name"] for c in inspector.get_columns("orders")]
-            if "service_charge" not in cols:
-                sync_conn.execute(text("ALTER TABLE orders ADD COLUMN service_charge FLOAT DEFAULT 0.0"))
-            user_cols = [c["name"] for c in inspector.get_columns("staff_users")]
-            if "username" not in user_cols:
-                sync_conn.execute(text("ALTER TABLE staff_users ADD COLUMN username VARCHAR(50)"))
-                sync_conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_staff_users_username ON staff_users (username)"))
-            if "password_hash" not in user_cols:
-                sync_conn.execute(text("ALTER TABLE staff_users ADD COLUMN password_hash VARCHAR(255)"))
-            if "last_login_at" not in user_cols:
-                sync_conn.execute(text("ALTER TABLE staff_users ADD COLUMN last_login_at DATETIME"))
-            if "restaurant_id" not in user_cols:
-                sync_conn.execute(text("ALTER TABLE staff_users ADD COLUMN restaurant_id INTEGER DEFAULT 1"))
-            cat_cols = [c["name"] for c in inspector.get_columns("categories")]
-            if "show_in_pos" not in cat_cols:
-                sync_conn.execute(text("ALTER TABLE categories ADD COLUMN show_in_pos BOOLEAN DEFAULT 1"))
-            prod_cols = [c["name"] for c in inspector.get_columns("products")]
-            if "show_in_pos" not in prod_cols:
-                sync_conn.execute(text("ALTER TABLE products ADD COLUMN show_in_pos BOOLEAN DEFAULT 1"))
-            if "order_index" not in prod_cols:
-                sync_conn.execute(text("ALTER TABLE products ADD COLUMN order_index INTEGER DEFAULT 0"))
-            item_cols = [c["name"] for c in inspector.get_columns("order_items")]
-            if "added_by" not in item_cols:
-                sync_conn.execute(text("ALTER TABLE order_items ADD COLUMN added_by VARCHAR(100) DEFAULT 'Garson'"))
+            tables = inspector.get_table_names()
+            if "orders" in tables:
+                cols = [c["name"] for c in inspector.get_columns("orders")]
+                if "service_charge" not in cols:
+                    sync_conn.execute(text("ALTER TABLE orders ADD COLUMN service_charge FLOAT DEFAULT 0.0"))
+            if "staff_users" in tables:
+                user_cols = [c["name"] for c in inspector.get_columns("staff_users")]
+                if "username" not in user_cols:
+                    sync_conn.execute(text("ALTER TABLE staff_users ADD COLUMN username VARCHAR(50)"))
+                    sync_conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_staff_users_username ON staff_users (username)"))
+                if "password_hash" not in user_cols:
+                    sync_conn.execute(text("ALTER TABLE staff_users ADD COLUMN password_hash VARCHAR(255)"))
+                if "last_login_at" not in user_cols:
+                    sync_conn.execute(text("ALTER TABLE staff_users ADD COLUMN last_login_at DATETIME"))
+                if "restaurant_id" not in user_cols:
+                    sync_conn.execute(text("ALTER TABLE staff_users ADD COLUMN restaurant_id INTEGER DEFAULT 1"))
+            if "categories" in tables:
+                cat_cols = [c["name"] for c in inspector.get_columns("categories")]
+                if "show_in_pos" not in cat_cols:
+                    sync_conn.execute(text("ALTER TABLE categories ADD COLUMN show_in_pos BOOLEAN DEFAULT 1"))
+            if "products" in tables:
+                prod_cols = [c["name"] for c in inspector.get_columns("products")]
+                if "show_in_pos" not in prod_cols:
+                    sync_conn.execute(text("ALTER TABLE products ADD COLUMN show_in_pos BOOLEAN DEFAULT 1"))
+                if "order_index" not in prod_cols:
+                    sync_conn.execute(text("ALTER TABLE products ADD COLUMN order_index INTEGER DEFAULT 0"))
+            if "order_items" in tables:
+                item_cols = [c["name"] for c in inspector.get_columns("order_items")]
+                if "added_by" not in item_cols:
+                    sync_conn.execute(text("ALTER TABLE order_items ADD COLUMN added_by VARCHAR(100) DEFAULT 'Garson'"))
         await conn.run_sync(migrate_schema)
 
         # Migrate all existing tenant databases

@@ -33,6 +33,7 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
   // Tenant Username Change Modal
   const [isChangingTenantCode, setIsChangingTenantCode] = useState<boolean>(false);
   const [newTenantCode, setNewTenantCode] = useState<string>('');
+  const [newTenantDisplayName, setNewTenantDisplayName] = useState<string>('');
 
   // New User Modal
   const [isNewUserModalOpen, setIsNewUserModalOpen] = useState<boolean>(false);
@@ -75,7 +76,10 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
       const res = await fetch(`/api/master/tenants/${currentTenantId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: newTenantCode.trim().toLowerCase() })
+        body: JSON.stringify({ 
+          code: newTenantCode.trim().toLowerCase(),
+          display_name: newTenantDisplayName.trim() || undefined
+        })
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -83,11 +87,13 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
       }
       const data = await res.json();
       const updatedCode = data.tenant?.code || newTenantCode.trim().toLowerCase();
+      const updatedDisplayName = data.display_name || newTenantDisplayName.trim();
       if (selectedTenant) {
         selectedTenant.code = updatedCode;
+        if (updatedDisplayName) selectedTenant.display_name = updatedDisplayName;
       }
       sound.cashDrawer();
-      alert(`✅ Restoran giriş kullanıcı adı başarıyla "@${updatedCode}" olarak güncellendi!`);
+      alert(`✅ Restoran bilgileri ve POS ekran başlığı ("${updatedDisplayName || updatedCode}") başarıyla güncellendi!`);
       setIsChangingTenantCode(false);
       onRefresh?.();
     } catch (err: any) {
@@ -223,21 +229,25 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
               <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-950 text-emerald-300 border border-emerald-800">
                 {selectedTenant.plan}
               </span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-emerald-400 border border-slate-700">
-                  Giriş Kullanıcı Adı: @{selectedTenant.code}
+                  Giriş Kodu: @{selectedTenant.code}
+                </span>
+                <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-950/70 text-emerald-300 border border-emerald-800/60" title="Menü altında görünen POS ekranı ve fiş başlığı">
+                  POS Başlığı: <strong>{selectedTenant.display_name || selectedTenant.name}</strong>
                 </span>
                 <button
                   type="button"
                   onClick={() => {
                     sound.beep();
                     setNewTenantCode(selectedTenant.code || '');
+                    setNewTenantDisplayName(selectedTenant.display_name || selectedTenant.name || '');
                     setIsChangingTenantCode(true);
                   }}
                   className="px-2 py-0.5 rounded-lg bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white text-[11px] font-black transition cursor-pointer border border-emerald-500/40"
-                  title="Restoranın giriş kullanıcı adını değiştir"
+                  title="Restoranın giriş kullanıcı adını veya POS menüsündeki başlığı değiştir"
                 >
-                  Kullanıcı Adını Değiştir ✏️
+                  İsimleri Değiştir ✏️
                 </button>
               </div>
             </div>
@@ -541,7 +551,7 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
 
             <form onSubmit={handleSaveTenantCode} className="space-y-4 text-xs font-bold text-slate-300">
               <div>
-                <label className="block mb-1 text-emerald-400">Yeni Restoran Kullanıcı Adı (Giriş Kodu)</label>
+                <label className="block mb-1 text-emerald-400">Restoran Giriş Kullanıcı Adı (Giriş Kodu)</label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono font-bold">@</span>
                   <input
@@ -553,8 +563,27 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
                     className="w-full pl-8 pr-4 py-2.5 rounded-xl bg-slate-800 border border-emerald-500/50 text-emerald-300 font-mono font-bold focus:border-emerald-400 focus:outline-none text-sm"
                   />
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1.5">
-                  Personeller giriş yaparken bu kullanıcı adını yazar. Değiştirdiğinizde restoran veritabanı kesintisiz olarak yeni kullanıcı adına taşınır.
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Personeller giriş yaparken bu kullanıcı adını yazar.
+                </p>
+              </div>
+
+              {/* POS Menüsü Altında ve Fişte Görünen İsim */}
+              <div className="p-3 rounded-2xl bg-slate-850 border border-emerald-500/40 space-y-1.5">
+                <label className="block text-emerald-300 font-black text-xs flex items-center justify-between">
+                  <span>🏪 POS Ekranı & Adisyon Başlığı (Menü Altındaki İsim)</span>
+                  <span className="text-[10px] text-emerald-400 font-bold">Canlı Ekrana Yansır</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newTenantDisplayName}
+                  onChange={(e) => setNewTenantDisplayName(e.target.value)}
+                  placeholder="Örn: FATİH ÇİFTLİĞİ"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-emerald-500/60 text-white font-black text-xs focus:border-emerald-400 focus:outline-none"
+                />
+                <p className="text-[11px] text-slate-400 font-medium">
+                  POS ekranının sol üst köşesinde (<strong>BonCore POS</strong> logosunun hemen altında) görünen başlık.
                 </p>
               </div>
 
