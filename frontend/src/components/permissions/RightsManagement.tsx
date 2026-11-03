@@ -142,8 +142,15 @@ export const initialPermissions: PermissionItem[] = [
   },
   {
     id: 'order_take_payment',
-    title: 'Ödeme alabilir.',
-    description: 'Kullanıcının adisyona ödeme işlemesini, alınan ödemeyi silmesini ve ÖKC ile POS cihazından tahsilat yapmasını sağlar.',
+    title: 'Ödeme alabilir ("ÖDE" butonunu görebilir ve ödeme işlemi yapabilir).',
+    description: 'Kullanıcının sipariş ekranında "ÖDE" kısmını görmesini, adisyona ödeme işlemesini, alınan ödemeyi silmesini ve tahsilat yapmasını sağlar.',
+    group: 'Sipariş Yetkilendirmeleri',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'order_fast_pay',
+    title: 'Hızlı Öde ("HIZLI ÖDE" butonunu görebilir ve tek tıkla tahsilat yapabilir).',
+    description: 'Kullanıcının sipariş ekranında "HIZLI ÖDE" kısmını görmesini ve nakit/kredi kartı ile tek tıkla hızlı ödeme almasını sağlar.',
     group: 'Sipariş Yetkilendirmeleri',
     roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
   },
@@ -335,7 +342,7 @@ export const initialPermissions: PermissionItem[] = [
   }
 ];
 
-function mergeWithInitialPermissions(savedList: any[] | null | undefined): PermissionItem[] {
+export function mergeWithInitialPermissions(savedList: any[] | null | undefined): PermissionItem[] {
   if (!Array.isArray(savedList) || savedList.length === 0) {
     return initialPermissions;
   }
@@ -360,6 +367,22 @@ function mergeWithInitialPermissions(savedList: any[] | null | undefined): Permi
           call_center: Boolean(existing.roles.call_center),
         }
       };
+    }
+    if (defItem.id === 'order_fast_pay' && savedMap.has('order_take_payment')) {
+      const takePay = savedMap.get('order_take_payment');
+      if (takePay && takePay.roles) {
+        return {
+          ...defItem,
+          roles: {
+            waiter: Boolean(takePay.roles.waiter),
+            kitchen: Boolean(takePay.roles.kitchen),
+            courier: Boolean(takePay.roles.courier),
+            cashier: Boolean(takePay.roles.cashier),
+            manager: Boolean(takePay.roles.manager),
+            call_center: Boolean(takePay.roles.call_center),
+          }
+        };
+      }
     }
     return defItem;
   });
@@ -408,18 +431,25 @@ export const RightsManagement: React.FC = () => {
 
   const handleToggle = (permId: string, roleKey: string) => {
     sound.beep();
-    setPermissions(prev => prev.map(p => {
-      if (p.id === permId) {
-        return {
-          ...p,
-          roles: {
-            ...p.roles,
-            [roleKey]: !p.roles[roleKey as keyof typeof p.roles]
-          }
-        };
-      }
-      return p;
-    }));
+    setPermissions(prev => {
+      const next = prev.map(p => {
+        if (p.id === permId) {
+          return {
+            ...p,
+            roles: {
+              ...p.roles,
+              [roleKey]: !p.roles[roleKey as keyof typeof p.roles]
+            }
+          };
+        }
+        return p;
+      });
+      try {
+        localStorage.setItem('boncore_role_permissions', JSON.stringify(next));
+        api.updateSettings({ role_permissions: next }).catch(() => {});
+      } catch {}
+      return next;
+    });
   };
 
   const handleSave = async () => {
@@ -486,8 +516,59 @@ export const RightsManagement: React.FC = () => {
           </div>
         </div>
 
-        {/* Search Input */}
-        <div className="px-4 sm:px-6">
+        {/* Search Input & Quick Waiter Payment Visibility Controls */}
+        <div className="px-4 sm:px-6 space-y-3">
+          <div className="p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-black text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                <Shield className="w-4 h-4 text-emerald-600" />
+                <span>Garsonlarda "ÖDE" ve "HIZLI ÖDE" Butonlarının Görünürlüğü</span>
+              </div>
+              <p className="text-[11px] text-emerald-700/80 dark:text-emerald-400 mt-0.5">
+                Garson rolündeki kullanıcıların sipariş ekranında <strong>Öde</strong> ve <strong>Hızlı Öde</strong> butonlarını görüp göremeyeceğini buradan veya aşağıdaki <em>SİPARİŞ İZİNLERİ</em> tablosundan seçebilirsiniz.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {(() => {
+                const payPerm = permissions.find(p => p.id === 'order_take_payment');
+                const fastPayPerm = permissions.find(p => p.id === 'order_fast_pay');
+                const waiterCanPay = payPerm?.roles.waiter ?? true;
+                const waiterCanFastPay = fastPayPerm?.roles.waiter ?? true;
+                return (
+                  <>
+                    <label className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-extrabold cursor-pointer transition select-none ${
+                      waiterCanPay
+                        ? 'bg-[#27ae60] text-white border-[#219653] shadow-xs'
+                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={waiterCanPay}
+                        onChange={() => handleToggle('order_take_payment', 'waiter')}
+                        className="w-3.5 h-3.5 rounded accent-white cursor-pointer"
+                      />
+                      <span>Garson: "ÖDE" Butonu {waiterCanPay ? 'Açık' : 'Gizli'}</span>
+                    </label>
+
+                    <label className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-extrabold cursor-pointer transition select-none ${
+                      waiterCanFastPay
+                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={waiterCanFastPay}
+                        onChange={() => handleToggle('order_fast_pay', 'waiter')}
+                        className="w-3.5 h-3.5 rounded accent-white cursor-pointer"
+                      />
+                      <span>Garson: "HIZLI ÖDE" Butonu {waiterCanFastPay ? 'Açık' : 'Gizli'}</span>
+                    </label>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+
           <div className="relative max-w-md">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input

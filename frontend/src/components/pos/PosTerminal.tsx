@@ -12,6 +12,7 @@ import { api } from '../../services/api';
 import { localHardware } from '../../services/localHardware';
 import { useWebSocket } from '../../services/websocket';
 import { ProductModifierModal } from './ProductModifierModal';
+import { initialPermissions, mergeWithInitialPermissions, PermissionItem } from '../permissions/RightsManagement';
 
 interface PosTerminalProps {
   categories: Category[];
@@ -228,6 +229,43 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     discounts: defaultPosDiscounts,
   });
 
+  const [rolePermissions, setRolePermissions] = useState<PermissionItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('boncore_role_permissions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return mergeWithInitialPermissions(parsed);
+        }
+      }
+    } catch {}
+    return initialPermissions;
+  });
+
+  const userRoleKey = useMemo(() => {
+    const raw = (currentUser?.role || 'waiter').toLowerCase();
+    if (raw === 'admin' || raw === 'müdür' || raw === 'mudur') return 'manager';
+    if (raw === 'garson') return 'waiter';
+    if (raw === 'kasa' || raw === 'kasiyer') return 'cashier';
+    if (raw === 'mutfak') return 'kitchen';
+    if (raw === 'kurye') return 'courier';
+    return raw as keyof PermissionItem['roles'];
+  }, [currentUser?.role]);
+
+  const canShowPayButton = useMemo(() => {
+    if (userRoleKey === 'manager') return true;
+    const perm = rolePermissions.find(p => p.id === 'order_take_payment');
+    if (!perm) return true;
+    return perm.roles[userRoleKey as keyof PermissionItem['roles']] ?? true;
+  }, [rolePermissions, userRoleKey]);
+
+  const canShowFastPayButton = useMemo(() => {
+    if (userRoleKey === 'manager') return true;
+    const perm = rolePermissions.find(p => p.id === 'order_fast_pay');
+    if (!perm) return true;
+    return perm.roles[userRoleKey as keyof PermissionItem['roles']] ?? true;
+  }, [rolePermissions, userRoleKey]);
+
   // Load existing order
   useEffect(() => {
     setActiveCategoryId('ALL');
@@ -259,6 +297,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       localStorage.setItem('boncore_service_enabled', String(newSettings.isServiceEnabled));
       localStorage.setItem('boncore_service_rate', String(newSettings.serviceRate));
       localStorage.setItem('boncore_discounts', JSON.stringify(loadedDiscounts));
+      if (data.role_permissions && Array.isArray(data.role_permissions)) {
+        const mergedPerms = mergeWithInitialPermissions(data.role_permissions);
+        setRolePermissions(mergedPerms);
+        localStorage.setItem('boncore_role_permissions', JSON.stringify(mergedPerms));
+      }
     } catch (err) {
       let cachedDiscounts = defaultPosDiscounts;
       try {
@@ -1329,66 +1372,78 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           </div>
           {/* 3 Buttons Grid */}
           <div className="grid grid-cols-12 gap-1.5 pt-1">
-            <button
-              onClick={async () => {
-                sound.beep();
-                const unsavedItems = cartItems.filter(i => !i.id);
-                let targetId = activeOrderId;
-                if (unsavedItems.length > 0) {
-                  setLoading(true);
-                  try {
-                    if (targetId) {
-                      await api.addItemsToOrder(targetId, unsavedItems, currentUser?.name || 'Garson');
-                      await loadOrder(targetId);
-                    } else {
-                      const res = await api.createOrder({
-                        table_id: activeTable?.id || null,
-                        order_type: activeTable ? 'dine_in' : 'takeaway',
-                        items: unsavedItems,
-                        waiter_name: currentUser?.name || 'Garson',
-                        notes: orderNote || null,
-                        kuver_count: 0
-                      });
-                      targetId = res.order_id;
-                      if (targetId) await loadOrder(targetId);
+            {canShowPayButton && (
+              <button
+                onClick={async () => {
+                  sound.beep();
+                  const unsavedItems = cartItems.filter(i => !i.id);
+                  let targetId = activeOrderId;
+                  if (unsavedItems.length > 0) {
+                    setLoading(true);
+                    try {
+                      if (targetId) {
+                        await api.addItemsToOrder(targetId, unsavedItems, currentUser?.name || 'Garson');
+                        await loadOrder(targetId);
+                      } else {
+                        const res = await api.createOrder({
+                          table_id: activeTable?.id || null,
+                          order_type: activeTable ? 'dine_in' : 'takeaway',
+                          items: unsavedItems,
+                          waiter_name: currentUser?.name || 'Garson',
+                          notes: orderNote || null,
+                          kuver_count: 0
+                        });
+                        targetId = res.order_id;
+                        if (targetId) await loadOrder(targetId);
+                      }
+                      onRefreshData();
+                    } catch (err: any) {
+                      showToast(err.message || 'Sipariş kaydedilemedi.', 'error');
+                      setLoading(false);
+                      return;
                     }
-                    onRefreshData();
-                  } catch (err: any) {
-                    showToast(err.message || 'Sipariş kaydedilemedi.', 'error');
                     setLoading(false);
-                    return;
                   }
-                  setLoading(false);
-                }
-                if (targetId) {
-                  onOpenCheckout(targetId, activeTable);
-                }
-              }}
-              disabled={loading || (cartItems.length === 0 && !activeOrderId)}
-              className="col-span-5 py-3 px-2 rounded-xl bg-[#27ae60] hover:bg-[#219653] disabled:opacity-50 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Tag className="w-3.5 h-3.5 flex-shrink-0" />
-              <span className="truncate">
-                ÖDE ₺{(existingOrder && cartItems.filter(i => !i.id).length === 0 ? existingOrder.remaining_total : grandTotal).toFixed(2)}
-              </span>
-            </button>
+                  if (targetId) {
+                    onOpenCheckout(targetId, activeTable);
+                  }
+                }}
+                disabled={loading || (cartItems.length === 0 && !activeOrderId)}
+                className={`${canShowFastPayButton ? 'col-span-5' : 'col-span-8'} py-3 px-2 rounded-xl bg-[#27ae60] hover:bg-[#219653] disabled:opacity-50 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-1.5 cursor-pointer`}
+              >
+                <Tag className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="truncate">
+                  ÖDE ₺{(existingOrder && cartItems.filter(i => !i.id).length === 0 ? existingOrder.remaining_total : grandTotal).toFixed(2)}
+                </span>
+              </button>
+            )}
 
-            <button
-              onClick={() => {
-                sound.beep();
-                setIsFastPayModalOpen(true);
-              }}
-              disabled={loading || (cartItems.length === 0 && !existingOrder)}
-              className="col-span-4 py-3 px-1.5 rounded-xl bg-[#fff9db] dark:bg-amber-950/40 border border-[#f59f00]/40 text-[#d97706] hover:bg-[#ffec99] disabled:opacity-50 font-black text-[11px] transition flex items-center justify-center gap-1 truncate cursor-pointer"
-            >
-              <Zap className="w-3 h-3 flex-shrink-0 text-amber-500 fill-amber-500" />
-              <span>HIZLI ÖDE</span>
-            </button>
+            {canShowFastPayButton && (
+              <button
+                onClick={() => {
+                  sound.beep();
+                  setIsFastPayModalOpen(true);
+                }}
+                disabled={loading || (cartItems.length === 0 && !existingOrder)}
+                className={`${canShowPayButton ? 'col-span-4' : 'col-span-7'} py-3 px-1.5 rounded-xl bg-[#fff9db] dark:bg-amber-950/40 border border-[#f59f00]/40 text-[#d97706] hover:bg-[#ffec99] disabled:opacity-50 font-black text-[11px] transition flex items-center justify-center gap-1 truncate cursor-pointer`}
+              >
+                <Zap className="w-3 h-3 flex-shrink-0 text-amber-500 fill-amber-500" />
+                <span>HIZLI ÖDE</span>
+              </button>
+            )}
 
             <button
               onClick={handleSaveOrSendOrder}
               disabled={loading || cartItems.length === 0}
-              className="col-span-3 py-3 px-1.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] disabled:opacity-50 text-white font-black text-xs shadow transition flex items-center justify-center cursor-pointer"
+              className={`${
+                canShowPayButton && canShowFastPayButton
+                  ? 'col-span-3'
+                  : canShowPayButton
+                  ? 'col-span-4'
+                  : canShowFastPayButton
+                  ? 'col-span-5'
+                  : 'col-span-12'
+              } py-3 px-1.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] disabled:opacity-50 text-white font-black text-xs shadow transition flex items-center justify-center cursor-pointer`}
             >
               <span>KAYDET</span>
             </button>
@@ -1633,14 +1688,16 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               <span>🧾 Adisyon ({activeCartCount})</span>
               <span className="font-mono font-black text-emerald-400">₺{grandTotal.toFixed(2)}</span>
             </button>
-            <button
-              onClick={() => { sound.beep(); setIsFastPayModalOpen(true); }}
-              disabled={loading}
-              className="py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs flex items-center gap-1 shrink-0"
-            >
-              <Zap className="w-3.5 h-3.5 fill-white" />
-              <span>Hızlı Öde</span>
-            </button>
+            {canShowFastPayButton && (
+              <button
+                onClick={() => { sound.beep(); setIsFastPayModalOpen(true); }}
+                disabled={loading}
+                className="py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs flex items-center gap-1 shrink-0"
+              >
+                <Zap className="w-3.5 h-3.5 fill-white" />
+                <span>Hızlı Öde</span>
+              </button>
+            )}
             <button
               onClick={handleSaveOrSendOrder}
               disabled={loading || cartItems.length === 0}
