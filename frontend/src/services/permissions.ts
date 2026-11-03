@@ -146,14 +146,14 @@ export const initialPermissions: PermissionItem[] = [
     title: 'Ödeme alabilir ("ÖDE" butonunu görebilir ve ödeme işlemi yapabilir).',
     description: 'Kullanıcının sipariş ekranında "ÖDE" kısmını görmesini, adisyona ödeme işlemesini, alınan ödemeyi silmesini ve tahsilat yapmasını sağlar.',
     group: 'Sipariş Yetkilendirmeleri',
-    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+    roles: { waiter: true, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
   },
   {
     id: 'order_fast_pay',
     title: 'Hızlı Öde ("HIZLI ÖDE" butonunu görebilir ve tek tıkla tahsilat yapabilir).',
     description: 'Kullanıcının sipariş ekranında "HIZLI ÖDE" kısmını görmesini ve nakit/kredi kartı ile tek tıkla hızlı ödeme almasını sağlar.',
     group: 'Sipariş Yetkilendirmeleri',
-    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+    roles: { waiter: true, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
   },
   {
     id: 'order_cancel',
@@ -188,7 +188,7 @@ export const initialPermissions: PermissionItem[] = [
     title: 'Siparişteki ürünü taşıyabilir',
     description: 'Kullanıcının bir adisyondaki ürünü başka bir adisyona veya yeni bir adisyona taşımasını sağlar.',
     group: 'Sipariş Yetkilendirmeleri',
-    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+    roles: { waiter: true, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
   },
   {
     id: 'order_view_closed_cancelled',
@@ -223,7 +223,7 @@ export const initialPermissions: PermissionItem[] = [
     title: 'Sipariş içindeki ürünün miktarını değiştirebilir.',
     description: 'Kullanıcının adisyondaki ürünün adedini artırmasını veya azaltmasını sağlar.',
     group: 'Sipariş Yetkilendirmeleri',
-    roles: { waiter: false, kitchen: true, courier: false, cashier: true, manager: true, call_center: true }
+    roles: { waiter: true, kitchen: true, courier: false, cashier: true, manager: true, call_center: true }
   },
   {
     id: 'order_manual_print',
@@ -265,7 +265,7 @@ export const initialPermissions: PermissionItem[] = [
     title: 'Siparişe Bahşiş Ekleyebilir',
     description: 'Kullanıcının siparişe bahşiş eklemesini sağlar.',
     group: 'Sipariş Yetkilendirmeleri',
-    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+    roles: { waiter: true, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
   },
 
   // ===================== 6. RESTAURANT TANIM YETKİLENDİRMELERİ =====================
@@ -292,17 +292,17 @@ export const initialPermissions: PermissionItem[] = [
   },
   {
     id: 'def_permissions_manage',
-    title: 'Yetkilendirme işlemleri',
-    description: 'Kullanıcının rollere yetki tanımlamasını veya mevcut yetkileri kaldırmasını sağlar.',
+    title: 'Yetkilendirme işlemleri (Sadece Yönetici)',
+    description: 'Kullanıcının rollere yetki tanımlamasını veya mevcut yetkileri kaldırmasını sağlar. (Sadece Yönetici erişebilir)',
     group: 'Restaurant Tanım Yetkilendirmeleri',
-    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+    roles: { waiter: false, kitchen: false, courier: false, cashier: false, manager: true, call_center: false }
   },
   {
     id: 'def_stock_entry_count',
     title: 'Stok girişi,stok sayımı işlemleri.',
     description: 'Kullanıcının stok girişi yapmasını, sayım kaydetmesini ve açılış maliyeti girmesini sağlar.',
     group: 'Restaurant Tanım Yetkilendirmeleri',
-    roles: { waiter: true, kitchen: true, courier: true, cashier: true, manager: true, call_center: true }
+    roles: { waiter: false, kitchen: true, courier: false, cashier: true, manager: true, call_center: false }
   },
   {
     id: 'def_delivery_integration_status',
@@ -323,7 +323,7 @@ export const initialPermissions: PermissionItem[] = [
     title: 'Entegrasyonlar ekranını görebilir ve işlem yapabilir',
     description: 'Kullanıcının Uygulama Mağazası ekranını açmasını ve entegrasyon ayarlarını kaydetmesini sağlar.',
     group: 'Restaurant Tanım Yetkilendirmeleri',
-    roles: { waiter: true, kitchen: true, courier: true, cashier: true, manager: true, call_center: true }
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
   },
 
   // ===================== 7. GİDER/MASRAF İŞLEMLER =====================
@@ -340,6 +340,183 @@ export const initialPermissions: PermissionItem[] = [
     description: 'Kullanıcının mevcut gider kaydını değiştirmesini veya silmesini sağlar.',
     group: 'Gider/Masraf İşlemler',
     roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+
+  // ===================== 8. SEKMELER (MENÜ & EKRAN GÖRÜNÜRLÜĞÜ) =====================
+  {
+    id: 'tab_dashboard',
+    title: 'Ana Sayfa (Dashboard)',
+    description: 'Sol menüdeki "Ana Sayfa" genel özet ekranını görmesini ve açmasını sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_tables',
+    title: 'Masalar & Sipariş Ekranı (POS)',
+    description: 'Masalar, açık siparişler ve POS sipariş alma ekranını görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: true, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'tab_kds',
+    title: 'Mutfak (KDS) Sekmesi',
+    description: 'Sol menü ve alt bardaki "Mutfak (KDS)" ekran sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: true, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_delivery',
+    title: 'Paket Servis & Kurye (Caller ID) Sekmesi',
+    description: 'Üst bar ve sol menüdeki "Paket Servis & Kurye" sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: true, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'tab_cashier',
+    title: 'Gider / Masraf & Kasa Sekmesi',
+    description: 'İşlemler altındaki "Gider / Masraf İşlemleri" ve mobil alt bardaki "Kasa" sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_integration_menu',
+    title: 'Entegrasyon İşlemleri & Ürün Eşleştirme Sekmesi',
+    description: 'Sol menüdeki "Entegrasyon İşlemleri" açılır menüsünü ve ekranını görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'tab_qr',
+    title: 'Dijital Menü (QR) Sekmesi',
+    description: 'Sol menüdeki "Dijital Menü (QR)" yönetim sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_settings',
+    title: 'Restaurant Tanımlamaları Sekmesi',
+    description: 'Tanımlamalar altındaki "Restaurant Tanımlamaları" (KDV, servis, yazıcı, indirim) sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_table_definition',
+    title: 'Masa / Bölgeler Tanımlama Sekmesi',
+    description: 'Tanımlamalar altındaki "Masa / Bölgeler" düzenleme sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_product_definition',
+    title: 'Menü / Ürünler Tanımlama Sekmesi',
+    description: 'Tanımlamalar altındaki "Menü / Ürünler" yönetim sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_inventory',
+    title: 'Stok, Birimler, Reçeteler & Zayi Sekmesi',
+    description: 'Tanımlamalar ve İşlemler altındaki "Birimler & Reçeteler", "Stok İşlemleri" ve "Zayi / Fire" sekmelerini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: true, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_kitchen_groups',
+    title: 'Mutfak Grupları Sekmesi',
+    description: 'Tanımlamalar altındaki "Mutfak Grupları" sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: true, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_customers',
+    title: 'Müşteri Sadakat & Cari (CRM) Sekmesi',
+    description: 'Sol menüdeki "Müşteri Sadakat & Cari" sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'tab_reservations',
+    title: 'Masa Rezervasyon Sekmesi',
+    description: 'Sol menüdeki "Masa Rezervasyon" sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
+  },
+  {
+    id: 'tab_kiosk',
+    title: 'Kiosk & Çağrı Ekranı (CFD) Sekmesi',
+    description: 'Sol menüdeki "Kiosk & Çağrı Ekranı" sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_hotel',
+    title: 'Otel Yönetim (PMS) Sekmesi',
+    description: 'Sol menüdeki "Otel Yönetim (PMS)" sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_audit',
+    title: 'Denetim İzi (Audit Log) Sekmesi',
+    description: 'İşlemler altındaki "Denetim İzi (Audit Log)" sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: false, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_users',
+    title: 'Kullanıcılar Sekmesi',
+    description: 'Kullanıcılar menüsü altındaki "Kullanıcılar" personel listesi sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: false, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_restaurant_statistics',
+    title: 'Restaurant İstatistikleri Raporu Sekmesi',
+    description: 'Raporlar altındaki "Restaurant İstatistikleri" sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_closed_bills_report',
+    title: 'Kapatılan Adisyonlar Raporu Sekmesi',
+    description: 'Raporlar altındaki "Kapatılan Adisyonlar" sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_product_sales_report',
+    title: 'Ürün Satış Raporu Sekmesi',
+    description: 'Raporlar altındaki "Ürün Satış Raporu" sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_day_end_report',
+    title: 'Gün Sonu Raporu (Z) Sekmesi',
+    description: 'Raporlar altındaki "Gün Sonu Raporu (Z)" sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_cost_profit',
+    title: 'Maliyet & Rapor Sihirbazı Sekmesi',
+    description: 'Raporlar altındaki "Maliyet & Rapor Sihirbazı" sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: false, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_app_store',
+    title: 'Uygulama Mağazası Sekmesi',
+    description: 'Sol menüdeki "Uygulama Mağazası" sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: false, kitchen: false, courier: false, cashier: false, manager: true, call_center: false }
+  },
+  {
+    id: 'tab_profile',
+    title: 'Profil & Kullanıcı Bilgisi Sekmesi',
+    description: 'Kullanıcının kendi profil ve hesap bilgisi sekmesini görmesini sağlar.',
+    group: 'Sekmeler',
+    roles: { waiter: true, kitchen: true, courier: true, cashier: true, manager: true, call_center: true }
   }
 ];
 
@@ -360,30 +537,14 @@ export function mergeWithInitialPermissions(savedList: any[] | null | undefined)
       return {
         ...defItem,
         roles: {
-          waiter: Boolean(existing.roles.waiter),
-          kitchen: Boolean(existing.roles.kitchen),
-          courier: Boolean(existing.roles.courier),
-          cashier: Boolean(existing.roles.cashier),
-          manager: Boolean(existing.roles.manager),
-          call_center: Boolean(existing.roles.call_center),
+          waiter: defItem.id === 'def_permissions_manage' ? false : Boolean(existing.roles.waiter),
+          kitchen: defItem.id === 'def_permissions_manage' ? false : Boolean(existing.roles.kitchen),
+          courier: defItem.id === 'def_permissions_manage' ? false : Boolean(existing.roles.courier),
+          cashier: defItem.id === 'def_permissions_manage' ? false : Boolean(existing.roles.cashier),
+          manager: defItem.id === 'order_predefined_discount_only' ? Boolean(existing.roles.manager) : true,
+          call_center: defItem.id === 'def_permissions_manage' ? false : Boolean(existing.roles.call_center),
         }
       };
-    }
-    if (defItem.id === 'order_fast_pay' && savedMap.has('order_take_payment')) {
-      const takePay = savedMap.get('order_take_payment');
-      if (takePay && takePay.roles) {
-        return {
-          ...defItem,
-          roles: {
-            waiter: Boolean(takePay.roles.waiter),
-            kitchen: Boolean(takePay.roles.kitchen),
-            courier: Boolean(takePay.roles.courier),
-            cashier: Boolean(takePay.roles.cashier),
-            manager: Boolean(takePay.roles.manager),
-            call_center: Boolean(takePay.roles.call_center),
-          }
-        };
-      }
     }
     return defItem;
   });
@@ -436,8 +597,10 @@ export function checkPermission(
   defaultFallback: boolean = false
 ): boolean {
   const roleKey = normalizeRoleKey(role);
+  if (permId === 'def_permissions_manage') {
+    return roleKey === 'manager';
+  }
   const perm = permissions.find(p => p.id === permId);
-  // Restrictive flags (like order_predefined_discount_only) evaluate directly even for managers
   if (permId === 'order_predefined_discount_only') {
     if (!perm) return false;
     return Boolean(perm.roles[roleKey]);
@@ -457,56 +620,22 @@ export function canAccessAppTab(
   tabId: string
 ): boolean {
   const roleKey = normalizeRoleKey(role);
-  if (roleKey === 'manager') return true;
-
-  const has = (id: string) => checkPermission(permissions, roleKey, id, false);
-
-  switch (tabId) {
-    case 'tables':
-    case 'pos':
-    case 'profile':
-      return true;
-    case 'kds':
-      return has('kds_view');
-    case 'delivery':
-      return has('courier_ops') || has('order_delivery');
-    case 'dashboard':
-    case 'restaurant_statistics':
-    case 'product_sales_report':
-    case 'cost_profit':
-      return has('reports_view');
-    case 'closed_bills_report':
-      return has('order_view_closed_cancelled') || has('reports_view');
-    case 'day_end_report':
-      return has('reports_z_close');
-    case 'cashier':
-      return has('reports_expense') || has('expense_add') || has('expense_edit_delete') || has('reports_register_edit');
-    case 'product_definition':
-    case 'kitchen_groups':
-    case 'qr':
-      return has('prod_manage_menu') || has('prod_edit_prices');
-    case 'integration_menu':
-      return has('prod_integration_manage') || has('prod_integration_prices') || has('def_delivery_integration_status');
-    case 'table_definition':
-      return has('def_table_area');
-    case 'settings':
-    case 'customers':
-    case 'reservations':
-    case 'hotel':
-    case 'kiosk':
-    case 'audit':
-      return has('def_general_settings');
-    case 'users':
-      return has('def_users_manage');
-    case 'rights':
-      return has('def_permissions_manage');
-    case 'inventory':
-      return has('def_stock_view') || has('def_stock_entry_count');
-    case 'app_store':
-      return has('def_integrations_appstore');
-    default:
-      return true;
+  // Yetkiler ekranı SADECE yöneticide (manager) gözükür ve sadece yönetici erişebilir!
+  if (tabId === 'rights') {
+    return roleKey === 'manager';
   }
+  if (roleKey === 'manager') {
+    return true;
+  }
+
+  const normalizedTab = tabId === 'pos' ? 'tables' : tabId;
+  const tabPermId = `tab_${normalizedTab}`;
+  const tabPerm = permissions.find(p => p.id === tabPermId);
+  if (tabPerm) {
+    return Boolean(tabPerm.roles[roleKey]);
+  }
+
+  return false;
 }
 
 export function useRolePermissions(currentUser?: StaffUser | null) {

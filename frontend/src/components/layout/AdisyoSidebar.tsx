@@ -268,31 +268,35 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                       Mutfak Grupları
                     </button>
                   )}
-                  <button
-                    onClick={() => handleNavClick('profile')}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                      activeTab === 'profile' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    Profil & Kullanıcı Bilgisi
-                  </button>
+                  {canTab('profile') && (
+                    <button
+                      onClick={() => handleNavClick('profile')}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                        activeTab === 'profile' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      Profil & Kullanıcı Bilgisi
+                    </button>
+                  )}
                 </div>
               )}
             </div>
           )}
 
           {/* Sipariş (Masa & POS) */}
-          <button
-            onClick={() => handleNavClick('tables')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
-              activeTab === 'tables' || activeTab === 'pos'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <UtensilsCrossed className="w-4 h-4 text-slate-500" />
-            <span>Masalar (Sipariş)</span>
-          </button>
+          {canTab('tables') && (
+            <button
+              onClick={() => handleNavClick('tables')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
+                activeTab === 'tables' || activeTab === 'pos'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <UtensilsCrossed className="w-4 h-4 text-slate-500" />
+              <span>Masalar (Sipariş)</span>
+            </button>
+          )}
 
           {/* Mutfak (KDS) */}
           {canTab('kds') && (
@@ -630,13 +634,15 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                   </div>
                 </div>
               </div>
-              <button
-                onClick={() => handleNavClick('profile')}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition cursor-pointer"
-                title="Profil Ayarları"
-              >
-                <Settings className="w-3.5 h-3.5" />
-              </button>
+              {canTab('profile') && (
+                <button
+                  onClick={() => handleNavClick('profile')}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition cursor-pointer"
+                  title="Profil Ayarları"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           )}
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, update
@@ -10,6 +10,7 @@ from app.models.setting import RestaurantSetting
 from app.models.product import Product
 from app.models.order import Order, OrderItem
 from app.websocket_hub import ws_hub
+from app.services.permission_service import resolve_operator_role
 
 router = APIRouter(prefix="/settings", tags=["Settings & Definitions"])
 
@@ -161,10 +162,17 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
     return output
 
 @router.put("/")
-async def update_settings(payload: Dict[str, Any], db: AsyncSession = Depends(get_db)):
+async def update_settings(payload: Dict[str, Any], request: Request = None, db: AsyncSession = Depends(get_db)):
     """
     Saves and updates restaurant settings into the database.
     """
+    if "role_permissions" in payload:
+        role_key = await resolve_operator_role(db, request, None)
+        if role_key and role_key != "manager":
+            raise HTTPException(
+                status_code=403,
+                detail="Yetkileri ve sekme görünürlüklerini sadece yönetici (Müdür) değiştirebilir."
+            )
     for key, value in payload.items():
         stmt = select(RestaurantSetting).where(RestaurantSetting.key == key)
         result = await db.execute(stmt)

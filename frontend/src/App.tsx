@@ -697,7 +697,7 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === 'rights' && <RightsManagement />}
+        {activeTab === 'rights' && <RightsManagement currentUser={currentUser} />}
 
         {activeTab === 'restaurant_statistics' && <RestaurantStatistics onNavigateTab={(tab) => setActiveTab(tab)} />}
 
@@ -772,46 +772,44 @@ export const App: React.FC = () => {
       </main>
 
       {/* Mobile Bottom Navigation Bar (Visible on phones < md) */}
-      <nav className={`md:hidden h-14 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 grid ${
-        canTab('kds') && canTab('cashier')
-          ? 'grid-cols-5'
-          : canTab('kds') || canTab('cashier')
-          ? 'grid-cols-4'
-          : 'grid-cols-3'
-      } items-center px-1 shrink-0 z-30 select-none`}>
-        <button
-          onClick={() => { sound.beep(); setActiveTab('tables'); setFloorSection('tables'); }}
-          className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
-            activeTab === 'tables' && floorSection === 'tables'
-              ? 'text-[#338d35] dark:text-emerald-400 font-black'
-              : 'text-slate-500 dark:text-slate-400 font-semibold'
-          }`}
-        >
-          <Grid className="w-4 h-4 mb-0.5" />
-          <span className="text-[10px]">Masalar</span>
-        </button>
-        <button
-          onClick={() => { sound.beep(); setActiveTab('tables'); setFloorSection('orders'); }}
-          className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer relative ${
-            activeTab === 'tables' && floorSection === 'orders'
-              ? 'text-[#338d35] dark:text-emerald-400 font-black'
-              : 'text-slate-500 dark:text-slate-400 font-semibold'
-          }`}
-        >
-          <div className="relative flex items-center justify-center">
-            <FileText className="w-4 h-4 mb-0.5" />
-            {openTablesCount > 0 && (
-              <span className="absolute -top-1.5 -right-2.5 bg-emerald-600 text-white text-[9px] font-black px-1 rounded-full leading-tight min-w-[14px] text-center shadow-xs">
-                {openTablesCount}
-              </span>
-            )}
-          </div>
-          <span className="text-[10px]">Siparişler</span>
-        </button>
+      <nav className="md:hidden h-14 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-around px-1 shrink-0 z-30 select-none">
+        {canTab('tables') && (
+          <>
+            <button
+              onClick={() => { sound.beep(); setActiveTab('tables'); setFloorSection('tables'); }}
+              className={`flex-1 flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
+                activeTab === 'tables' && floorSection === 'tables'
+                  ? 'text-[#338d35] dark:text-emerald-400 font-black'
+                  : 'text-slate-500 dark:text-slate-400 font-semibold'
+              }`}
+            >
+              <Grid className="w-4 h-4 mb-0.5" />
+              <span className="text-[10px]">Masalar</span>
+            </button>
+            <button
+              onClick={() => { sound.beep(); setActiveTab('tables'); setFloorSection('orders'); }}
+              className={`flex-1 flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer relative ${
+                activeTab === 'tables' && floorSection === 'orders'
+                  ? 'text-[#338d35] dark:text-emerald-400 font-black'
+                  : 'text-slate-500 dark:text-slate-400 font-semibold'
+              }`}
+            >
+              <div className="relative flex items-center justify-center">
+                <FileText className="w-4 h-4 mb-0.5" />
+                {openTablesCount > 0 && (
+                  <span className="absolute -top-1.5 -right-2.5 bg-emerald-600 text-white text-[9px] font-black px-1 rounded-full leading-tight min-w-[14px] text-center shadow-xs">
+                    {openTablesCount}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px]">Siparişler</span>
+            </button>
+          </>
+        )}
         {canTab('kds') && (
           <button
             onClick={() => { sound.beep(); setActiveTab('kds'); }}
-            className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
+            className={`flex-1 flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
               activeTab === 'kds'
                 ? 'text-[#338d35] dark:text-emerald-400 font-black'
                 : 'text-slate-500 dark:text-slate-400 font-semibold'
@@ -824,7 +822,7 @@ export const App: React.FC = () => {
         {canTab('cashier') && (
           <button
             onClick={() => { sound.beep(); setActiveTab('cashier'); }}
-            className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
+            className={`flex-1 flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
               activeTab === 'cashier'
                 ? 'text-[#338d35] dark:text-emerald-400 font-black'
                 : 'text-slate-500 dark:text-slate-400 font-semibold'
@@ -836,7 +834,7 @@ export const App: React.FC = () => {
         )}
         <button
           onClick={() => { sound.beep(); setIsSidebarOpen(true); }}
-          className="flex flex-col items-center justify-center py-1 rounded-xl text-slate-500 dark:text-slate-400 font-semibold transition cursor-pointer"
+          className="flex-1 flex flex-col items-center justify-center py-1 rounded-xl text-slate-500 dark:text-slate-400 font-semibold transition cursor-pointer"
         >
           <Menu className="w-4 h-4 mb-0.5" />
           <span className="text-[10px]">Menü</span>
