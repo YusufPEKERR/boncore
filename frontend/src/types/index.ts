@@ -21,6 +21,7 @@ export interface Table {
   area_id: number;
   name: string;
   shape: 'square' | 'round' | 'rectangle' | 'bar';
+  order_index?: number;
   x: number;
   y: number;
   width: number;

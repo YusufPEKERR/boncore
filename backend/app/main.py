@@ -59,6 +59,10 @@ async def lifespan(app: FastAPI):
                     sync_conn.execute(text("ALTER TABLE products ADD COLUMN show_in_pos BOOLEAN DEFAULT 1"))
                 if "order_index" not in prod_cols:
                     sync_conn.execute(text("ALTER TABLE products ADD COLUMN order_index INTEGER DEFAULT 0"))
+            if "tables" in tables:
+                t_cols = [c["name"] for c in inspector.get_columns("tables")]
+                if "order_index" not in t_cols:
+                    sync_conn.execute(text("ALTER TABLE tables ADD COLUMN order_index INTEGER DEFAULT 0"))
             if "order_items" in tables:
                 item_cols = [c["name"] for c in inspector.get_columns("order_items")]
                 if "added_by" not in item_cols:
@@ -72,6 +76,11 @@ async def lifespan(app: FastAPI):
             try:
                 conn_sqlite = sqlite3.connect(t_db)
                 c = conn_sqlite.cursor()
+                c.execute("PRAGMA table_info(tables)")
+                t_info = [r[1] for r in c.fetchall()]
+                if t_info and "order_index" not in t_info:
+                    c.execute("ALTER TABLE tables ADD COLUMN order_index INTEGER DEFAULT 0")
+                    conn_sqlite.commit()
                 c.execute("PRAGMA table_info(order_items)")
                 cols_info = [r[1] for r in c.fetchall()]
                 if cols_info and "added_by" not in cols_info:

@@ -52,17 +52,26 @@ class AreaCreate(BaseModel):
     name: str
     order_index: Optional[int] = 0
 
+class AreaReorderRequest(BaseModel):
+    area_ids: List[int]
+
 class TableCreateSchema(BaseModel):
     area_id: int
     name: str
     seats: Optional[int] = 4
     shape: Optional[str] = "square"
+    order_index: Optional[int] = 0
 
 class TableUpdateSchema(BaseModel):
     area_id: Optional[int] = None
     name: Optional[str] = None
     seats: Optional[int] = None
     shape: Optional[str] = None
+    order_index: Optional[int] = None
+
+class TableReorderRequest(BaseModel):
+    area_id: Optional[int] = None
+    table_ids: List[int]
 
 class TableBulkCreateSchema(BaseModel):
     area_id: int
@@ -79,6 +88,7 @@ class TablePositionUpdate(BaseModel):
     width: Optional[float] = 120.0
     height: Optional[float] = 120.0
     shape: Optional[str] = "square"
+    order_index: Optional[int] = None
 
 class TableMoveRequest(BaseModel):
     source_table_id: int

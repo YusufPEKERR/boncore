@@ -142,7 +142,7 @@ def resolve_tenant_code_from_request(request: Optional[Request]) -> str:
     4. Fallback: 'boncore-kadikoy'
     """
     if not request:
-        return DEFAULT_TENANT_CODE
+        return get_primary_tenant_code()
 
     # 1. Custom Header
     h_code = request.headers.get("X-Restaurant-Code") or request.headers.get("X-Tenant-Code")
@@ -176,7 +176,7 @@ def resolve_tenant_code_from_request(request: Optional[Request]) -> str:
     if q_code:
         return clean_tenant_code(q_code)
 
-    return DEFAULT_TENANT_CODE
+    return get_primary_tenant_code()
 
 
 async def get_db(request: Request = None) -> AsyncGenerator[AsyncSession, None]:

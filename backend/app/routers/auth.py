@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.config import settings
-from app.database import get_db, get_master_db, get_tenant_sessionmaker, clean_tenant_code
+from app.database import get_db, get_master_db, get_tenant_sessionmaker, clean_tenant_code, resolve_tenant_code_from_request
 from app.models.user import StaffUser
 from app.models.tenant import RestaurantTenant
 from app.schemas.all import (
@@ -260,17 +260,18 @@ async def login(payload: LoginRequest, request: Request, response: Response, mas
 
 
 @router.post("/login-pin", response_model=StaffUserResponse)
-async def login_by_pin(payload: PinAuthRequest, db: AsyncSession = Depends(get_db)):
+async def login_by_pin(payload: PinAuthRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """
     Yönetici / hızlı vardiya PIN doğrulaması.
     """
+    tenant_code = resolve_tenant_code_from_request(request)
     stmt = select(StaffUser).where(StaffUser.pin_code == payload.pin_code, StaffUser.is_active == True)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
     if not user:
         if payload.pin_code == settings.MANAGER_OVERRIDE_PIN:
-            token, _ = create_access_token(999, "manager")
+            token, _ = create_access_token(999, "manager", restaurant_code=tenant_code)
             return StaffUserResponse(
                 id=999,
                 name="Yönetici (Master)",
@@ -286,7 +287,7 @@ async def login_by_pin(payload: PinAuthRequest, db: AsyncSession = Depends(get_d
 
     user.last_login_at = datetime.utcnow()
     await db.commit()
-    token, _ = create_access_token(user.id, user.role)
+    token, _ = create_access_token(user.id, user.role, restaurant_code=tenant_code)
     return StaffUserResponse(
         id=user.id,
         name=user.name,

@@ -11,7 +11,7 @@ from app.models.audit import AuditLog
 from app.schemas.all import (
     TablePositionUpdate, TableMoveRequest, TableMergeRequest, 
     TableItemTransferRequest, TableKuverRequest, WaiterCallRequest,
-    AreaCreate, TableCreateSchema, TableUpdateSchema, TableBulkCreateSchema
+    AreaCreate, AreaReorderRequest, TableCreateSchema, TableUpdateSchema, TableReorderRequest, TableBulkCreateSchema
 )
 from app.websocket_hub import ws_hub
 from app.cache import cache_manager
@@ -35,7 +35,8 @@ async def get_areas_with_tables(db: AsyncSession = Depends(get_db)):
 
     for area in areas:
         tables_data = []
-        for table in area.tables:
+        sorted_tables = sorted(area.tables, key=lambda t: (t.order_index if t.order_index is not None else 0, t.id))
+        for table in sorted_tables:
             active_order = None
 
             # Eğer masa "empty" durumundaysa ve current_order_id yoksa, arkada asılı kalmış
@@ -120,6 +121,7 @@ async def get_areas_with_tables(db: AsyncSession = Depends(get_db)):
                 "area_id": table.area_id,
                 "name": table.name,
                 "shape": table.shape,
+                "order_index": table.order_index or 0,
                 "x": table.x,
                 "y": table.y,
                 "width": table.width,
@@ -164,6 +166,7 @@ async def update_table_positions(positions: list[TablePositionUpdate], db: Async
             if pos.width: table.width = pos.width
             if pos.height: table.height = pos.height
             if pos.shape: table.shape = pos.shape
+            if pos.order_index is not None: table.order_index = pos.order_index
 
     await db.commit()
     await ws_hub.broadcast_all("FLOOR_LAYOUT_UPDATED", {"updated_count": len(positions)})
@@ -470,6 +473,38 @@ async def create_area(payload: AreaCreate, db: AsyncSession = Depends(get_db)):
     await ws_hub.broadcast_all("AREAS_UPDATED", {"area_id": new_area.id})
     return {"status": "success", "area": {"id": new_area.id, "name": new_area.name}}
 
+@router.put("/areas/reorder")
+async def reorder_areas(payload: AreaReorderRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Updates the display order of areas.
+    """
+    for idx, area_id in enumerate(payload.area_ids):
+        stmt = select(Area).where(Area.id == area_id)
+        res = await db.execute(stmt)
+        area = res.scalar_one_or_none()
+        if area:
+            area.order_index = idx
+    await db.commit()
+    await ws_hub.broadcast_all("AREAS_UPDATED", {"reordered": True})
+    return {"status": "success", "message": "Bölge sıralaması güncellendi."}
+
+@router.put("/tables/reorder")
+async def reorder_tables(payload: TableReorderRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Updates the display order of tables within an area or across areas.
+    """
+    for idx, table_id in enumerate(payload.table_ids):
+        stmt = select(Table).where(Table.id == table_id)
+        res = await db.execute(stmt)
+        table = res.scalar_one_or_none()
+        if table:
+            table.order_index = idx
+            if payload.area_id is not None:
+                table.area_id = payload.area_id
+    await db.commit()
+    await ws_hub.broadcast_all("AREAS_UPDATED", {"tables_reordered": True})
+    return {"status": "success", "message": "Masa sıralaması güncellendi."}
+
 @router.put("/areas/{area_id}")
 async def update_area(area_id: int, payload: AreaCreate, db: AsyncSession = Depends(get_db)):
     """
@@ -521,6 +556,7 @@ async def create_single_table(payload: TableCreateSchema, db: AsyncSession = Dep
         name=payload.name,
         seats=payload.seats or 4,
         shape=payload.shape or "square",
+        order_index=payload.order_index or 0,
         status="empty",
         x=50.0,
         y=50.0,
@@ -536,7 +572,7 @@ async def create_single_table(payload: TableCreateSchema, db: AsyncSession = Dep
 @router.put("/single/{table_id}")
 async def update_single_table(table_id: int, payload: TableUpdateSchema, db: AsyncSession = Depends(get_db)):
     """
-    Updates table name, seats, shape, or area.
+    Updates table name, seats, shape, area, or order index.
     """
     stmt = select(Table).where(Table.id == table_id)
     res = await db.execute(stmt)
@@ -551,8 +587,11 @@ async def update_single_table(table_id: int, payload: TableUpdateSchema, db: Asy
         table.seats = payload.seats
     if payload.shape is not None:
         table.shape = payload.shape
+    if payload.order_index is not None:
+        table.order_index = payload.order_index
     await db.commit()
     await ws_hub.broadcast_all("AREAS_UPDATED", {"table_id": table_id})
+    return {"status": "success", "message": "Masa güncellendi."}
     return {"status": "success", "message": "Masa güncellendi."}
 
 @router.delete("/single/{table_id}")

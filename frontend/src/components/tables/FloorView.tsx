@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Edit3, MoreVertical, Clock, 
-  ArrowRight, Merge, RefreshCw, FileText, CheckCircle, ArrowRightLeft 
+  ArrowRight, Merge, RefreshCw, FileText, CheckCircle, ArrowRightLeft,
+  LayoutGrid, MapPin, Move, Save, ChevronLeft, ChevronRight, Sliders
 } from 'lucide-react';
 import { Area, Table, StaffUser } from '../../types';
 import { sound } from '../../services/sound';
@@ -33,6 +34,12 @@ export const FloorView: React.FC<FloorViewProps> = ({
     }
     return areas[0]?.id || 1;
   });
+
+  const [viewMode, setViewMode] = useState<'grid' | 'kroki'>(() => {
+    return (localStorage.getItem('boncore_floor_view_mode') as 'grid' | 'kroki') || 'grid';
+  });
+
+  const [isEditingLayout, setIsEditingLayout] = useState<boolean>(false);
   const [selectedTableForAction, setSelectedTableForAction] = useState<Table | null>(null);
 
   // Modals
@@ -41,6 +48,13 @@ export const FloorView: React.FC<FloorViewProps> = ({
   const [isTransferItemsOpen, setIsTransferItemsOpen] = useState<boolean>(false);
   const [activeActionTableId, setActiveActionTableId] = useState<number | null>(null);
   const [currentNow, setCurrentNow] = useState<number>(Date.now());
+
+  // Kroki Canvas Drag state
+  const [canvasTables, setCanvasTables] = useState<Table[]>([]);
+  const [hasUnsavedPositions, setHasUnsavedPositions] = useState<boolean>(false);
+  const [activeDragId, setActiveDragId] = useState<number | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const dragStartRef = useRef<{ mouseX: number; mouseY: number; tableX: number; tableY: number } | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentNow(Date.now()), 1000);
@@ -76,6 +90,10 @@ export const FloorView: React.FC<FloorViewProps> = ({
   }, [activeAreaId]);
 
   useEffect(() => {
+    localStorage.setItem('boncore_floor_view_mode', viewMode);
+  }, [viewMode]);
+
+  useEffect(() => {
     if (areas.length > 0 && !areas.some(a => a.id === activeAreaId)) {
       setActiveAreaId(areas[0].id);
     }
@@ -84,7 +102,15 @@ export const FloorView: React.FC<FloorViewProps> = ({
   const currentArea = areas.find(a => a.id === activeAreaId) || areas[0];
   const displayedTables: Table[] = currentArea?.tables || [];
 
+  useEffect(() => {
+    if (currentArea) {
+      setCanvasTables(currentArea.tables || []);
+      setHasUnsavedPositions(false);
+    }
+  }, [currentArea?.id, currentArea?.tables]);
+
   const handleTableClick = (table: Table) => {
+    if (isEditingLayout) return;
     sound.beep();
     onSelectTable(table);
   };
@@ -96,27 +122,116 @@ export const FloorView: React.FC<FloorViewProps> = ({
     setActiveActionTableId(activeActionTableId === table.id ? null : table.id);
   };
 
+  // Shift Area Left/Right
+  const handleShiftArea = async (e: React.MouseEvent, areaIndex: number, direction: 'left' | 'right') => {
+    e.stopPropagation();
+    const targetIndex = direction === 'left' ? areaIndex - 1 : areaIndex + 1;
+    if (targetIndex < 0 || targetIndex >= areas.length) return;
+
+    sound.beep();
+    const newAreas = [...areas];
+    const [moved] = newAreas.splice(areaIndex, 1);
+    newAreas.splice(targetIndex, 0, moved);
+
+    try {
+      await api.reorderAreas(newAreas.map(a => a.id));
+      onRefreshAreas();
+    } catch (err: any) {
+      sound.warning();
+    }
+  };
+
+  // Kroki Drag handlers
+  const handleKrokiMouseDown = (e: React.MouseEvent, table: Table) => {
+    if (!isEditingLayout) return;
+    e.stopPropagation();
+    setActiveDragId(table.id);
+    dragStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      tableX: table.x || 50,
+      tableY: table.y || 50
+    };
+  };
+
+  const handleKrokiMouseMove = (e: React.MouseEvent) => {
+    if (!activeDragId || !dragStartRef.current || !isEditingLayout) return;
+    const deltaX = e.clientX - dragStartRef.current.mouseX;
+    const deltaY = e.clientY - dragStartRef.current.mouseY;
+
+    const rawX = Math.max(10, dragStartRef.current.tableX + deltaX);
+    const rawY = Math.max(10, dragStartRef.current.tableY + deltaY);
+    const snappedX = Math.round(rawX / 10) * 10;
+    const snappedY = Math.round(rawY / 10) * 10;
+
+    setCanvasTables(prev => prev.map(t => {
+      if (t.id === activeDragId) {
+        return { ...t, x: snappedX, y: snappedY };
+      }
+      return t;
+    }));
+    setHasUnsavedPositions(true);
+  };
+
+  const handleKrokiMouseUp = () => {
+    if (activeDragId) {
+      setActiveDragId(null);
+      dragStartRef.current = null;
+    }
+  };
+
+  const handleSaveKrokiPositions = async () => {
+    sound.beep();
+    try {
+      const payload = canvasTables.map(t => ({
+        id: t.id,
+        x: t.x || 50,
+        y: t.y || 50,
+        width: t.width || 120,
+        height: t.height || 120,
+        shape: t.shape || 'square'
+      }));
+      await api.updateTablePositions(payload);
+      setHasUnsavedPositions(false);
+      setIsEditingLayout(false);
+      onRefreshAreas();
+    } catch (err: any) {
+      sound.warning();
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-slate-50 dark:bg-slate-950 select-none overflow-hidden transition-colors duration-200">
-      {/* Area Horizontal Tabs Bar (Matching Adisyo Frame 105) */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-4 flex items-center justify-between z-10 shadow-sm overflow-x-auto shrink-0">
-        <div className="flex items-center gap-1 overflow-x-auto py-1 no-scrollbar">
-          {/* AREA TABS */}
-          {areas.map((area) => {
+      {/* Area Horizontal Tabs Bar */}
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-4 flex items-center justify-between z-10 shadow-sm overflow-x-auto shrink-0 gap-2">
+        <div className="flex items-center gap-1 overflow-x-auto py-1 no-scrollbar flex-1">
+          {/* AREA TABS WITH QUICK REORDER ARROWS ON ACTIVE TAB */}
+          {areas.map((area, idx) => {
             const isAreaActive = activeAreaId === area.id;
             const occupiedInArea = (area.tables || []).filter(t => t.status === 'occupied' || t.status === 'bill_requested').length;
             const totalInArea = (area.tables || []).length;
 
             return (
-              <button
+              <div
                 key={area.id}
-                onClick={() => { sound.beep(); setActiveAreaId(area.id); }}
-                className={`py-2.5 sm:py-3 px-2.5 sm:px-3.5 text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 sm:gap-2 border-b-2 shrink-0 ${
+                className={`py-1.5 sm:py-2 px-2 sm:px-3 text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 border-b-2 shrink-0 ${
                   isAreaActive
-                    ? 'border-[#2c3e50] dark:border-blue-500 text-slate-900 dark:text-white font-extrabold'
-                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    ? 'border-[#2c3e50] dark:border-blue-500 text-slate-900 dark:text-white font-extrabold bg-slate-50 dark:bg-slate-800/50 rounded-t-lg'
+                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer'
                 }`}
+                onClick={() => { sound.beep(); setActiveAreaId(area.id); }}
               >
+                {/* Shift Left Arrow on Active Tab */}
+                {isAreaActive && idx > 0 && (
+                  <button
+                    onClick={(e) => handleShiftArea(e, idx, 'left')}
+                    className="p-0.5 text-slate-400 hover:text-slate-900 dark:hover:text-white rounded hover:bg-slate-200 dark:hover:bg-slate-700"
+                    title="Bölgeyi Sola Kaydır"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
                 <span className="uppercase">{area.name}</span>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                   isAreaActive 
@@ -125,12 +240,76 @@ export const FloorView: React.FC<FloorViewProps> = ({
                 }`}>
                   {occupiedInArea}/{totalInArea}
                 </span>
-              </button>
+
+                {/* Shift Right Arrow on Active Tab */}
+                {isAreaActive && idx < areas.length - 1 && (
+                  <button
+                    onClick={(e) => handleShiftArea(e, idx, 'right')}
+                    className="p-0.5 text-slate-400 hover:text-slate-900 dark:hover:text-white rounded hover:bg-slate-200 dark:hover:bg-slate-700"
+                    title="Bölgeyi Sağa Kaydır"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0 pl-1">
+        {/* View Mode & Controls */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 pl-1">
+          {/* Mode Switch: Grid vs Kroki */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold">
+            <button
+              onClick={() => { sound.beep(); setViewMode('grid'); setIsEditingLayout(false); }}
+              className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg flex items-center gap-1 transition ${
+                viewMode === 'grid'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+              title="Izgara Görünümü"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Izgara</span>
+            </button>
+            <button
+              onClick={() => { sound.beep(); setViewMode('kroki'); }}
+              className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg flex items-center gap-1 transition ${
+                viewMode === 'kroki'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+              title="Kroki / Salon Planı"
+            >
+              <MapPin className="w-3.5 h-3.5 text-emerald-500" />
+              <span className="hidden sm:inline">Kroki</span>
+            </button>
+          </div>
+
+          {/* If in Kroki mode: Edit Layout Toggle / Save Button */}
+          {viewMode === 'kroki' && (
+            <>
+              {isEditingLayout ? (
+                <button
+                  onClick={handleSaveKrokiPositions}
+                  className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow transition flex items-center gap-1"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Kaydet</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => { sound.beep(); setIsEditingLayout(true); }}
+                  className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200 dark:border-slate-700 transition flex items-center gap-1"
+                  title="Masaların yerini taşımak için düzenleme modunu aç"
+                >
+                  <Move className="w-3.5 h-3.5 text-blue-500" />
+                  <span className="hidden sm:inline">Masaları Taşı</span>
+                </button>
+              )}
+            </>
+          )}
+
           <button
             onClick={() => { sound.beep(); onRefreshAreas(); }}
             className={`p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition ${loading ? 'animate-spin' : ''}`}
@@ -141,160 +320,268 @@ export const FloorView: React.FC<FloorViewProps> = ({
         </div>
       </div>
 
-      {/* Tables Grid Canvas (Matching Adisyo Frame 105) */}
-      <div className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 bg-slate-50 dark:bg-slate-950">
-        {loading && displayedTables.length === 0 && (
-          <div className="h-64 flex flex-col items-center justify-center text-slate-400 gap-3 animate-fadeIn">
-            <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-            <span className="text-sm font-bold">Masalar yükleniyor...</span>
-          </div>
-        )}
-
-        {!loading && displayedTables.length === 0 && (
-          <div className="h-64 flex flex-col items-center justify-center text-slate-400 gap-3 animate-fadeIn">
-            <div className="w-16 h-16 rounded-3xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-400">
-              <RefreshCw className="w-8 h-8" />
+      {/* Main Floor View: GRID or KROKI */}
+      {viewMode === 'grid' ? (
+        <div className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 bg-slate-50 dark:bg-slate-950">
+          {loading && displayedTables.length === 0 && (
+            <div className="h-64 flex flex-col items-center justify-center text-slate-400 gap-3 animate-fadeIn">
+              <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
+              <span className="text-sm font-bold">Masalar yükleniyor...</span>
             </div>
-            <h3 className="text-base font-black text-slate-800 dark:text-slate-200">Henüz Masa Bulunmuyor</h3>
-            <p className="text-xs text-slate-400 max-w-sm text-center">Masalar henüz listelenmedi veya bağlantı bekleniyor.</p>
-            <button
-              onClick={onRefreshAreas}
-              className="mt-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
-            >
-              <RefreshCw className="w-4 h-4" />
-              <span>Masaları Yenile</span>
-            </button>
-          </div>
-        )}
+          )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5 sm:gap-4">
-          {displayedTables.map((table) => {
-            const isOccupied = table.status === 'occupied' || !!table.active_order;
-            const isBillRequested = table.status === 'bill_requested';
-            const isReserved = table.status === 'reserved';
-            const hasBuzzer = !!table.waiter_call_reason || table.status === 'waiter_call';
-            const isMenuOpen = activeActionTableId === table.id;
-
-            return (
-              <div
-                key={table.id}
-                onClick={() => handleTableClick(table)}
-                className={`h-32 sm:h-40 rounded-2xl p-3 sm:p-4 flex flex-col justify-between cursor-pointer transition-all duration-150 pos-touch-card relative border shadow-sm hover:shadow-md ${
-                  hasBuzzer
-                    ? 'bg-purple-50 dark:bg-purple-950/50 border-purple-400 text-purple-900 dark:text-purple-100 animate-pulse'
-                    : isBillRequested
-                    ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-400 text-blue-900 dark:text-blue-100'
-                    : isOccupied
-                    ? 'bg-[#fce8e6] dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900/60 text-slate-900 dark:text-white'
-                    : isReserved
-                    ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-900/60 text-amber-900 dark:text-amber-100'
-                    : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 text-slate-800 dark:text-slate-200 hover:border-slate-300'
-                }`}
+          {!loading && displayedTables.length === 0 && (
+            <div className="h-64 flex flex-col items-center justify-center text-slate-400 gap-3 animate-fadeIn">
+              <div className="w-16 h-16 rounded-3xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-400">
+                <RefreshCw className="w-8 h-8" />
+              </div>
+              <h3 className="text-base font-black text-slate-800 dark:text-slate-200">Henüz Masa Bulunmuyor</h3>
+              <p className="text-xs text-slate-400 max-w-sm text-center">Masalar henüz listelenmedi veya bağlantı bekleniyor.</p>
+              <button
+                onClick={onRefreshAreas}
+                className="mt-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
               >
-                {/* Card Top: Table Name, Waiter Subtext, and 3-dots Menu */}
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="font-extrabold text-base text-slate-900 dark:text-white tracking-tight leading-tight">
-                      {table.name}
-                    </h3>
-                    {isOccupied && (
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider block mt-0.5">
-                        {table.waiter_name || 'MEHMETABİ'}
+                <RefreshCw className="w-4 h-4" />
+                <span>Masaları Yenile</span>
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5 sm:gap-4">
+            {displayedTables.map((table) => {
+              const isOccupied = table.status === 'occupied' || !!table.active_order;
+              const isBillRequested = table.status === 'bill_requested';
+              const isReserved = table.status === 'reserved';
+              const hasBuzzer = !!table.waiter_call_reason || table.status === 'waiter_call';
+              const isMenuOpen = activeActionTableId === table.id;
+
+              return (
+                <div
+                  key={table.id}
+                  onClick={() => handleTableClick(table)}
+                  className={`h-32 sm:h-40 rounded-2xl p-3 sm:p-4 flex flex-col justify-between cursor-pointer transition-all duration-150 pos-touch-card relative border shadow-sm hover:shadow-md ${
+                    hasBuzzer
+                      ? 'bg-purple-50 dark:bg-purple-950/50 border-purple-400 text-purple-900 dark:text-purple-100 animate-pulse'
+                      : isBillRequested
+                      ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-400 text-blue-900 dark:text-blue-100'
+                      : isOccupied
+                      ? 'bg-[#fce8e6] dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900/60 text-slate-900 dark:text-white'
+                      : isReserved
+                      ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-900/60 text-amber-900 dark:text-amber-100'
+                      : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 text-slate-800 dark:text-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {/* Card Top: Table Name, Waiter Subtext, and 3-dots Menu */}
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="font-extrabold text-base text-slate-900 dark:text-white tracking-tight leading-tight">
+                        {table.name}
+                      </h3>
+                      {isOccupied && (
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider block mt-0.5">
+                          {table.waiter_name || 'MEHMETABİ'}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 3 dots action menu button */}
+                    <div className="relative">
+                      <button
+                        onClick={(e) => handleOpenActionMenu(e, table)}
+                        className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-full hover:bg-black/5"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+
+                      {/* Pop-up Action Menu */}
+                      {isMenuOpen && (
+                        <div 
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute right-0 top-6 w-36 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 z-20 text-xs font-semibold animate-fadeIn"
+                        >
+                          <button
+                            onClick={() => { setIsMoveOpen(true); setActiveActionTableId(null); }}
+                            className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                          >
+                            <ArrowRight className="w-3.5 h-3.5 text-blue-500" />
+                            <span>Masa Taşı</span>
+                          </button>
+                          <button
+                            onClick={() => { setIsMergeOpen(true); setActiveActionTableId(null); }}
+                            className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                          >
+                            <Merge className="w-3.5 h-3.5 text-amber-500" />
+                            <span>Masa Birleştir</span>
+                          </button>
+                          <button
+                            onClick={() => { setIsTransferItemsOpen(true); setActiveActionTableId(null); }}
+                            className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                          >
+                            <ArrowRightLeft className="w-3.5 h-3.5 text-emerald-500" />
+                            <span>Ürün Aktar</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Card Center: Amount Display */}
+                  <div className="text-center my-auto">
+                    {isOccupied && table.active_order ? (
+                      table.active_order.paid_total && table.active_order.paid_total > 0 ? (
+                        <div className="flex flex-col items-center">
+                          <div className="text-base sm:text-lg font-black font-mono tracking-tight text-slate-900 dark:text-white">
+                            <span>₺{table.active_order.grand_total.toFixed(2)}</span>
+                            <span className="text-slate-400 font-normal mx-0.5">/</span>
+                            <span className="text-emerald-600 dark:text-emerald-400">₺{table.active_order.paid_total.toFixed(2)}</span>
+                          </div>
+                          <span className="text-[10px] font-extrabold text-brand-600 dark:text-emerald-400 font-mono mt-0.5">
+                            Kalan: ₺{((table.active_order.remaining_total !== undefined ? table.active_order.remaining_total : table.active_order.grand_total - table.active_order.paid_total)).toFixed(2)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="text-xl font-black text-slate-950 dark:text-white font-mono tracking-tight">
+                          ₺{table.active_order.grand_total.toFixed(2)}
+                        </div>
+                      )
+                    ) : isReserved ? (
+                      <span className="text-xs font-bold text-amber-700 dark:text-amber-400">
+                        {table.reservation_name || 'Rezerve'}
+                      </span>
+                    ) : hasBuzzer ? (
+                      <span className="text-xs font-bold text-purple-700 dark:text-purple-300">
+                        🔔 {table.waiter_call_reason || 'Garson Çağrısı'}
+                      </span>
+                    ) : (
+                      <span className="text-xs font-medium text-slate-400 dark:text-slate-500">
+                        Boş
                       </span>
                     )}
                   </div>
 
-                  {/* 3 dots action menu button */}
-                  <div className="relative">
-                    <button
-                      onClick={(e) => handleOpenActionMenu(e, table)}
-                      className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-full hover:bg-black/5"
-                    >
-                      <MoreVertical className="w-4 h-4" />
-                    </button>
-
-                    {/* Pop-up Action Menu */}
-                    {isMenuOpen && (
-                      <div 
-                        onClick={(e) => e.stopPropagation()}
-                        className="absolute right-0 top-6 w-36 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 z-20 text-xs font-semibold animate-fadeIn"
-                      >
-                        <button
-                          onClick={() => { setIsMoveOpen(true); setActiveActionTableId(null); }}
-                          className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
-                        >
-                          <ArrowRight className="w-3.5 h-3.5 text-blue-500" />
-                          <span>Masa Taşı</span>
-                        </button>
-                        <button
-                          onClick={() => { setIsMergeOpen(true); setActiveActionTableId(null); }}
-                          className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
-                        >
-                          <Merge className="w-3.5 h-3.5 text-amber-500" />
-                          <span>Masa Birleştir</span>
-                        </button>
-                        <button
-                          onClick={() => { setIsTransferItemsOpen(true); setActiveActionTableId(null); }}
-                          className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
-                        >
-                          <ArrowRightLeft className="w-3.5 h-3.5 text-emerald-500" />
-                          <span>Ürün Aktar</span>
-                        </button>
-                      </div>
+                  {/* Card Bottom: Elapsed Timer */}
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                    {isOccupied ? (
+                      <span className="font-mono text-slate-600 dark:text-slate-300 flex items-center gap-1 truncate" title="Masa Açılış Süresi">
+                        <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                        <span className="truncate">{getTableElapsedFormatted(table.active_order?.created_at || table.opened_at)}</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-400">{currentArea?.name}</span>
                     )}
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        /* KROKI / FLOOR PLAN VIEW */
+        <div
+          ref={canvasRef}
+          onMouseMove={handleKrokiMouseMove}
+          onMouseUp={handleKrokiMouseUp}
+          className="flex-1 relative overflow-auto bg-slate-100/70 dark:bg-slate-950 p-4 select-none min-h-[600px]"
+          style={{
+            backgroundImage: 'radial-gradient(circle, #cbd5e1 1px, transparent 1px)',
+            backgroundSize: '24px 24px'
+          }}
+        >
+          {/* Kroki Help Badge */}
+          <div className="absolute top-3 left-3 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs shadow-sm pointer-events-none">
+            <span className="font-bold text-slate-800 dark:text-slate-200">
+              {currentArea?.name} Salon Krokisi
+            </span>
+            <p className="text-[11px] text-slate-400">
+              {isEditingLayout 
+                ? 'Düzenleme Modu: Masaları istediğiniz konuma sürükleyin, ardından Kaydet\'e basın.' 
+                : 'Sipariş almak veya hesap görmek için masaya dokununuz.'}
+            </p>
+          </div>
 
-                {/* Card Center: Amount Display (Ara Tahsilat Uyumlu: Toplam / Ödenen) */}
-                <div className="text-center my-auto">
-                  {isOccupied && table.active_order ? (
-                    table.active_order.paid_total && table.active_order.paid_total > 0 ? (
-                      <div className="flex flex-col items-center">
-                        <div className="text-base sm:text-lg font-black font-mono tracking-tight text-slate-900 dark:text-white">
-                          <span>₺{table.active_order.grand_total.toFixed(2)}</span>
-                          <span className="text-slate-400 font-normal mx-0.5">/</span>
-                          <span className="text-emerald-600 dark:text-emerald-400">₺{table.active_order.paid_total.toFixed(2)}</span>
-                        </div>
-                        <span className="text-[10px] font-extrabold text-brand-600 dark:text-emerald-400 font-mono mt-0.5">
-                          Kalan: ₺{((table.active_order.remaining_total !== undefined ? table.active_order.remaining_total : table.active_order.grand_total - table.active_order.paid_total)).toFixed(2)}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="text-xl font-black text-slate-950 dark:text-white font-mono tracking-tight">
-                        ₺{table.active_order.grand_total.toFixed(2)}
-                      </div>
-                    )
-                  ) : isReserved ? (
-                    <span className="text-xs font-bold text-amber-700 dark:text-amber-400">
-                      {table.reservation_name || 'Rezerve'}
-                    </span>
-                  ) : hasBuzzer ? (
-                    <span className="text-xs font-bold text-purple-700 dark:text-purple-300">
-                      🔔 {table.waiter_call_reason || 'Garson Çağrısı'}
-                    </span>
+          {canvasTables.map((table) => {
+            const isOccupied = table.status === 'occupied' || !!table.active_order;
+            const isBillRequested = table.status === 'bill_requested';
+            const isReserved = table.status === 'reserved';
+            const hasBuzzer = !!table.waiter_call_reason || table.status === 'waiter_call';
+            const isDraggingThis = activeDragId === table.id;
+            const isRound = table.shape === 'round';
+            const posX = table.x || 50;
+            const posY = table.y || 50;
+
+            return (
+              <div
+                key={table.id}
+                onMouseDown={(e) => handleKrokiMouseDown(e, table)}
+                onClick={() => handleTableClick(table)}
+                style={{
+                  left: `${posX}px`,
+                  top: `${posY}px`,
+                  width: '135px',
+                  height: '115px'
+                }}
+                className={`absolute flex flex-col justify-between p-3 border transition-shadow select-none ${
+                  isEditingLayout ? 'cursor-move' : 'cursor-pointer hover:scale-105 transition-transform'
+                } ${
+                  isRound ? 'rounded-full text-center' : 'rounded-2xl'
+                } ${
+                  isDraggingThis
+                    ? 'ring-4 ring-emerald-400 shadow-2xl z-30 scale-105'
+                    : hasBuzzer
+                    ? 'bg-purple-50 dark:bg-purple-950/50 border-purple-400 text-purple-900 dark:text-purple-100 shadow-md animate-pulse z-20'
+                    : isBillRequested
+                    ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-400 text-blue-900 dark:text-blue-100 shadow-md z-20'
+                    : isOccupied
+                    ? 'bg-[#fce8e6] dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-900/60 text-slate-900 dark:text-white shadow-md z-20'
+                    : isReserved
+                    ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-900/60 text-amber-900 dark:text-amber-100 shadow-md z-20'
+                    : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 text-slate-800 dark:text-slate-200 shadow-sm hover:border-slate-400 z-10'
+                }`}
+              >
+                {/* Top: Name & Move icon */}
+                <div className="flex items-center justify-between text-xs">
+                  <h4 className="font-black text-sm tracking-tight truncate leading-tight">
+                    {table.name}
+                  </h4>
+                  {isEditingLayout ? (
+                    <Move className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   ) : (
-                    <span className="text-xs font-medium text-slate-400 dark:text-slate-500">
-                      Boş
-                    </span>
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{
+                      backgroundColor: isOccupied ? '#10b981' : isBillRequested ? '#3b82f6' : isReserved ? '#f59e0b' : '#94a3b8'
+                    }} />
                   )}
                 </div>
 
-                {/* Card Bottom: Elapsed Timer */}
-                <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                {/* Center: Amount or Status */}
+                <div className="text-center my-auto">
+                  {isOccupied && table.active_order ? (
+                    <div className="text-xs sm:text-sm font-black font-mono">
+                      ₺{table.active_order.grand_total.toFixed(2)}
+                    </div>
+                  ) : isReserved ? (
+                    <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400">Rezerve</span>
+                  ) : hasBuzzer ? (
+                    <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300">🔔 Çağrı</span>
+                  ) : (
+                    <span className="text-[11px] text-slate-400 font-medium">Boş</span>
+                  )}
+                </div>
+
+                {/* Bottom: Timer or Subtext */}
+                <div className="text-[10px] text-slate-400 text-center truncate">
                   {isOccupied ? (
-                    <span className="font-mono text-slate-600 dark:text-slate-300 flex items-center gap-1 truncate" title="Masa Açılış Süresi">
-                      <Clock className="w-3 h-3 text-slate-400 shrink-0" />
-                      <span className="truncate">{getTableElapsedFormatted(table.active_order?.created_at || table.opened_at)}</span>
+                    <span className="font-mono text-slate-500 dark:text-slate-400">
+                      {getTableElapsedFormatted(table.active_order?.created_at || table.opened_at)}
                     </span>
                   ) : (
-                    <span className="text-[10px] text-slate-400">{currentArea?.name}</span>
+                    <span>{table.waiter_name || currentArea?.name}</span>
                   )}
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
+      )}
 
       {/* Modals */}
       <MoveTableModal

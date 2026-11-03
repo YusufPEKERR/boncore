@@ -10,7 +10,7 @@ class Area(Base):
     name = Column(String(50), nullable=False) # Salon, Bahçe, Teras, VIP
     order_index = Column(Integer, default=0)
 
-    tables = relationship("Table", back_populates="area", cascade="all, delete-orphan")
+    tables = relationship("Table", back_populates="area", cascade="all, delete-orphan", order_by="Table.order_index, Table.id")
 
 class Table(Base):
     __tablename__ = "tables"
@@ -19,6 +19,7 @@ class Table(Base):
     area_id = Column(Integer, ForeignKey("areas.id"), nullable=False)
     name = Column(String(50), nullable=False) # S1, T4, B12, VIP-1
     shape = Column(String(20), default="square") # square, round, rectangle, bar
+    order_index = Column(Integer, default=0)
     x = Column(Float, default=100.0) # Kroki X
     y = Column(Float, default=100.0) # Kroki Y
     width = Column(Float, default=120.0)

@@ -247,6 +247,26 @@ export const api = {
     return res.json();
   },
 
+  async reorderAreas(areaIds: number[]): Promise<any> {
+    const res = await fetch(`${API_BASE}/tables/areas/reorder`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ area_ids: areaIds })
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Bölge sıralaması güncellenemedi.');
+    return res.json();
+  },
+
+  async reorderTables(areaId: number, tableIds: number[]): Promise<any> {
+    const res = await fetch(`${API_BASE}/tables/tables/reorder`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ area_id: areaId, table_ids: tableIds })
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Masa sıralaması güncellenemedi.');
+    return res.json();
+  },
+
   async deleteArea(area_id: number): Promise<any> {
     const res = await fetch(`${API_BASE}/tables/areas/${area_id}`, {
       method: 'DELETE'
@@ -255,7 +275,7 @@ export const api = {
     return res.json();
   },
 
-  async createTable(payload: { area_id: number; name: string; seats?: number; shape?: string }): Promise<any> {
+  async createTable(payload: { area_id: number; name: string; seats?: number; shape?: string; order_index?: number }): Promise<any> {
     const res = await fetch(`${API_BASE}/tables/single`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -265,7 +285,7 @@ export const api = {
     return res.json();
   },
 
-  async updateTable(table_id: number, payload: { area_id: number; name: string; seats?: number; shape?: string }): Promise<any> {
+  async updateTable(table_id: number, payload: { area_id?: number; name?: string; seats?: number; shape?: string; order_index?: number }): Promise<any> {
     const res = await fetch(`${API_BASE}/tables/single/${table_id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
