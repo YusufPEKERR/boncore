@@ -148,6 +148,9 @@ export const App: React.FC = () => {
 
   // Navigation (persistent across F5 reload via hash and localStorage)
   const [activeTab, setActiveTab] = useState<string>(getInitialTab);
+  const [floorSection, setFloorSection] = useState<'tables' | 'orders'>(() => {
+    return (localStorage.getItem('boncore_floor_section') as 'tables' | 'orders') || 'tables';
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [isQrallModalOpen, setIsQrallModalOpen] = useState<boolean>(false);
   const [isOkcModalOpen, setIsOkcModalOpen] = useState<boolean>(false);
@@ -548,9 +551,10 @@ export const App: React.FC = () => {
     );
   }
 
-  // Count active buzzer calls
+  // Count active buzzer calls and open tables
   const allTables = areas.flatMap(a => a.tables);
   const callingTables = allTables.filter(t => t.waiter_call_reason || t.status === 'waiter_call' || t.status === 'bill_requested');
+  const openTablesCount = allTables.filter(t => t.status === 'occupied' || t.status === 'bill_requested' || t.status === 'waiter_call' || (t.active_order && (t.active_order.grand_total || 0) > 0)).length;
 
   return (
     <div className="h-[100dvh] w-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans transition-colors duration-200">
@@ -604,6 +608,8 @@ export const App: React.FC = () => {
             onRefreshAreas={loadAreas}
             onClearBuzzer={handleClearBuzzer}
             loading={loadingAreas}
+            floorSection={floorSection}
+            onFloorSectionChange={setFloorSection}
           />
         )}
 
@@ -733,9 +739,9 @@ export const App: React.FC = () => {
       {/* Mobile Bottom Navigation Bar (Visible on phones < md) */}
       <nav className="md:hidden h-14 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 grid grid-cols-5 items-center px-1 shrink-0 z-30 select-none">
         <button
-          onClick={() => { sound.beep(); setActiveTab('tables'); }}
+          onClick={() => { sound.beep(); setActiveTab('tables'); setFloorSection('tables'); }}
           className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
-            activeTab === 'tables'
+            activeTab === 'tables' && floorSection === 'tables'
               ? 'text-[#338d35] dark:text-emerald-400 font-black'
               : 'text-slate-500 dark:text-slate-400 font-semibold'
           }`}
@@ -744,15 +750,22 @@ export const App: React.FC = () => {
           <span className="text-[10px]">Masalar</span>
         </button>
         <button
-          onClick={() => { sound.beep(); setActiveTab('pos'); }}
-          className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
-            activeTab === 'pos'
+          onClick={() => { sound.beep(); setActiveTab('tables'); setFloorSection('orders'); }}
+          className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer relative ${
+            activeTab === 'tables' && floorSection === 'orders'
               ? 'text-[#338d35] dark:text-emerald-400 font-black'
               : 'text-slate-500 dark:text-slate-400 font-semibold'
           }`}
         >
-          <FileText className="w-4 h-4 mb-0.5" />
-          <span className="text-[10px]">POS Sipariş</span>
+          <div className="relative flex items-center justify-center">
+            <FileText className="w-4 h-4 mb-0.5" />
+            {openTablesCount > 0 && (
+              <span className="absolute -top-1.5 -right-2.5 bg-emerald-600 text-white text-[9px] font-black px-1 rounded-full leading-tight min-w-[14px] text-center shadow-xs">
+                {openTablesCount}
+              </span>
+            )}
+          </div>
+          <span className="text-[10px]">Siparişler</span>
         </button>
         <button
           onClick={() => { sound.beep(); setActiveTab('kds'); }}
