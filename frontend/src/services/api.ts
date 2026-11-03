@@ -391,6 +391,21 @@ export const api = {
     return res.json();
   },
 
+  async cancelOrder(orderId: number, reasonCode: string, reasonText: string, operatorName: string, managerPin?: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/orders/${orderId}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reason_code: reasonCode,
+        reason_text: reasonText,
+        operator_name: operatorName,
+        manager_pin: managerPin
+      })
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Sipariş iptal edilemedi.');
+    return res.json();
+  },
+
   async updateOrderNotes(orderId: number, notes: string): Promise<any> {
     const res = await fetch(`${API_BASE}/orders/${orderId}/notes`, {
       method: 'PUT',

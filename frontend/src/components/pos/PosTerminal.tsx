@@ -151,6 +151,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [voidReasonText, setVoidReasonText] = useState<string>('Müşteri vazgeçti');
   const [voidManagerPin, setVoidManagerPin] = useState<string>('9999');
 
+  // Cancel Entire Order Modal
+  const [isCancelOrderModalOpen, setIsCancelOrderModalOpen] = useState<boolean>(false);
+  const [cancelOrderReasonCode, setCancelOrderReasonCode] = useState<string>('MUSTERI_VAZGECTI');
+  const [cancelOrderReasonText, setCancelOrderReasonText] = useState<string>('Müşteri vazgeçti');
+
   // Reçete (BOM) Stoğu Biten Ürün Uyarı Modalı
   const [bomStockWarningModal, setBomStockWarningModal] = useState<{
     productName: string;
@@ -264,6 +269,15 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     const perm = rolePermissions.find(p => p.id === 'order_fast_pay');
     if (!perm) return true;
     return perm.roles[userRoleKey as keyof PermissionItem['roles']] ?? true;
+  }, [rolePermissions, userRoleKey]);
+
+  const canCancelOrder = useMemo(() => {
+    if (userRoleKey === 'manager') return true;
+    const cancelPerm = rolePermissions.find(p => p.id === 'order_cancel');
+    const removePerm = rolePermissions.find(p => p.id === 'order_remove_item');
+    const canCancel = cancelPerm ? (cancelPerm.roles[userRoleKey as keyof PermissionItem['roles']] ?? false) : false;
+    const canRemove = removePerm ? (removePerm.roles[userRoleKey as keyof PermissionItem['roles']] ?? false) : false;
+    return canCancel || canRemove;
   }, [rolePermissions, userRoleKey]);
 
   // Load existing order
@@ -678,9 +692,14 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         }
       });
     } else {
-      // Saved item: trigger void modal
-      const savedItem = cartItems.find(i => i.id && i.product_id === productId);
+      // Saved item: trigger void modal only if user has cancel permission
+      const savedItem = cartItems.find(i => i.id && !i.is_voided && i.product_id === productId);
       if (savedItem) {
+        if (!canCancelOrder) {
+          sound.warning();
+          showToast('Sipariş / ürün iptal yetkiniz bulunmamaktadır.', 'error');
+          return;
+        }
         sound.beep();
         setSelectedItemForVoid(savedItem);
         setIsVoidModalOpen(true);
@@ -719,8 +738,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         selectedItemForVoid.id,
         voidReasonCode,
         voidReasonText,
-        currentUser?.name || 'Müdür',
-        voidManagerPin
+        currentUser?.name || 'Garson',
+        canCancelOrder ? '9999' : voidManagerPin
       );
       sound.warning();
       setIsVoidModalOpen(false);
@@ -731,6 +750,34 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       onRefreshData();
     } catch (err: any) {
       showToast(err.message || 'Ürün iptal edilemedi.', 'error');
+      sound.warning();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConfirmCancelOrder = async () => {
+    if (!activeOrderId) return;
+    sound.beep();
+    setLoading(true);
+    try {
+      await api.cancelOrder(
+        activeOrderId,
+        cancelOrderReasonCode,
+        cancelOrderReasonText,
+        currentUser?.name || 'Garson',
+        canCancelOrder ? '9999' : voidManagerPin
+      );
+      sound.warning();
+      setIsCancelOrderModalOpen(false);
+      setActiveOrderId(null);
+      setExistingOrder(null);
+      setCartItems([]);
+      showToast('Sipariş iptal edildi.', 'success');
+      onRefreshData();
+      onBackToTables();
+    } catch (err: any) {
+      showToast(err.message || 'Sipariş iptal edilemedi.', 'error');
       sound.warning();
     } finally {
       setLoading(false);
@@ -895,6 +942,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       localStorage.setItem('boncore_service_enabled', String(newSettings.isServiceEnabled));
       localStorage.setItem('boncore_service_rate', String(newSettings.serviceRate));
       localStorage.setItem('boncore_discounts', JSON.stringify(updatedDiscounts));
+      if (data.role_permissions && Array.isArray(data.role_permissions)) {
+        const mergedPerms = mergeWithInitialPermissions(data.role_permissions);
+        setRolePermissions(mergedPerms);
+        localStorage.setItem('boncore_role_permissions', JSON.stringify(mergedPerms));
+      }
     }
 
     // Real-time kitchen & order status events
@@ -1060,13 +1112,26 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             </button>
             <button 
               onClick={() => {
-                if (confirm('Adisyondaki kaydedilmemiş ürünleri temizlemek istiyor musunuz?')) {
+                const hasUnsaved = cartItems.some(i => !i.id);
+                if (hasUnsaved) {
+                  if (confirm('Adisyondaki kaydedilmemiş ürünleri temizlemek istiyor musunuz?')) {
+                    sound.warning();
+                    setCartItems(prev => prev.filter(i => !!i.id));
+                  }
+                } else if (activeOrderId && canCancelOrder) {
+                  sound.beep();
+                  setIsCancelOrderModalOpen(true);
+                } else if (activeOrderId && !canCancelOrder) {
                   sound.warning();
-                  setCartItems(prev => prev.filter(i => !!i.id));
+                  showToast('Sipariş iptal yetkiniz bulunmamaktadır.', 'error');
                 }
               }}
-              className="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-slate-200/50"
-              title="Temizle"
+              className={`p-1.5 rounded-lg hover:bg-slate-200/50 ${
+                activeOrderId && !canCancelOrder && !cartItems.some(i => !i.id)
+                  ? 'hidden'
+                  : 'text-slate-400 hover:text-brand-600'
+              }`}
+              title={activeOrderId && !cartItems.some(i => !i.id) ? 'Siparişi İptal Et' : 'Temizle'}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -1078,9 +1143,25 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           <span className="font-semibold text-slate-600 dark:text-slate-400">
             Adisyon: <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{existingOrder?.order_no || '---'}</span>
           </span>
-          <span className="font-bold text-emerald-600 dark:text-emerald-400">
-            {activeOrderId ? 'Açık Hesap' : 'Yeni Sipariş'}
-          </span>
+          <div className="flex items-center gap-2">
+            {activeOrderId && canCancelOrder && (
+              <button
+                type="button"
+                onClick={() => {
+                  sound.beep();
+                  setIsCancelOrderModalOpen(true);
+                }}
+                className="px-2 py-0.5 rounded-md bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-extrabold text-[10px] flex items-center gap-1 transition cursor-pointer"
+                title="Açık siparişi tamamen iptal et"
+              >
+                <Trash2 className="w-2.5 h-2.5" />
+                <span>Siparişi İptal Et</span>
+              </button>
+            )}
+            <span className="font-bold text-emerald-600 dark:text-emerald-400">
+              {activeOrderId ? 'Açık Hesap' : 'Yeni Sipariş'}
+            </span>
+          </div>
         </div>
 
         {/* Cart Items List */}
@@ -1228,21 +1309,24 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                     ₺{item.total_price.toFixed(2)}
                   </span>
 
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!isSaved) {
-                        setCartItems(prev => prev.filter((_, i) => i !== idx));
-                      } else {
-                        sound.beep();
-                        setSelectedItemForVoid(item);
-                        setIsVoidModalOpen(true);
-                      }
-                    }}
-                    className="text-slate-300 hover:text-brand-500 p-1 transition"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {(!isSaved || canCancelOrder) && !item.is_voided && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!isSaved) {
+                          setCartItems(prev => prev.filter((_, i) => i !== idx));
+                        } else if (canCancelOrder) {
+                          sound.beep();
+                          setSelectedItemForVoid(item);
+                          setIsVoidModalOpen(true);
+                        }
+                      }}
+                      className="text-slate-300 hover:text-brand-500 p-1 transition"
+                      title={isSaved ? 'Ürünü İptal Et' : 'Sepetten Kaldır'}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -2228,17 +2312,19 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="text-slate-500 block mb-1 font-bold">Müdür / Yetkili PIN:</label>
-                <input
-                  type="password"
-                  value={voidManagerPin}
-                  onChange={(e) => setVoidManagerPin(e.target.value)}
-                  maxLength={6}
-                  placeholder="PIN"
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-center tracking-widest text-slate-900 dark:text-white"
-                />
-              </div>
+              {!canCancelOrder && (
+                <div>
+                  <label className="text-slate-500 block mb-1 font-bold">Müdür / Yetkili PIN:</label>
+                  <input
+                    type="password"
+                    value={voidManagerPin}
+                    onChange={(e) => setVoidManagerPin(e.target.value)}
+                    maxLength={6}
+                    placeholder="PIN"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-center tracking-widest text-slate-900 dark:text-white"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
@@ -2259,6 +2345,85 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-black text-xs shadow-md transition disabled:opacity-50"
               >
                 {loading ? 'İptal Ediliyor...' : 'İptali Onayla'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Entire Order Modal (Siparişi İptal Et) */}
+      {isCancelOrderModalOpen && activeOrderId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn font-sans">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-black text-rose-600 dark:text-rose-400">Siparişi İptal Et</h3>
+                <p className="text-xs text-slate-500 font-semibold">
+                  {activeTable ? activeTable.name : 'Hızlı Satış'} • #{existingOrder?.order_no || activeOrderId}
+                </p>
+              </div>
+              <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
+                ₺{grandTotal.toFixed(2)}
+              </span>
+            </div>
+
+            <div className="space-y-3 text-xs font-semibold">
+              <div>
+                <label className="text-slate-500 block mb-1.5 font-bold">Sipariş İptal Sebebi:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { code: 'MUSTERI_VAZGECTI', label: 'Müşteri Vazgeçti' },
+                    { code: 'YANLIS_SIPARIS', label: 'Yanlış Masa / Sipariş' },
+                    { code: 'GECIKME', label: 'Mutfak Gecikmesi' },
+                    { code: 'DIGER', label: 'Diğer Sebep' },
+                  ].map((r) => (
+                    <button
+                      key={r.code}
+                      type="button"
+                      onClick={() => {
+                        sound.beep();
+                        setCancelOrderReasonCode(r.code);
+                        setCancelOrderReasonText(r.label);
+                      }}
+                      className={`p-2 rounded-xl text-left font-bold transition border ${
+                        cancelOrderReasonCode === r.code
+                          ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-500 text-rose-700 dark:text-rose-300'
+                          : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-500 block mb-1 font-bold">Açıklama / Not:</label>
+                <input
+                  type="text"
+                  value={cancelOrderReasonText}
+                  onChange={(e) => setCancelOrderReasonText(e.target.value)}
+                  placeholder="Sipariş iptal açıklaması..."
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsCancelOrderModalOpen(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs cursor-pointer"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCancelOrder}
+                disabled={loading}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-md transition disabled:opacity-50 cursor-pointer"
+              >
+                {loading ? 'İptal Ediliyor...' : 'Siparişi İptal Et'}
               </button>
             </div>
           </div>

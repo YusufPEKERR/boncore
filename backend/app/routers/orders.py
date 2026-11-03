@@ -11,6 +11,7 @@ from app.models.audit import AuditLog
 from app.models.setting import RestaurantSetting
 from app.models.payment import Payment
 from app.models.delivery import DeliveryOrder, Courier
+from app.models.user import StaffUser
 from app.schemas.all import (
     CreateOrderRequest, AddItemsRequest, HoldFireToggleRequest,
     VoidItemRequest, ApplyDiscountRequest,
@@ -411,21 +412,70 @@ async def toggle_hold_fire(payload: HoldFireToggleRequest, db: AsyncSession = De
     await ws_hub.broadcast_all("ORDER_UPDATED", {"item_ids": payload.order_item_ids})
     return {"status": "success", "message": f"{len(items)} kalem ürün mutfağa ateşlendi!"}
 
+async def verify_cancel_authorization(db: AsyncSession, operator_name: str | None, manager_pin: str | None) -> bool:
+    """
+    Checks whether an item void or order cancellation is authorized via:
+    1) Valid manager override PIN or active manager's PIN, OR
+    2) The operator's role having 'order_cancel' or 'order_remove_item' enabled in RestaurantSetting('role_permissions').
+    """
+    if manager_pin == settings.MANAGER_OVERRIDE_PIN:
+        return True
+    if manager_pin:
+        mgr_stmt = select(StaffUser).where(
+            StaffUser.pin_code == manager_pin,
+            StaffUser.role == "manager",
+            StaffUser.is_active == True
+        )
+        mgr_res = await db.execute(mgr_stmt)
+        if mgr_res.scalar_one_or_none():
+            return True
+
+    # Determine operator role (default to waiter if not found)
+    role_key = "waiter"
+    if operator_name:
+        user_stmt = select(StaffUser).where(StaffUser.name == operator_name, StaffUser.is_active == True)
+        user_res = await db.execute(user_stmt)
+        staff_user = user_res.scalars().first()
+        if staff_user and staff_user.role:
+            raw_role = staff_user.role.lower()
+            if raw_role in ["admin", "müdür", "mudur", "manager"]:
+                return True
+            elif raw_role in ["kasa", "kasiyer", "cashier"]:
+                role_key = "cashier"
+            elif raw_role in ["mutfak", "kitchen"]:
+                role_key = "kitchen"
+            elif raw_role in ["kurye", "courier"]:
+                role_key = "courier"
+            else:
+                role_key = "waiter"
+
+    perm_stmt = select(RestaurantSetting).where(RestaurantSetting.key == "role_permissions")
+    perm_res = await db.execute(perm_stmt)
+    perm_setting = perm_res.scalar_one_or_none()
+    if perm_setting and perm_setting.value:
+        try:
+            perms = json.loads(perm_setting.value)
+            if isinstance(perms, list):
+                for p in perms:
+                    if isinstance(p, dict) and p.get("id") in ("order_cancel", "order_remove_item"):
+                        roles_map = p.get("roles") or {}
+                        if roles_map.get(role_key) is True:
+                            return True
+        except Exception:
+            pass
+
+    return False
+
+
 @router.post("/void-item")
 async def void_order_item(payload: VoidItemRequest, db: AsyncSession = Depends(get_db)):
     """
-    Cancels / Voids an item with mandatory reason and manager PIN verification.
+    Cancels / Voids an item with mandatory reason and role permission or manager PIN verification.
     Also produces a kitchen cancel slip.
     """
-    is_valid_pin = (payload.manager_pin == settings.MANAGER_OVERRIDE_PIN)
-    if not is_valid_pin and payload.manager_pin:
-        mgr_stmt = select(StaffUser).where(StaffUser.pin_code == payload.manager_pin, StaffUser.role == "manager", StaffUser.is_active == True)
-        mgr_res = await db.execute(mgr_stmt)
-        if mgr_res.scalar_one_or_none():
-            is_valid_pin = True
-
-    if not is_valid_pin:
-        raise HTTPException(status_code=403, detail="Yetkisiz işlem! Ürün iptali için geçerli bir müdür PIN kodu gereklidir.")
+    is_authorized = await verify_cancel_authorization(db, payload.operator_name, payload.manager_pin)
+    if not is_authorized:
+        raise HTTPException(status_code=403, detail="Yetkisiz işlem! Sipariş/ürün iptali yetkiniz kapalıdır veya geçerli bir müdür PIN kodu gereklidir.")
 
     stmt = select(OrderItem).where(OrderItem.id == payload.order_item_id).options(
         selectinload(OrderItem.order).selectinload(Order.items),
@@ -476,6 +526,68 @@ async def void_order_item(payload: VoidItemRequest, db: AsyncSession = Depends(g
         "reason": item.void_reason
     })
     return {"status": "success", "message": f"{item.product_name} iptal edildi."}
+
+
+@router.post("/{order_id}/cancel")
+async def cancel_entire_order(order_id: int, payload: dict | None = None, db: AsyncSession = Depends(get_db)):
+    """
+    Cancels an entire open order, voids all its active items, and frees the table.
+    """
+    payload = payload or {}
+    operator_name = payload.get("operator_name", "Garson")
+    reason_code = payload.get("reason_code", "SIPARIS_IPTAL")
+    reason_text = payload.get("reason_text", "Sipariş iptal edildi")
+    manager_pin = payload.get("manager_pin")
+
+    is_authorized = await verify_cancel_authorization(db, operator_name, manager_pin)
+    if not is_authorized:
+        raise HTTPException(status_code=403, detail="Yetkisiz işlem! Siparişi iptal etme yetkiniz bulunmamaktadır.")
+
+    stmt = select(Order).where(Order.id == order_id).options(
+        selectinload(Order.items),
+        selectinload(Order.table)
+    )
+    res = await db.execute(stmt)
+    order = res.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Sipariş bulunamadı.")
+
+    for it in (order.items or []):
+        if not it.is_voided:
+            it.is_voided = True
+            it.status = "voided"
+            it.void_reason = f"[{reason_code}] {reason_text}"
+            it.voided_by = operator_name
+
+    order.status = "cancelled"
+    order.subtotal = 0.0
+    order.grand_total = 0.0
+    order.remaining_total = 0.0
+    order.closed_at = datetime.utcnow()
+
+    if order.table:
+        order.table.status = "empty"
+        order.table.current_order_id = None
+        order.table.opened_at = None
+        order.table.kuver_count = 0
+        order.table.waiter_name = None
+
+    audit = AuditLog(
+        action_type="ORDER_CANCELLED",
+        operator_name=operator_name,
+        target_ref=order.order_no,
+        reason_code=reason_code,
+        reason_text=reason_text,
+        details={"order_id": order.id, "table_id": order.table_id}
+    )
+    db.add(audit)
+    await db.commit()
+
+    await ws_hub.broadcast_all("ORDER_UPDATED", {"order_id": order.id, "status": "cancelled", "table_id": order.table_id})
+    if order.table_id:
+        await ws_hub.broadcast_all("TABLE_STATUS_CHANGED", {"table_id": order.table_id, "status": "empty", "order_id": None})
+
+    return {"status": "success", "message": f"Sipariş (#{order.order_no}) iptal edildi."}
 
 @router.post("/{order_id}/discount")
 async def apply_discount(order_id: int, payload: ApplyDiscountRequest, db: AsyncSession = Depends(get_db)):

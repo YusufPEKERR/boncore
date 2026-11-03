@@ -156,8 +156,8 @@ export const initialPermissions: PermissionItem[] = [
   },
   {
     id: 'order_cancel',
-    title: 'Siparişi iptal edebilir.',
-    description: 'Kullanıcının açık bir siparişi iptal etmesini sağlar.',
+    title: 'Siparişi iptal edebilir ("Siparişi İptal Et" ve ürün iptal işlemlerini yapabilir).',
+    description: 'Kullanıcının açık bir siparişi veya adisyondaki kaydedilmiş ürünleri iptal etmesini sağlar.',
     group: 'Sipariş Yetkilendirmeleri',
     roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
   },
@@ -522,18 +522,20 @@ export const RightsManagement: React.FC = () => {
             <div>
               <div className="text-xs font-black text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
                 <Shield className="w-4 h-4 text-emerald-600" />
-                <span>Garsonlarda "ÖDE" ve "HIZLI ÖDE" Butonlarının Görünürlüğü</span>
+                <span>Garsonlarda "ÖDE", "HIZLI ÖDE" ve "SİPARİŞ İPTAL" Yetkileri</span>
               </div>
               <p className="text-[11px] text-emerald-700/80 dark:text-emerald-400 mt-0.5">
-                Garson rolündeki kullanıcıların sipariş ekranında <strong>Öde</strong> ve <strong>Hızlı Öde</strong> butonlarını görüp göremeyeceğini buradan veya aşağıdaki <em>SİPARİŞ İZİNLERİ</em> tablosundan seçebilirsiniz.
+                Garson rolündeki kullanıcıların sipariş ekranında <strong>Öde</strong>, <strong>Hızlı Öde</strong> butonlarını görüp göremeyeceğini ve <strong>Siparişi İptal</strong> edip edemeyeceğini buradan veya aşağıdaki <em>Sipariş Yetkilendirmeleri</em> tablosundan seçebilirsiniz.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               {(() => {
                 const payPerm = permissions.find(p => p.id === 'order_take_payment');
                 const fastPayPerm = permissions.find(p => p.id === 'order_fast_pay');
+                const cancelPerm = permissions.find(p => p.id === 'order_cancel');
                 const waiterCanPay = payPerm?.roles.waiter ?? true;
                 const waiterCanFastPay = fastPayPerm?.roles.waiter ?? true;
+                const waiterCanCancel = cancelPerm?.roles.waiter ?? false;
                 return (
                   <>
                     <label className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-extrabold cursor-pointer transition select-none ${
@@ -562,6 +564,20 @@ export const RightsManagement: React.FC = () => {
                         className="w-3.5 h-3.5 rounded accent-white cursor-pointer"
                       />
                       <span>Garson: "HIZLI ÖDE" Butonu {waiterCanFastPay ? 'Açık' : 'Gizli'}</span>
+                    </label>
+
+                    <label className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-extrabold cursor-pointer transition select-none ${
+                      waiterCanCancel
+                        ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
+                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={waiterCanCancel}
+                        onChange={() => handleToggle('order_cancel', 'waiter')}
+                        className="w-3.5 h-3.5 rounded accent-white cursor-pointer"
+                      />
+                      <span>Garson: "SİPARİŞ İPTAL" {waiterCanCancel ? 'Açık' : 'Kapalı'}</span>
                     </label>
                   </>
                 );
