@@ -300,48 +300,8 @@ export const RightsManagement: React.FC<RightsManagementProps> = ({ currentUser 
           </div>
         </div>
 
-        {/* Search Input & Quick Controls */}
-        <div className="px-4 sm:px-6 space-y-3">
-          {activeSectionTab === 'tabs' && (
-            <div className="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <div className="text-xs font-black text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
-                  <LayoutGrid className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  <span>Sekme & Menü Görünürlüğü Yönetimi (Sadece Yönetici)</span>
-                </div>
-                <p className="text-[11px] text-indigo-700/80 dark:text-indigo-400 mt-0.5">
-                  Garson ve diğer yetki gruplarındaki kullanıcıların sol menüde ve uygulama içinde hangi sekmeleri görebileceğini buradan tek tek açıp kapatabilirsiniz. <strong>Yetkiler Ekranı</strong> ise her zaman sadece yöneticide gözükür.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => handleBulkRoleToggle('waiter', true, 'tabs')}
-                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs cursor-pointer transition"
-                >
-                  <Unlock className="w-3.5 h-3.5" />
-                  <span>Garson: Tüm Sekmeleri Aç</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleWaiterDefaultTabs}
-                  className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs cursor-pointer transition"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Garson: Sadece Masalar & Profil</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleBulkRoleToggle('waiter', false, 'tabs')}
-                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs cursor-pointer transition"
-                >
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>Garson: Tüm Sekmeleri Kapat</span>
-                </button>
-              </div>
-            </div>
-          )}
-
+        {/* Search Input */}
+        <div className="px-4 sm:px-6">
           <div className="relative max-w-md">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
