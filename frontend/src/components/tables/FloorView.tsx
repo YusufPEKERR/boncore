@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, Edit3, MoreVertical, Clock, 
   ArrowRight, Merge, RefreshCw, FileText, CheckCircle, ArrowRightLeft,
-  LayoutGrid, MapPin, Move, Save, ChevronLeft, ChevronRight, Sliders
+  LayoutGrid, MapPin
 } from 'lucide-react';
 import { Area, Table, StaffUser } from '../../types';
 import { sound } from '../../services/sound';
-import { api } from '../../services/api';
 import { MoveTableModal, MergeTableModal, TransferItemsModal } from './TableActionModals';
 
 interface FloorViewProps {
@@ -39,7 +38,6 @@ export const FloorView: React.FC<FloorViewProps> = ({
     return (localStorage.getItem('boncore_floor_view_mode') as 'grid' | 'kroki') || 'grid';
   });
 
-  const [isEditingLayout, setIsEditingLayout] = useState<boolean>(false);
   const [selectedTableForAction, setSelectedTableForAction] = useState<Table | null>(null);
 
   // Modals
@@ -48,13 +46,6 @@ export const FloorView: React.FC<FloorViewProps> = ({
   const [isTransferItemsOpen, setIsTransferItemsOpen] = useState<boolean>(false);
   const [activeActionTableId, setActiveActionTableId] = useState<number | null>(null);
   const [currentNow, setCurrentNow] = useState<number>(Date.now());
-
-  // Kroki Canvas Drag state
-  const [canvasTables, setCanvasTables] = useState<Table[]>([]);
-  const [hasUnsavedPositions, setHasUnsavedPositions] = useState<boolean>(false);
-  const [activeDragId, setActiveDragId] = useState<number | null>(null);
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const dragStartRef = useRef<{ mouseX: number; mouseY: number; tableX: number; tableY: number } | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentNow(Date.now()), 1000);
@@ -102,15 +93,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
   const currentArea = areas.find(a => a.id === activeAreaId) || areas[0];
   const displayedTables: Table[] = currentArea?.tables || [];
 
-  useEffect(() => {
-    if (currentArea) {
-      setCanvasTables(currentArea.tables || []);
-      setHasUnsavedPositions(false);
-    }
-  }, [currentArea?.id, currentArea?.tables]);
-
   const handleTableClick = (table: Table) => {
-    if (isEditingLayout) return;
     sound.beep();
     onSelectTable(table);
   };
@@ -122,116 +105,27 @@ export const FloorView: React.FC<FloorViewProps> = ({
     setActiveActionTableId(activeActionTableId === table.id ? null : table.id);
   };
 
-  // Shift Area Left/Right
-  const handleShiftArea = async (e: React.MouseEvent, areaIndex: number, direction: 'left' | 'right') => {
-    e.stopPropagation();
-    const targetIndex = direction === 'left' ? areaIndex - 1 : areaIndex + 1;
-    if (targetIndex < 0 || targetIndex >= areas.length) return;
-
-    sound.beep();
-    const newAreas = [...areas];
-    const [moved] = newAreas.splice(areaIndex, 1);
-    newAreas.splice(targetIndex, 0, moved);
-
-    try {
-      await api.reorderAreas(newAreas.map(a => a.id));
-      onRefreshAreas();
-    } catch (err: any) {
-      sound.warning();
-    }
-  };
-
-  // Kroki Drag handlers
-  const handleKrokiMouseDown = (e: React.MouseEvent, table: Table) => {
-    if (!isEditingLayout) return;
-    e.stopPropagation();
-    setActiveDragId(table.id);
-    dragStartRef.current = {
-      mouseX: e.clientX,
-      mouseY: e.clientY,
-      tableX: table.x || 50,
-      tableY: table.y || 50
-    };
-  };
-
-  const handleKrokiMouseMove = (e: React.MouseEvent) => {
-    if (!activeDragId || !dragStartRef.current || !isEditingLayout) return;
-    const deltaX = e.clientX - dragStartRef.current.mouseX;
-    const deltaY = e.clientY - dragStartRef.current.mouseY;
-
-    const rawX = Math.max(10, dragStartRef.current.tableX + deltaX);
-    const rawY = Math.max(10, dragStartRef.current.tableY + deltaY);
-    const snappedX = Math.round(rawX / 10) * 10;
-    const snappedY = Math.round(rawY / 10) * 10;
-
-    setCanvasTables(prev => prev.map(t => {
-      if (t.id === activeDragId) {
-        return { ...t, x: snappedX, y: snappedY };
-      }
-      return t;
-    }));
-    setHasUnsavedPositions(true);
-  };
-
-  const handleKrokiMouseUp = () => {
-    if (activeDragId) {
-      setActiveDragId(null);
-      dragStartRef.current = null;
-    }
-  };
-
-  const handleSaveKrokiPositions = async () => {
-    sound.beep();
-    try {
-      const payload = canvasTables.map(t => ({
-        id: t.id,
-        x: t.x || 50,
-        y: t.y || 50,
-        width: t.width || 120,
-        height: t.height || 120,
-        shape: t.shape || 'square'
-      }));
-      await api.updateTablePositions(payload);
-      setHasUnsavedPositions(false);
-      setIsEditingLayout(false);
-      onRefreshAreas();
-    } catch (err: any) {
-      sound.warning();
-    }
-  };
-
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-slate-50 dark:bg-slate-950 select-none overflow-hidden transition-colors duration-200">
-      {/* Area Horizontal Tabs Bar */}
+      {/* Area Horizontal Tabs Bar (Matching Adisyo Frame 105) */}
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-4 flex items-center justify-between z-10 shadow-sm overflow-x-auto shrink-0 gap-2">
         <div className="flex items-center gap-1 overflow-x-auto py-1 no-scrollbar flex-1">
-          {/* AREA TABS WITH QUICK REORDER ARROWS ON ACTIVE TAB */}
-          {areas.map((area, idx) => {
+          {/* AREA TABS */}
+          {areas.map((area) => {
             const isAreaActive = activeAreaId === area.id;
             const occupiedInArea = (area.tables || []).filter(t => t.status === 'occupied' || t.status === 'bill_requested').length;
             const totalInArea = (area.tables || []).length;
 
             return (
-              <div
+              <button
                 key={area.id}
-                className={`py-1.5 sm:py-2 px-2 sm:px-3 text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 border-b-2 shrink-0 ${
-                  isAreaActive
-                    ? 'border-[#2c3e50] dark:border-blue-500 text-slate-900 dark:text-white font-extrabold bg-slate-50 dark:bg-slate-800/50 rounded-t-lg'
-                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer'
-                }`}
                 onClick={() => { sound.beep(); setActiveAreaId(area.id); }}
+                className={`py-2.5 sm:py-3 px-2.5 sm:px-3.5 text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 sm:gap-2 border-b-2 shrink-0 ${
+                  isAreaActive
+                    ? 'border-[#2c3e50] dark:border-blue-500 text-slate-900 dark:text-white font-extrabold'
+                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
               >
-                {/* Shift Left Arrow on Active Tab */}
-                {isAreaActive && idx > 0 && (
-                  <button
-                    onClick={(e) => handleShiftArea(e, idx, 'left')}
-                    className="p-0.5 text-slate-400 hover:text-slate-900 dark:hover:text-white rounded hover:bg-slate-200 dark:hover:bg-slate-700"
-                    title="Bölgeyi Sola Kaydır"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                  </button>
-                )}
-
                 <span className="uppercase">{area.name}</span>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                   isAreaActive 
@@ -240,28 +134,17 @@ export const FloorView: React.FC<FloorViewProps> = ({
                 }`}>
                   {occupiedInArea}/{totalInArea}
                 </span>
-
-                {/* Shift Right Arrow on Active Tab */}
-                {isAreaActive && idx < areas.length - 1 && (
-                  <button
-                    onClick={(e) => handleShiftArea(e, idx, 'right')}
-                    className="p-0.5 text-slate-400 hover:text-slate-900 dark:hover:text-white rounded hover:bg-slate-200 dark:hover:bg-slate-700"
-                    title="Bölgeyi Sağa Kaydır"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
+              </button>
             );
           })}
         </div>
 
-        {/* View Mode & Controls */}
+        {/* View Mode & Refresh (Tables are strictly static on floor view) */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 pl-1">
           {/* Mode Switch: Grid vs Kroki */}
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold">
             <button
-              onClick={() => { sound.beep(); setViewMode('grid'); setIsEditingLayout(false); }}
+              onClick={() => { sound.beep(); setViewMode('grid'); }}
               className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg flex items-center gap-1 transition ${
                 viewMode === 'grid'
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
@@ -279,36 +162,12 @@ export const FloorView: React.FC<FloorViewProps> = ({
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
               }`}
-              title="Kroki / Salon Planı"
+              title="Kroki / Salon Planı Görünümü"
             >
               <MapPin className="w-3.5 h-3.5 text-emerald-500" />
               <span className="hidden sm:inline">Kroki</span>
             </button>
           </div>
-
-          {/* If in Kroki mode: Edit Layout Toggle / Save Button */}
-          {viewMode === 'kroki' && (
-            <>
-              {isEditingLayout ? (
-                <button
-                  onClick={handleSaveKrokiPositions}
-                  className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow transition flex items-center gap-1"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>Kaydet</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => { sound.beep(); setIsEditingLayout(true); }}
-                  className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200 dark:border-slate-700 transition flex items-center gap-1"
-                  title="Masaların yerini taşımak için düzenleme modunu aç"
-                >
-                  <Move className="w-3.5 h-3.5 text-blue-500" />
-                  <span className="hidden sm:inline">Masaları Taşı</span>
-                </button>
-              )}
-            </>
-          )}
 
           <button
             onClick={() => { sound.beep(); onRefreshAreas(); }}
@@ -320,7 +179,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
         </div>
       </div>
 
-      {/* Main Floor View: GRID or KROKI */}
+      {/* Main Floor View: GRID or STATIC KROKI */}
       {viewMode === 'grid' ? (
         <div className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 bg-slate-50 dark:bg-slate-950">
           {loading && displayedTables.length === 0 && (
@@ -476,35 +335,29 @@ export const FloorView: React.FC<FloorViewProps> = ({
           </div>
         </div>
       ) : (
-        /* KROKI / FLOOR PLAN VIEW */
+        /* STATIC KROKI / FLOOR PLAN VIEW (Strictly Read-only / Click-to-Order, No Moving) */
         <div
-          ref={canvasRef}
-          onMouseMove={handleKrokiMouseMove}
-          onMouseUp={handleKrokiMouseUp}
           className="flex-1 relative overflow-auto bg-slate-100/70 dark:bg-slate-950 p-4 select-none min-h-[600px]"
           style={{
             backgroundImage: 'radial-gradient(circle, #cbd5e1 1px, transparent 1px)',
             backgroundSize: '24px 24px'
           }}
         >
-          {/* Kroki Help Badge */}
+          {/* Kroki Info Badge */}
           <div className="absolute top-3 left-3 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs shadow-sm pointer-events-none">
             <span className="font-bold text-slate-800 dark:text-slate-200">
               {currentArea?.name} Salon Krokisi
             </span>
             <p className="text-[11px] text-slate-400">
-              {isEditingLayout 
-                ? 'Düzenleme Modu: Masaları istediğiniz konuma sürükleyin, ardından Kaydet\'e basın.' 
-                : 'Sipariş almak veya hesap görmek için masaya dokununuz.'}
+              Sipariş girmek veya hesap açmak için masaya dokununuz.
             </p>
           </div>
 
-          {canvasTables.map((table) => {
+          {displayedTables.map((table) => {
             const isOccupied = table.status === 'occupied' || !!table.active_order;
             const isBillRequested = table.status === 'bill_requested';
             const isReserved = table.status === 'reserved';
             const hasBuzzer = !!table.waiter_call_reason || table.status === 'waiter_call';
-            const isDraggingThis = activeDragId === table.id;
             const isRound = table.shape === 'round';
             const posX = table.x || 50;
             const posY = table.y || 50;
@@ -512,7 +365,6 @@ export const FloorView: React.FC<FloorViewProps> = ({
             return (
               <div
                 key={table.id}
-                onMouseDown={(e) => handleKrokiMouseDown(e, table)}
                 onClick={() => handleTableClick(table)}
                 style={{
                   left: `${posX}px`,
@@ -520,14 +372,10 @@ export const FloorView: React.FC<FloorViewProps> = ({
                   width: '135px',
                   height: '115px'
                 }}
-                className={`absolute flex flex-col justify-between p-3 border transition-shadow select-none ${
-                  isEditingLayout ? 'cursor-move' : 'cursor-pointer hover:scale-105 transition-transform'
-                } ${
+                className={`absolute flex flex-col justify-between p-3 border select-none cursor-pointer hover:scale-105 active:scale-95 transition-all shadow-sm ${
                   isRound ? 'rounded-full text-center' : 'rounded-2xl'
                 } ${
-                  isDraggingThis
-                    ? 'ring-4 ring-emerald-400 shadow-2xl z-30 scale-105'
-                    : hasBuzzer
+                  hasBuzzer
                     ? 'bg-purple-50 dark:bg-purple-950/50 border-purple-400 text-purple-900 dark:text-purple-100 shadow-md animate-pulse z-20'
                     : isBillRequested
                     ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-400 text-blue-900 dark:text-blue-100 shadow-md z-20'
@@ -535,21 +383,17 @@ export const FloorView: React.FC<FloorViewProps> = ({
                     ? 'bg-[#fce8e6] dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-900/60 text-slate-900 dark:text-white shadow-md z-20'
                     : isReserved
                     ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-900/60 text-amber-900 dark:text-amber-100 shadow-md z-20'
-                    : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 text-slate-800 dark:text-slate-200 shadow-sm hover:border-slate-400 z-10'
+                    : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800 text-slate-800 dark:text-slate-200 hover:border-slate-400 z-10'
                 }`}
               >
-                {/* Top: Name & Move icon */}
+                {/* Top: Name & Indicator */}
                 <div className="flex items-center justify-between text-xs">
                   <h4 className="font-black text-sm tracking-tight truncate leading-tight">
                     {table.name}
                   </h4>
-                  {isEditingLayout ? (
-                    <Move className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  ) : (
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{
-                      backgroundColor: isOccupied ? '#10b981' : isBillRequested ? '#3b82f6' : isReserved ? '#f59e0b' : '#94a3b8'
-                    }} />
-                  )}
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{
+                    backgroundColor: isOccupied ? '#10b981' : isBillRequested ? '#3b82f6' : isReserved ? '#f59e0b' : '#94a3b8'
+                  }} />
                 </div>
 
                 {/* Center: Amount or Status */}
