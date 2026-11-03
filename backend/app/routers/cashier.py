@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -15,6 +15,7 @@ from app.schemas.all import (
 )
 from app.services.report_service import ReportService
 from app.services.fiscal_service import FiscalService
+from app.services.permission_service import require_permission
 from app.websocket_hub import ws_hub
 
 router = APIRouter(prefix="/cashier", tags=["Cashier & Payments"])
@@ -45,11 +46,14 @@ async def get_active_register(db: AsyncSession = Depends(get_db)):
     }
 
 @router.post("/settle-payment")
-async def settle_order_payment(payload: SettlePaymentRequest, db: AsyncSession = Depends(get_db)):
+async def settle_order_payment(payload: SettlePaymentRequest, request: Request = None, db: AsyncSession = Depends(get_db)):
     """
     Settles order with mixed / split payment methods (e.g. ₺200 Cash + ₺300 Card + ₺100 Sodexo).
     Triggers simulated RJ12 cash drawer if cash is used, and closes table if fully paid.
     """
+    await require_permission(db, request, payload.cashier_name, ("order_take_payment", "order_fast_pay"), default_value=True, error_detail="Ödeme alma yetkiniz bulunmamaktadır.")
+    if any((p.method or "").lower() == "open_account" for p in (payload.payments or [])):
+        await require_permission(db, request, payload.cashier_name, ("order_open_account_transfer",), default_value=False, error_detail="Açık hesaba aktarma yetkiniz bulunmamaktadır.")
     stmt = select(Order).where(Order.id == payload.order_id).options(
         selectinload(Order.items),
         selectinload(Order.table),

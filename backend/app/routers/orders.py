@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -19,6 +19,7 @@ from app.schemas.all import (
     BatchItemDiscountRequest, ApplyTreatRequest, SplitEqualRequest
 )
 from app.services.stock_service import StockService
+from app.services.permission_service import require_permission, resolve_operator_role, check_role_permission
 from app.websocket_hub import ws_hub
 from app.config import settings
 import json
@@ -160,10 +161,11 @@ async def get_order_details(order_id: int, db: AsyncSession = Depends(get_db)):
     }
 
 @router.post("/create")
-async def create_new_order(payload: CreateOrderRequest, db: AsyncSession = Depends(get_db)):
+async def create_new_order(payload: CreateOrderRequest, request: Request = None, db: AsyncSession = Depends(get_db)):
     """
     Creates a new order for a table or takeaway/online order.
     """
+    await require_permission(db, request, payload.waiter_name, ("order_general",), default_value=True, error_detail="Genel sipariş alma yetkiniz kapalıdır.")
     table = None
     if payload.table_id:
         t_stmt = select(Table).where(Table.id == payload.table_id)
@@ -183,7 +185,7 @@ async def create_new_order(payload: CreateOrderRequest, db: AsyncSession = Depen
         existing_open = existing_res.scalars().first()
         if existing_open:
             add_req = AddItemsRequest(items=payload.items, waiter_name=payload.waiter_name)
-            await add_items_to_order(existing_open.id, add_req, db)
+            await add_items_to_order(existing_open.id, add_req, request, db)
             return {"status": "success", "order_id": existing_open.id, "order_no": existing_open.order_no}
 
     # Reçete (BOM) hammadde stok kontrolü
@@ -322,10 +324,11 @@ async def update_order_notes(order_id: int, payload: dict, db: AsyncSession = De
     return {"status": "success", "notes": order.notes}
 
 @router.post("/{order_id}/add-items")
-async def add_items_to_order(order_id: int, payload: AddItemsRequest, db: AsyncSession = Depends(get_db)):
+async def add_items_to_order(order_id: int, payload: AddItemsRequest, request: Request = None, db: AsyncSession = Depends(get_db)):
     """
     Adds extra items to an existing open order.
     """
+    await require_permission(db, request, payload.waiter_name, ("order_general",), default_value=True, error_detail="Genel sipariş alma yetkiniz kapalıdır.")
     stmt = select(Order).where(Order.id == order_id).options(selectinload(Order.items), selectinload(Order.table))
     res = await db.execute(stmt)
     order = res.scalar_one_or_none()
@@ -412,12 +415,26 @@ async def toggle_hold_fire(payload: HoldFireToggleRequest, db: AsyncSession = De
     await ws_hub.broadcast_all("ORDER_UPDATED", {"item_ids": payload.order_item_ids})
     return {"status": "success", "message": f"{len(items)} kalem ürün mutfağa ateşlendi!"}
 
-async def verify_cancel_authorization(db: AsyncSession, operator_name: str | None, manager_pin: str | None) -> bool:
+async def verify_cancel_authorization(db: AsyncSession, operator_name: str | None, manager_pin: str | None, request: Request | None = None) -> bool:
     """
     Checks whether an item void or order cancellation is authorized via:
-    1) Valid manager override PIN or active manager's PIN, OR
-    2) The operator's role having 'order_cancel' or 'order_remove_item' enabled in RestaurantSetting('role_permissions').
+    1) The operator's role having 'order_cancel' or 'order_remove_item' enabled in RestaurantSetting('role_permissions'), OR
+    2) Valid manager override PIN when not explicitly blocked for an unprivileged waiter header.
     """
+    role_key = await resolve_operator_role(db, request, operator_name)
+    if role_key == "manager":
+        return True
+
+    if role_key:
+        has_role_perm = await check_role_permission(db, role_key, ("order_cancel", "order_remove_item"), default_value=False)
+        if has_role_perm:
+            return True
+        # If the caller is explicitly identified as a non-manager role (e.g. waiter) whose cancel permission is False,
+        # only allow if they provide a real active manager's PIN (or override PIN when no X-User-Role header was sent).
+        header_role = request.headers.get("X-User-Role") if request is not None else None
+        if header_role and role_key != "manager":
+            return False
+
     if manager_pin == settings.MANAGER_OVERRIDE_PIN:
         return True
     if manager_pin:
@@ -430,50 +447,16 @@ async def verify_cancel_authorization(db: AsyncSession, operator_name: str | Non
         if mgr_res.scalar_one_or_none():
             return True
 
-    # Determine operator role (default to waiter if not found)
-    role_key = "waiter"
-    if operator_name:
-        user_stmt = select(StaffUser).where(StaffUser.name == operator_name, StaffUser.is_active == True)
-        user_res = await db.execute(user_stmt)
-        staff_user = user_res.scalars().first()
-        if staff_user and staff_user.role:
-            raw_role = staff_user.role.lower()
-            if raw_role in ["admin", "müdür", "mudur", "manager"]:
-                return True
-            elif raw_role in ["kasa", "kasiyer", "cashier"]:
-                role_key = "cashier"
-            elif raw_role in ["mutfak", "kitchen"]:
-                role_key = "kitchen"
-            elif raw_role in ["kurye", "courier"]:
-                role_key = "courier"
-            else:
-                role_key = "waiter"
-
-    perm_stmt = select(RestaurantSetting).where(RestaurantSetting.key == "role_permissions")
-    perm_res = await db.execute(perm_stmt)
-    perm_setting = perm_res.scalar_one_or_none()
-    if perm_setting and perm_setting.value:
-        try:
-            perms = json.loads(perm_setting.value)
-            if isinstance(perms, list):
-                for p in perms:
-                    if isinstance(p, dict) and p.get("id") in ("order_cancel", "order_remove_item"):
-                        roles_map = p.get("roles") or {}
-                        if roles_map.get(role_key) is True:
-                            return True
-        except Exception:
-            pass
-
     return False
 
 
 @router.post("/void-item")
-async def void_order_item(payload: VoidItemRequest, db: AsyncSession = Depends(get_db)):
+async def void_order_item(payload: VoidItemRequest, request: Request = None, db: AsyncSession = Depends(get_db)):
     """
     Cancels / Voids an item with mandatory reason and role permission or manager PIN verification.
     Also produces a kitchen cancel slip.
     """
-    is_authorized = await verify_cancel_authorization(db, payload.operator_name, payload.manager_pin)
+    is_authorized = await verify_cancel_authorization(db, payload.operator_name, payload.manager_pin, request)
     if not is_authorized:
         raise HTTPException(status_code=403, detail="Yetkisiz işlem! Sipariş/ürün iptali yetkiniz kapalıdır veya geçerli bir müdür PIN kodu gereklidir.")
 
@@ -529,7 +512,7 @@ async def void_order_item(payload: VoidItemRequest, db: AsyncSession = Depends(g
 
 
 @router.post("/{order_id}/cancel")
-async def cancel_entire_order(order_id: int, payload: dict | None = None, db: AsyncSession = Depends(get_db)):
+async def cancel_entire_order(order_id: int, payload: dict | None = None, request: Request = None, db: AsyncSession = Depends(get_db)):
     """
     Cancels an entire open order, voids all its active items, and frees the table.
     """
@@ -539,7 +522,7 @@ async def cancel_entire_order(order_id: int, payload: dict | None = None, db: As
     reason_text = payload.get("reason_text", "Sipariş iptal edildi")
     manager_pin = payload.get("manager_pin")
 
-    is_authorized = await verify_cancel_authorization(db, operator_name, manager_pin)
+    is_authorized = await verify_cancel_authorization(db, operator_name, manager_pin, request)
     if not is_authorized:
         raise HTTPException(status_code=403, detail="Yetkisiz işlem! Siparişi iptal etme yetkiniz bulunmamaktadır.")
 
@@ -590,7 +573,8 @@ async def cancel_entire_order(order_id: int, payload: dict | None = None, db: As
     return {"status": "success", "message": f"Sipariş (#{order.order_no}) iptal edildi."}
 
 @router.post("/{order_id}/discount")
-async def apply_discount(order_id: int, payload: ApplyDiscountRequest, db: AsyncSession = Depends(get_db)):
+async def apply_discount(order_id: int, payload: ApplyDiscountRequest, request: Request = None, db: AsyncSession = Depends(get_db)):
+    await require_permission(db, request, payload.operator_name, ("order_discount",), default_value=False, error_detail="İndirim uygulama yetkiniz bulunmamaktadır.")
     stmt = select(Order).where(Order.id == order_id)
     res = await db.execute(stmt)
     order = res.scalar_one_or_none()
@@ -630,7 +614,8 @@ def recalc_order_discounts_and_totals(order: Order):
     order.remaining_total = max(0.0, round(order.grand_total - (order.paid_total or 0.0), 2))
 
 @router.post("/items/{item_id}/discount")
-async def apply_item_discount(item_id: int, payload: ApplyItemDiscountRequest, db: AsyncSession = Depends(get_db)):
+async def apply_item_discount(item_id: int, payload: ApplyItemDiscountRequest, request: Request = None, db: AsyncSession = Depends(get_db)):
+    await require_permission(db, request, payload.operator_name, ("order_discount",), default_value=False, error_detail="İndirim uygulama yetkiniz bulunmamaktadır.")
     stmt = select(OrderItem).where(OrderItem.id == item_id).options(selectinload(OrderItem.order).selectinload(Order.items))
     res = await db.execute(stmt)
     item = res.scalar_one_or_none()
@@ -717,7 +702,8 @@ async def remove_item_discount(item_id: int, db: AsyncSession = Depends(get_db))
     }
 
 @router.post("/{order_id}/batch-item-discount")
-async def apply_batch_item_discount(order_id: int, payload: BatchItemDiscountRequest, db: AsyncSession = Depends(get_db)):
+async def apply_batch_item_discount(order_id: int, payload: BatchItemDiscountRequest, request: Request = None, db: AsyncSession = Depends(get_db)):
+    await require_permission(db, request, payload.operator_name, ("order_discount",), default_value=False, error_detail="İndirim uygulama yetkiniz bulunmamaktadır.")
     stmt = select(Order).where(Order.id == order_id).options(selectinload(Order.items))
     res = await db.execute(stmt)
     order = res.scalar_one_or_none()
@@ -797,7 +783,9 @@ async def remove_all_discounts(order_id: int, db: AsyncSession = Depends(get_db)
 
 
 @router.post("/{order_id}/treat")
-async def apply_treat(order_id: int, payload: ApplyTreatRequest, db: AsyncSession = Depends(get_db)):
+async def apply_treat(order_id: int, payload: ApplyTreatRequest, request: Request = None, db: AsyncSession = Depends(get_db)):
+    req_perms = ("order_item_treat",) if payload.order_item_ids else ("order_close_complimentary", "order_item_treat")
+    await require_permission(db, request, payload.operator_name, req_perms, default_value=False, error_detail="İkram uygulama yetkiniz bulunmamaktadır.")
     stmt = select(Order).where(Order.id == order_id).options(selectinload(Order.items))
     res = await db.execute(stmt)
     order = res.scalar_one_or_none()

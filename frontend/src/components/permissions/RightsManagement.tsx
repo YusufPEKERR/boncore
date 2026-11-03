@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Shield, Search, Save, CheckCircle2, HelpCircle, Check, X, Play, RefreshCw, Lock, Unlock } from 'lucide-react';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
+import { broadcastPermissionsUpdate } from '../../services/permissions';
 
 export interface PermissionItem {
   id: string;
@@ -409,9 +410,9 @@ export const RightsManagement: React.FC = () => {
         if (settings?.role_permissions && Array.isArray(settings.role_permissions)) {
           const merged = mergeWithInitialPermissions(settings.role_permissions);
           setPermissions(merged);
-          localStorage.setItem('boncore_role_permissions', JSON.stringify(merged));
+          broadcastPermissionsUpdate(merged);
         } else {
-          localStorage.setItem('boncore_role_permissions', JSON.stringify(initialPermissions));
+          broadcastPermissionsUpdate(initialPermissions);
         }
       } catch (err) {
         console.warn('Failed to load settings permissions', err);
@@ -445,17 +446,38 @@ export const RightsManagement: React.FC = () => {
         return p;
       });
       try {
-        localStorage.setItem('boncore_role_permissions', JSON.stringify(next));
+        broadcastPermissionsUpdate(next);
         api.updateSettings({ role_permissions: next }).catch(() => {});
       } catch {}
       return next;
     });
   };
 
+  const handleBulkRoleToggle = (roleKey: keyof PermissionItem['roles'], enableAll: boolean) => {
+    sound.beep();
+    setPermissions(prev => {
+      const next = prev.map(p => ({
+        ...p,
+        roles: {
+          ...p.roles,
+          // Keep order_predefined_discount_only as false when enabling all so custom discounts aren't accidentally locked
+          [roleKey]: p.id === 'order_predefined_discount_only' ? false : enableAll
+        }
+      }));
+      try {
+        broadcastPermissionsUpdate(next);
+        api.updateSettings({ role_permissions: next }).catch(() => {});
+      } catch {}
+      return next;
+    });
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 3000);
+  };
+
   const handleSave = async () => {
     sound.beep();
     try {
-      localStorage.setItem('boncore_role_permissions', JSON.stringify(permissions));
+      broadcastPermissionsUpdate(permissions);
       await api.updateSettings({ role_permissions: permissions });
     } catch (e) {
       console.warn('Failed to save permissions to backend', e);
@@ -579,6 +601,26 @@ export const RightsManagement: React.FC = () => {
                       />
                       <span>Garson: "SİPARİŞ İPTAL" {waiterCanCancel ? 'Açık' : 'Kapalı'}</span>
                     </label>
+
+                    <button
+                      type="button"
+                      onClick={() => handleBulkRoleToggle('waiter', true)}
+                      className="px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs cursor-pointer transition"
+                      title="Garson rolü için tüm yetkileri aç"
+                    >
+                      <Unlock className="w-3.5 h-3.5" />
+                      <span>Garson: Tümünü Aç</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleBulkRoleToggle('waiter', false)}
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs cursor-pointer transition"
+                      title="Garson rolü için tüm yetkileri kaldır"
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>Garson: Tümünü Kaldır</span>
+                    </button>
                   </>
                 );
               })()}

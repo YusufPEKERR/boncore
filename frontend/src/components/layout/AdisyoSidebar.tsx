@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { StaffUser } from '../../types';
 import { sound } from '../../services/sound';
+import { useRolePermissions } from '../../services/permissions';
 
 interface AdisyoSidebarProps {
   isOpen: boolean;
@@ -84,6 +85,8 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
     localStorage.setItem('boncore_menu_reports_open', String(isReportsOpen));
   }, [isReportsOpen]);
 
+  const { canTab } = useRolePermissions(currentUser);
+
   if (!isOpen) return null;
 
   const handleNavClick = (tabId: string) => {
@@ -131,134 +134,152 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
         {/* Scrollable Navigation Menu List (Exact Video 3 Tree) */}
         <div className="flex-1 overflow-y-auto py-2 px-2 text-xs font-semibold space-y-0.5">
           {/* Ana Sayfa (Dashboard) */}
-          <button
-            onClick={() => handleNavClick('dashboard')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
-              activeTab === 'dashboard'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Home className="w-4 h-4 text-slate-500" />
-            <span>Ana Sayfa</span>
-          </button>
+          {canTab('dashboard') && (
+            <button
+              onClick={() => handleNavClick('dashboard')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
+                activeTab === 'dashboard'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Home className="w-4 h-4 text-slate-500" />
+              <span>Ana Sayfa</span>
+            </button>
+          )}
 
           {/* Entegrasyon İşlemleri Dropdown */}
-          <div>
-            <button
-              onClick={() => setIsIntegrationsOpen(!isIntegrationsOpen)}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition"
-            >
-              <div className="flex items-center gap-3">
-                <Layers className="w-4 h-4 text-slate-500" />
-                <span className="font-bold">Entegrasyon İşlemleri</span>
-              </div>
-              {isIntegrationsOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
-            </button>
+          {canTab('integration_menu') && (
+            <div>
+              <button
+                onClick={() => setIsIntegrationsOpen(!isIntegrationsOpen)}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition"
+              >
+                <div className="flex items-center gap-3">
+                  <Layers className="w-4 h-4 text-slate-500" />
+                  <span className="font-bold">Entegrasyon İşlemleri</span>
+                </div>
+                {isIntegrationsOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
+              </button>
 
-            {isIntegrationsOpen && (
-              <div className="pl-7 pr-1 py-1 space-y-0.5 border-l-2 border-slate-100 dark:border-slate-800 ml-4">
-                <button
-                  onClick={() => handleNavClick('integration_menu')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between ${
-                    activeTab === 'integration_menu' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  <span>Ürün Eşleştirme Ekranı</span>
-                </button>
-                <button
-                  onClick={() => handleNavClick('integration_menu')}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center justify-between"
-                >
-                  <span>Entegrasyon İşlemleri</span>
-                  <span className="bg-[#338d35] text-white text-[8px] font-black px-1 py-0.2 rounded">Yeni</span>
-                </button>
-              </div>
-            )}
-          </div>
+              {isIntegrationsOpen && (
+                <div className="pl-7 pr-1 py-1 space-y-0.5 border-l-2 border-slate-100 dark:border-slate-800 ml-4">
+                  <button
+                    onClick={() => handleNavClick('integration_menu')}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between ${
+                      activeTab === 'integration_menu' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>Ürün Eşleştirme Ekranı</span>
+                  </button>
+                  <button
+                    onClick={() => handleNavClick('integration_menu')}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center justify-between"
+                  >
+                    <span>Entegrasyon İşlemleri</span>
+                    <span className="bg-[#338d35] text-white text-[8px] font-black px-1 py-0.2 rounded">Yeni</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Dijital Menü (QR) */}
-          <button
-            onClick={() => handleNavClick('qr')}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
-              activeTab === 'qr'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <Smartphone className="w-4 h-4 text-slate-500" />
-              <span>Dijital Menü (QR)</span>
-            </div>
-            <span className="bg-[#338d35] text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-md">
-              Canlı
-            </span>
-          </button>
-
-          {/* Tanımlamalar Dropdown */}
-          <div>
+          {canTab('qr') && (
             <button
-              onClick={() => setIsDefinitionsOpen(!isDefinitionsOpen)}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition"
+              onClick={() => handleNavClick('qr')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
+                activeTab === 'qr'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
             >
               <div className="flex items-center gap-3">
-                <Settings className="w-4 h-4 text-slate-500" />
-                <span className="font-bold">Tanımlamalar</span>
+                <Smartphone className="w-4 h-4 text-slate-500" />
+                <span>Dijital Menü (QR)</span>
               </div>
-              {isDefinitionsOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
+              <span className="bg-[#338d35] text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-md">
+                Canlı
+              </span>
             </button>
+          )}
 
-            {isDefinitionsOpen && (
-              <div className="pl-7 pr-1 py-1 space-y-0.5 border-l-2 border-slate-100 dark:border-slate-800 ml-4">
-                <button
-                  onClick={() => handleNavClick('settings')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'settings' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Restaurant Tanımlamaları
-                </button>
-                <button
-                  onClick={() => handleNavClick('table_definition')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'table_definition' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Masa / Bölgeler
-                </button>
-                <button
-                  onClick={() => handleNavClick('product_definition')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'product_definition' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Menü / Ürünler
-                </button>
-                <button
-                  onClick={() => handleNavClick('inventory')}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-                >
-                  Birimler & Reçeteler
-                </button>
-                <button
-                  onClick={() => handleNavClick('kitchen_groups')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'kitchen_groups' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Mutfak Grupları
-                </button>
-                <button
-                  onClick={() => handleNavClick('profile')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'profile' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Profil & Kullanıcı Bilgisi
-                </button>
-              </div>
-            )}
-          </div>
+          {/* Tanımlamalar Dropdown */}
+          {(canTab('settings') || canTab('table_definition') || canTab('product_definition') || canTab('inventory') || canTab('kitchen_groups') || canTab('profile')) && (
+            <div>
+              <button
+                onClick={() => setIsDefinitionsOpen(!isDefinitionsOpen)}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition"
+              >
+                <div className="flex items-center gap-3">
+                  <Settings className="w-4 h-4 text-slate-500" />
+                  <span className="font-bold">Tanımlamalar</span>
+                </div>
+                {isDefinitionsOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
+              </button>
+
+              {isDefinitionsOpen && (
+                <div className="pl-7 pr-1 py-1 space-y-0.5 border-l-2 border-slate-100 dark:border-slate-800 ml-4">
+                  {canTab('settings') && (
+                    <button
+                      onClick={() => handleNavClick('settings')}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                        activeTab === 'settings' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      Restaurant Tanımlamaları
+                    </button>
+                  )}
+                  {canTab('table_definition') && (
+                    <button
+                      onClick={() => handleNavClick('table_definition')}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                        activeTab === 'table_definition' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      Masa / Bölgeler
+                    </button>
+                  )}
+                  {canTab('product_definition') && (
+                    <button
+                      onClick={() => handleNavClick('product_definition')}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                        activeTab === 'product_definition' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      Menü / Ürünler
+                    </button>
+                  )}
+                  {canTab('inventory') && (
+                    <button
+                      onClick={() => handleNavClick('inventory')}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                    >
+                      Birimler & Reçeteler
+                    </button>
+                  )}
+                  {canTab('kitchen_groups') && (
+                    <button
+                      onClick={() => handleNavClick('kitchen_groups')}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                        activeTab === 'kitchen_groups' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      Mutfak Grupları
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleNavClick('profile')}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                      activeTab === 'profile' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    Profil & Kullanıcı Bilgisi
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Sipariş (Masa & POS) */}
           <button
@@ -274,234 +295,274 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
           </button>
 
           {/* Mutfak (KDS) */}
-          <button
-            onClick={() => handleNavClick('kds')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
-              activeTab === 'kds'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <ChefHat className="w-4 h-4 text-slate-500" />
-            <span>Mutfak (KDS)</span>
-          </button>
+          {canTab('kds') && (
+            <button
+              onClick={() => handleNavClick('kds')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
+                activeTab === 'kds'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <ChefHat className="w-4 h-4 text-slate-500" />
+              <span>Mutfak (KDS)</span>
+            </button>
+          )}
 
           {/* Paket Servis & Kurye */}
-          <button
-            onClick={() => handleNavClick('delivery')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
-              activeTab === 'delivery'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <ShoppingBag className="w-4 h-4 text-slate-500" />
-            <span>Paket Servis & Kurye</span>
-          </button>
+          {canTab('delivery') && (
+            <button
+              onClick={() => handleNavClick('delivery')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
+                activeTab === 'delivery'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <ShoppingBag className="w-4 h-4 text-slate-500" />
+              <span>Paket Servis & Kurye</span>
+            </button>
+          )}
 
           {/* Müşteri Sadakat & Cari (CRM) */}
-          <button
-            onClick={() => handleNavClick('customers')}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
-              activeTab === 'customers'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <Gift className="w-4 h-4 text-brand-500" />
-              <span>Müşteri Sadakat & Cari</span>
-            </div>
-            <span className="bg-[#338d35] text-white text-[8px] font-black px-1.5 py-0.5 rounded">CRM</span>
-          </button>
+          {canTab('customers') && (
+            <button
+              onClick={() => handleNavClick('customers')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
+                activeTab === 'customers'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Gift className="w-4 h-4 text-brand-500" />
+                <span>Müşteri Sadakat & Cari</span>
+              </div>
+              <span className="bg-[#338d35] text-white text-[8px] font-black px-1.5 py-0.5 rounded">CRM</span>
+            </button>
+          )}
 
           {/* Masa Rezervasyon */}
-          <button
-            onClick={() => handleNavClick('reservations')}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
-              activeTab === 'reservations'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <FileText className="w-4 h-4 text-indigo-500" />
-              <span>Masa Rezervasyon</span>
-            </div>
-            <span className="bg-indigo-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded">Pro</span>
-          </button>
+          {canTab('reservations') && (
+            <button
+              onClick={() => handleNavClick('reservations')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
+                activeTab === 'reservations'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <FileText className="w-4 h-4 text-indigo-500" />
+                <span>Masa Rezervasyon</span>
+              </div>
+              <span className="bg-indigo-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded">Pro</span>
+            </button>
+          )}
 
           {/* Self-Servis Kiosk & CFD */}
-          <button
-            onClick={() => handleNavClick('kiosk')}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
-              activeTab === 'kiosk'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <Smartphone className="w-4 h-4 text-emerald-500" />
-              <span>Kiosk & Çağrı Ekranı</span>
-            </div>
-            <span className="bg-emerald-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded">CFD</span>
-          </button>
+          {canTab('kiosk') && (
+            <button
+              onClick={() => handleNavClick('kiosk')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
+                activeTab === 'kiosk'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Smartphone className="w-4 h-4 text-emerald-500" />
+                <span>Kiosk & Çağrı Ekranı</span>
+              </div>
+              <span className="bg-emerald-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded">CFD</span>
+            </button>
+          )}
 
           {/* Otel Yönetim (PMS Oda Folyo) */}
-          <button
-            onClick={() => handleNavClick('hotel')}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
-              activeTab === 'hotel'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <Warehouse className="w-4 h-4 text-amber-500" />
-              <span>Otel Yönetim (PMS)</span>
-            </div>
-            <span className="bg-amber-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded">Folyo</span>
-          </button>
+          {canTab('hotel') && (
+            <button
+              onClick={() => handleNavClick('hotel')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
+                activeTab === 'hotel'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Warehouse className="w-4 h-4 text-amber-500" />
+                <span>Otel Yönetim (PMS)</span>
+              </div>
+              <span className="bg-amber-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded">Folyo</span>
+            </button>
+          )}
 
           {/* İşlemler (Stok / Kasa / Masraf / Denetim) Dropdown */}
-          <div>
-            <button
-              onClick={() => setIsOperationsOpen(!isOperationsOpen)}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition"
-            >
-              <div className="flex items-center gap-3">
-                <Activity className="w-4 h-4 text-slate-500" />
-                <span className="font-bold">İşlemler</span>
-              </div>
-              {isOperationsOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
-            </button>
+          {(canTab('inventory') || canTab('cashier') || canTab('audit')) && (
+            <div>
+              <button
+                onClick={() => setIsOperationsOpen(!isOperationsOpen)}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition"
+              >
+                <div className="flex items-center gap-3">
+                  <Activity className="w-4 h-4 text-slate-500" />
+                  <span className="font-bold">İşlemler</span>
+                </div>
+                {isOperationsOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
+              </button>
 
-            {isOperationsOpen && (
-              <div className="pl-7 pr-1 py-1 space-y-0.5 border-l-2 border-slate-100 dark:border-slate-800 ml-4">
-                <button
-                  onClick={() => handleNavClick('inventory')}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-                >
-                  Stok İşlemleri
-                </button>
-                <button
-                  onClick={() => handleNavClick('cashier')}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-                >
-                  Gider / Masraf İşlemleri
-                </button>
-                <button
-                  onClick={() => handleNavClick('inventory')}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-                >
-                  Zayi / Fire İşlemleri
-                </button>
-                <button
-                  onClick={() => handleNavClick('audit')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'audit' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Denetim İzi (Audit Log)
-                </button>
-              </div>
-            )}
-          </div>
+              {isOperationsOpen && (
+                <div className="pl-7 pr-1 py-1 space-y-0.5 border-l-2 border-slate-100 dark:border-slate-800 ml-4">
+                  {canTab('inventory') && (
+                    <button
+                      onClick={() => handleNavClick('inventory')}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                    >
+                      Stok İşlemleri
+                    </button>
+                  )}
+                  {canTab('cashier') && (
+                    <button
+                      onClick={() => handleNavClick('cashier')}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                    >
+                      Gider / Masraf İşlemleri
+                    </button>
+                  )}
+                  {canTab('inventory') && (
+                    <button
+                      onClick={() => handleNavClick('inventory')}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                    >
+                      Zayi / Fire İşlemleri
+                    </button>
+                  )}
+                  {canTab('audit') && (
+                    <button
+                      onClick={() => handleNavClick('audit')}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                        activeTab === 'audit' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      Denetim İzi (Audit Log)
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Kullanıcılar & Yetkiler Dropdown (Frame 110) */}
-          <div>
-            <button
-              onClick={() => setIsUsersOpen(!isUsersOpen)}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition"
-            >
-              <div className="flex items-center gap-3">
-                <Users className="w-4 h-4 text-slate-500" />
-                <span className="font-bold">Kullanıcılar</span>
-              </div>
-              {isUsersOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
-            </button>
+          {(canTab('users') || canTab('rights')) && (
+            <div>
+              <button
+                onClick={() => setIsUsersOpen(!isUsersOpen)}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition"
+              >
+                <div className="flex items-center gap-3">
+                  <Users className="w-4 h-4 text-slate-500" />
+                  <span className="font-bold">Kullanıcılar</span>
+                </div>
+                {isUsersOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
+              </button>
 
-            {isUsersOpen && (
-              <div className="pl-7 pr-1 py-1 space-y-0.5 border-l-2 border-slate-100 dark:border-slate-800 ml-4">
-                <button
-                  onClick={() => handleNavClick('users')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'users' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Kullanıcılar
-                </button>
-                <button
-                  onClick={() => handleNavClick('rights')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'rights' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Yetki / İzin Ekranı
-                </button>
-              </div>
-            )}
-          </div>
+              {isUsersOpen && (
+                <div className="pl-7 pr-1 py-1 space-y-0.5 border-l-2 border-slate-100 dark:border-slate-800 ml-4">
+                  {canTab('users') && (
+                    <button
+                      onClick={() => handleNavClick('users')}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                        activeTab === 'users' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      Kullanıcılar
+                    </button>
+                  )}
+                  {canTab('rights') && (
+                    <button
+                      onClick={() => handleNavClick('rights')}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                        activeTab === 'rights' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      Yetki / İzin Ekranı
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Raporlar Dropdown (Frame 150 & 190) */}
-          <div>
-            <button
-              onClick={() => setIsReportsOpen(!isReportsOpen)}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition"
-            >
-              <div className="flex items-center gap-3">
-                <BarChart3 className="w-4 h-4 text-slate-500" />
-                <span className="font-bold">Raporlar</span>
-              </div>
-              {isReportsOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
-            </button>
+          {(canTab('restaurant_statistics') || canTab('closed_bills_report') || canTab('product_sales_report') || canTab('day_end_report') || canTab('cost_profit')) && (
+            <div>
+              <button
+                onClick={() => setIsReportsOpen(!isReportsOpen)}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition"
+              >
+                <div className="flex items-center gap-3">
+                  <BarChart3 className="w-4 h-4 text-slate-500" />
+                  <span className="font-bold">Raporlar</span>
+                </div>
+                {isReportsOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
+              </button>
 
-            {isReportsOpen && (
-              <div className="pl-7 pr-1 py-1 space-y-0.5 border-l-2 border-slate-100 dark:border-slate-800 ml-4">
-                <button
-                  onClick={() => handleNavClick('restaurant_statistics')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'restaurant_statistics' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Restaurant İstatistikleri
-                </button>
-                <button
-                  onClick={() => handleNavClick('closed_bills_report')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'closed_bills_report' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Kapatılan Adisyonlar
-                </button>
-                <button
-                  onClick={() => handleNavClick('product_sales_report')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'product_sales_report' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Ürün Satış Raporu
-                </button>
-                <button
-                  onClick={() => handleNavClick('day_end_report')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    activeTab === 'day_end_report' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Gün Sonu Raporu (Z)
-                </button>
-                <button
-                  onClick={() => handleNavClick('cost_profit')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between ${
-                    activeTab === 'cost_profit' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  <span>Maliyet & Rapor Sihirbazı</span>
-                  <span className="bg-emerald-600 text-white text-[8px] font-black px-1 py-0.2 rounded">Pro</span>
-                </button>
-              </div>
-            )}
-          </div>
+              {isReportsOpen && (
+                <div className="pl-7 pr-1 py-1 space-y-0.5 border-l-2 border-slate-100 dark:border-slate-800 ml-4">
+                  {canTab('restaurant_statistics') && (
+                    <button
+                      onClick={() => handleNavClick('restaurant_statistics')}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                        activeTab === 'restaurant_statistics' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      Restaurant İstatistikleri
+                    </button>
+                  )}
+                  {canTab('closed_bills_report') && (
+                    <button
+                      onClick={() => handleNavClick('closed_bills_report')}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                        activeTab === 'closed_bills_report' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      Kapatılan Adisyonlar
+                    </button>
+                  )}
+                  {canTab('product_sales_report') && (
+                    <button
+                      onClick={() => handleNavClick('product_sales_report')}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                        activeTab === 'product_sales_report' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      Ürün Satış Raporu
+                    </button>
+                  )}
+                  {canTab('day_end_report') && (
+                    <button
+                      onClick={() => handleNavClick('day_end_report')}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                        activeTab === 'day_end_report' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      Gün Sonu Raporu (Z)
+                    </button>
+                  )}
+                  {canTab('cost_profit') && (
+                    <button
+                      onClick={() => handleNavClick('cost_profit')}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between ${
+                        activeTab === 'cost_profit' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>Maliyet & Rapor Sihirbazı</span>
+                      <span className="bg-emerald-600 text-white text-[8px] font-black px-1 py-0.2 rounded">Pro</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Mobil Android APK İndir */}
           <a
@@ -520,17 +581,19 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
           </a>
 
           {/* Uygulama Mağazası (Frame 190) */}
-          <button
-            onClick={() => handleNavClick('app_store')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
-              activeTab === 'app_store'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Store className="w-4 h-4 text-slate-500" />
-            <span>Uygulama Mağazası</span>
-          </button>
+          {canTab('app_store') && (
+            <button
+              onClick={() => handleNavClick('app_store')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
+                activeTab === 'app_store'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Store className="w-4 h-4 text-slate-500" />
+              <span>Uygulama Mağazası</span>
+            </button>
+          )}
 
           {/* Tavsiye Et ve Kazan */}
           <button

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update
@@ -14,6 +14,7 @@ from app.schemas.all import (
     AreaCreate, AreaReorderRequest, TableCreateSchema, TableUpdateSchema, TableReorderRequest, TableBulkCreateSchema
 )
 from app.websocket_hub import ws_hub
+from app.services.permission_service import require_permission
 from app.cache import cache_manager
 import uuid
 
@@ -173,10 +174,11 @@ async def update_table_positions(positions: list[TablePositionUpdate], db: Async
     return {"status": "success", "message": "Kroki yerleşimi güncellendi."}
 
 @router.post("/move")
-async def move_table(payload: TableMoveRequest, db: AsyncSession = Depends(get_db)):
+async def move_table(payload: TableMoveRequest, request: Request = None, db: AsyncSession = Depends(get_db)):
     """
     Moves all orders and state from source table to target table.
     """
+    await require_permission(db, request, payload.operator_name, ("order_table_move_merge",), default_value=True, error_detail="Masa taşıma ve birleştirme yetkiniz bulunmamaktadır.")
     src_res = await db.execute(select(Table).where(Table.id == payload.source_table_id).options(selectinload(Table.orders)))
     target_res = await db.execute(select(Table).where(Table.id == payload.target_table_id).options(selectinload(Table.orders)))
     src_table = src_res.scalar_one_or_none()
@@ -224,10 +226,11 @@ async def move_table(payload: TableMoveRequest, db: AsyncSession = Depends(get_d
     return {"status": "success", "message": f"{src_table.name} masası {target_table.name} masasına taşındı."}
 
 @router.post("/merge")
-async def merge_tables(payload: TableMergeRequest, db: AsyncSession = Depends(get_db)):
+async def merge_tables(payload: TableMergeRequest, request: Request = None, db: AsyncSession = Depends(get_db)):
     """
     Merges source table's active order into target table's active order.
     """
+    await require_permission(db, request, payload.operator_name, ("order_table_move_merge",), default_value=True, error_detail="Masa taşıma ve birleştirme yetkiniz bulunmamaktadır.")
     src_res = await db.execute(select(Table).where(Table.id == payload.source_table_id).options(selectinload(Table.orders).selectinload(Order.items)))
     target_res = await db.execute(select(Table).where(Table.id == payload.target_table_id).options(selectinload(Table.orders).selectinload(Order.items)))
     src_table = src_res.scalar_one_or_none()
@@ -284,11 +287,12 @@ async def merge_tables(payload: TableMergeRequest, db: AsyncSession = Depends(ge
     return {"status": "success", "message": f"{src_table.name} masası {target_table.name} ile birleştirildi."}
 
 @router.post("/transfer-items")
-async def transfer_items_between_tables(payload: TableItemTransferRequest, db: AsyncSession = Depends(get_db)):
+async def transfer_items_between_tables(payload: TableItemTransferRequest, request: Request = None, db: AsyncSession = Depends(get_db)):
     """
     Transfers specific individual items from source table to target table.
     Creates an order on target table if it doesn't have an active one.
     """
+    await require_permission(db, request, payload.operator_name, ("order_transfer_item",), default_value=True, error_detail="Ürün aktarma yetkiniz bulunmamaktadır.")
     src_res = await db.execute(select(Table).where(Table.id == payload.source_table_id).options(selectinload(Table.orders).selectinload(Order.items)))
     target_res = await db.execute(select(Table).where(Table.id == payload.target_table_id).options(selectinload(Table.orders).selectinload(Order.items)))
     src_table = src_res.scalar_one_or_none()

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { StaffUser } from '../../types';
 import { sound } from '../../services/sound';
+import { useRolePermissions } from '../../services/permissions';
 
 interface HeaderProps {
   activeTab: string;
@@ -53,6 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [supportMessage, setSupportMessage] = useState<string>('');
   const [supportSent, setSupportSent] = useState<boolean>(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(sound.enabled);
+  const { canTab } = useRolePermissions(currentUser);
 
   // Live Date & Time Clock
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -191,13 +193,15 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         {/* Caller ID / Phone Icon */}
-        <button
-          onClick={() => { sound.beep(); setActiveTab('delivery'); }}
-          className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-          title="Caller ID Santral & Paket"
-        >
-          <PhoneCall className="w-4 h-4" />
-        </button>
+        {canTab('delivery') && (
+          <button
+            onClick={() => { sound.beep(); setActiveTab('delivery'); }}
+            className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+            title="Caller ID Santral & Paket"
+          >
+            <PhoneCall className="w-4 h-4" />
+          </button>
+        )}
 
         {/* Wifi / Connectivity status */}
         <div

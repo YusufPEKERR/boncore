@@ -7,6 +7,7 @@ import {
 import { Area, Table, StaffUser } from '../../types';
 import { sound } from '../../services/sound';
 import { MoveTableModal, MergeTableModal, TransferItemsModal } from './TableActionModals';
+import { useRolePermissions } from '../../services/permissions';
 
 interface FloorViewProps {
   areas: Area[];
@@ -36,6 +37,11 @@ export const FloorView: React.FC<FloorViewProps> = ({
   const [internalFloorSection, setInternalFloorSection] = useState<'tables' | 'orders'>(() => {
     return (localStorage.getItem('boncore_floor_section') as 'tables' | 'orders') || 'tables';
   });
+
+  const { hasPerm } = useRolePermissions(currentUser);
+  const canMoveMergeTable = hasPerm('order_table_move_merge', true);
+  const canTransferItems = hasPerm('order_transfer_item', false);
+  const hasAnyTableAction = canMoveMergeTable || canTransferItems;
 
   const currentFloorSection = externalFloorSection !== undefined ? externalFloorSection : internalFloorSection;
 
@@ -368,43 +374,51 @@ export const FloorView: React.FC<FloorViewProps> = ({
                           )}
                         </div>
 
-                        <div className="relative">
-                          <button
-                            onClick={(e) => handleOpenActionMenu(e, table)}
-                            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-full hover:bg-black/5"
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </button>
-
-                          {isMenuOpen && (
-                            <div 
-                              onClick={(e) => e.stopPropagation()}
-                              className="absolute right-0 top-6 w-36 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 z-20 text-xs font-semibold animate-fadeIn"
+                        {hasAnyTableAction && (
+                          <div className="relative">
+                            <button
+                              onClick={(e) => handleOpenActionMenu(e, table)}
+                              className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-full hover:bg-black/5"
                             >
-                              <button
-                                onClick={() => { setIsMoveOpen(true); setActiveActionTableId(null); }}
-                                className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+
+                            {isMenuOpen && (
+                              <div 
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute right-0 top-6 w-36 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 z-20 text-xs font-semibold animate-fadeIn"
                               >
-                                <ArrowRight className="w-3.5 h-3.5 text-blue-500" />
-                                <span>Masa Taşı</span>
-                              </button>
-                              <button
-                                onClick={() => { setIsMergeOpen(true); setActiveActionTableId(null); }}
-                                className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
-                              >
-                                <Merge className="w-3.5 h-3.5 text-amber-500" />
-                                <span>Masa Birleştir</span>
-                              </button>
-                              <button
-                                onClick={() => { setIsTransferItemsOpen(true); setActiveActionTableId(null); }}
-                                className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
-                              >
-                                <ArrowRightLeft className="w-3.5 h-3.5 text-emerald-500" />
-                                <span>Ürün Aktar</span>
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                                {canMoveMergeTable && (
+                                  <>
+                                    <button
+                                      onClick={() => { setIsMoveOpen(true); setActiveActionTableId(null); }}
+                                      className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                                    >
+                                      <ArrowRight className="w-3.5 h-3.5 text-blue-500" />
+                                      <span>Masa Taşı</span>
+                                    </button>
+                                    <button
+                                      onClick={() => { setIsMergeOpen(true); setActiveActionTableId(null); }}
+                                      className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                                    >
+                                      <Merge className="w-3.5 h-3.5 text-amber-500" />
+                                      <span>Masa Birleştir</span>
+                                    </button>
+                                  </>
+                                )}
+                                {canTransferItems && (
+                                  <button
+                                    onClick={() => { setIsTransferItemsOpen(true); setActiveActionTableId(null); }}
+                                    className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                                  >
+                                    <ArrowRightLeft className="w-3.5 h-3.5 text-emerald-500" />
+                                    <span>Ürün Aktar</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       <div className="text-center my-auto">
@@ -712,43 +726,51 @@ export const FloorView: React.FC<FloorViewProps> = ({
                       </button>
 
                       {/* 3 dots action menu button */}
-                      <div className="relative">
-                        <button
-                          onClick={(e) => handleOpenActionMenu(e, table)}
-                          className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
-
-                        {isMenuOpen && (
-                          <div 
-                            onClick={(e) => e.stopPropagation()}
-                            className="absolute right-0 top-8 w-36 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 z-30 text-xs font-semibold animate-fadeIn"
+                      {hasAnyTableAction && (
+                        <div className="relative">
+                          <button
+                            onClick={(e) => handleOpenActionMenu(e, table)}
+                            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
                           >
-                            <button
-                              onClick={() => { setIsMoveOpen(true); setActiveActionTableId(null); }}
-                              className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+
+                          {isMenuOpen && (
+                            <div 
+                              onClick={(e) => e.stopPropagation()}
+                              className="absolute right-0 top-8 w-36 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 z-30 text-xs font-semibold animate-fadeIn"
                             >
-                              <ArrowRight className="w-3.5 h-3.5 text-blue-500" />
-                              <span>Masa Taşı</span>
-                            </button>
-                            <button
-                              onClick={() => { setIsMergeOpen(true); setActiveActionTableId(null); }}
-                              className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
-                            >
-                              <Merge className="w-3.5 h-3.5 text-amber-500" />
-                              <span>Masa Birleştir</span>
-                            </button>
-                            <button
-                              onClick={() => { setIsTransferItemsOpen(true); setActiveActionTableId(null); }}
-                              className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
-                            >
-                              <ArrowRightLeft className="w-3.5 h-3.5 text-emerald-500" />
-                              <span>Ürün Aktar</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                              {canMoveMergeTable && (
+                                <>
+                                  <button
+                                    onClick={() => { setIsMoveOpen(true); setActiveActionTableId(null); }}
+                                    className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                                  >
+                                    <ArrowRight className="w-3.5 h-3.5 text-blue-500" />
+                                    <span>Masa Taşı</span>
+                                  </button>
+                                  <button
+                                    onClick={() => { setIsMergeOpen(true); setActiveActionTableId(null); }}
+                                    className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                                  >
+                                    <Merge className="w-3.5 h-3.5 text-amber-500" />
+                                    <span>Masa Birleştir</span>
+                                  </button>
+                                </>
+                              )}
+                              {canTransferItems && (
+                                <button
+                                  onClick={() => { setIsTransferItemsOpen(true); setActiveActionTableId(null); }}
+                                  className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                                >
+                                  <ArrowRightLeft className="w-3.5 h-3.5 text-emerald-500" />
+                                  <span>Ürün Aktar</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

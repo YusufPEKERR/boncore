@@ -3,9 +3,10 @@ import {
   Save, Printer, X, History, ArrowLeft, Check, Percent, Tag, 
   Users, ChevronRight, AlertCircle, CheckCircle2, Trash2 
 } from 'lucide-react';
-import { Table, Order, PaymentItem, PaymentMethodConfig } from '../../types';
+import { Table, Order, PaymentItem, PaymentMethodConfig, StaffUser } from '../../types';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
+import { useRolePermissions } from '../../services/permissions';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -83,6 +84,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 }) => {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+
+  const activeUser: StaffUser | null = React.useMemo(() => {
+    try {
+      const saved = localStorage.getItem('boncore_user');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  }, [isOpen, cashierName]);
+
+  const { hasPerm } = useRolePermissions(activeUser);
+  const canDiscount = hasPerm('order_discount', false);
+  const canOpenAccount = hasPerm('order_open_account_transfer', false);
+  const canAddTip = hasPerm('order_add_tip', true);
 
   // Active Tab on Right Panel ('methods' | 'tip')
   const [activeRightTab, setActiveRightTab] = useState<'methods' | 'tip'>('methods');
@@ -258,6 +272,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       return;
     }
     if (key === 'İndirim') {
+      if (!canDiscount) {
+        sound.warning();
+        showNotice('İndirim uygulama yetkiniz bulunmamaktadır.', true);
+        return;
+      }
       setIsDiscountModalOpen(true);
       return;
     }
@@ -611,7 +630,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-brand-700 font-bold text-[11px]">
                           🏷️ İndirim: -₺{(it.discount_amount || 0).toFixed(2)} {it.discount_rate ? `(%${it.discount_rate})` : ''}
                         </span>
-                        {it.id && (
+                        {it.id && canDiscount && (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -633,7 +652,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
 
           {/* Bottom Action Buttons */}
-          <div className="grid grid-cols-2 gap-3 pt-3 mt-2 border-t border-gray-100">
+          <div className={`grid ${canDiscount ? 'grid-cols-2' : 'grid-cols-1'} gap-3 pt-3 mt-2 border-t border-gray-100`}>
             <button
               onClick={() => {
                 sound.beep();
@@ -643,15 +662,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             >
               Ürün Bazlı 1/n
             </button>
-            <button
-              onClick={() => {
-                sound.beep();
-                setIsDiscountModalOpen(true);
-              }}
-              className="bg-[#f4f5f7] hover:bg-[#eaecef] text-[#338d35] font-bold text-xs py-2.5 px-2 rounded-xl border border-gray-200/80 shadow-2xs transition cursor-pointer text-center"
-            >
-              Ürün Bazlı İndirim
-            </button>
+            {canDiscount && (
+              <button
+                onClick={() => {
+                  sound.beep();
+                  setIsDiscountModalOpen(true);
+                }}
+                className="bg-[#f4f5f7] hover:bg-[#eaecef] text-[#338d35] font-bold text-xs py-2.5 px-2 rounded-xl border border-gray-200/80 shadow-2xs transition cursor-pointer text-center"
+              >
+                Ürün Bazlı İndirim
+              </button>
+            )}
           </div>
         </section>
 
@@ -917,11 +938,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             {/* Row 3: 1 | 2 | 3 | İndirim */}
             <div className="grid grid-cols-4 border-b border-gray-200 dark:border-slate-800">
-              {['1', '2', '3', 'İndirim'].map((k) => (
+              {['1', '2', '3', canDiscount ? 'İndirim' : ''].map((k, idx) => (
                 <button
-                  key={k}
-                  onClick={() => handleNumpad(k)}
-                  className="h-10 sm:h-11 flex items-center justify-center bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-bold text-base sm:text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer"
+                  key={idx}
+                  onClick={() => k && handleNumpad(k)}
+                  disabled={!k}
+                  className="h-10 sm:h-11 flex items-center justify-center bg-white dark:bg-slate-800/90 hover:bg-gray-50 dark:hover:bg-slate-700/80 active:bg-gray-100 dark:active:bg-slate-700 border-r border-gray-200 dark:border-slate-800 last:border-r-0 text-center font-bold text-base sm:text-lg text-gray-800 dark:text-slate-100 transition cursor-pointer disabled:cursor-default"
                 >
                   {k === 'İndirim' ? <span className="text-xs sm:text-sm font-bold text-gray-700 dark:text-slate-300">İndirim</span> : k}
                 </button>
@@ -965,19 +987,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 )}
               </button>
 
-              <button
-                onClick={() => { sound.beep(); setActiveRightTab('tip'); }}
-                className={`pb-2.5 px-3 text-sm font-semibold transition cursor-pointer relative ${
-                  activeRightTab === 'tip'
-                    ? 'text-[#338d35] font-bold'
-                    : 'text-gray-500 hover:text-gray-800'
-                }`}
-              >
-                <span>Bahşiş ekle</span>
-                {activeRightTab === 'tip' && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#338d35]" />
-                )}
-              </button>
+              {canAddTip && (
+                <button
+                  onClick={() => { sound.beep(); setActiveRightTab('tip'); }}
+                  className={`pb-2.5 px-3 text-sm font-semibold transition cursor-pointer relative ${
+                    activeRightTab === 'tip'
+                      ? 'text-[#338d35] font-bold'
+                      : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  <span>Bahşiş ekle</span>
+                  {activeRightTab === 'tip' && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#338d35]" />
+                  )}
+                </button>
+              )}
             </div>
 
             {/* TAB CONTENT 1: Ödeme Tipleri Tiles */}
@@ -1035,29 +1059,31 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </button>
 
                   {/* Tile 3: Açık Hesap */}
-                  <button
-                    onClick={() => {
-                      sound.beep();
-                      setSelectedMethod('open_account');
-                    }}
-                    className={`relative border rounded-xl p-5 bg-white transition active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-2 group ${
-                      selectedMethod === 'open_account'
-                        ? 'border-2 border-[#338d35] shadow-sm bg-emerald-50 dark:bg-emerald-950/40/20 ring-2 ring-emerald-500/20'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    {selectedMethod === 'open_account' && (
-                      <span className="absolute top-2 right-2 w-5 h-5 bg-[#338d35] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-2xs">
-                        ✓
+                  {canOpenAccount && (
+                    <button
+                      onClick={() => {
+                        sound.beep();
+                        setSelectedMethod('open_account');
+                      }}
+                      className={`relative border rounded-xl p-5 bg-white transition active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-2 group ${
+                        selectedMethod === 'open_account'
+                          ? 'border-2 border-[#338d35] shadow-sm bg-emerald-50 dark:bg-emerald-950/40/20 ring-2 ring-emerald-500/20'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      {selectedMethod === 'open_account' && (
+                        <span className="absolute top-2 right-2 w-5 h-5 bg-[#338d35] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-2xs">
+                          ✓
+                        </span>
+                      )}
+                      <OpenAccountHandshakeIcon />
+                      <span className={`font-bold text-sm transition ${
+                        selectedMethod === 'open_account' ? 'text-[#338d35]' : 'text-[#212529]'
+                      }`}>
+                        Açık Hesap
                       </span>
-                    )}
-                    <OpenAccountHandshakeIcon />
-                    <span className={`font-bold text-sm transition ${
-                      selectedMethod === 'open_account' ? 'text-[#338d35]' : 'text-[#212529]'
-                    }`}>
-                      Açık Hesap
-                    </span>
-                  </button>
+                    </button>
+                  )}
                 </div>
 
                 {/* Info pill about selected method + Direct Action Buttons */}

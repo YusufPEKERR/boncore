@@ -13,6 +13,7 @@ import { localHardware } from '../../services/localHardware';
 import { useWebSocket } from '../../services/websocket';
 import { ProductModifierModal } from './ProductModifierModal';
 import { initialPermissions, mergeWithInitialPermissions, PermissionItem } from '../permissions/RightsManagement';
+import { broadcastPermissionsUpdate } from '../../services/permissions';
 
 interface PosTerminalProps {
   categories: Category[];
@@ -247,6 +248,26 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     return initialPermissions;
   });
 
+  useEffect(() => {
+    const syncPerms = () => {
+      try {
+        const saved = localStorage.getItem('boncore_role_permissions');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            setRolePermissions(mergeWithInitialPermissions(parsed));
+          }
+        }
+      } catch {}
+    };
+    window.addEventListener('boncore_permissions_updated', syncPerms);
+    window.addEventListener('storage', syncPerms);
+    return () => {
+      window.removeEventListener('boncore_permissions_updated', syncPerms);
+      window.removeEventListener('storage', syncPerms);
+    };
+  }, []);
+
   const userRoleKey = useMemo(() => {
     const raw = (currentUser?.role || 'waiter').toLowerCase();
     if (raw === 'admin' || raw === 'müdür' || raw === 'mudur') return 'manager';
@@ -257,28 +278,24 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     return raw as keyof PermissionItem['roles'];
   }, [currentUser?.role]);
 
-  const canShowPayButton = useMemo(() => {
+  const hasPerm = useCallback((permId: string, fallback = true): boolean => {
     if (userRoleKey === 'manager') return true;
-    const perm = rolePermissions.find(p => p.id === 'order_take_payment');
-    if (!perm) return true;
-    return perm.roles[userRoleKey as keyof PermissionItem['roles']] ?? true;
+    const perm = rolePermissions.find(p => p.id === permId);
+    if (!perm) return fallback;
+    return perm.roles[userRoleKey as keyof PermissionItem['roles']] ?? fallback;
   }, [rolePermissions, userRoleKey]);
 
-  const canShowFastPayButton = useMemo(() => {
-    if (userRoleKey === 'manager') return true;
-    const perm = rolePermissions.find(p => p.id === 'order_fast_pay');
-    if (!perm) return true;
-    return perm.roles[userRoleKey as keyof PermissionItem['roles']] ?? true;
-  }, [rolePermissions, userRoleKey]);
-
-  const canCancelOrder = useMemo(() => {
-    if (userRoleKey === 'manager') return true;
-    const cancelPerm = rolePermissions.find(p => p.id === 'order_cancel');
-    const removePerm = rolePermissions.find(p => p.id === 'order_remove_item');
-    const canCancel = cancelPerm ? (cancelPerm.roles[userRoleKey as keyof PermissionItem['roles']] ?? false) : false;
-    const canRemove = removePerm ? (removePerm.roles[userRoleKey as keyof PermissionItem['roles']] ?? false) : false;
-    return canCancel || canRemove;
-  }, [rolePermissions, userRoleKey]);
+  const canOrderGeneral = useMemo(() => hasPerm('order_general', true), [hasPerm]);
+  const canShowPayButton = useMemo(() => hasPerm('order_take_payment', true), [hasPerm]);
+  const canShowFastPayButton = useMemo(() => hasPerm('order_fast_pay', true), [hasPerm]);
+  const canCancelOrder = useMemo(() => hasPerm('order_cancel', false) || hasPerm('order_remove_item', false), [hasPerm]);
+  const canEditItemQty = useMemo(() => hasPerm('order_edit_item_qty', true), [hasPerm]);
+  const canDiscount = useMemo(() => hasPerm('order_discount', false), [hasPerm]);
+  const predefinedDiscountOnly = useMemo(() => hasPerm('order_predefined_discount_only', false), [hasPerm]);
+  const canTreatItem = useMemo(() => hasPerm('order_item_treat', false), [hasPerm]);
+  const canCloseComplimentary = useMemo(() => hasPerm('order_close_complimentary', false), [hasPerm]);
+  const canTreat = useMemo(() => canTreatItem || canCloseComplimentary, [canTreatItem, canCloseComplimentary]);
+  const canViewStock = useMemo(() => hasPerm('def_stock_view', true), [hasPerm]);
 
   // Load existing order
   useEffect(() => {
@@ -314,7 +331,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       if (data.role_permissions && Array.isArray(data.role_permissions)) {
         const mergedPerms = mergeWithInitialPermissions(data.role_permissions);
         setRolePermissions(mergedPerms);
-        localStorage.setItem('boncore_role_permissions', JSON.stringify(mergedPerms));
+        broadcastPermissionsUpdate(mergedPerms);
       }
     } catch (err) {
       let cachedDiscounts = defaultPosDiscounts;
@@ -607,6 +624,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   };
 
   const handleProductClick = (product: Product) => {
+    if (!canOrderGeneral) {
+      sound.warning();
+      showToast('Genel sipariş alma yetkiniz kapalıdır.', 'error');
+      return;
+    }
     if (product.is_available === false) {
       sound.warning();
       showToast(`"${product.name}" şu anda satışa kapalıdır (Pasif).`, 'error');
@@ -637,6 +659,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     // Add or increment simple piece item
     const existingIndex = cartItems.findIndex(i => !i.id && i.product_id === product.id && (!i.selected_modifiers || i.selected_modifiers.length === 0));
     if (existingIndex > -1) {
+      if (!canEditItemQty) {
+        sound.warning();
+        showToast('Ürün adedi düzenleme yetkiniz bulunmamaktadır.', 'error');
+        return;
+      }
       setCartItems(prev => prev.map((item, idx) => {
         if (idx === existingIndex) {
           const newQty = Number((item.quantity + 1).toFixed(3));
@@ -785,6 +812,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   };
 
   const handleSaveOrSendOrder = async () => {
+    if (!canOrderGeneral) {
+      sound.warning();
+      showToast('Genel sipariş alma yetkiniz kapalıdır.', 'error');
+      return;
+    }
     const unsavedItems = cartItems.filter(i => !i.id);
     if (unsavedItems.length === 0 && activeOrderId) {
       onBackToTables();
@@ -823,6 +855,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   };
 
   const handleFastPayment = async (method: 'cash' | 'credit_card') => {
+    if (!canShowFastPayButton) {
+      sound.warning();
+      showToast('Hızlı ödeme yetkiniz bulunmamaktadır.', 'error');
+      return;
+    }
     sound.beep();
     setLoading(true);
     try {
@@ -866,6 +903,16 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   };
 
   const handleApplyTreatSubmit = async (wholeOrder: boolean = false) => {
+    if (wholeOrder && !canCloseComplimentary && !canTreatItem) {
+      sound.warning();
+      showToast('İkram uygulama yetkiniz bulunmamaktadır.', 'error');
+      return;
+    }
+    if (!wholeOrder && !canTreatItem) {
+      sound.warning();
+      showToast('Kalem bazlı ikram yetkiniz bulunmamaktadır.', 'error');
+      return;
+    }
     if (!activeOrderId) {
       showToast('İkram uygulamak için önce adisyonu kaydediniz.', 'error');
       return;
@@ -877,7 +924,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         wholeOrder ? null : treatSelectedItems,
         treatReason || 'Müessese İkramı',
         currentUser?.name || 'Yetkili',
-        treatManagerPin || '9999'
+        canTreat ? '9999' : treatManagerPin
       );
       sound.cashDrawer();
       await loadOrder(activeOrderId);
@@ -893,6 +940,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   };
 
   const handleApplyDiscountSubmit = async (val: number, name: string, type: 'percent' | 'fixed' = 'percent') => {
+    if (!canDiscount) {
+      sound.warning();
+      showToast('İndirim uygulama yetkiniz bulunmamaktadır.', 'error');
+      return;
+    }
     sound.beep();
     if (type === 'percent') {
       setDiscountPercent(val);
@@ -945,7 +997,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       if (data.role_permissions && Array.isArray(data.role_permissions)) {
         const mergedPerms = mergeWithInitialPermissions(data.role_permissions);
         setRolePermissions(mergedPerms);
-        localStorage.setItem('boncore_role_permissions', JSON.stringify(mergedPerms));
+        broadcastPermissionsUpdate(mergedPerms);
       }
     }
 
@@ -1103,13 +1155,15 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             >
               <FileText className="w-4 h-4" />
             </button>
-            <button 
-              onClick={() => setIsDiscountModalOpen(true)}
-              className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-200/50"
-              title="İndirim / İkram"
-            >
-              <DollarSign className="w-4 h-4" />
-            </button>
+            {canDiscount && (
+              <button 
+                onClick={() => setIsDiscountModalOpen(true)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-200/50"
+                title="İndirim / İkram"
+              >
+                <DollarSign className="w-4 h-4" />
+              </button>
+            )}
             <button 
               onClick={() => {
                 const hasUnsaved = cartItems.some(i => !i.id);
@@ -1278,7 +1332,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                       <span className="font-bold flex items-center gap-1">
                         🏷️ İndirim: -₺{(item.discount_amount || 0).toFixed(2)} {item.discount_rate ? `(%${item.discount_rate})` : ''}
                       </span>
-                      {item.id && (
+                      {item.id && canDiscount && (
                         <button
                           type="button"
                           onClick={async (e) => {
@@ -1364,7 +1418,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 <div className="flex items-center justify-between text-brand-600 dark:text-emerald-400">
                   <div className="flex items-center gap-1.5">
                     <span>Uygulanan İndirim:</span>
-                    {activeOrderId && (
+                    {activeOrderId && canDiscount && (
                       <button
                         type="button"
                         onClick={async (e) => {
@@ -1596,22 +1650,26 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             </button>
 
             {/* Treat Button 🍽️ */}
-            <button
-              onClick={() => { sound.beep(); setIsTreatModalOpen(true); }}
-              className="p-2 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition"
-              title="İkram Uygula"
-            >
-              <Utensils className="w-4 h-4" />
-            </button>
+            {canTreat && (
+              <button
+                onClick={() => { sound.beep(); setIsTreatModalOpen(true); }}
+                className="p-2 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition"
+                title="İkram Uygula"
+              >
+                <Utensils className="w-4 h-4" />
+              </button>
+            )}
 
             {/* Discount Button 💵 */}
-            <button
-              onClick={() => setIsDiscountModalOpen(true)}
-              className="p-2 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition"
-              title="İndirim Uygula"
-            >
-              <DollarSign className="w-4 h-4" />
-            </button>
+            {canDiscount && (
+              <button
+                onClick={() => setIsDiscountModalOpen(true)}
+                className="p-2 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition"
+                title="İndirim Uygula"
+              >
+                <DollarSign className="w-4 h-4" />
+              </button>
+            )}
 
             {/* Undo / Refresh Button ↻ */}
             <button
@@ -1707,7 +1765,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                     <span className="text-[9px] font-bold text-brand-600 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded">
                       Pasif
                     </span>
-                  ) : p.stock_quantity !== undefined && p.stock_quantity !== null ? (
+                  ) : canViewStock && p.stock_quantity !== undefined && p.stock_quantity !== null ? (
                     <span className={p.stock_quantity <= 0 ? 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded truncate text-brand-600 bg-emerald-50 dark:bg-emerald-950/50' : 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded truncate text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50'}>
                       {Number(Number(p.stock_quantity).toFixed(2))} {p.unit || 'Adet'}
                     </span>
@@ -2118,32 +2176,34 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             </div>
 
             {/* Custom Discount Input */}
-            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
-              <label className="text-[11px] font-bold text-slate-500">Özel Yüzdesel İndirim (%):</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  placeholder="10"
-                  value={discountPercent === 0 ? '' : discountPercent}
-                  onChange={(e) => setDiscountPercent(Number(e.target.value) || 0)}
-                  className="w-24 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-center font-black text-slate-900 dark:text-white"
-                />
-                <button
-                  onClick={() => {
-                    if (discountPercent > 0) {
-                      handleApplyDiscountSubmit(discountPercent, `%${discountPercent} Özel İndirim`);
-                    } else {
-                      setIsDiscountModalOpen(false);
-                    }
-                  }}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow transition cursor-pointer"
-                >
-                  Özel İndirimi Uygula
-                </button>
+            {!predefinedDiscountOnly && (
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                <label className="text-[11px] font-bold text-slate-500">Özel Yüzdesel İndirim (%):</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="10"
+                    value={discountPercent === 0 ? '' : discountPercent}
+                    onChange={(e) => setDiscountPercent(Number(e.target.value) || 0)}
+                    className="w-24 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-center font-black text-slate-900 dark:text-white"
+                  />
+                  <button
+                    onClick={() => {
+                      if (discountPercent > 0) {
+                        handleApplyDiscountSubmit(discountPercent, `%${discountPercent} Özel İndirim`);
+                      } else {
+                        setIsDiscountModalOpen(false);
+                      }
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow transition cursor-pointer"
+                  >
+                    Özel İndirimi Uygula
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="flex justify-end pt-1">
               <button
@@ -2192,21 +2252,23 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               </div>
             </div>
 
-            {/* Manager PIN Verification */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-500">Yetkili / Müdür PIN Kodu:</label>
-              <input
-                type="password"
-                maxLength={6}
-                value={treatManagerPin}
-                onChange={(e) => setTreatManagerPin(e.target.value)}
-                placeholder="9999"
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-center font-black tracking-widest text-slate-900 dark:text-white"
-              />
-            </div>
+            {/* Manager PIN Verification (Sadece ikram yetkisi yoksa gösterilir) */}
+            {!canTreat && (
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-500">Yetkili / Müdür PIN Kodu:</label>
+                <input
+                  type="password"
+                  maxLength={6}
+                  value={treatManagerPin}
+                  onChange={(e) => setTreatManagerPin(e.target.value)}
+                  placeholder="9999"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-center font-black tracking-widest text-slate-900 dark:text-white"
+                />
+              </div>
+            )}
 
             {/* Itemized Selection if existing order has saved items */}
-            {existingOrder && existingOrder.items && existingOrder.items.length > 0 && (
+            {canTreatItem && existingOrder && existingOrder.items && existingOrder.items.length > 0 && (
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-slate-500">Kalem Bazlı İkram (Opsiyonel):</label>
                 <div className="max-h-36 overflow-y-auto space-y-1 border border-slate-200 dark:border-slate-800 rounded-2xl p-2">
@@ -2238,20 +2300,24 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
             {/* Action Buttons */}
             <div className="grid grid-cols-2 gap-2 pt-2">
-              <button
-                onClick={() => handleApplyTreatSubmit(true)}
-                disabled={loading}
-                className="py-3 rounded-2xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-black text-xs shadow-md transition flex items-center justify-center gap-1 cursor-pointer"
-              >
-                <span>TÜM ADİSYON İKRAM</span>
-              </button>
-              <button
-                onClick={() => handleApplyTreatSubmit(false)}
-                disabled={loading || treatSelectedItems.length === 0}
-                className="py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-black text-xs shadow-md transition flex items-center justify-center gap-1 cursor-pointer"
-              >
-                <span>SEÇİLENLERİ İKRAM ET ({treatSelectedItems.length})</span>
-              </button>
+              {canCloseComplimentary && (
+                <button
+                  onClick={() => handleApplyTreatSubmit(true)}
+                  disabled={loading}
+                  className={`${canTreatItem ? '' : 'col-span-2'} py-3 rounded-2xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-black text-xs shadow-md transition flex items-center justify-center gap-1 cursor-pointer`}
+                >
+                  <span>TÜM ADİSYON İKRAM</span>
+                </button>
+              )}
+              {canTreatItem && (
+                <button
+                  onClick={() => handleApplyTreatSubmit(false)}
+                  disabled={loading || treatSelectedItems.length === 0}
+                  className={`${canCloseComplimentary ? '' : 'col-span-2'} py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-black text-xs shadow-md transition flex items-center justify-center gap-1 cursor-pointer`}
+                >
+                  <span>SEÇİLENLERİ İKRAM ET ({treatSelectedItems.length})</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

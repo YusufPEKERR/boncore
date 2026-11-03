@@ -30,6 +30,13 @@ if (typeof window !== 'undefined' && window.fetch) {
         if (rCode && !headers.has('X-Restaurant-Code')) {
           headers.set('X-Restaurant-Code', rCode);
         }
+        const savedUser = localStorage.getItem('boncore_user');
+        if (savedUser && !headers.has('X-User-Role')) {
+          const parsedUser = JSON.parse(savedUser);
+          if (parsedUser?.role) {
+            headers.set('X-User-Role', encodeURIComponent(String(parsedUser.role)));
+          }
+        }
       } catch {}
 
       customInit.headers = headers;
@@ -53,6 +60,13 @@ export function getAuthHeaders(includeJson: boolean = true): Record<string, stri
     const rCode = localStorage.getItem('boncore_restaurant_code');
     if (rCode) {
       headers['X-Restaurant-Code'] = rCode;
+    }
+    const savedUser = localStorage.getItem('boncore_user');
+    if (savedUser) {
+      const parsedUser = JSON.parse(savedUser);
+      if (parsedUser?.role) {
+        headers['X-User-Role'] = encodeURIComponent(String(parsedUser.role));
+      }
     }
   } catch {}
   return headers;

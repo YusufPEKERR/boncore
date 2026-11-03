@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Grid, FileText, ChefHat, Wallet, Menu } from 'lucide-react';
+import { Grid, FileText, ChefHat, Wallet, Menu, Shield } from 'lucide-react';
 import { Header } from './components/layout/Header';
 import { AdisyoSidebar } from './components/layout/AdisyoSidebar';
 import { AdisyoDashboard } from './components/dashboard/AdisyoDashboard';
@@ -48,6 +48,7 @@ import { sound } from './services/sound';
 import { useWebSocket } from './services/websocket';
 import { useTheme } from './context/ThemeContext';
 import { syncOfflineQueue } from './services/offlineDb';
+import { useRolePermissions, broadcastPermissionsUpdate, mergeWithInitialPermissions } from './services/permissions';
 
 export const App: React.FC = () => {
   // Global Theme Hook (Dark / Light)
@@ -120,6 +121,8 @@ export const App: React.FC = () => {
   const [restaurantTitle, setRestaurantTitle] = useState<string>(() => {
     return localStorage.getItem('boncore_active_restaurant_name') || 'BONCORE RESTORAN';
   });
+
+  const { canTab } = useRolePermissions(currentUser);
 
   // Verify token on startup if authenticated
   useEffect(() => {
@@ -277,6 +280,9 @@ export const App: React.FC = () => {
     } else if (type === 'SETTINGS_UPDATED') {
       if (data && data.restaurant_name) {
         setRestaurantTitle(String(data.restaurant_name));
+      }
+      if (data && Array.isArray(data.role_permissions)) {
+        broadcastPermissionsUpdate(mergeWithInitialPermissions(data.role_permissions));
       }
     } else if (type === 'ORDER_CREATED' || type === 'ORDER_UPDATED' || type === 'ORDER_PAID' || type === 'TABLE_MOVED' || type === 'TABLE_MERGED') {
       loadAreas();
@@ -592,6 +598,33 @@ export const App: React.FC = () => {
 
       {/* Main View Area */}
       <main className="flex-1 flex overflow-hidden relative min-h-0">
+        {!canTab(activeTab) ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-slate-50 dark:bg-slate-950 select-none">
+            <div className="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
+                <Shield className="w-7 h-7" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  Bu Ekrana Erişim Yetkiniz Bulunmamaktadır
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  <strong>{currentUser?.name || 'Kullanıcı'}</strong> ({currentUser?.role || 'Garson'}) rolü için bu ekranın yetkisi <strong>Yetki / İzin Ekranı</strong> üzerinden kapatılmıştır.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  sound.beep();
+                  setActiveTab('tables');
+                }}
+                className="w-full py-3 rounded-2xl bg-[#338d35] hover:bg-[#28702a] text-white font-black text-xs shadow-md transition cursor-pointer"
+              >
+                Masalar (Sipariş) Ekranına Dön
+              </button>
+            </div>
+          </div>
+        ) : (
+        <>
         {activeTab === 'dashboard' && (
           <AdisyoDashboard
             areas={areas}
@@ -734,10 +767,18 @@ export const App: React.FC = () => {
         {activeTab === 'hotel' && <HotelFolioView />}
 
         {activeTab === 'kiosk' && <KioskCfdView categories={categories} />}
+        </>
+        )}
       </main>
 
       {/* Mobile Bottom Navigation Bar (Visible on phones < md) */}
-      <nav className="md:hidden h-14 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 grid grid-cols-5 items-center px-1 shrink-0 z-30 select-none">
+      <nav className={`md:hidden h-14 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 grid ${
+        canTab('kds') && canTab('cashier')
+          ? 'grid-cols-5'
+          : canTab('kds') || canTab('cashier')
+          ? 'grid-cols-4'
+          : 'grid-cols-3'
+      } items-center px-1 shrink-0 z-30 select-none`}>
         <button
           onClick={() => { sound.beep(); setActiveTab('tables'); setFloorSection('tables'); }}
           className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
@@ -767,28 +808,32 @@ export const App: React.FC = () => {
           </div>
           <span className="text-[10px]">Siparişler</span>
         </button>
-        <button
-          onClick={() => { sound.beep(); setActiveTab('kds'); }}
-          className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
-            activeTab === 'kds'
-              ? 'text-[#338d35] dark:text-emerald-400 font-black'
-              : 'text-slate-500 dark:text-slate-400 font-semibold'
-          }`}
-        >
-          <ChefHat className="w-4 h-4 mb-0.5" />
-          <span className="text-[10px]">Mutfak</span>
-        </button>
-        <button
-          onClick={() => { sound.beep(); setActiveTab('cashier'); }}
-          className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
-            activeTab === 'cashier'
-              ? 'text-[#338d35] dark:text-emerald-400 font-black'
-              : 'text-slate-500 dark:text-slate-400 font-semibold'
-          }`}
-        >
-          <Wallet className="w-4 h-4 mb-0.5" />
-          <span className="text-[10px]">Kasa</span>
-        </button>
+        {canTab('kds') && (
+          <button
+            onClick={() => { sound.beep(); setActiveTab('kds'); }}
+            className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
+              activeTab === 'kds'
+                ? 'text-[#338d35] dark:text-emerald-400 font-black'
+                : 'text-slate-500 dark:text-slate-400 font-semibold'
+            }`}
+          >
+            <ChefHat className="w-4 h-4 mb-0.5" />
+            <span className="text-[10px]">Mutfak</span>
+          </button>
+        )}
+        {canTab('cashier') && (
+          <button
+            onClick={() => { sound.beep(); setActiveTab('cashier'); }}
+            className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
+              activeTab === 'cashier'
+                ? 'text-[#338d35] dark:text-emerald-400 font-black'
+                : 'text-slate-500 dark:text-slate-400 font-semibold'
+            }`}
+          >
+            <Wallet className="w-4 h-4 mb-0.5" />
+            <span className="text-[10px]">Kasa</span>
+          </button>
+        )}
         <button
           onClick={() => { sound.beep(); setIsSidebarOpen(true); }}
           className="flex flex-col items-center justify-center py-1 rounded-xl text-slate-500 dark:text-slate-400 font-semibold transition cursor-pointer"
@@ -824,6 +869,9 @@ export const App: React.FC = () => {
         staffList={staffUsers}
         onLoginSuccess={(user) => {
           setCurrentUser(user);
+          try {
+            localStorage.setItem('boncore_user', JSON.stringify(user));
+          } catch {}
           addToast(`Giriş yapıldı: ${user.name}`, 'success');
         }}
         onLogout={handleLogout}
