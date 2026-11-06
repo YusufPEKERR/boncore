@@ -1,6 +1,8 @@
 package api
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -1576,6 +1578,123 @@ func saveTerminalsList(db *gorm.DB, terminals []map[string]interface{}) {
 }
 
 func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
+	group.Get("/download-agent", func(c *fiber.Ctx) error {
+		terminalName := strings.TrimSpace(c.Query("terminal_name"))
+		if terminalName == "" {
+			terminalName = "Kasa 1"
+		}
+		terminalID := strings.TrimSpace(c.Query("terminal_id"))
+		if terminalID == "" {
+			terminalID = fmt.Sprintf("kasa_%x", time.Now().UnixNano()%0xFFFFFF)
+		}
+		tenantCode := strings.TrimSpace(c.Query("restaurant_code"))
+		if tenantCode == "" {
+			tenantCode = middleware.GetTenantCode(c)
+		}
+		if tenantCode == "" {
+			tenantCode = "fatihciftligi"
+		}
+		scaleIP := strings.TrimSpace(c.Query("scale_ip"))
+		if scaleIP == "" {
+			scaleIP = "192.168.1.150"
+		}
+		scalePort := c.QueryInt("scale_port", 2004)
+
+		fwdHost := c.Get("X-Forwarded-Host")
+		if fwdHost == "" {
+			fwdHost = c.Get("Host")
+		}
+		fwdProto := c.Get("X-Forwarded-Proto")
+		if fwdProto == "" {
+			fwdProto = c.Protocol()
+		}
+		serverBase := "https://boncoreapp.me"
+		if fwdHost != "" && !strings.Contains(fwdHost, "localhost") && !strings.Contains(fwdHost, "127.0.0.1") {
+			serverBase = fmt.Sprintf("%s://%s", fwdProto, fwdHost)
+		}
+
+		candidates := []string{
+			filepath.Join("hardware_agent"),
+			filepath.Join("..", "hardware_agent"),
+			`C:\Users\Administrator\Documents\BonCore\hardware_agent`,
+		}
+		var agentDir string
+		for _, dir := range candidates {
+			if info, err := os.Stat(dir); err == nil && info.IsDir() {
+				agentDir = dir
+				break
+			}
+		}
+
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+
+		filesToBundle := []string{
+			"BonCoreAgent.exe",
+			"Kurulum.bat",
+			"boncore_agent.py",
+			"desktop_app.py",
+			"run_agent.bat",
+		}
+
+		for _, fname := range filesToBundle {
+			fpath := filepath.Join(agentDir, fname)
+			content, err := os.ReadFile(fpath)
+			if err == nil {
+				if strings.HasSuffix(fname, ".bat") {
+					content = bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
+					content = bytes.ReplaceAll(content, []byte("\n"), []byte("\r\n"))
+				}
+				w, err := zw.Create(fname)
+				if err == nil {
+					_, _ = w.Write(content)
+				}
+			}
+		}
+
+		configData := map[string]interface{}{
+			"server_url":         serverBase,
+			"restaurant_code":    tenantCode,
+			"terminal_id":        terminalID,
+			"terminal_name":      terminalName,
+			"scale_default_ip":   scaleIP,
+			"scale_default_port": scalePort,
+			"auto_start":         true,
+			"minimize_to_tray":   true,
+			"show_notifications": true,
+		}
+		configBytes, _ := json.MarshalIndent(configData, "", "  ")
+		if w, err := zw.Create("config.json"); err == nil {
+			_, _ = w.Write(configBytes)
+		}
+
+		if err := zw.Close(); err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "Zip paketi olusturulamadi")
+		}
+
+		safeName := strings.ReplaceAll(terminalName, "/", "_")
+		safeName = strings.ReplaceAll(safeName, "\\", "_")
+		safeName = strings.ReplaceAll(safeName, ":", "_")
+
+		c.Set("Content-Type", "application/zip")
+		c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"boncore-hardware-agent-%s.zip\"", safeName))
+		return c.Send(buf.Bytes())
+	})
+
+	group.Get("/raw-exe", func(c *fiber.Ctx) error {
+		candidates := []string{
+			filepath.Join("hardware_agent", "BonCoreAgent.exe"),
+			filepath.Join("..", "hardware_agent", "BonCoreAgent.exe"),
+			`C:\Users\Administrator\Documents\BonCore\hardware_agent\BonCoreAgent.exe`,
+		}
+		for _, p := range candidates {
+			if _, err := os.Stat(p); err == nil {
+				return c.SendFile(p)
+			}
+		}
+		return c.Status(fiber.StatusNotFound).SendString("BonCoreAgent.exe bulunamadi")
+	})
+
 	group.Get("/terminals", func(c *fiber.Ctx) error {
 		db, _, err := getTenantDB(c, svc)
 		if err != nil {
