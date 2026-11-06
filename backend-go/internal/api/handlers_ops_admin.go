@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1558,9 +1559,48 @@ var (
 	}
 )
 
+func isVirtualPrinter(p string) bool {
+	low := strings.ToLower(p)
+	virtualKeywords := []string{
+		"microsoft print to pdf",
+		"microsoft xps",
+		"onenote",
+		"fax",
+		"anydesk printer",
+		"send to onenote",
+	}
+	for _, k := range virtualKeywords {
+		if strings.Contains(low, k) {
+			return true
+		}
+	}
+	return false
+}
+
+func sortPrinters(printers []string) []string {
+	unique := make([]string, 0, len(printers))
+	seen := make(map[string]bool)
+	for _, p := range printers {
+		p = strings.TrimSpace(p)
+		if p != "" && !seen[p] {
+			seen[p] = true
+			unique = append(unique, p)
+		}
+	}
+	sort.SliceStable(unique, func(i, j int) bool {
+		vi := isVirtualPrinter(unique[i])
+		vj := isVirtualPrinter(unique[j])
+		if vi != vj {
+			return !vi
+		}
+		return strings.ToLower(unique[i]) < strings.ToLower(unique[j])
+	})
+	return unique
+}
+
 func loadTerminalsList(db *gorm.DB) []map[string]interface{} {
 	if m, ok := loadJSONSettingMap(db, "registered_pos_terminals"); ok {
-		if list, ok := m["terminals"].([]interface{}); ok {
+		if list, ok := m["terminals"].([]interface{}); ok && len(list) > 0 {
 			res := make([]map[string]interface{}, 0, len(list))
 			for _, item := range list {
 				if mp, ok := item.(map[string]interface{}); ok {
@@ -1568,6 +1608,25 @@ func loadTerminalsList(db *gorm.DB) []map[string]interface{} {
 				}
 			}
 			return res
+		}
+	}
+	// Fallback: seed from existing backend/app/terminals.json if available
+	candidates := []string{
+		filepath.Join("..", "backend", "app", "terminals.json"),
+		filepath.Join("backend", "app", "terminals.json"),
+		`C:\Users\Administrator\Documents\BonCore\backend\app\terminals.json`,
+	}
+	for _, cPath := range candidates {
+		if data, err := os.ReadFile(cPath); err == nil && len(data) > 0 {
+			var rawMap map[string]map[string]interface{}
+			if err := json.Unmarshal(data, &rawMap); err == nil && len(rawMap) > 0 {
+				res := make([]map[string]interface{}, 0, len(rawMap))
+				for _, t := range rawMap {
+					res = append(res, t)
+				}
+				saveTerminalsList(db, res)
+				return res
+			}
 		}
 	}
 	return []map[string]interface{}{}
@@ -1708,17 +1767,93 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			for k, v := range t {
 				item[k] = v
 			}
+
+			// Normalize ID
+			tid := fmt.Sprintf("%v", item["id"])
+			if tid == "" || tid == "<nil>" {
+				tid = fmt.Sprintf("%v", item["terminal_id"])
+			}
+			item["id"] = tid
+
+			// Normalize Name
+			tname := fmt.Sprintf("%v", item["name"])
+			if tname == "" || tname == "<nil>" {
+				tname = fmt.Sprintf("%v", item["custom_name"])
+			}
+			if tname == "" || tname == "<nil>" {
+				tname = fmt.Sprintf("%v", item["alias"])
+			}
+			if tname == "" || tname == "<nil>" {
+				tname = "Kasa"
+			}
+			item["name"] = tname
+
+			// Normalize LocalIP
+			lip := fmt.Sprintf("%v", item["local_ip"])
+			if lip == "" || lip == "<nil>" {
+				lip = "127.0.0.1"
+			}
+			item["local_ip"] = lip
+
+			// Normalize Version
+			ver := fmt.Sprintf("%v", item["version"])
+			if ver == "" || ver == "<nil>" {
+				ver = fmt.Sprintf("%v", item["agent_version"])
+			}
+			if ver == "" || ver == "<nil>" {
+				ver = "2.2.0"
+			}
+			item["version"] = ver
+
+			// Online calculation
 			lastTs, _ := item["last_heartbeat_ts"].(float64)
+			if lastTs == 0 {
+				lastTs, _ = item["last_seen"].(float64)
+			}
 			age := nowTs - lastTs
-			isOnline := lastTs > 0 && age < 20.0
+			isOnline := lastTs > 0 && age < 25.0
 			item["is_online"] = isOnline
-			if isOnline {
-				item["last_seen_text"] = fmt.Sprintf("%d sn önce aktif", int(age))
-			} else if lastTs > 0 {
-				item["last_seen_text"] = fmt.Sprintf("%d dk önce çevrimdışı", int(age/60))
+			if lastTs > 0 {
+				item["last_seen_seconds_ago"] = math.Round(age*10) / 10
+				if isOnline {
+					item["last_seen_text"] = fmt.Sprintf("%d sn önce aktif", int(age))
+				} else {
+					item["last_seen_text"] = fmt.Sprintf("%d dk önce çevrimdışı", int(age/60))
+				}
 			} else {
+				item["last_seen_seconds_ago"] = 999.0
 				item["last_seen_text"] = "Hiç bağlanmadı"
 			}
+
+			if item["scale_ip"] == nil {
+				item["scale_ip"] = "192.168.1.150"
+			}
+			if item["scale_port"] == nil {
+				item["scale_port"] = 2004
+			}
+			if item["scale_connected"] == nil {
+				item["scale_connected"] = false
+			}
+
+			// Extract printers list
+			var prList []string
+			if rawPr, ok := item["printers"].([]interface{}); ok {
+				for _, p := range rawPr {
+					if ps := fmt.Sprintf("%v", p); ps != "" {
+						prList = append(prList, ps)
+					}
+				}
+			} else if rawPrStr, ok := item["printers"].([]string); ok {
+				prList = rawPrStr
+			}
+			item["printers"] = sortPrinters(prList)
+
+			if isDef, ok := item["is_default"].(bool); !ok {
+				item["is_default"] = false
+			} else {
+				item["is_default"] = isDef
+			}
+
 			enriched = append(enriched, item)
 		}
 		return c.JSON(fiber.Map{"terminals": enriched})
@@ -1730,16 +1865,34 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			return err
 		}
 		tid := c.Params("terminal_id")
-		var payload map[string]interface{}
+		var payload struct {
+			Name      *string `json:"name"`
+			ScaleIP   *string `json:"scale_ip"`
+			ScalePort *int    `json:"scale_port"`
+			IsDefault *bool   `json:"is_default"`
+		}
 		_ = c.BodyParser(&payload)
+
 		terminals := loadTerminalsList(db)
 		updated := false
 		for i := range terminals {
-			if fmt.Sprintf("%v", terminals[i]["terminal_id"]) == tid {
-				for _, field := range []string{"alias", "location", "assigned_cashier_printer", "assigned_scale_port", "assigned_caller_id_port", "is_authorized"} {
-					if v, ok := payload[field]; ok && v != nil {
-						terminals[i][field] = v
-					}
+			currID := fmt.Sprintf("%v", terminals[i]["id"])
+			currTID := fmt.Sprintf("%v", terminals[i]["terminal_id"])
+			if currID == tid || currTID == tid {
+				if payload.Name != nil && *payload.Name != "" {
+					terminals[i]["name"] = *payload.Name
+					terminals[i]["custom_name"] = *payload.Name
+				}
+				if payload.ScaleIP != nil && *payload.ScaleIP != "" {
+					terminals[i]["scale_ip"] = *payload.ScaleIP
+					terminals[i]["custom_scale_ip"] = *payload.ScaleIP
+				}
+				if payload.ScalePort != nil && *payload.ScalePort > 0 {
+					terminals[i]["scale_port"] = *payload.ScalePort
+					terminals[i]["custom_scale_port"] = *payload.ScalePort
+				}
+				if payload.IsDefault != nil {
+					terminals[i]["is_default"] = *payload.IsDefault
 				}
 				updated = true
 				break
@@ -1761,7 +1914,9 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		terminals := loadTerminalsList(db)
 		filtered := make([]map[string]interface{}, 0)
 		for _, t := range terminals {
-			if fmt.Sprintf("%v", t["terminal_id"]) != tid {
+			currID := fmt.Sprintf("%v", t["id"])
+			currTID := fmt.Sprintf("%v", t["terminal_id"])
+			if currID != tid && currTID != tid {
 				filtered = append(filtered, t)
 			}
 		}
@@ -1775,32 +1930,84 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			return err
 		}
 		var payload struct {
-			AgentVersion   string   `json:"agent_version"`
-			Hostname       string   `json:"hostname"`
-			OsInfo         string   `json:"os_info"`
-			ActiveComPorts []string `json:"active_com_ports"`
-			LiveWeightGram *int     `json:"live_weight_gram"`
-			LiveStable     bool     `json:"live_stable"`
-			LastError      *string  `json:"last_error"`
-			TerminalID     *string  `json:"terminal_id"`
-			LocalIP        *string  `json:"local_ip"`
-			MacAddress     *string  `json:"mac_address"`
+			TerminalID     string      `json:"terminal_id"`
+			TerminalName   string      `json:"terminal_name"`
+			Hostname       string      `json:"hostname"`
+			LocalIP        string      `json:"local_ip"`
+			Version        string      `json:"version"`
+			AgentVersion   string      `json:"agent_version"`
+			ScaleConnected bool        `json:"scale_connected"`
+			ScaleIP        string      `json:"scale_ip"`
+			ScalePort      int         `json:"scale_port"`
+			LastWeight     float64     `json:"last_weight"`
+			LiveWeightGram *int        `json:"live_weight_gram"`
+			LiveStable     bool        `json:"live_stable"`
+			Printers       interface{} `json:"printers"`
+			UserConfigured bool        `json:"user_configured"`
+			RestaurantCode string      `json:"restaurant_code"`
+			ActiveComPorts []string    `json:"active_com_ports"`
+			OsInfo         string      `json:"os_info"`
+			LastError      *string     `json:"last_error"`
 		}
 		_ = c.BodyParser(&payload)
-		if payload.AgentVersion == "" {
-			payload.AgentVersion = "1.0.0"
+
+		tid := strings.TrimSpace(payload.TerminalID)
+		if tid == "" {
+			tid = strings.TrimSpace(payload.Hostname)
 		}
-		if payload.Hostname == "" {
-			payload.Hostname = "POS-TERMINAL"
+		if tid == "" {
+			tid = "kasa-1"
 		}
+
+		tname := strings.TrimSpace(payload.TerminalName)
+		if tname == "" {
+			tname = strings.TrimSpace(payload.Hostname)
+		}
+		if tname == "" {
+			tname = "Kasa 1"
+		}
+
+		localIP := strings.TrimSpace(payload.LocalIP)
+		if localIP == "" {
+			localIP = "127.0.0.1"
+		}
+
+		version := payload.Version
+		if version == "" {
+			version = payload.AgentVersion
+		}
+		if version == "" {
+			version = "2.2.0"
+		}
+
+		scaleIP := strings.TrimSpace(payload.ScaleIP)
+		if scaleIP == "" {
+			scaleIP = "192.168.1.150"
+		}
+		scalePort := payload.ScalePort
+		if scalePort == 0 {
+			scalePort = 2004
+		}
+
+		// Extract printers
+		var prList []string
+		if prArr, ok := payload.Printers.([]interface{}); ok {
+			for _, p := range prArr {
+				if s := fmt.Sprintf("%v", p); s != "" {
+					prList = append(prList, s)
+				}
+			}
+		} else if prStrArr, ok := payload.Printers.([]string); ok {
+			prList = prStrArr
+		}
+		sortedPr := sortPrinters(prList)
 
 		nowTs := float64(time.Now().Unix())
 		scaleMu.Lock()
 		agentRuntimeState["online"] = true
 		agentRuntimeState["last_heartbeat_ts"] = nowTs
-		agentRuntimeState["agent_version"] = payload.AgentVersion
-		agentRuntimeState["hostname"] = payload.Hostname
-		agentRuntimeState["os_info"] = payload.OsInfo
+		agentRuntimeState["agent_version"] = version
+		agentRuntimeState["hostname"] = tname
 		agentRuntimeState["active_com_ports"] = payload.ActiveComPorts
 		agentRuntimeState["live_stable"] = payload.LiveStable
 		agentRuntimeState["last_error"] = payload.LastError
@@ -1808,6 +2015,9 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			g := *payload.LiveWeightGram
 			agentRuntimeState["live_weight_gram"] = g
 			agentRuntimeState["live_weight_kg"] = math.Round((float64(g)/1000.0)*1000) / 1000
+		} else if payload.LastWeight > 0 {
+			agentRuntimeState["live_weight_kg"] = payload.LastWeight
+			agentRuntimeState["live_weight_gram"] = int(payload.LastWeight * 1000)
 		}
 		jobs, _ := agentRuntimeState["pending_print_jobs"].([]fiber.Map)
 		agentRuntimeState["pending_print_jobs"] = []fiber.Map{}
@@ -1817,44 +2027,57 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		}
 		scaleMu.Unlock()
 
-		tid := payload.Hostname
-		if payload.TerminalID != nil && *payload.TerminalID != "" {
-			tid = *payload.TerminalID
-		}
 		terminals := loadTerminalsList(db)
-		found := false
+		foundIdx := -1
 		for i := range terminals {
-			if fmt.Sprintf("%v", terminals[i]["terminal_id"]) == tid {
-				terminals[i]["hostname"] = payload.Hostname
-				terminals[i]["os_info"] = payload.OsInfo
-				terminals[i]["agent_version"] = payload.AgentVersion
-				terminals[i]["active_com_ports"] = payload.ActiveComPorts
-				terminals[i]["local_ip"] = payload.LocalIP
-				terminals[i]["mac_address"] = payload.MacAddress
-				terminals[i]["last_heartbeat_ts"] = nowTs
-				terminals[i]["live_weight_gram"] = payload.LiveWeightGram
-				found = true
+			currID := fmt.Sprintf("%v", terminals[i]["id"])
+			currTID := fmt.Sprintf("%v", terminals[i]["terminal_id"])
+			currIP := fmt.Sprintf("%v", terminals[i]["local_ip"])
+			if currID == tid || currTID == tid || (localIP != "127.0.0.1" && currIP == localIP) {
+				foundIdx = i
 				break
 			}
 		}
-		if !found {
+
+		if foundIdx >= 0 {
+			terminals[foundIdx]["id"] = tid
+			terminals[foundIdx]["terminal_id"] = tid
+			if payload.UserConfigured && tname != "" {
+				terminals[foundIdx]["name"] = tname
+				terminals[foundIdx]["custom_name"] = tname
+			} else if currName, _ := terminals[foundIdx]["name"].(string); currName == "" || currName == "Kasa 1" || currName == "Kasa" {
+				terminals[foundIdx]["name"] = tname
+			}
+			terminals[foundIdx]["local_ip"] = localIP
+			terminals[foundIdx]["version"] = version
+			terminals[foundIdx]["agent_version"] = version
+			terminals[foundIdx]["scale_connected"] = payload.ScaleConnected
+			terminals[foundIdx]["scale_ip"] = scaleIP
+			terminals[foundIdx]["scale_port"] = scalePort
+			terminals[foundIdx]["last_weight"] = payload.LastWeight
+			if len(sortedPr) > 0 {
+				terminals[foundIdx]["printers"] = sortedPr
+			}
+			terminals[foundIdx]["last_heartbeat_ts"] = nowTs
+			terminals[foundIdx]["last_seen"] = nowTs
+		} else {
+			isDef := len(terminals) == 0
 			terminals = append(terminals, map[string]interface{}{
-				"terminal_id":              tid,
-				"alias":                    fmt.Sprintf("Kasa Terminali (%s)", payload.Hostname),
-				"location":                 "Ana Salon / Kasa",
-				"hostname":                 payload.Hostname,
-				"os_info":                  payload.OsInfo,
-				"agent_version":            payload.AgentVersion,
-				"active_com_ports":         payload.ActiveComPorts,
-				"local_ip":                 payload.LocalIP,
-				"mac_address":              payload.MacAddress,
-				"assigned_cashier_printer": "Varsayılan Yazıcı",
-				"assigned_scale_port":      "COM3",
-				"assigned_caller_id_port":  "Yok",
-				"is_authorized":            true,
-				"first_registered_at":      time.Now().Format("02.01.2006 15:04"),
-				"last_heartbeat_ts":        nowTs,
-				"live_weight_gram":         0,
+				"id":                tid,
+				"terminal_id":       tid,
+				"name":              tname,
+				"custom_name":       tname,
+				"local_ip":          localIP,
+				"version":           version,
+				"agent_version":     version,
+				"scale_connected":   payload.ScaleConnected,
+				"scale_ip":          scaleIP,
+				"scale_port":        scalePort,
+				"last_weight":       payload.LastWeight,
+				"printers":          sortedPr,
+				"last_heartbeat_ts": nowTs,
+				"last_seen":         nowTs,
+				"is_default":        isDef,
 			})
 		}
 		saveTerminalsList(db, terminals)
@@ -1864,14 +2087,18 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 				"weight_gram": *payload.LiveWeightGram,
 				"weight_kg":   math.Round((float64(*payload.LiveWeightGram)/1000.0)*1000) / 1000,
 				"stable":      payload.LiveStable,
-				"hostname":    payload.Hostname,
+				"hostname":    tname,
 			})
 		}
 
 		return c.JSON(fiber.Map{
 			"status":             "ok",
-			"config":             cfgCopy,
+			"terminal_id":        tid,
+			"terminal_name":      tname,
+			"scale_ip":           scaleIP,
+			"scale_port":         scalePort,
 			"pending_print_jobs": jobs,
+			"server_time":        nowTs,
 		})
 	})
 
