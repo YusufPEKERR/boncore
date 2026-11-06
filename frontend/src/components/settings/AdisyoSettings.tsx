@@ -118,6 +118,52 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [customPrinterInput, setCustomPrinterInput] = useState<string>('');
   const [printerSearchQuery, setPrinterSearchQuery] = useState<string>('');
   const [showVirtualPrinters, setShowVirtualPrinters] = useState<boolean>(true);
+  const [downloadingAgent, setDownloadingAgent] = useState<boolean>(false);
+  const [downloadStatusText, setDownloadStatusText] = useState<string>('');
+
+  const handleDownloadAgentZip = async (customTerminalName?: string) => {
+    if (downloadingAgent) return;
+    setDownloadingAgent(true);
+    setDownloadStatusText('Hazırlanıyor...');
+    sound.beep();
+    try {
+      const restaurantCode = localStorage.getItem('boncore_restaurant_code') || 'fatihciftligi';
+      const termName = customTerminalName?.trim() || '';
+      const params = new URLSearchParams();
+      params.set('restaurant_code', restaurantCode);
+      if (termName) {
+        params.set('terminal_name', termName);
+      }
+      const url = `/api/scale/download-agent?${params.toString()}`;
+
+      setDownloadStatusText('İndiriliyor...');
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const tempLink = document.createElement('a');
+      tempLink.href = blobUrl;
+      const safeName = (termName || restaurantCode).replace(/[\\/:*?"<>|]/g, '_');
+      tempLink.download = `boncore-hardware-agent-${safeName}.zip`;
+      document.body.appendChild(tempLink);
+      tempLink.click();
+      document.body.removeChild(tempLink);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 30000);
+      setDownloadStatusText('İndirme Başlatıldı!');
+      setTimeout(() => setDownloadStatusText(''), 3000);
+    } catch (err) {
+      console.warn('Fetch blob download fallback:', err);
+      const restaurantCode = localStorage.getItem('boncore_restaurant_code') || 'fatihciftligi';
+      const termName = customTerminalName?.trim() || '';
+      const fallbackUrl = `/api/scale/download-agent?restaurant_code=${encodeURIComponent(restaurantCode)}${termName ? `&terminal_name=${encodeURIComponent(termName)}` : ''}`;
+      window.open(fallbackUrl, '_blank');
+      setDownloadStatusText('');
+    } finally {
+      setDownloadingAgent(false);
+    }
+  };
 
   const isVirtualPrinter = (pName: string) => {
     const low = (pName || '').toLowerCase();
@@ -1208,14 +1254,34 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                     Yenile
                   </button>
 
-                  <a
-                    href={`/api/scale/download-agent?restaurant_code=${encodeURIComponent(localStorage.getItem('boncore_restaurant_code') || '')}`}
-                    download={`boncore-hardware-agent-${localStorage.getItem('boncore_restaurant_code') || 'pos'}.zip`}
-                    className="px-4 py-2 rounded-xl bg-[#338d35] hover:bg-[#28702a] active:scale-95 text-white font-black text-xs shadow-md shadow-brand-600/30 transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>Kurulum Paketini İndir (.ZIP)</span>
-                  </a>
+                  <div className="flex flex-col items-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadAgentZip()}
+                      disabled={downloadingAgent}
+                      className="px-4 py-2 rounded-xl bg-[#338d35] hover:bg-[#28702a] active:scale-95 text-white font-black text-xs shadow-md shadow-brand-600/30 transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-60"
+                    >
+                      {downloadingAgent ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>{downloadStatusText || 'İndiriliyor...'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4" />
+                          <span>Kurulum Paketini İndir (.ZIP)</span>
+                        </>
+                      )}
+                    </button>
+                    <a
+                      href="/api/scale/raw-exe"
+                      download="BonCoreAgent.exe"
+                      className="text-[10px] font-bold text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 underline transition cursor-pointer"
+                      title="Alternatif olarak sadece EXE dosyasını doğrudan indirin"
+                    >
+                      Alternatif: Tek Dosya BonCoreAgent.exe İndir
+                    </a>
+                  </div>
                 </div>
               </div>
 
@@ -1472,14 +1538,24 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       placeholder="Örn: Kasa 2 - Paket"
                       className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white w-full sm:w-48"
                     />
-                    <a
-                      href={`/api/scale/download-agent?terminal_name=${encodeURIComponent(newTerminalName)}&restaurant_code=${encodeURIComponent(localStorage.getItem('boncore_restaurant_code') || '')}`}
-                      download={`boncore-hardware-agent-${newTerminalName}.zip`}
-                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-black text-xs shadow-md shadow-purple-600/30 transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer"
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadAgentZip(newTerminalName)}
+                      disabled={downloadingAgent}
+                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-black text-xs shadow-md shadow-purple-600/30 transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer disabled:opacity-60"
                     >
-                      <Download className="w-4 h-4" />
-                      <span>Bu Kasa İçin İndir (.ZIP)</span>
-                    </a>
+                      {downloadingAgent ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>{downloadStatusText || 'Hazırlanıyor...'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4" />
+                          <span>Bu Kasa İçin İndir (.ZIP)</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
               </div>

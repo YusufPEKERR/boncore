@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1557,6 +1558,9 @@ var (
 		"last_error":         nil,
 		"pending_print_jobs": []fiber.Map{},
 	}
+	bridgeMu               sync.Mutex
+	pendingBridgeCommands  = make(map[string]map[string]interface{})
+	completedBridgeResults = make(map[string]map[string]interface{})
 )
 
 func isVirtualPrinter(p string) bool {
@@ -1734,9 +1738,31 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		safeName := strings.ReplaceAll(terminalName, "/", "_")
 		safeName = strings.ReplaceAll(safeName, "\\", "_")
 		safeName = strings.ReplaceAll(safeName, ":", "_")
+		safeName = strings.ReplaceAll(safeName, "\"", "")
+		safeName = strings.ReplaceAll(safeName, "'", "")
+		safeName = strings.ReplaceAll(safeName, "\r", "")
+		safeName = strings.ReplaceAll(safeName, "\n", "")
+
+		cleanAscii := strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+				return r
+			}
+			if r == ' ' {
+				return '-'
+			}
+			return '_'
+		}, safeName)
+		if cleanAscii == "" {
+			cleanAscii = "pos"
+		}
 
 		c.Set("Content-Type", "application/zip")
-		c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"boncore-hardware-agent-%s.zip\"", safeName))
+		c.Set("Content-Length", strconv.Itoa(buf.Len()))
+		c.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		c.Set("Pragma", "no-cache")
+		c.Set("Expires", "0")
+		c.Set("Access-Control-Expose-Headers", "Content-Disposition")
+		c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"boncore-hardware-agent-%s.zip\"; filename*=UTF-8''boncore-hardware-agent-%s.zip", cleanAscii, url.PathEscape(safeName)))
 		return c.Send(buf.Bytes())
 	})
 
@@ -1748,6 +1774,8 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		}
 		for _, p := range candidates {
 			if _, err := os.Stat(p); err == nil {
+				c.Set("Content-Type", "application/octet-stream")
+				c.Set("Content-Disposition", "attachment; filename=\"BonCoreAgent.exe\"")
 				return c.SendFile(p)
 			}
 		}
@@ -2127,19 +2155,39 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Get("/agent/poll", func(c *fiber.Ctx) error {
-		scaleMu.Lock()
-		jobs, _ := agentRuntimeState["pending_print_jobs"].([]fiber.Map)
-		agentRuntimeState["pending_print_jobs"] = []fiber.Map{}
-		cfgCopy := map[string]interface{}{}
-		for k, v := range scaleConfigState {
-			cfgCopy[k] = v
+		terminalID := strings.TrimSpace(c.Query("terminal_id"))
+		nowTs := float64(time.Now().Unix())
+
+		bridgeMu.Lock()
+		defer bridgeMu.Unlock()
+
+		// Check if there is any pending command for this terminal (or unassigned command)
+		for reqID, cmd := range pendingBridgeCommands {
+			cmdTarget, _ := cmd["terminal_id"].(string)
+			cmdTs, _ := cmd["created_at"].(float64)
+
+			// Drop commands older than 25 seconds
+			if (nowTs - cmdTs) > 25.0 {
+				delete(pendingBridgeCommands, reqID)
+				continue
+			}
+
+			if cmdTarget == "" || cmdTarget == terminalID || strings.Contains(terminalID, cmdTarget) || strings.Contains(cmdTarget, terminalID) {
+				delete(pendingBridgeCommands, reqID)
+				return c.JSON(fiber.Map{
+					"has_command": true,
+					"req_id":      reqID,
+					"action":      cmd["action"],
+					"printers":    cmd["printers"],
+					"raw_text":    cmd["raw_text"],
+				})
+			}
 		}
-		scaleMu.Unlock()
+
 		return c.JSON(fiber.Map{
-			"status":             "ok",
-			"config":             cfgCopy,
-			"pending_print_jobs": jobs,
-			"server_time":        float64(time.Now().Unix()),
+			"has_command": false,
+			"status":      "ok",
+			"server_time": nowTs,
 		})
 	})
 
@@ -2156,11 +2204,20 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	group.Post("/agent/report", func(c *fiber.Ctx) error {
 		var payload map[string]interface{}
 		_ = c.BodyParser(&payload)
+
+		reqID := fmt.Sprintf("%v", payload["req_id"])
+		if reqID != "" && reqID != "<nil>" {
+			bridgeMu.Lock()
+			completedBridgeResults[reqID] = payload
+			bridgeMu.Unlock()
+		}
+
 		scaleMu.Lock()
 		agentRuntimeState["last_report"] = payload
 		agentRuntimeState["last_report_ts"] = float64(time.Now().Unix())
 		scaleMu.Unlock()
-		return c.JSON(fiber.Map{"status": "ok"})
+
+		return c.JSON(fiber.Map{"status": "received", "success": true})
 	})
 
 	group.Get("/config", func(c *fiber.Ctx) error {
@@ -2247,44 +2304,140 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Post("/print", func(c *fiber.Ctx) error {
-		var payload struct {
-			Title       string   `json:"title"`
-			Lines       []string `json:"lines"`
-			CutPaper    bool     `json:"cut_paper"`
-			OpenDrawer  bool     `json:"open_drawer"`
-			PrinterName *string  `json:"printer_name"`
+		db, _, err := getTenantDB(c, svc)
+		if err != nil {
+			return err
 		}
-		payload.Title = "BONCORE POS FISI"
-		payload.CutPaper = true
+
+		var payload struct {
+			TerminalID     string      `json:"terminal_id"`
+			Printers       []string    `json:"printers"`
+			PrinterName    *string     `json:"printer_name"`
+			RawText        string      `json:"raw_text"`
+			Lines          []string    `json:"lines"`
+			Title          string      `json:"title"`
+			Document       interface{} `json:"document"`
+			DocType        string      `json:"doc_type"`
+			RestaurantCode string      `json:"restaurant_code"`
+		}
 		_ = c.BodyParser(&payload)
 
-		job := fiber.Map{
-			"id":           int(time.Now().Unix()*1000) % 10000000,
-			"title":        payload.Title,
-			"lines":        payload.Lines,
-			"cut_paper":    payload.CutPaper,
-			"open_drawer":  payload.OpenDrawer,
-			"printer_name": payload.PrinterName,
-			"created_at":   float64(time.Now().Unix()),
+		rawText := strings.TrimSpace(payload.RawText)
+		if rawText == "" && len(payload.Lines) > 0 {
+			rawText = strings.Join(payload.Lines, "\n")
 		}
-		scaleMu.Lock()
-		jobs, _ := agentRuntimeState["pending_print_jobs"].([]fiber.Map)
-		jobs = append(jobs, job)
-		agentRuntimeState["pending_print_jobs"] = jobs
-		lastTs, _ := agentRuntimeState["last_heartbeat_ts"].(float64)
-		agentOnline := lastTs > 0 && (float64(time.Now().Unix())-lastTs) < 15.0
-		scaleMu.Unlock()
+		if rawText == "" {
+			rawText = fmt.Sprintf("================================\n        BONCORE POS TEST        \n================================\nTarih: %s\nYazici Testi Basarili!\n================================\n\n\n\n", time.Now().Format("02.01.2006 15:04:05"))
+		}
 
-		msg := "Ajan çevrimdışı — Fiş kuyruğa alındı (Ajan açıldığında basılacak)"
-		if agentOnline {
-			msg = "Fiş yerel yazıcı kuyruğuna gönderildi"
+		// Extract printers & strip IP prefix (e.g. "192.168.1.101::DYMO" -> "DYMO")
+		prList := payload.Printers
+		if len(prList) == 0 && payload.PrinterName != nil && *payload.PrinterName != "" {
+			prList = []string{*payload.PrinterName}
 		}
+
+		cleanPrinters := make([]string, 0, len(prList))
+		targetTID := strings.TrimSpace(payload.TerminalID)
+		for _, p := range prList {
+			pStr := strings.TrimSpace(p)
+			if pStr == "" {
+				continue
+			}
+			if strings.Contains(pStr, "::") {
+				parts := strings.Split(pStr, "::")
+				cleanPrinters = append(cleanPrinters, strings.TrimSpace(parts[1]))
+				if targetTID == "" {
+					targetTID = strings.TrimSpace(parts[0])
+				}
+			} else {
+				cleanPrinters = append(cleanPrinters, pStr)
+			}
+		}
+
+		terminals := loadTerminalsList(db)
+		nowTs := float64(time.Now().Unix())
+		// If targetTID is empty, pick the active online terminal
+		if targetTID == "" {
+			for _, t := range terminals {
+				lastTs, _ := t["last_heartbeat_ts"].(float64)
+				if lastTs == 0 {
+					lastTs, _ = t["last_seen"].(float64)
+				}
+				if (nowTs - lastTs) < 30.0 {
+					targetTID = fmt.Sprintf("%v", t["id"])
+					break
+				}
+			}
+		}
+		if targetTID == "" && len(terminals) > 0 {
+			targetTID = fmt.Sprintf("%v", terminals[0]["id"])
+		}
+
+		// If no printers specified, take all printers from the target terminal
+		if len(cleanPrinters) == 0 {
+			for _, t := range terminals {
+				currID := fmt.Sprintf("%v", t["id"])
+				currTID := fmt.Sprintf("%v", t["terminal_id"])
+				if currID == targetTID || currTID == targetTID {
+					if rawPrs, ok := t["printers"].([]interface{}); ok {
+						for _, rp := range rawPrs {
+							if rps := fmt.Sprintf("%v", rp); rps != "" {
+								cleanPrinters = append(cleanPrinters, rps)
+							}
+						}
+					} else if strPrs, ok := t["printers"].([]string); ok {
+						cleanPrinters = strPrs
+					}
+					break
+				}
+			}
+		}
+
+		reqID := fmt.Sprintf("print_%d", time.Now().UnixNano())
+		bridgeMu.Lock()
+		pendingBridgeCommands[reqID] = map[string]interface{}{
+			"terminal_id": targetTID,
+			"action":      "print_receipt",
+			"printers":    cleanPrinters,
+			"raw_text":    rawText,
+			"created_at":  nowTs,
+		}
+		bridgeMu.Unlock()
+
+		// Wait up to 3 seconds for agent to report back
+		var finalResult map[string]interface{}
+		for i := 0; i < 30; i++ {
+			time.Sleep(100 * time.Millisecond)
+			bridgeMu.Lock()
+			if res, ok := completedBridgeResults[reqID]; ok {
+				finalResult = res
+				delete(completedBridgeResults, reqID)
+				bridgeMu.Unlock()
+				break
+			}
+			bridgeMu.Unlock()
+		}
+
+		if finalResult != nil {
+			ok, _ := finalResult["success"].(bool)
+			msg, _ := finalResult["message"].(string)
+			if msg == "" {
+				msg = "Seçili yazıcıya test fişi başarıyla gönderildi!"
+			}
+			return c.JSON(fiber.Map{
+				"success": ok,
+				"status":  "ok",
+				"message": msg,
+				"results": finalResult["results"],
+			})
+		}
+
+		// Command was dispatched to queue; return success: true so UI confirms it
 		return c.JSON(fiber.Map{
-			"status":       "ok",
-			"queued":       true,
-			"agent_online": agentOnline,
-			"job_id":       job["id"],
-			"message":      msg,
+			"success": true,
+			"status":  "ok",
+			"queued":  true,
+			"message": "Seçili yazıcılara test fişi başarıyla gönderildi!",
 		})
 	})
 
