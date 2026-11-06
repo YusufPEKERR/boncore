@@ -1,0 +1,99 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: boncore-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: boncore_pos
+      TZ: Europe/Istanbul
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=500"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "synchronous_commit=on"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./migrations/001_postgresql_schema_and_indexes.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d boncore_pos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pgbouncer:
+    image: edoburu/pgbouncer:1.22.0-p1
+    container_name: boncore-pgbouncer
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgres://postgres:password@postgres:5432/boncore_pos"
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 2000
+      DEFAULT_POOL_SIZE: 64
+      MIN_POOL_SIZE: 16
+      RESERVE_POOL_SIZE: 16
+    ports:
+      - "6432:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: boncore-redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--tcp-keepalive", "60"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  boncore-backend-go:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: boncore-backend-go
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: "8000"
+      DATABASE_URL: "postgres://postgres:password@pgbouncer:5432/boncore_pos?sslmode=disable"
+      MASTER_DATABASE_URL: "postgres://postgres:password@pgbouncer:5432/boncore_pos?sslmode=disable"
+      PGBOUNCER_MODE: "true"
+      REDIS_URL: "redis://redis:6379/0"
+      DEFAULT_TENANT_CODE: "fatihciftligi"
+    ports:
+      - "8000:8000"
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: boncore-nginx-proxy
+    restart: always
+    depends_on:
+      - boncore-backend-go
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+      - "443:443"
+
+volumes:
+  pg_data:
+  redis_data:

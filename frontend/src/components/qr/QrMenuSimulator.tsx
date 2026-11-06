@@ -14,7 +14,7 @@ interface QrMenuSimulatorProps {
 }
 
 export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({ areas, onBuzzerSent }) => {
-  const allTables = areas.flatMap(a => a.tables);
+  const allTables = (areas || []).flatMap(a => (a && a.tables) || []).filter(Boolean);
   const [selectedTableId, setSelectedTableId] = useState<number>(allTables[0]?.id || 1);
   const [menuData, setMenuData] = useState<any>(null);
   const [activeCategoryIndex, setActiveCategoryIndex] = useState<number>(0);

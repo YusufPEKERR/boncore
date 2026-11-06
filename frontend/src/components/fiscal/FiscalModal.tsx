@@ -13,11 +13,14 @@ interface FiscalModalProps {
   orderId: number | null;
 }
 
-export const printThermalReceipt = async (doc: any) => {
+export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) => {
   if (!doc) return;
 
   // 1. Kasa bilgisayarinda secili termal yazicilar varsa dogrudan ajan uzerinden yazdir
-  const selectedPrinters = localHardware.getSelectedPrinters();
+  const selectedPrinters = (targetPrinters && targetPrinters.length > 0)
+    ? targetPrinters
+    : localHardware.getSelectedPrinters();
+
   if (selectedPrinters && selectedPrinters.length > 0) {
     try {
       const res = await localHardware.printReceipt({
@@ -341,22 +344,22 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
                 {fiscalDoc.items.map((it: any, i: number) => (
                   <div key={i} className="grid grid-cols-12 py-1 border-b border-slate-100 text-[11px]">
                     <span className="col-span-6 font-semibold">{it.product_name} {it.variant && `(${it.variant})`}</span>
-                    <span className="col-span-2 text-center font-mono">{Number.isInteger(Number(it.quantity)) ? it.quantity : `${Number(Number(it.quantity).toFixed(3))} Kg`}</span>
-                    <span className="col-span-2 text-right font-mono">₺{it.unit_price.toFixed(2)}</span>
-                    <span className="col-span-2 text-right font-mono font-bold">₺{it.total_price.toFixed(2)}</span>
+                    <span className="col-span-2 text-center font-mono">{Number.isInteger(Number(it.quantity)) ? it.quantity : `${Number(Number(it.quantity || 0).toFixed(3))} Kg`}</span>
+                    <span className="col-span-2 text-right font-mono">₺{Number(it.unit_price || 0).toFixed(2)}</span>
+                    <span className="col-span-2 text-right font-mono font-bold">₺{Number(it.total_price || 0).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
 
               {/* Totals & VAT Breakdown */}
               <div className="pt-2 border-t-2 border-slate-900 space-y-1 text-right text-[11px]">
-                <div>Ara Toplam: <span className="font-mono font-bold">₺{fiscalDoc.subtotal.toFixed(2)}</span></div>
-                {fiscalDoc.kuver > 0 && <div>Kuver Bedeli: <span className="font-mono font-bold">₺{fiscalDoc.kuver.toFixed(2)}</span></div>}
-                {fiscalDoc.service_charge > 0 && <div>Servis Bedeli: <span className="font-mono font-bold">₺{fiscalDoc.service_charge.toFixed(2)}</span></div>}
-                {fiscalDoc.discount > 0 && <div className="text-brand-600">İndirim: <span className="font-mono font-bold">-₺{fiscalDoc.discount.toFixed(2)}</span></div>}
-                <div>Hesaplanan KDV (%10): <span className="font-mono">₺{fiscalDoc.vat_summary.vat_10.tax.toFixed(2)}</span></div>
+                <div>Ara Toplam: <span className="font-mono font-bold">₺{Number(fiscalDoc.subtotal || 0).toFixed(2)}</span></div>
+                {Number(fiscalDoc.kuver || 0) > 0 && <div>Kuver Bedeli: <span className="font-mono font-bold">₺{Number(fiscalDoc.kuver || 0).toFixed(2)}</span></div>}
+                {Number(fiscalDoc.service_charge || 0) > 0 && <div>Servis Bedeli: <span className="font-mono font-bold">₺{Number(fiscalDoc.service_charge || 0).toFixed(2)}</span></div>}
+                {Number(fiscalDoc.discount || 0) > 0 && <div className="text-brand-600">İndirim: <span className="font-mono font-bold">-₺{Number(fiscalDoc.discount || 0).toFixed(2)}</span></div>}
+                <div>Hesaplanan KDV (%10): <span className="font-mono">₺{Number(fiscalDoc.vat_summary?.vat_10?.tax || fiscalDoc.vat_summary?.vat_10 || 0).toFixed(2)}</span></div>
                 <div className="text-base font-black text-slate-950 pt-1 border-t">
-                  GENEL TOPLAM: <span className="font-mono">₺{fiscalDoc.grand_total.toFixed(2)}</span>
+                  GENEL TOPLAM: <span className="font-mono">₺{Number(fiscalDoc.grand_total || 0).toFixed(2)}</span>
                 </div>
                 {fiscalDoc.payments && fiscalDoc.payments.length > 0 && (
                   <div className="pt-1.5 border-t border-slate-200 space-y-0.5">

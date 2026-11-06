@@ -67,8 +67,33 @@ export const CustomersLoyaltyView: React.FC = () => {
     try {
       const res = await api.getCustomersLoyalty();
       if (res) {
-        setCustomers(res.customers || []);
-        setCampaigns(res.campaigns || []);
+        const rawCusts = res.customers || [];
+        const normalizedCusts: CustomerItem[] = rawCusts.map((c: any) => ({
+          id: String(c.id || ''),
+          name: c.name || 'İsimsiz Müşteri',
+          phone: c.phone || '',
+          email: c.email || '',
+          tier: c.tier || 'Standart',
+          points: Number(c.points || 0),
+          balance: Number(c.balance !== undefined ? c.balance : (c.open_account_balance !== undefined ? -c.open_account_balance : 0)),
+          total_spent: Number(c.total_spent || 0),
+          visit_count: Number(c.visit_count || 1),
+          last_visit: c.last_visit || 'Kayıtlı',
+          notes: c.notes || ''
+        }));
+        setCustomers(normalizedCusts);
+
+        const rawCamps = res.campaigns || [];
+        const normalizedCamps: CampaignItem[] = rawCamps.map((camp: any) => ({
+          id: String(camp.id || ''),
+          title: camp.title || camp.name || 'Kampanya',
+          type: camp.type || 'points_cashback',
+          rule: camp.rule || camp.time_range || 'Tüm Siparişlerde Geçerli',
+          reward: camp.reward || (camp.discount_percent ? `%${camp.discount_percent} İndirim` : 'Özel İndirim'),
+          is_active: camp.is_active !== undefined ? Boolean(camp.is_active) : (camp.active !== undefined ? Boolean(camp.active) : true),
+          usage_count: Number(camp.usage_count || 0)
+        }));
+        setCampaigns(normalizedCamps);
         setSummary(res.summary || {});
       }
     } catch (e) {
@@ -195,7 +220,7 @@ export const CustomersLoyaltyView: React.FC = () => {
           <div>
             <div className="text-[11px] font-bold text-slate-400 uppercase">Kayıtlı Müşteri</div>
             <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-              {summary.total_customers || customers.length}
+              {Number(summary?.total_customers ?? customers.length ?? 0)}
             </div>
             <div className="text-[11px] text-emerald-600 font-bold mt-0.5">Sadakat & Cari Aktif</div>
           </div>
@@ -208,7 +233,7 @@ export const CustomersLoyaltyView: React.FC = () => {
           <div>
             <div className="text-[11px] font-bold text-slate-400 uppercase">Toplam Para Puan</div>
             <div className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">
-              {(summary.total_loyalty_points || 0).toLocaleString('tr-TR')} Puan
+              {Number(summary?.total_loyalty_points || 0).toLocaleString('tr-TR')} Puan
             </div>
             <div className="text-[11px] text-slate-400 font-semibold mt-0.5">Harcanabilir Ödül Havuzu</div>
           </div>
@@ -221,7 +246,7 @@ export const CustomersLoyaltyView: React.FC = () => {
           <div>
             <div className="text-[11px] font-bold text-slate-400 uppercase">Açık Veresiye (Cari Alacak)</div>
             <div className="text-2xl font-black text-brand-600 dark:text-emerald-400 mt-1">
-              ₺{(summary.total_credit_receivable || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+              ₺{Number(summary?.total_credit_receivable || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
             </div>
             <div className="text-[11px] text-brand-500 font-semibold mt-0.5">Tahsilat Bekleyen Bakiye</div>
           </div>
@@ -234,7 +259,7 @@ export const CustomersLoyaltyView: React.FC = () => {
           <div>
             <div className="text-[11px] font-bold text-slate-400 uppercase">Aktif Kampanyalar</div>
             <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
-              {summary.active_campaigns ?? campaigns.filter(c => c.is_active).length} / {campaigns.length}
+              {Number(summary?.active_campaigns ?? campaigns.filter(c => c.is_active).length ?? 0)} / {campaigns.length}
             </div>
             <div className="text-[11px] text-emerald-600 font-semibold mt-0.5">Otomatik POS İndirimi</div>
           </div>
@@ -265,7 +290,7 @@ export const CustomersLoyaltyView: React.FC = () => {
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
             }`}
           >
-            Cari / Veresiye Hesaplar ({customers.filter(c => c.balance !== 0).length})
+            Cari / Veresiye Hesaplar ({customers.filter(c => Number(c.balance || 0) !== 0).length})
           </button>
           <button
             onClick={() => { sound.beep(); setActiveTab('campaigns'); }}
@@ -386,25 +411,25 @@ export const CustomersLoyaltyView: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-3.5 px-4 font-extrabold text-amber-600 dark:text-amber-400">
-                      {c.points.toLocaleString('tr-TR')} Puan
+                      {Number(c.points || 0).toLocaleString('tr-TR')} Puan
                     </td>
                     <td className="py-3.5 px-4">
                       <span className={`font-black text-sm ${
-                        c.balance < 0
+                        Number(c.balance || 0) < 0
                           ? 'text-brand-600 dark:text-emerald-400'
-                          : c.balance > 0
+                          : Number(c.balance || 0) > 0
                           ? 'text-emerald-600 dark:text-emerald-400'
                           : 'text-slate-500'
                       }`}>
-                        ₺{c.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                        ₺{Number(c.balance || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                       </span>
-                      {c.balance < 0 && (
+                      {Number(c.balance || 0) < 0 && (
                         <div className="text-[10px] text-brand-500 font-bold">Borçlu (Veresiye)</div>
                       )}
                     </td>
                     <td className="py-3.5 px-4">
                       <div className="font-bold text-slate-800 dark:text-slate-200">
-                        ₺{(c.total_spent || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                        ₺{Number(c.total_spent || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                       </div>
                       <div className="text-[10px] text-slate-400">{c.visit_count || 0} ziyaret • Son: {c.last_visit}</div>
                     </td>
@@ -413,7 +438,7 @@ export const CustomersLoyaltyView: React.FC = () => {
                         onClick={() => {
                           sound.beep();
                           setSelectedCustomer(c);
-                          setTxType(c.balance < 0 ? 'pay_debt' : 'earn_points');
+                          setTxType(Number(c.balance || 0) < 0 ? 'pay_debt' : 'earn_points');
                         }}
                         className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900 text-brand-600 dark:text-emerald-300 font-extrabold text-xs transition cursor-pointer"
                       >
@@ -536,7 +561,7 @@ export const CustomersLoyaltyView: React.FC = () => {
             <div>
               <h3 className="text-lg font-black text-slate-900 dark:text-white">{selectedCustomer.name}</h3>
               <p className="text-xs text-slate-500">
-                Mevcut Cari: <strong>₺{selectedCustomer.balance.toFixed(2)}</strong> • Puan: <strong>{selectedCustomer.points}</strong>
+                Mevcut Cari: <strong>₺{Number(selectedCustomer.balance || 0).toFixed(2)}</strong> • Puan: <strong>{selectedCustomer.points || 0}</strong>
               </p>
             </div>
             <form onSubmit={handleTransactionSubmit} className="space-y-3 text-xs">

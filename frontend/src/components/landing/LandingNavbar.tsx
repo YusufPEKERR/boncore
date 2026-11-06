@@ -62,9 +62,11 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({
             onClick={() => { sound.beep(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
             className="flex items-center gap-2.5 cursor-pointer group select-none"
           >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-700 via-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform duration-200">
-              <Utensils className="w-5 h-5" />
-            </div>
+            <img 
+              src="/icon-192.png" 
+              alt="BonCore POS" 
+              className="w-10 h-10 rounded-xl object-cover shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform duration-200 shrink-0" 
+            />
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="text-xl font-black tracking-tight text-slate-900 dark:text-white">

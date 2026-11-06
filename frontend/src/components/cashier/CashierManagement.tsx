@@ -151,7 +151,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
         <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-md">
           <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Toplam Günlük Ciro</div>
           <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-            ₺{xReport?.total_revenue?.toFixed(2) || '0.00'}
+            ₺{Number(xReport?.total_revenue || 0).toFixed(2)}
           </div>
           <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 font-medium">
             {xReport?.total_orders || 0} Adet Tamamlanan Adisyon
@@ -161,7 +161,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
         <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-md">
           <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Kasada Nakit Durumu</div>
           <div className="text-2xl font-black text-blue-600 dark:text-blue-400 font-mono">
-            ₺{xReport?.cash_in_drawer?.toFixed(2) || '500.00'}
+            ₺{Number(xReport?.cash_in_drawer ?? 500).toFixed(2)}
           </div>
           <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 font-medium">
             500 ₺ Açılış Avansı Dahil
@@ -171,7 +171,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
         <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-md">
           <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Kredi Kartı & Slip</div>
           <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono">
-            ₺{xReport?.payment_breakdown?.credit_card?.amount?.toFixed(2) || '0.00'}
+            ₺{Number(xReport?.payment_breakdown?.credit_card?.amount || 0).toFixed(2)}
           </div>
           <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 font-medium">
             {xReport?.payment_breakdown?.credit_card?.count || 0} Adet POS Çekimi
@@ -181,7 +181,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
         <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-md">
           <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Toplam Masraf & Çıkış</div>
           <div className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">
-            ₺{xReport?.total_expenses?.toFixed(2) || '0.00'}
+            ₺{Number(xReport?.total_expenses || 0).toFixed(2)}
           </div>
           <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 font-medium">
             {expenses.length} Kalem Gün İçi Gider
@@ -271,7 +271,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
                       <div className="text-[10px] text-slate-500 dark:text-slate-400">{e.description} • {e.created_at}</div>
                     </div>
                     <span className={`font-mono font-black ${isCashIn ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                      {isCashIn ? '+' : '-'}₺{e.amount.toFixed(2)}
+                      {isCashIn ? '+' : '-'}₺{Number(e.amount || 0).toFixed(2)}
                     </span>
                   </div>
                 );
@@ -308,19 +308,19 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
               <div className="text-center font-bold">------------------------------------------</div>
               <div className="flex justify-between font-bold text-white">
                 <span>TOPLAM HASILAT (CİRO):</span>
-                <span className="text-emerald-400">₺{(zReportData || xReport)?.total_revenue?.toFixed(2)}</span>
+                <span className="text-emerald-400">₺{Number((zReportData || xReport)?.total_revenue || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span>• Nakit Tahsilat:</span>
-                <span>₺{((zReportData || xReport)?.payment_breakdown?.cash?.amount || 0).toFixed(2)}</span>
+                <span>₺{Number((zReportData || xReport)?.payment_breakdown?.cash?.amount || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span>• Kredi Kartı / POS:</span>
-                <span>₺{((zReportData || xReport)?.payment_breakdown?.credit_card?.amount || 0).toFixed(2)}</span>
+                <span>₺{Number((zReportData || xReport)?.payment_breakdown?.credit_card?.amount || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span>• Sodexo / Yemek Çeki:</span>
-                <span>₺{((zReportData || xReport)?.payment_breakdown?.sodexo?.amount || 0).toFixed(2)}</span>
+                <span>₺{Number((zReportData || xReport)?.payment_breakdown?.sodexo?.amount || 0).toFixed(2)}</span>
               </div>
               <div className="text-center font-bold">------------------------------------------</div>
               <div className="flex justify-between text-amber-300">
@@ -329,16 +329,16 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
               </div>
               <div className="flex justify-between text-emerald-400">
                 <span>Kasadan Çıkan Masraflar:</span>
-                <span>-₺{(zReportData || xReport)?.total_expenses?.toFixed(2)}</span>
+                <span>-₺{Number((zReportData || xReport)?.total_expenses || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between font-bold text-emerald-400">
                 <span>KASADA OLMASI GEREKEN NAKİT:</span>
-                <span>₺{(zReportData || xReport)?.cash_in_drawer?.toFixed(2)}</span>
+                <span>₺{Number((zReportData || xReport)?.cash_in_drawer || 0).toFixed(2)}</span>
               </div>
               <div className="text-center font-bold">------------------------------------------</div>
-              <div>KDV %1: ₺{(zReportData || xReport)?.vat_summary?.vat_1?.toFixed(2)}</div>
-              <div>KDV %10 (Gıda): ₺{(zReportData || xReport)?.vat_summary?.vat_10?.toFixed(2)}</div>
-              <div>KDV %20 (Alkol/Diğer): ₺{(zReportData || xReport)?.vat_summary?.vat_20?.toFixed(2)}</div>
+              <div>KDV %1: ₺{Number((zReportData || xReport)?.vat_summary?.vat_1 || 0).toFixed(2)}</div>
+              <div>KDV %10 (Gıda): ₺{Number((zReportData || xReport)?.vat_summary?.vat_10 || 0).toFixed(2)}</div>
+              <div>KDV %20 (Alkol/Diğer): ₺{Number((zReportData || xReport)?.vat_summary?.vat_20 || 0).toFixed(2)}</div>
               <div className="text-center font-bold text-white">==========================================</div>
             </div>
           </div>

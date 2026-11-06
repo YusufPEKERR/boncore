@@ -56,10 +56,10 @@ export const ProductModifierModal: React.FC<ProductModifierModalProps> = ({
   };
 
   // Calculate Unit Price
-  const variantDelta = selectedVariant ? selectedVariant.price_delta : 0;
-  const modifiersTotal = selectedModifiers.reduce((sum, m) => sum + m.price, 0);
-  const calculatedUnitPrice = product.base_price + variantDelta + modifiersTotal;
-  const grandTotal = calculatedUnitPrice * quantity;
+  const variantDelta = selectedVariant ? Number(selectedVariant.price_delta || 0) : 0;
+  const modifiersTotal = selectedModifiers.reduce((sum, m) => sum + Number(m.price || 0), 0);
+  const calculatedUnitPrice = Number(product.base_price || 0) + variantDelta + modifiersTotal;
+  const grandTotal = calculatedUnitPrice * Number(quantity || 1);
 
   const handleConfirm = () => {
     sound.beep();
@@ -265,7 +265,7 @@ export const ProductModifierModal: React.FC<ProductModifierModalProps> = ({
             className="flex-1 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-500/20 transition flex items-center justify-center gap-2 active:scale-[0.98]"
           >
             <span>SEPETE EKLE</span>
-            <span className="font-mono text-white/90">₺{grandTotal.toFixed(2)}</span>
+            <span className="font-mono text-white/90">₺{Number(grandTotal || 0).toFixed(2)}</span>
           </button>
         </div>
       </div>

@@ -2,14 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { 
   Building2, Users, CreditCard, Sparkles, LayoutDashboard, 
   KeyRound, ShieldCheck, LogOut, Globe, Utensils, 
-  Menu, X, Phone, DollarSign, ArrowRight 
+  Menu, X, Phone, DollarSign, ArrowRight, Activity, 
+  GitBranch, Megaphone, LifeBuoy, HardDrive, Sun, Moon
 } from 'lucide-react';
 import { MasterDashboardView } from './MasterDashboardView';
 import { MasterTenantsView } from './MasterTenantsView';
 import { MasterTenantUsersView } from './MasterTenantUsersView';
 import { MasterLeadsView } from './MasterLeadsView';
 import { MasterBillingView } from './MasterBillingView';
+import { MasterFleetView } from './MasterFleetView';
+import { MasterFranchiseView } from './MasterFranchiseView';
+import { MasterBroadcastView } from './MasterBroadcastView';
+import { MasterTicketsView } from './MasterTicketsView';
+import { MasterBackupQuotaView } from './MasterBackupQuotaView';
 import { sound } from '../../services/sound';
+import { useTheme } from '../../context/ThemeContext';
+import { useWebSocket } from '../../services/websocket';
+import { sendNativeNotification } from '../../services/nativeNotifications';
 
 interface MasterAdminLayoutProps {
   onLogout: () => void;
@@ -17,12 +26,25 @@ interface MasterAdminLayoutProps {
   onGoToPos: () => void;
 }
 
+export type MasterAdminTab = 
+  | 'dashboard' 
+  | 'fleet' 
+  | 'tenants' 
+  | 'franchise' 
+  | 'billing' 
+  | 'broadcast' 
+  | 'tickets' 
+  | 'backups' 
+  | 'users' 
+  | 'leads';
+
 export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
   onLogout,
   onGoToLanding,
   onGoToPos
 }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tenants' | 'users' | 'leads' | 'billing'>('dashboard');
+  const { theme, toggleTheme } = useTheme();
+  const [activeTab, setActiveTab] = useState<MasterAdminTab>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
 
   // Master Data
@@ -30,6 +52,8 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
   const [tenants, setTenants] = useState<any[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
+  const [fleetList, setFleetList] = useState<any[]>([]);
+  const [ticketList, setTicketList] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Cross-view selection state
@@ -39,21 +63,68 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
     loadAllMasterData();
   }, []);
 
+  useWebSocket('all', (type, data) => {
+    if (type === 'SUPPORT_TICKET_CREATED') {
+      sound.kitchenBell();
+      sendNativeNotification({
+        title: '🎫 Yeni Destek Talebi Geldi!',
+        body: `${data.tenant_name || 'Restoran'}: ${data.subject || 'Destek talebi oluşturuldu.'}`,
+        tag: `master-ticket-${data.id || Date.now()}`
+      });
+      loadAllMasterData();
+    } else if (type === 'SUPPORT_TICKET_REPLIED' && data && data.sender_type !== 'master_admin') {
+      sound.kitchenBell();
+      sendNativeNotification({
+        title: `💬 Restorandan Yanıt Geldi (#${data.ticket_number || ''})`,
+        body: `${data.sender_name || 'Restoran'}: "${data.message || ''}"`,
+        tag: `master-ticket-reply-${data.ticket_id || Date.now()}`
+      });
+      loadAllMasterData();
+    } else if (type === 'LEAD_SUBMITTED') {
+      sound.cashDrawer();
+      sendNativeNotification({
+        title: '✨ Yeni Müşteri / Demo Talebi!',
+        body: `${data.full_name || 'Ziyaretçi'} (${data.company_name || 'İşletme'}) demo talep etti.`,
+        tag: `master-lead-${Date.now()}`
+      });
+      loadAllMasterData();
+    }
+  });
+
   const loadAllMasterData = async () => {
     setLoading(true);
     try {
       const t = Date.now();
-      const [statsRes, tenantsRes, leadsRes, invRes] = await Promise.all([
+      const [statsRes, tenantsRes, leadsRes, invRes, fleetRes, ticketsRes] = await Promise.all([
         fetch(`/api/master/stats?_t=${t}`, { cache: 'no-store' }),
         fetch(`/api/master/tenants?_t=${t}`, { cache: 'no-store' }),
         fetch(`/api/master/leads?_t=${t}`, { cache: 'no-store' }),
-        fetch(`/api/master/invoices?_t=${t}`, { cache: 'no-store' })
+        fetch(`/api/master/invoices?_t=${t}`, { cache: 'no-store' }),
+        fetch(`/api/master/fleet?_t=${t}`, { cache: 'no-store' }).catch(() => null),
+        fetch(`/api/master/tickets?_t=${t}`, { cache: 'no-store' }).catch(() => null)
       ]);
 
       if (statsRes.ok) setStats(await statsRes.json());
-      if (tenantsRes.ok) setTenants(await tenantsRes.json());
-      if (leadsRes.ok) setLeads(await leadsRes.json());
-      if (invRes.ok) setInvoices(await invRes.json());
+      if (tenantsRes.ok) {
+        const d = await tenantsRes.json();
+        setTenants(Array.isArray(d) ? d : (d?.tenants || []));
+      }
+      if (leadsRes.ok) {
+        const d = await leadsRes.json();
+        setLeads(Array.isArray(d) ? d : (d?.leads || []));
+      }
+      if (invRes.ok) {
+        const d = await invRes.json();
+        setInvoices(Array.isArray(d) ? d : (d?.invoices || []));
+      }
+      if (fleetRes && fleetRes.ok) {
+        const d = await fleetRes.json();
+        setFleetList(Array.isArray(d) ? d : []);
+      }
+      if (ticketsRes && ticketsRes.ok) {
+        const d = await ticketsRes.json();
+        setTicketList(Array.isArray(d) ? d : []);
+      }
     } catch (e) {
       console.warn('Master data load warning:', e);
     } finally {
@@ -72,23 +143,31 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
     onGoToPos();
   };
 
+  const onlineFleetCount = fleetList.filter(f => f.is_online).length;
+  const newTicketsCount = ticketList.filter(t => t.status === 'new').length;
+
   const navItems = [
     { id: 'dashboard', label: 'Genel Bakış & Gelirler', icon: LayoutDashboard },
-    { id: 'tenants', label: 'Tüm Restoranlar', icon: Building2, badge: tenants.length },
+    { id: 'fleet', label: 'Canlı Filo & Radar', icon: Activity, badge: onlineFleetCount > 0 ? `${onlineFleetCount} Aktif` : undefined },
+    { id: 'tenants', label: 'Tüm Restoranlar & Modüller', icon: Building2, badge: tenants.length || undefined },
+    { id: 'franchise', label: 'Şube & Franchise Yönetimi', icon: GitBranch },
+    { id: 'billing', label: 'SaaS Finans & Sanal POS', icon: CreditCard },
+    { id: 'broadcast', label: 'Duyuru & Bildirim Merkezi', icon: Megaphone },
+    { id: 'tickets', label: 'Destek & Talep Yönetimi', icon: LifeBuoy, badge: newTicketsCount > 0 ? newTicketsCount : undefined },
+    { id: 'backups', label: 'Yedekleme & Veri Kotası', icon: HardDrive },
     { id: 'users', label: 'Restoran Kullanıcıları & Şifre', icon: KeyRound },
-    { id: 'leads', label: 'Gelen Müşteri Talepleri', icon: Sparkles, badge: leads.filter(l => l.status === 'yeni').length || undefined },
-    { id: 'billing', label: 'SaaS Finans & Abonelikler', icon: CreditCard }
+    { id: 'leads', label: 'Gelen Müşteri Talepleri', icon: Sparkles, badge: leads.filter(l => l.status === 'yeni').length || undefined }
   ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans select-none">
+    <div className={`master-admin-root ${theme === 'light' ? 'saas-white-theme bg-slate-50 text-slate-900' : 'bg-slate-950 text-slate-100'} min-h-screen flex flex-col font-sans select-none transition-colors duration-200`}>
       
       {/* Top Master Navbar */}
-      <header className="h-16 bg-slate-900 border-b border-slate-800 px-4 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-40">
+      <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-40 shadow-xs">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="lg:hidden p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800"
+            className="lg:hidden p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
           >
             {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -99,10 +178,10 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-black text-white text-sm sm:text-base tracking-tight">
-                  BonCore <span className="text-emerald-400">Master Admin</span>
+                <span className="font-black text-slate-900 dark:text-white text-sm sm:text-base tracking-tight">
+                  BonCore <span className="text-emerald-600 dark:text-emerald-400">Master Admin</span>
                 </span>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800">
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
                   SaaS Backoffice
                 </span>
               </div>
@@ -114,28 +193,47 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
         </div>
 
         {/* Right Action Buttons */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 sm:gap-2.5">
+          {/* Theme Switcher Button */}
+          <button
+            onClick={() => { sound.beep(); toggleTheme(); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 text-xs font-bold transition cursor-pointer shadow-2xs"
+            title={theme === 'dark' ? 'Beyaz Temaya Geç' : 'Koyu Temaya Geç'}
+          >
+            {theme === 'dark' ? (
+              <>
+                <Sun className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Beyaz Tema</span>
+              </>
+            ) : (
+              <>
+                <Moon className="w-3.5 h-3.5 text-slate-600" />
+                <span className="hidden sm:inline">Koyu Tema</span>
+              </>
+            )}
+          </button>
+
           <button
             onClick={() => { sound.beep(); onGoToLanding(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white text-xs font-bold transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white text-xs font-bold transition cursor-pointer shadow-2xs"
             title="Tanıtım Web Sitesine Git"
           >
-            <Globe className="w-3.5 h-3.5 text-emerald-400" />
+            <Globe className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span className="hidden sm:inline">Web Sitesi</span>
           </button>
 
           <button
             onClick={() => { sound.beep(); onGoToPos(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/40 bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 text-xs font-bold transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/40 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 text-xs font-bold transition cursor-pointer shadow-2xs"
             title="Restoran POS Paneline Geç"
           >
-            <Utensils className="w-3.5 h-3.5" />
+            <Utensils className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span className="hidden sm:inline">Restoran POS</span>
           </button>
 
           <button
             onClick={() => { sound.beep(); onLogout(); }}
-            className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-900/50 text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
+            className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
             title="Master Admin Oturumunu Kapat"
           >
             <LogOut className="w-3.5 h-3.5" />
@@ -149,7 +247,7 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
         
         {/* Left Sidebar */}
         <aside
-          className={`fixed lg:static inset-y-0 left-0 z-30 w-64 bg-slate-900/95 lg:bg-slate-900 border-r border-slate-800 p-4 flex flex-col justify-between transition-transform duration-200 ${
+          className={`fixed lg:static inset-y-0 left-0 z-30 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 p-4 flex flex-col justify-between transition-transform duration-200 overflow-y-auto ${
             isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           }`}
         >
@@ -166,23 +264,23 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
                   key={item.id}
                   onClick={() => {
                     sound.beep();
-                    setActiveTab(item.id as any);
+                    setActiveTab(item.id as MasterAdminTab);
                     setIsSidebarOpen(false);
                   }}
                   className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-black transition cursor-pointer select-none ${
                     isActive
                       ? 'bg-gradient-to-r from-brand-600 to-emerald-600 text-white shadow-md shadow-emerald-600/20'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/80'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <Icon className="w-4 h-4" />
-                    <span>{item.label}</span>
+                  <div className="flex items-center gap-3 truncate">
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{item.label}</span>
                   </div>
 
                   {item.badge !== undefined && (
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                      isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-300'
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                      isActive ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                     }`}>
                       {item.badge}
                     </span>
@@ -193,8 +291,8 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
           </div>
 
           {/* Bottom Live System Stats Pill */}
-          <div className="p-3.5 rounded-2xl bg-slate-850 border border-slate-800 space-y-1 text-xs">
-            <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
+          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 space-y-1 text-xs mt-4">
+            <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span>SaaS API Motoru Aktif</span>
             </div>
@@ -224,12 +322,48 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
             />
           )}
 
+          {activeTab === 'fleet' && (
+            <MasterFleetView />
+          )}
+
           {activeTab === 'tenants' && (
             <MasterTenantsView
               tenants={tenants}
               onRefresh={loadAllMasterData}
               onSelectTenantUsers={handleSelectTenantUsers}
               onImpersonateTenant={handleImpersonateTenant}
+            />
+          )}
+
+          {activeTab === 'franchise' && (
+            <MasterFranchiseView
+              tenants={tenants}
+              onRefreshMasterData={loadAllMasterData}
+            />
+          )}
+
+          {activeTab === 'billing' && (
+            <MasterBillingView
+              stats={stats}
+              tenants={tenants}
+              invoices={invoices}
+              onRefresh={loadAllMasterData}
+            />
+          )}
+
+          {activeTab === 'broadcast' && (
+            <MasterBroadcastView
+              tenants={tenants}
+            />
+          )}
+
+          {activeTab === 'tickets' && (
+            <MasterTicketsView />
+          )}
+
+          {activeTab === 'backups' && (
+            <MasterBackupQuotaView
+              tenants={tenants}
             />
           )}
 
@@ -245,15 +379,6 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
           {activeTab === 'leads' && (
             <MasterLeadsView
               leads={leads}
-              onRefresh={loadAllMasterData}
-            />
-          )}
-
-          {activeTab === 'billing' && (
-            <MasterBillingView
-              stats={stats}
-              tenants={tenants}
-              invoices={invoices}
               onRefresh={loadAllMasterData}
             />
           )}

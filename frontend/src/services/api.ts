@@ -22,25 +22,110 @@ if (typeof window !== 'undefined' && window.fetch) {
       const headers = new Headers(customInit.headers || {});
 
       try {
-        const token = localStorage.getItem('boncore_token');
-        if (token && !headers.has('Authorization')) {
-          headers.set('Authorization', `Bearer ${token}`);
-        }
-        const rCode = localStorage.getItem('boncore_restaurant_code');
-        if (rCode && !headers.has('X-Restaurant-Code')) {
-          headers.set('X-Restaurant-Code', rCode);
-        }
-        const savedUser = localStorage.getItem('boncore_user');
-        if (savedUser && !headers.has('X-User-Role')) {
-          const parsedUser = JSON.parse(savedUser);
-          if (parsedUser?.role) {
-            headers.set('X-User-Role', encodeURIComponent(String(parsedUser.role)));
+        if (urlStr.includes('/api/master/')) {
+          const masterToken = localStorage.getItem('boncore_master_token');
+          if (masterToken && !headers.has('Authorization')) {
+            headers.set('Authorization', `Bearer ${masterToken}`);
+          }
+        } else {
+          const token = localStorage.getItem('boncore_token');
+          if (token && !headers.has('Authorization')) {
+            headers.set('Authorization', `Bearer ${token}`);
+          }
+          const rCode = localStorage.getItem('boncore_restaurant_code');
+          if (rCode && !headers.has('X-Restaurant-Code')) {
+            headers.set('X-Restaurant-Code', rCode);
+          }
+          const savedUser = localStorage.getItem('boncore_user');
+          if (savedUser && !headers.has('X-User-Role')) {
+            const parsedUser = JSON.parse(savedUser);
+            if (parsedUser?.role) {
+              headers.set('X-User-Role', encodeURIComponent(String(parsedUser.role)));
+            }
           }
         }
       } catch {}
 
       customInit.headers = headers;
-      return originalFetch.call(this, input, customInit);
+      const response = await originalFetch.call(this, input, customInit);
+
+      // Wrap response.json() so non-JSON responses (500, 502, 504 HTML error pages)
+      // do not throw unhandled JSON parse SyntaxErrors, and surface clean error toasts.
+      const originalText = response.text.bind(response);
+      let cachedParsed: any = undefined;
+      let hasParsed = false;
+
+      response.json = async function (): Promise<any> {
+        if (hasParsed) {
+          return cachedParsed;
+        }
+
+        try {
+          const rawText = await originalText();
+          if (!rawText || !rawText.trim()) {
+            cachedParsed = {};
+            hasParsed = true;
+            return cachedParsed;
+          }
+
+          try {
+            cachedParsed = JSON.parse(rawText);
+            hasParsed = true;
+
+            // If 5xx server error with JSON payload, surface to toast
+            if (response.status >= 500 && typeof window !== 'undefined') {
+              const errMsg = cachedParsed.detail || cachedParsed.error || cachedParsed.message || `Sunucu hatası (${response.status})`;
+              window.dispatchEvent(new CustomEvent('boncore_toast', {
+                detail: { message: String(errMsg), type: 'error' }
+              }));
+            }
+
+            return cachedParsed;
+          } catch {
+            // Raw text is not valid JSON (e.g. HTML 500, 502 Bad Gateway, 504 Gateway Timeout)
+            const status = response.status;
+            let cleanMsg = 'Sunucuyla iletişim kurulurken bir hata oluştu.';
+            if (status === 502) {
+              cleanMsg = 'Sunucuya ulaşılamıyor (502 Bad Gateway). Backend servisini kontrol edin.';
+            } else if (status === 504) {
+              cleanMsg = 'Ağ zaman aşımı (504 Gateway Timeout). Sunucu yanıt vermedi.';
+            } else if (status === 500) {
+              cleanMsg = 'Sunucu hatası (500 Internal Server Error). Lütfen tekrar deneyiniz.';
+            } else if (status === 404) {
+              cleanMsg = 'İstenen kaynak bulunamadı (404 Not Found).';
+            } else if (status >= 400) {
+              cleanMsg = `İstek başarısız oldu (${status}).`;
+            }
+
+            if (typeof window !== 'undefined' && status >= 400) {
+              window.dispatchEvent(new CustomEvent('boncore_toast', {
+                detail: { message: cleanMsg, type: 'error' }
+              }));
+            }
+
+            cachedParsed = {
+              error: cleanMsg,
+              detail: cleanMsg,
+              message: cleanMsg,
+              status: 'error',
+              statusCode: status,
+              is_non_json: true
+            };
+            hasParsed = true;
+            return cachedParsed;
+          }
+        } catch {
+          cachedParsed = {
+            error: 'Yanıt akışı okunamadı.',
+            detail: 'Yanıt akışı okunamadı.',
+            status: 'error'
+          };
+          hasParsed = true;
+          return cachedParsed;
+        }
+      };
+
+      return response;
     }
 
     return originalFetch.call(this, input, init);
@@ -70,6 +155,14 @@ export function getAuthHeaders(includeJson: boolean = true): Record<string, stri
     }
   } catch {}
   return headers;
+}
+
+export function showToast(message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('boncore_toast', {
+      detail: { message, type }
+    }));
+  }
 }
 
 export const api = {
@@ -613,7 +706,10 @@ export const api = {
     const res = await fetch(`${API_BASE}/inventory/ingredients`, {
       headers: getAuthHeaders(false)
     });
-    return res.json();
+    const data = await res.json().catch(() => []);
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.ingredients)) return data.ingredients;
+    return [];
   },
 
   async createIngredient(payload: Partial<Ingredient>): Promise<any> {
@@ -767,10 +863,28 @@ export const api = {
     return res.json();
   },
 
+  async printTableBill(orderId: number, operatorName?: string): Promise<any> {
+    const url = operatorName
+      ? `${API_BASE}/fiscal/receipt/${orderId}/escpos?operator_name=${encodeURIComponent(operatorName)}`
+      : `${API_BASE}/fiscal/receipt/${orderId}/escpos`;
+    const res = await fetch(url, { method: 'POST' });
+    return res.json();
+  },
+
+  async clearBillPrinted(tableId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/tables/${tableId}/clear-bill-printed`, {
+      method: 'POST'
+    });
+    return res.json();
+  },
+
   // Audit Logs
-  async getAuditLogs(actionType?: string): Promise<AuditLog[]> {
-    const url = actionType ? `${API_BASE}/audit/logs?action_type=${actionType}` : `${API_BASE}/audit/logs`;
-    const res = await fetch(url);
+  async getAuditLogs(actionType?: string, search?: string): Promise<AuditLog[]> {
+    const q = new URLSearchParams();
+    if (actionType && actionType !== 'all') q.append('action_type', actionType);
+    if (search) q.append('search', search);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    const res = await fetch(`${API_BASE}/audit/logs${qs}`);
     return res.json();
   },
 
@@ -935,7 +1049,7 @@ export const api = {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Masa ve adisyon tekrar aktif edilemedi.');
+      throw new Error(err.detail || err.message || 'Masa ve adisyon tekrar aktif edilemedi.');
     }
     return res.json();
   },

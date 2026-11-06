@@ -937,7 +937,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
                       onClick={() => {
                         sound.beep();
                         const allCats = localCategories.map(c => c.id);
-                        const allProds = localCategories.flatMap(c => (c.products || []).map(p => p.id));
+                        const allProds = (localCategories || []).flatMap(c => ((c && c.products) || []).map(p => p.id));
                         setSelectedCategoryIds(allCats);
                         setSelectedProductIds(allProds);
                       }}

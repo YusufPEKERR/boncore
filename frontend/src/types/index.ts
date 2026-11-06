@@ -27,7 +27,7 @@ export interface Table {
   width: number;
   height: number;
   seats: number;
-  status: 'empty' | 'occupied' | 'bill_requested' | 'reserved' | 'waiter_call';
+  status: 'empty' | 'occupied' | 'bill_requested' | 'bill_printed' | 'reserved' | 'waiter_call';
   opened_at: string | null;
   duration_minutes: number;
   kuver_count: number;
@@ -36,6 +36,8 @@ export interface Table {
   reservation_time: string | null;
   waiter_call_reason: string | null;
   is_merged_to: number | null;
+  has_ready_items?: boolean;
+  ready_items_summary?: string;
   active_order: ActiveOrderSummary | null;
 }
 
@@ -51,6 +53,8 @@ export interface ActiveOrderSummary {
   kuver_count: number;
   waiter_name: string;
   items_count: number;
+  has_ready_items?: boolean;
+  ready_items_summary?: string;
   created_at: string;
 }
 

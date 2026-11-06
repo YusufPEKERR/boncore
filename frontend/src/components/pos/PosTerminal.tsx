@@ -12,6 +12,7 @@ import { api } from '../../services/api';
 import { localHardware } from '../../services/localHardware';
 import { useWebSocket } from '../../services/websocket';
 import { ProductModifierModal } from './ProductModifierModal';
+import { printThermalReceipt } from '../fiscal/FiscalModal';
 import { initialPermissions, mergeWithInitialPermissions, PermissionItem } from '../permissions/RightsManagement';
 import { broadcastPermissionsUpdate } from '../../services/permissions';
 
@@ -137,6 +138,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   // Quick Action Modals
   const [isFastPayModalOpen, setIsFastPayModalOpen] = useState<boolean>(false);
   const [isNoteModalOpen, setIsNoteModalOpen] = useState<boolean>(false);
+  const [isPrinterSelectModalOpen, setIsPrinterSelectModalOpen] = useState<boolean>(false);
+  const [availablePrinters, setAvailablePrinters] = useState<string[]>([]);
   const [orderNote, setOrderNote] = useState<string>('');
   const [isDiscountModalOpen, setIsDiscountModalOpen] = useState<boolean>(false);
   const [discountPercent, setDiscountPercent] = useState<number>(0);
@@ -296,6 +299,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const canCloseComplimentary = useMemo(() => hasPerm('order_close_complimentary', false), [hasPerm]);
   const canTreat = useMemo(() => canTreatItem || canCloseComplimentary, [canTreatItem, canCloseComplimentary]);
   const canViewStock = useMemo(() => hasPerm('def_stock_view', true), [hasPerm]);
+  const canPrintBill = useMemo(() => hasPerm('order_manual_print', true), [hasPerm]);
 
   // Load existing order
   useEffect(() => {
@@ -376,11 +380,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return;
     }
     const q = searchQuery.toLowerCase().trim();
-    const allProducts = visibleCategories.flatMap(c => c.products);
+    const allProducts = (visibleCategories || []).flatMap(c => (c && c.products) || []).filter(Boolean);
     const matched = allProducts.filter(p => 
-      p.name.toLowerCase().includes(q) || 
-      (p.plu_code && p.plu_code.toLowerCase().includes(q)) ||
-      (p.barcode && p.barcode.toLowerCase().includes(q))
+      p && (
+        p.name.toLowerCase().includes(q) || 
+        (p.plu_code && p.plu_code.toLowerCase().includes(q)) ||
+        (p.barcode && p.barcode.toLowerCase().includes(q))
+      )
     );
     setSearchResults(matched);
   }, [searchQuery, visibleCategories]);
@@ -629,6 +635,12 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       showToast('Genel sipariş alma yetkiniz kapalıdır.', 'error');
       return;
     }
+
+    // Eğer hesap yazdırıldıktan sonra yeni sipariş girilirse yazdırıldı işaretini kaldır
+    if (activeTable && activeTable.status === 'bill_printed') {
+      activeTable.status = 'occupied';
+      api.clearBillPrinted(activeTable.id).catch(() => {});
+    }
     if (product.is_available === false) {
       sound.warning();
       showToast(`"${product.name}" şu anda satışa kapalıdır (Pasif).`, 'error');
@@ -817,8 +829,15 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       showToast('Genel sipariş alma yetkiniz kapalıdır.', 'error');
       return;
     }
+
+    // Eğer hesap yazdırıldıktan sonra yeni sipariş girilirse yazdırıldı işaretini kaldır
+    if (activeTable && activeTable.status === 'bill_printed') {
+      activeTable.status = 'occupied';
+      api.clearBillPrinted(activeTable.id).catch(() => {});
+    }
     const unsavedItems = cartItems.filter(i => !i.id);
     if (unsavedItems.length === 0 && activeOrderId) {
+      onRefreshData();
       onBackToTables();
       return;
     }
@@ -844,10 +863,124 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         await api.createOrder(payload);
       }
       sound.kitchenBell();
-      onBackToTables();
       onRefreshData();
+      onBackToTables();
     } catch (err: any) {
       showToast(err.message || 'Sipariş kaydedilemedi.', 'error');
+      sound.warning();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatPrinterLabel = (p: string) => {
+    if (!p) return { name: 'Termal Yazıcı', ip: '' };
+    if (p.includes('::')) {
+      const parts = p.split('::');
+      return {
+        name: parts[1] || parts[0],
+        ip: parts[0]
+      };
+    }
+    return {
+      name: p,
+      ip: ''
+    };
+  };
+
+  const handlePrintBill = async () => {
+    if (!canOrderGeneral && !canPrintBill) {
+      sound.warning();
+      showToast('Adisyon fişi yazdırma yetkiniz kapalıdır.', 'error');
+      return;
+    }
+
+    if (cartItems.length === 0 && !existingOrder && !activeOrderId) {
+      sound.warning();
+      showToast('Yazdırılacak ürün veya adisyon bulunamadı.', 'error');
+      return;
+    }
+
+    // 1. Aktif seçili yazıcıları kontrol et
+    const activePrinters = localHardware.getSelectedPrinters();
+    if (!activePrinters || activePrinters.length === 0) {
+      sound.warning();
+      showToast('Aktif seçili yazıcı bulunamadı! Lütfen Ayarlar > Yazıcılar menüsünden en az bir yazıcı seçin veya tanımlayın.', 'error');
+      return;
+    }
+
+    // 2. Garsona seçili yazıcılardan hangisinde yazdıracağını seçtirmek için modalı aç
+    setAvailablePrinters(activePrinters);
+    setIsPrinterSelectModalOpen(true);
+  };
+
+  const executePrintBill = async (printersToUse: string[]) => {
+    setIsPrinterSelectModalOpen(false);
+    if (!printersToUse || printersToUse.length === 0) {
+      sound.warning();
+      showToast('Lütfen yazdırılacak en az bir yazıcı seçin.', 'error');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      let targetOrderId = activeOrderId || existingOrder?.id;
+      const unsavedItems = cartItems.filter(i => !i.id);
+
+      // Masada henüz kaydedilmemiş yeni ürünler varsa önce siparişi kaydet ki adisyona tüm kalemler yansısın
+      if (unsavedItems.length > 0 || !targetOrderId) {
+        if (!targetOrderId) {
+          const payload = {
+            table_id: activeTable?.id || null,
+            order_type: activeTable ? 'dine_in' : 'takeaway',
+            items: unsavedItems,
+            waiter_name: currentUser?.name || 'Garson',
+            notes: orderNote || null,
+            kuver_count: 0
+          };
+          const orderRes = await api.createOrder(payload);
+          targetOrderId = orderRes.order_id || orderRes.id;
+        } else {
+          await api.addItemsToOrder(targetOrderId, unsavedItems, currentUser?.name || 'Garson');
+          if (orderNote) {
+            await api.updateOrderNotes(targetOrderId, orderNote);
+          }
+        }
+      }
+
+      if (!targetOrderId) {
+        showToast('Yazdırılacak adisyon bulunamadı.', 'error');
+        return;
+      }
+
+      sound.cashDrawer();
+
+      // 1. Backend üzerinden adisyonu yazdırıldı olarak işaretle ve ESC/POS fişini al
+      await api.printTableBill(targetOrderId, currentUser?.name);
+
+      // 2. Seçilen yazıcı(lar) üzerinden çıktıyı tetikle
+      try {
+        const fiscalDoc = await api.getEAdisyon(targetOrderId);
+        if (fiscalDoc) {
+          await printThermalReceipt(fiscalDoc, printersToUse);
+        }
+      } catch (printErr) {
+        console.warn('Adisyon fiş yazdırma önizleme uyarısı:', printErr);
+      }
+
+      // 3. Masayı yerel state'de yazdırıldı durumuna al
+      if (activeTable) {
+        activeTable.status = 'bill_printed';
+      }
+
+      const labelText = printersToUse.length === 1
+        ? formatPrinterLabel(printersToUse[0]).name
+        : `${printersToUse.length} Yazıcıya`;
+      showToast(`Adisyon "${labelText}" yazıcısına başarıyla gönderildi. Masalar ekranında "Yazdırıldı" işareti görüntülenecektir.`, 'success');
+      onRefreshData();
+      onBackToTables();
+    } catch (err: any) {
+      showToast(err.message || 'Adisyon yazdırılırken bir hata oluştu.', 'error');
       sound.warning();
     } finally {
       setLoading(false);
@@ -1360,7 +1493,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
                 <div className="flex flex-col items-end justify-between self-stretch">
                   <span className="font-mono text-xs font-black text-slate-900 dark:text-white">
-                    ₺{item.total_price.toFixed(2)}
+                    ₺{Number(item.total_price || 0).toFixed(2)}
                   </span>
 
                   {(!isSaved || canCancelOrder) && !item.is_voided && (
@@ -1508,8 +1641,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               <ChevronUp className={`w-4 h-4 text-slate-400 transition-transform ${showBreakdown ? 'rotate-180 text-brand-600' : ''}`} />
             </div>
           </div>
-          {/* 3 Buttons Grid */}
-          <div className="grid grid-cols-12 gap-1.5 pt-1">
+          {/* Action Buttons: ÖDE, HIZLI ÖDE, YAZDIR, KAYDET */}
+          <div className="flex items-center gap-1.5 pt-1">
             {canShowPayButton && (
               <button
                 onClick={async () => {
@@ -1547,7 +1680,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   }
                 }}
                 disabled={loading || (cartItems.length === 0 && !activeOrderId)}
-                className={`${canShowFastPayButton ? 'col-span-5' : 'col-span-8'} py-3 px-2 rounded-xl bg-[#27ae60] hover:bg-[#219653] disabled:opacity-50 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-1.5 cursor-pointer`}
+                className="flex-1 min-w-0 py-3 px-2 rounded-xl bg-[#27ae60] hover:bg-[#219653] disabled:opacity-50 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Tag className="w-3.5 h-3.5 flex-shrink-0" />
                 <span className="truncate">
@@ -1563,7 +1696,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   setIsFastPayModalOpen(true);
                 }}
                 disabled={loading || (cartItems.length === 0 && !existingOrder)}
-                className={`${canShowPayButton ? 'col-span-4' : 'col-span-7'} py-3 px-1.5 rounded-xl bg-[#fff9db] dark:bg-amber-950/40 border border-[#f59f00]/40 text-[#d97706] hover:bg-[#ffec99] disabled:opacity-50 font-black text-[11px] transition flex items-center justify-center gap-1 truncate cursor-pointer`}
+                className="py-3 px-2.5 rounded-xl bg-[#fff9db] dark:bg-amber-950/40 border border-[#f59f00]/40 text-[#d97706] hover:bg-[#ffec99] disabled:opacity-50 font-black text-[11px] transition flex items-center justify-center gap-1 shrink-0 cursor-pointer"
               >
                 <Zap className="w-3 h-3 flex-shrink-0 text-amber-500 fill-amber-500" />
                 <span>HIZLI ÖDE</span>
@@ -1571,17 +1704,19 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             )}
 
             <button
+              onClick={handlePrintBill}
+              disabled={loading || (cartItems.length === 0 && !existingOrder && !activeOrderId)}
+              className="py-3 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white font-black text-xs shadow-md shadow-sky-600/20 transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+              title="Adisyon Hesabını Yazdır"
+            >
+              <Printer className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>YAZDIR</span>
+            </button>
+
+            <button
               onClick={handleSaveOrSendOrder}
               disabled={loading || cartItems.length === 0}
-              className={`${
-                canShowPayButton && canShowFastPayButton
-                  ? 'col-span-3'
-                  : canShowPayButton
-                  ? 'col-span-4'
-                  : canShowFastPayButton
-                  ? 'col-span-5'
-                  : 'col-span-12'
-              } py-3 px-1.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] disabled:opacity-50 text-white font-black text-xs shadow transition flex items-center justify-center cursor-pointer`}
+              className="py-3 px-3.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] disabled:opacity-50 text-white font-black text-xs shadow transition flex items-center justify-center cursor-pointer shrink-0"
             >
               <span>KAYDET</span>
             </button>
@@ -1820,32 +1955,34 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           )}
         </div>
 
-        {/* Sticky Mobile Bottom Cart Summary Bar in Menu View (< lg) */}
+        {/* Sticky Mobile Bottom Action Bar in Menu View (< lg) */}
         {(cartItems.length > 0 || existingOrder) && (
           <div className="lg:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-2.5 flex items-center gap-2 shadow-2xl shrink-0">
-            <button
-              onClick={() => { sound.beep(); setMobilePosView('cart'); }}
-              className="flex-1 py-2.5 px-3 rounded-xl bg-slate-900 dark:bg-slate-800 text-white font-extrabold text-xs flex items-center justify-between"
-            >
-              <span>🧾 Adisyon ({activeCartCount})</span>
-              <span className="font-mono font-black text-emerald-400">₺{grandTotal.toFixed(2)}</span>
-            </button>
             {canShowFastPayButton && (
               <button
                 onClick={() => { sound.beep(); setIsFastPayModalOpen(true); }}
                 disabled={loading}
-                className="py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs flex items-center gap-1 shrink-0"
+                className="py-3 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-black text-xs flex items-center justify-center gap-1 shrink-0 shadow-sm cursor-pointer"
               >
-                <Zap className="w-3.5 h-3.5 fill-white" />
+                <Zap className="w-4 h-4 fill-white" />
                 <span>Hızlı Öde</span>
               </button>
             )}
             <button
+              onClick={handlePrintBill}
+              disabled={loading || (cartItems.length === 0 && !existingOrder && !activeOrderId)}
+              className="flex-1 py-3 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 active:scale-95 disabled:opacity-50 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer"
+              title="Adisyon Hesabını Yazdır"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Yazdır</span>
+            </button>
+            <button
               onClick={handleSaveOrSendOrder}
               disabled={loading || cartItems.length === 0}
-              className="py-2.5 px-3.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] disabled:opacity-50 text-white font-black text-xs shrink-0"
+              className="flex-1 py-3 px-3.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] active:scale-95 disabled:opacity-50 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer"
             >
-              Kaydet
+              <span>Kaydet</span>
             </button>
           </div>
         )}
@@ -2648,6 +2785,122 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             >
               Anlaşıldı
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Yazıcı Seçimi Modalı */}
+      {isPrinterSelectModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn font-sans">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/30 shrink-0">
+                  <Printer className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white leading-tight">
+                    Yazıcı Seçimi
+                  </h3>
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
+                    {activeTable ? `Masa: ${activeTable.name}` : 'Adisyon'} • Toplam: <strong className="font-mono text-emerald-600 dark:text-emerald-400">₺{grandTotal.toFixed(2)}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPrinterSelectModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                title="Kapat"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Prompt */}
+            <div className="text-xs font-bold text-slate-600 dark:text-slate-300">
+              Adisyon fişinin yazdırılacağı yazıcıyı seçiniz:
+            </div>
+
+            {/* Printer Options List */}
+            <div className="space-y-2.5 max-h-64 overflow-y-auto pr-0.5">
+              {/* Option to Print to All if multiple printers */}
+              {availablePrinters.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => executePrintBill(availablePrinters)}
+                  className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 border-2 border-emerald-500/60 hover:border-emerald-600 text-left transition flex items-center justify-between group cursor-pointer shadow-sm active:scale-[0.99]"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md">
+                      <Printer className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
+                        <span>Tüm Seçili Yazıcılara Yazdır</span>
+                        <span className="px-1.5 py-0.5 rounded-md bg-emerald-600 text-white font-mono text-[10px]">
+                          {availablePrinters.length} Adet
+                        </span>
+                      </div>
+                      <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 mt-0.5">
+                        Fişi tüm aktif yazıcılara aynı anda gönderir
+                      </div>
+                    </div>
+                  </div>
+                  <span className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-black shadow-sm group-hover:bg-emerald-700 transition shrink-0">
+                    Hepsine Yazdır
+                  </span>
+                </button>
+              )}
+
+              {/* Individual Printers */}
+              {availablePrinters.map((prKey, idx) => {
+                const label = formatPrinterLabel(prKey);
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => executePrintBill([prKey])}
+                    className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 hover:border-emerald-500 dark:hover:border-emerald-500 text-left transition flex items-center justify-between group cursor-pointer hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20 active:scale-[0.99]"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 flex items-center justify-center shrink-0 group-hover:text-emerald-600 group-hover:border-emerald-400 transition">
+                        <Printer className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-black text-slate-900 dark:text-white truncate">
+                          {label.name}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                            {label.ip ? `IP: ${label.ip}` : 'Aktif Termal Yazıcı'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <span className="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 group-hover:bg-emerald-600 text-slate-700 dark:text-slate-200 group-hover:text-white text-xs font-black transition shrink-0">
+                      Yazdır
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                Ayarlar &gt; Donanım &amp; Yazıcılar sekmesinden yönetilebilir.
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsPrinterSelectModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 transition cursor-pointer"
+              >
+                Vazgeç
+              </button>
+            </div>
           </div>
         </div>
       )}

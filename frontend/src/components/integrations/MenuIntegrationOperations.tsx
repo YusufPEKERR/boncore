@@ -35,7 +35,7 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
     }
   };
 
-  const allProducts = categories.flatMap(c => (c.products || []).map(p => ({ ...p, categoryName: c.name })));
+  const allProducts = (categories || []).flatMap(c => ((c && c.products) || []).map(p => ({ ...p, categoryName: c?.name || '' })));
 
   const filteredProducts = allProducts.filter(p => {
     const matchesSearch = !searchQuery.trim() || p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.categoryName.toLowerCase().includes(searchQuery.toLowerCase());
@@ -139,7 +139,7 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
                     </span>
                   </div>
                   <div className="col-span-2 font-mono font-bold text-slate-800 dark:text-slate-200">
-                    ₺{p.base_price.toFixed(2)}
+                    ₺{Number(p.base_price || 0).toFixed(2)}
                   </div>
                   <div className="col-span-2 flex justify-end">
                     <label className="relative inline-flex items-center cursor-pointer">

@@ -47,6 +47,18 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
     setTimeout(() => setToast(null), 4000);
   };
 
+  const formatDate = (val: any) => {
+    if (!val) return '-';
+    if (typeof val === 'string' && val.includes('.') && val.includes(':') && !val.includes('T')) return val;
+    try {
+      const d = new Date(val);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      }
+    } catch {}
+    return String(val);
+  };
+
   const loadClosedBills = useCallback(async () => {
     setLoading(true);
     try {
@@ -55,9 +67,41 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
         search: searchQuery.trim() || undefined,
         paymentMethod: paymentFilter !== 'all' ? paymentFilter : undefined
       });
-      setReportData(data);
+      if (Array.isArray(data)) {
+        let totalTurnover = 0;
+        let cashTotal = 0;
+        let cardTotal = 0;
+        let otherTotal = 0;
+        data.forEach((o: any) => {
+          if (o.status === 'paid') {
+            totalTurnover += Number(o.grand_total || 0);
+          }
+          (o.payments || []).forEach((p: any) => {
+            const amt = Number(p.amount || 0);
+            if (p.method === 'cash') cashTotal += amt;
+            else if (p.method === 'credit_card') cardTotal += amt;
+            else otherTotal += amt;
+          });
+        });
+        const paidCount = data.filter((o: any) => o.status === 'paid').length;
+        setReportData({
+          orders: data,
+          total_closed_count: data.length,
+          paid_orders_count: paidCount,
+          total_turnover: totalTurnover,
+          cash_total: cashTotal,
+          card_total: cardTotal,
+          other_total: otherTotal,
+          average_ticket: paidCount > 0 ? totalTurnover / paidCount : 0
+        });
+      } else if (data && typeof data === 'object') {
+        setReportData(data);
+      } else {
+        setReportData({ orders: [] });
+      }
     } catch (err) {
       console.warn('Failed to load closed bills report:', err);
+      setReportData({ orders: [] });
     } finally {
       setLoading(false);
     }
@@ -122,7 +166,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
   const orders: any[] = reportData?.orders || [];
 
   return (
-    <div className={`${embedded ? '' : 'flex-1 flex flex-col h-full overflow-y-auto bg-slate-50 dark:bg-slate-950 p-4 md:p-6'} space-y-5 text-slate-900 dark:text-slate-100 select-none font-sans`}>
+    <div className={`${embedded ? 'w-full pb-16' : 'flex-1 w-full h-full min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 p-4 md:p-6 pb-28'} space-y-5 text-slate-900 dark:text-slate-100 font-sans touch-pan-y`}>
       {/* Toast Notification */}
       {toast && (
         <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-extrabold animate-slideDown ${
@@ -255,8 +299,8 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
 
       {/* Closed Bills Table */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+        <div className="overflow-x-auto touch-pan-x overscroll-x-contain">
+          <table className="w-full text-left text-xs min-w-[750px]">
             <thead className="bg-slate-50 dark:bg-slate-800/80 text-[11px] font-extrabold uppercase text-slate-400 border-b border-slate-200 dark:border-slate-800">
               <tr>
                 <th className="py-3.5 px-4">Adisyon No</th>
@@ -306,8 +350,8 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
                     </td>
 
                     <td className="py-3.5 px-4 text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                      <div>Açılış: {bill.created_at}</div>
-                      <div className="text-slate-700 dark:text-slate-300 font-bold">Kapanış: {bill.closed_at}</div>
+                      <div>Açılış: {formatDate(bill.created_at)}</div>
+                      <div className="text-slate-700 dark:text-slate-300 font-bold">Kapanış: {formatDate(bill.closed_at)}</div>
                     </td>
 
                     <td className="py-3.5 px-4 text-xs">
@@ -416,7 +460,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
                     {selectedBill.table_name} • Adisyon #{selectedBill.order_no}
                   </h3>
                   <p className="text-[11px] font-semibold text-slate-500">
-                    Açılış: {selectedBill.created_at} • Kapanış: {selectedBill.closed_at}
+                    Açılış: {formatDate(selectedBill.created_at)} • Kapanış: {formatDate(selectedBill.closed_at)}
                   </p>
                 </div>
               </div>

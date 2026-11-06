@@ -152,7 +152,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         return;
       }
       setOrder(data);
-      setPayAmount(data.remaining_total > 0 ? data.remaining_total.toFixed(2) : '0.00');
+      setPayAmount(Number(data.remaining_total || 0) > 0 ? Number(data.remaining_total || 0).toFixed(2) : '0.00');
             setSelectedItemIds([]);
     } catch (e) {
       console.warn('Failed to fetch order', e);
@@ -253,7 +253,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           .reduce((s, it) => s + it.total_price, 0);
         setPayAmount(sum.toFixed(2));
               } else {
-        setPayAmount(order.remaining_total.toFixed(2));
+        setPayAmount(Number(order.remaining_total || 0).toFixed(2));
               }
       return next;
     });
@@ -264,7 +264,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     sound.beep();
     if (key === 'Tüm') {
       setSelectedItemIds([]);
-      setPayAmount(order.remaining_total.toFixed(2));
+      setPayAmount(Number(order.remaining_total || 0).toFixed(2));
       return;
     }
     if (key === '1/n') {
@@ -572,7 +572,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 PARÇALI ÖDE
               </h2>
               <span className="text-[15px] font-bold text-[#212529] font-mono">
-                ₺{selectedItemsSum.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ₺{Number(selectedItemsSum || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
 
@@ -585,10 +585,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             {/* Scrollable Products List */}
             <div className="flex-1 overflow-y-auto space-y-1.5 pr-1.5 custom-scrollbar">
-              {order.items.map((it) => {
+              {(order.items || []).map((it) => {
                 const isSelected = it.id ? selectedItemIds.includes(it.id) : false;
                 const paidAmt = (it.id && itemPaidMap[it.id]) || 0;
-                const remainingAmt = Math.max(0, it.total_price - paidAmt);
+                const itPrice = Number(it.total_price || 0);
+                const remainingAmt = Math.max(0, itPrice - paidAmt);
 
                 return (
                   <div
@@ -604,7 +605,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 truncate pr-2">
                         <span className="text-[13px] font-bold text-[#212529] dark:text-slate-200 truncate">
-                          {Number.isInteger(Number(it.quantity)) ? `${it.quantity} Adet` : `${Number(Number(it.quantity).toFixed(3))} Kg (${Math.round(Number(it.quantity) * 1000)} gr)`} - {it.product_name.toUpperCase()}
+                          {Number.isInteger(Number(it.quantity)) ? `${it.quantity} Adet` : `${Number(Number(it.quantity || 0).toFixed(3))} Kg (${Math.round(Number(it.quantity || 0) * 1000)} gr)`} - {(it.product_name || '').toUpperCase()}
                           {it.variant_name && <span className="text-gray-500 text-xs ml-1 font-normal">({it.variant_name})</span>}
                         </span>
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 shrink-0" title="Siparişi Giren Personel">
@@ -613,7 +614,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <span className="text-[13px] font-bold text-[#212529] dark:text-slate-200 font-mono">
-                          ₺{it.total_price.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                          ₺{Number(itPrice || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                         </span>
                         <TouchHandIcon active={isSelected} />
                       </div>
@@ -621,7 +622,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                     {/* Bottom Row: Ödenen & Kalan */}
                     <div className="text-[11px] text-gray-500 font-medium mt-0.5">
-                      Ödenen: ₺{paidAmt.toFixed(2)}  ·  Kalan: ₺{remainingAmt.toFixed(2)}
+                      Ödenen: ₺{Number(paidAmt || 0).toFixed(2)}  ·  Kalan: ₺{Number(remainingAmt || 0).toFixed(2)}
                     </div>
 
                     {/* Ürün İndirimi Göstergesi ve İptal Butonu */}
@@ -696,21 +697,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <div className="bg-gray-50 dark:bg-slate-800/80 p-2 rounded-xl border border-gray-200/70 dark:border-slate-700">
                 <div className="text-[10px] text-gray-500 dark:text-slate-400 font-bold uppercase tracking-wider">Toplam</div>
                 <div className="text-xs sm:text-sm font-black text-gray-900 dark:text-slate-100 font-mono">
-                  ₺{order.grand_total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                  ₺{Number(order.grand_total || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                 </div>
               </div>
 
               <div className="bg-emerald-50/70 dark:bg-emerald-950/40 p-2 rounded-xl border border-emerald-200/60 dark:border-emerald-800/50">
                 <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold uppercase tracking-wider">Ödenen</div>
                 <div className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                  ₺{(order.paid_total || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                  ₺{Number(order.paid_total || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                 </div>
               </div>
 
               <div className="bg-emerald-50/70 dark:bg-emerald-950/40 p-2 rounded-xl border border-emerald-200/60 dark:border-emerald-800/50">
                 <div className="text-[10px] text-brand-700 dark:text-emerald-400 font-bold uppercase tracking-wider">Kalan Borç</div>
                 <div className="text-xs sm:text-sm font-black text-brand-600 dark:text-emerald-400 font-mono">
-                  ₺{order.remaining_total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                  ₺{Number(order.remaining_total || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                 </div>
               </div>
             </div>
@@ -741,7 +742,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-xs">
-                          ₺{p.amount.toFixed(2)}
+                          ₺{Number(p.amount || 0).toFixed(2)}
                         </span>
                         {p.id && (
                           <button
@@ -789,12 +790,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     onClick={() => {
                       sound.beep();
                       setSelectedItemIds([]);
-                      setPayAmount(order.remaining_total.toFixed(2));
+                      setPayAmount(Number(order.remaining_total || 0).toFixed(2));
                     }}
                     className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold transition cursor-pointer shadow-xs"
                     title="Kalan borcun tamamını yaz"
                   >
-                    Tümü (₺{order.remaining_total.toFixed(2)})
+                    Tümü (₺{Number(order.remaining_total || 0).toFixed(2)})
                   </button>
                 </div>
               </div>
@@ -827,7 +828,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   }}
                   onBlur={() => {
                     if (!payAmount || payAmount === '.') {
-                      setPayAmount(order.remaining_total > 0 ? order.remaining_total.toFixed(2) : '0.00');
+                      setPayAmount(Number(order.remaining_total || 0) > 0 ? Number(order.remaining_total || 0).toFixed(2) : '0.00');
                     }
                   }}
                   className="w-full bg-transparent text-right text-2xl sm:text-3xl font-black font-mono text-slate-900 dark:text-white focus:outline-none tracking-tight"
@@ -885,8 +886,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   { label: '₺50', val: 50 },
                   { label: '₺100', val: 100 },
                   { label: '₺200', val: 200 },
-                  { label: '1/2', fn: () => (order.remaining_total / 2).toFixed(2) },
-                  { label: 'Kalan', fn: () => order.remaining_total.toFixed(2) }
+                  { label: '1/2', fn: () => (Number(order.remaining_total || 0) / 2).toFixed(2) },
+                  { label: 'Kalan', fn: () => Number(order.remaining_total || 0).toFixed(2) }
                 ].map((btn, idx) => (
                   <button
                     key={idx}
@@ -896,7 +897,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       if (btn.fn) {
                         setPayAmount(btn.fn());
                       } else if (btn.val) {
-                        setPayAmount(btn.val.toFixed(2));
+                        setPayAmount(Number(btn.val || 0).toFixed(2));
                       }
                     }}
                     className="py-1.5 px-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-100 border border-gray-200 dark:border-slate-700 transition active:scale-95 text-center cursor-pointer font-mono text-[11px] font-extrabold shadow-2xs"

@@ -244,3 +244,406 @@
 .font-thermal {
   font-family: 'JetBrains Mono', 'Courier New', Courier, monospace;
 }
+
+/* =========================================================
+   SAAS PLATFORM MASTER ADMIN - HARMONIZED LIGHT & DARK THEME
+   ========================================================= */
+
+/* --- 1. LIGHT THEME (White / Slate-50) --- */
+html:not(.dark) .master-admin-root,
+.master-admin-root.saas-white-theme {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+/* Header & Sidebar in Light Theme */
+html:not(.dark) .master-admin-root header,
+.master-admin-root.saas-white-theme header {
+  background-color: #ffffff !important;
+  border-bottom-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04) !important;
+}
+
+html:not(.dark) .master-admin-root aside,
+.master-admin-root.saas-white-theme aside {
+  background-color: #ffffff !important;
+  border-right-color: #e2e8f0 !important;
+  box-shadow: 1px 0 3px 0 rgba(0, 0, 0, 0.03) !important;
+}
+
+/* Universal Slate Backgrounds in Light Theme */
+html:not(.dark) .master-admin-root [class*="bg-slate-950"],
+.master-admin-root.saas-white-theme [class*="bg-slate-950"] {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) .master-admin-root [class*="bg-slate-900"],
+.master-admin-root.saas-white-theme [class*="bg-slate-900"] {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05) !important;
+}
+
+html:not(.dark) .master-admin-root [class*="bg-slate-850"],
+.master-admin-root.saas-white-theme [class*="bg-slate-850"],
+html:not(.dark) .master-admin-root [class*="bg-slate-800"],
+.master-admin-root.saas-white-theme [class*="bg-slate-800"] {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+html:not(.dark) .master-admin-root [class*="bg-slate-750"],
+.master-admin-root.saas-white-theme [class*="bg-slate-750"],
+html:not(.dark) .master-admin-root [class*="bg-slate-700"],
+.master-admin-root.saas-white-theme [class*="bg-slate-700"] {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* Hover States in Light Theme */
+html:not(.dark) .master-admin-root [class*="hover:bg-slate-800"]:hover,
+.master-admin-root.saas-white-theme [class*="hover:bg-slate-800"]:hover,
+html:not(.dark) .master-admin-root [class*="hover:bg-slate-750"]:hover,
+.master-admin-root.saas-white-theme [class*="hover:bg-slate-750"]:hover,
+html:not(.dark) .master-admin-root [class*="hover:bg-slate-700"]:hover,
+.master-admin-root.saas-white-theme [class*="hover:bg-slate-700"]:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+/* Universal Slate Borders in Light Theme */
+html:not(.dark) .master-admin-root [class*="border-slate-800"],
+.master-admin-root.saas-white-theme [class*="border-slate-800"],
+html:not(.dark) .master-admin-root [class*="border-slate-750"],
+.master-admin-root.saas-white-theme [class*="border-slate-750"],
+html:not(.dark) .master-admin-root [class*="border-slate-700"],
+.master-admin-root.saas-white-theme [class*="border-slate-700"] {
+  border-color: #e2e8f0 !important;
+}
+
+/* High-Contrast Typography for Headings & Text in Light Theme */
+html:not(.dark) .master-admin-root h1:not([class*="bg-"]):not([class*="text-"]):not(button *),
+.master-admin-root.saas-white-theme h1:not([class*="bg-"]):not([class*="text-"]):not(button *),
+html:not(.dark) .master-admin-root h2:not([class*="bg-"]):not([class*="text-"]):not(button *),
+.master-admin-root.saas-white-theme h2:not([class*="bg-"]):not([class*="text-"]):not(button *),
+html:not(.dark) .master-admin-root h3:not([class*="bg-"]):not([class*="text-"]):not(button *),
+.master-admin-root.saas-white-theme h3:not([class*="bg-"]):not([class*="text-"]):not(button *),
+html:not(.dark) .master-admin-root h4:not([class*="bg-"]):not([class*="text-"]):not(button *),
+.master-admin-root.saas-white-theme h4:not([class*="bg-"]):not([class*="text-"]):not(button *) {
+  color: #0f172a !important;
+}
+
+/* Titles that had hardcoded text-white */
+html:not(.dark) .master-admin-root h1.text-white,
+.master-admin-root.saas-white-theme h1.text-white,
+html:not(.dark) .master-admin-root h2.text-white,
+.master-admin-root.saas-white-theme h2.text-white,
+html:not(.dark) .master-admin-root h3.text-white,
+.master-admin-root.saas-white-theme h3.text-white,
+html:not(.dark) .master-admin-root h4.text-white,
+.master-admin-root.saas-white-theme h4.text-white,
+html:not(.dark) .master-admin-root p.text-white,
+.master-admin-root.saas-white-theme p.text-white,
+html:not(.dark) .master-admin-root div.text-white:not(button *):not([class*="bg-"]):not([class*="badge"]),
+.master-admin-root.saas-white-theme div.text-white:not(button *):not([class*="bg-"]):not([class*="badge"]) {
+  color: #0f172a !important;
+}
+
+html:not(.dark) .master-admin-root .text-slate-100,
+.master-admin-root.saas-white-theme .text-slate-100,
+html:not(.dark) .master-admin-root .text-slate-200,
+.master-admin-root.saas-white-theme .text-slate-200 {
+  color: #1e293b !important;
+}
+
+html:not(.dark) .master-admin-root .text-slate-300,
+.master-admin-root.saas-white-theme .text-slate-300 {
+  color: #334155 !important;
+}
+
+html:not(.dark) .master-admin-root .text-slate-400,
+.master-admin-root.saas-white-theme .text-slate-400 {
+  color: #64748b !important;
+}
+
+html:not(.dark) .master-admin-root .text-slate-500,
+.master-admin-root.saas-white-theme .text-slate-500 {
+  color: #64748b !important;
+}
+
+/* CRITICAL: Keep all Action Buttons, Badges, and Gradients with Crisp Pure White Text */
+html:not(.dark) .master-admin-root [class*="bg-emerald-600"],
+.master-admin-root.saas-white-theme [class*="bg-emerald-600"],
+html:not(.dark) .master-admin-root [class*="bg-brand-600"],
+.master-admin-root.saas-white-theme [class*="bg-brand-600"],
+html:not(.dark) .master-admin-root [class*="bg-blue-600"],
+.master-admin-root.saas-white-theme [class*="bg-blue-600"],
+html:not(.dark) .master-admin-root [class*="bg-red-600"],
+.master-admin-root.saas-white-theme [class*="bg-red-600"],
+html:not(.dark) .master-admin-root [class*="bg-indigo-600"],
+.master-admin-root.saas-white-theme [class*="bg-indigo-600"],
+html:not(.dark) .master-admin-root [class*="bg-purple-600"],
+.master-admin-root.saas-white-theme [class*="bg-purple-600"],
+html:not(.dark) .master-admin-root [class*="bg-gradient-"],
+.master-admin-root.saas-white-theme [class*="bg-gradient-"],
+html:not(.dark) .master-admin-root button[class*="bg-emerald-"],
+.master-admin-root.saas-white-theme button[class*="bg-emerald-"],
+html:not(.dark) .master-admin-root button[class*="bg-blue-"],
+.master-admin-root.saas-white-theme button[class*="bg-blue-"],
+html:not(.dark) .master-admin-root button[class*="bg-red-"],
+.master-admin-root.saas-white-theme button[class*="bg-red-"] {
+  color: #ffffff !important;
+}
+
+html:not(.dark) .master-admin-root [class*="bg-emerald-600"] *,
+.master-admin-root.saas-white-theme [class*="bg-emerald-600"] *,
+html:not(.dark) .master-admin-root [class*="bg-brand-600"] *,
+.master-admin-root.saas-white-theme [class*="bg-brand-600"] *,
+html:not(.dark) .master-admin-root [class*="bg-blue-600"] *,
+.master-admin-root.saas-white-theme [class*="bg-blue-600"] *,
+html:not(.dark) .master-admin-root [class*="bg-red-600"] *,
+.master-admin-root.saas-white-theme [class*="bg-red-600"] *,
+html:not(.dark) .master-admin-root [class*="bg-indigo-600"] *,
+.master-admin-root.saas-white-theme [class*="bg-indigo-600"] *,
+html:not(.dark) .master-admin-root [class*="bg-purple-600"] *,
+.master-admin-root.saas-white-theme [class*="bg-purple-600"] *,
+html:not(.dark) .master-admin-root [class*="bg-gradient-"] *,
+.master-admin-root.saas-white-theme [class*="bg-gradient-"] *,
+html:not(.dark) .master-admin-root button[class*="bg-emerald-"] *,
+.master-admin-root.saas-white-theme button[class*="bg-emerald-"] *,
+html:not(.dark) .master-admin-root button[class*="bg-blue-"] *,
+.master-admin-root.saas-white-theme button[class*="bg-blue-"] *,
+html:not(.dark) .master-admin-root button[class*="bg-red-"] *,
+.master-admin-root.saas-white-theme button[class*="bg-red-"] * {
+  color: #ffffff !important;
+}
+
+/* Light Theme Badges & Pills */
+html:not(.dark) .master-admin-root [class*="bg-emerald-950"],
+.master-admin-root.saas-white-theme [class*="bg-emerald-950"] {
+  background-color: #ecfdf5 !important;
+  border-color: #a7f3d0 !important;
+  color: #065f46 !important;
+}
+
+html:not(.dark) .master-admin-root [class*="border-emerald-900"],
+.master-admin-root.saas-white-theme [class*="border-emerald-900"],
+html:not(.dark) .master-admin-root [class*="border-emerald-800"],
+.master-admin-root.saas-white-theme [class*="border-emerald-800"] {
+  border-color: #a7f3d0 !important;
+}
+
+html:not(.dark) .master-admin-root [class*="text-emerald-400"],
+.master-admin-root.saas-white-theme [class*="text-emerald-400"],
+html:not(.dark) .master-admin-root [class*="text-emerald-300"],
+.master-admin-root.saas-white-theme [class*="text-emerald-300"] {
+  color: #047857 !important;
+}
+
+html:not(.dark) .master-admin-root [class*="bg-blue-950"],
+.master-admin-root.saas-white-theme [class*="bg-blue-950"] {
+  background-color: #eff6ff !important;
+  border-color: #bfdbfe !important;
+  color: #1e40af !important;
+}
+
+html:not(.dark) .master-admin-root [class*="text-blue-400"],
+.master-admin-root.saas-white-theme [class*="text-blue-400"] {
+  color: #1d4ed8 !important;
+}
+
+html:not(.dark) .master-admin-root [class*="bg-red-950"],
+.master-admin-root.saas-white-theme [class*="bg-red-950"] {
+  background-color: #fef2f2 !important;
+  border-color: #fecaca !important;
+  color: #991b1b !important;
+}
+
+html:not(.dark) .master-admin-root [class*="text-red-400"],
+.master-admin-root.saas-white-theme [class*="text-red-400"] {
+  color: #b91c1c !important;
+}
+
+html:not(.dark) .master-admin-root [class*="bg-amber-950"],
+.master-admin-root.saas-white-theme [class*="bg-amber-950"] {
+  background-color: #fffbeb !important;
+  border-color: #fde68a !important;
+  color: #92400e !important;
+}
+
+html:not(.dark) .master-admin-root [class*="text-amber-400"],
+.master-admin-root.saas-white-theme [class*="text-amber-400"] {
+  color: #b45309 !important;
+}
+
+/* Form Inputs, Selects & Textareas in Light Theme */
+html:not(.dark) .master-admin-root input,
+.master-admin-root.saas-white-theme input,
+html:not(.dark) .master-admin-root select,
+.master-admin-root.saas-white-theme select,
+html:not(.dark) .master-admin-root textarea,
+.master-admin-root.saas-white-theme textarea {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) .master-admin-root input::placeholder,
+.master-admin-root.saas-white-theme input::placeholder,
+html:not(.dark) .master-admin-root textarea::placeholder,
+.master-admin-root.saas-white-theme textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Tables in Light Theme */
+html:not(.dark) .master-admin-root table thead,
+.master-admin-root.saas-white-theme table thead {
+  background-color: #f1f5f9 !important;
+  color: #475569 !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+
+html:not(.dark) .master-admin-root table tr:hover,
+.master-admin-root.saas-white-theme table tr:hover {
+  background-color: #f8fafc !important;
+}
+
+html:not(.dark) .master-admin-root table td,
+.master-admin-root.saas-white-theme table td {
+  border-color: #f1f5f9 !important;
+}
+
+/* Modals & Dialog Backdrops in Light Theme */
+html:not(.dark) .master-admin-root .fixed.bg-slate-950\/80,
+.master-admin-root.saas-white-theme .fixed.bg-slate-950\/80,
+html:not(.dark) .master-admin-root .fixed.bg-black\/60,
+.master-admin-root.saas-white-theme .fixed.bg-black\/60,
+html:not(.dark) .master-admin-root .fixed.bg-black\/70,
+.master-admin-root.saas-white-theme .fixed.bg-black\/70,
+html:not(.dark) .master-admin-root .fixed.bg-black\/75,
+.master-admin-root.saas-white-theme .fixed.bg-black\/75 {
+  background-color: rgba(15, 23, 42, 0.45) !important;
+  backdrop-filter: blur(4px);
+}
+
+/* --- 2. DARK THEME (Pure Deep Slate) --- */
+html.dark .master-admin-root {
+  background-color: #020617 !important;
+  color: #f8fafc !important;
+}
+
+html.dark .master-admin-root header {
+  background-color: #0f172a !important;
+  border-bottom-color: #1e293b !important;
+}
+
+html.dark .master-admin-root aside {
+  background-color: #0f172a !important;
+  border-right-color: #1e293b !important;
+}
+
+html.dark .master-admin-root [class*="bg-slate-900"] {
+  background-color: #0f172a !important;
+  border-color: #1e293b !important;
+}
+
+html.dark .master-admin-root [class*="bg-slate-850"] {
+  background-color: #131c2e !important;
+  border-color: #1e293b !important;
+}
+
+html.dark .master-admin-root [class*="bg-slate-800"] {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+html.dark .master-admin-root input,
+html.dark .master-admin-root select,
+html.dark .master-admin-root textarea {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+html.dark .master-admin-root table thead {
+  background-color: #1e293b !important;
+  color: #94a3b8 !important;
+  border-bottom-color: #334155 !important;
+}
+
+html.dark .master-admin-root table tr:hover {
+  background-color: rgba(30, 41, 59, 0.7) !important;
+}
+
+html.dark .master-admin-root table td {
+  border-color: #1e293b !important;
+}
+
+/* Explicit High-Contrast Ticket Chat Bubble Rules (SaaS Light & Dark Themes) */
+.ticket-bubble-support {
+  background-color: #ecfdf5 !important;
+  border: 1px solid #a7f3d0 !important;
+  color: #064e3b !important;
+}
+.ticket-bubble-support .bubble-sender {
+  color: #047857 !important;
+}
+.ticket-bubble-support .bubble-time {
+  color: #059669 !important;
+}
+.ticket-bubble-support .bubble-text {
+  color: #022c22 !important;
+}
+
+.ticket-bubble-tenant {
+  background-color: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+.ticket-bubble-tenant .bubble-sender {
+  color: #0f172a !important;
+}
+.ticket-bubble-tenant .bubble-time {
+  color: #64748b !important;
+}
+.ticket-bubble-tenant .bubble-text {
+  color: #1e293b !important;
+}
+
+/* Dark Theme Overrides for Chat Bubbles */
+.dark .ticket-bubble-support {
+  background-color: rgba(6, 78, 59, 0.45) !important;
+  border: 1px solid #047857 !important;
+  color: #ecfdf5 !important;
+}
+.dark .ticket-bubble-support .bubble-sender {
+  color: #34d399 !important;
+}
+.dark .ticket-bubble-support .bubble-time {
+  color: #10b981 !important;
+}
+.dark .ticket-bubble-support .bubble-text {
+  color: #f0fdf4 !important;
+}
+
+.dark .ticket-bubble-tenant {
+  background-color: #1e293b !important;
+  border: 1px solid #334155 !important;
+  color: #f8fafc !important;
+  box-shadow: none !important;
+}
+.dark .ticket-bubble-tenant .bubble-sender {
+  color: #ffffff !important;
+}
+.dark .ticket-bubble-tenant .bubble-time {
+  color: #94a3b8 !important;
+}
+.dark .ticket-bubble-tenant .bubble-text {
+  color: #f1f5f9 !important;
+}
+
+

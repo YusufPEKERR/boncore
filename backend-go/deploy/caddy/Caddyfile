@@ -1,0 +1,72 @@
+# ============================================================================
+# BonCore Enterprise POS — Caddy v2 HTTP/2 & HTTP/3 (QUIC) Reverse Proxy
+# Features:
+# - Automatic Let's Encrypt / ZeroSSL TLS 1.3 + HTTP/2 + HTTP/3
+# - Native RFC 6455 WebSocket Upgrade & Long-Lived Stream Flushing
+# - Zstandard (zstd) + Brotli (br) + Gzip Compression
+# ============================================================================
+
+{
+	servers {
+		protocols h1 h2 h3
+		timeouts {
+			read_body   30s
+			read_header 10s
+			write       0s
+			idle        24h
+		}
+	}
+}
+
+pos.boncore.com.tr, localhost:443 {
+	# Enable Zstandard, Brotli (if compiled), and Gzip compression
+	encode {
+		zstd
+		gzip 6
+		minimum_length 256
+		match {
+			header Content-Type application/json*
+			header Content-Type application/javascript*
+			header Content-Type text/*
+			header Content-Type application/xml*
+			header Content-Type image/svg+xml*
+		}
+	}
+
+	# 1. Real-Time WebSocket Tunnel (/ws/pos, /ws/kds, /ws/table/*)
+	@websockets {
+		path /ws/*
+	}
+	handle @websockets {
+		reverse_proxy 127.0.0.1:8000 {
+			flush_interval -1
+			transport http {
+				keepalive 24h
+				keepalive_idle_conns 128
+				read_timeout 24h
+				write_timeout 24h
+			}
+		}
+	}
+
+	# 2. REST API & Health Check (/api/*, /health)
+	@api {
+		path /api/* /health
+	}
+	handle @api {
+		reverse_proxy 127.0.0.1:8000 {
+			transport http {
+				keepalive 65s
+				keepalive_idle_conns 128
+				keepalive_idle_conns_per_host 128
+			}
+		}
+	}
+
+	# 3. Frontend Static Build & SPA Router
+	handle {
+		root * /usr/share/caddy/html
+		try_files {path} /index.html
+		file_server
+	}
+}

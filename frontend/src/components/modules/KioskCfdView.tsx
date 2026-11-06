@@ -268,7 +268,7 @@ export const KioskCfdView: React.FC<KioskCfdViewProps> = ({ categories }) => {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="font-extrabold text-slate-900 dark:text-white truncate">{item.product.name}</div>
-                        <div className="text-[11px] text-brand-600 font-bold">₺{((item.product.base_price || 0) * item.qty).toFixed(2)}</div>
+                        <div className="text-[11px] text-brand-600 font-bold">₺{Number((item.product?.base_price || 0) * item.qty).toFixed(2)}</div>
                       </div>
                       <div className="flex items-center gap-2">
                         <button
@@ -295,7 +295,7 @@ export const KioskCfdView: React.FC<KioskCfdViewProps> = ({ categories }) => {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-500">Ödenecek Toplam</span>
                 <span className="text-2xl font-black text-brand-600 dark:text-emerald-400">
-                  ₺{totalAmount.toFixed(2)}
+                  ₺{Number(totalAmount || 0).toFixed(2)}
                 </span>
               </div>
 
@@ -324,7 +324,7 @@ export const KioskCfdView: React.FC<KioskCfdViewProps> = ({ categories }) => {
             <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800">
               <div className="text-[11px] font-bold text-slate-400 uppercase">Sıra Numaranız</div>
               <div className="text-4xl font-black text-brand-600 font-mono mt-1">{lastTicket.queue_number}</div>
-              <div className="text-xs font-bold text-slate-500 mt-1">Ödenen: ₺{lastTicket.total.toFixed(2)}</div>
+              <div className="text-xs font-bold text-slate-500 mt-1">Ödenen: ₺{Number(lastTicket?.total || 0).toFixed(2)}</div>
             </div>
             <button
               onClick={() => setLastTicket(null)}

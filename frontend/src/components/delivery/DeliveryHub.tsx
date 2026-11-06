@@ -21,7 +21,7 @@ export const DeliveryHub: React.FC<DeliveryHubProps> = ({ categories = [] }) => 
   const [selectedCourierByDelivery, setSelectedCourierByDelivery] = useState<Record<number, number>>({});
 
   // Flatten real products from categories
-  const realProducts: Product[] = categories.flatMap(c => (c.products || []).filter(p => p.is_available !== false));
+  const realProducts: Product[] = (categories || []).flatMap(c => ((c && c.products) || []).filter(p => p && p.is_available !== false));
 
   // New Caller Delivery Order State
   const [isCreateOrderModalOpen, setIsCreateOrderModalOpen] = useState<boolean>(false);
@@ -151,7 +151,7 @@ export const DeliveryHub: React.FC<DeliveryHubProps> = ({ categories = [] }) => 
   };
 
   const handleCourierSettlement = async (courier: Courier) => {
-    if (!confirm(`${courier.name} için gün sonu nakit (₺${courier.cash_collected.toFixed(2)}) ve POS fişi (₺${courier.card_slips_collected.toFixed(2)}) mutabakatı kapatılacak. Onaylıyor musunuz?`)) return;
+    if (!confirm(`${courier.name} için gün sonu nakit (₺${Number(courier.cash_collected || 0).toFixed(2)}) ve POS fişi (₺${Number(courier.card_slips_collected || 0).toFixed(2)}) mutabakatı kapatılacak. Onaylıyor musunuz?`)) return;
     sound.cashDrawer();
     try {
       await api.settleCourier(courier.id, courier.cash_collected, courier.card_slips_collected);
@@ -319,8 +319,8 @@ export const DeliveryHub: React.FC<DeliveryHubProps> = ({ categories = [] }) => 
                     Telefon / Plaka: <span className="text-slate-800 dark:text-slate-200 font-bold">{c.phone} {c.vehicle_plate ? `(${c.vehicle_plate})` : ''}</span>
                   </div>
                   <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    <span>Zimmet Nakit: <strong className="font-mono text-emerald-600 dark:text-emerald-400">₺{c.cash_collected.toFixed(2)}</strong></span>
-                    <span>POS Fişi: <strong className="font-mono text-blue-600 dark:text-blue-400">₺{c.card_slips_collected.toFixed(2)}</strong></span>
+                    <span>Zimmet Nakit: <strong className="font-mono text-emerald-600 dark:text-emerald-400">₺{Number(c.cash_collected || 0).toFixed(2)}</strong></span>
+                    <span>POS Fişi: <strong className="font-mono text-blue-600 dark:text-blue-400">₺{Number(c.card_slips_collected || 0).toFixed(2)}</strong></span>
                   </div>
                 </div>
 
@@ -368,7 +368,7 @@ export const DeliveryHub: React.FC<DeliveryHubProps> = ({ categories = [] }) => 
                       <div className="text-[10px] text-slate-500 font-normal">{d.customer_phone}</div>
                     </td>
                     <td className="py-3 px-4 text-slate-600 dark:text-slate-300 max-w-xs truncate">{d.delivery_address}</td>
-                    <td className="py-3 px-4 font-mono font-black text-emerald-600 dark:text-emerald-400">₺{d.grand_total.toFixed(2)}</td>
+                    <td className="py-3 px-4 font-mono font-black text-emerald-600 dark:text-emerald-400">₺{Number(d.grand_total || 0).toFixed(2)}</td>
                     <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
                       {d.courier_status === 'unassigned' && couriers.length > 0 ? (
                         <select
@@ -485,7 +485,7 @@ export const DeliveryHub: React.FC<DeliveryHubProps> = ({ categories = [] }) => 
                 >
                   {realProducts.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name} (₺{p.base_price.toFixed(2)})
+                      {p.name} (₺{Number(p.base_price || 0).toFixed(2)})
                     </option>
                   ))}
                   {realProducts.length === 0 && (

@@ -6,6 +6,7 @@ import {
 import { Area } from '../../types';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
+import { useWebSocket } from '../../services/websocket';
 
 interface AdisyoDashboardProps {
   areas: Area[];
@@ -48,6 +49,22 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
     loadDashboardData();
   }, [areas]);
 
+  useWebSocket('all', (type) => {
+    if (
+      type === 'ORDER_PAID' ||
+      type === 'ORDER_CREATED' ||
+      type === 'ORDER_UPDATED' ||
+      type === 'ORDER_VOIDED' ||
+      type === 'TABLE_STATUS_CHANGED' ||
+      type === 'TABLE_BILL_CLOSED' ||
+      type === 'PAYMENT_RECEIVED' ||
+      type === 'DAY_END_Z_REPORT_CREATED' ||
+      type === 'ORDER_ITEM_VOIDED'
+    ) {
+      loadDashboardData();
+    }
+  });
+
   const loadDashboardData = async () => {
     setLoading(true);
     try {
@@ -69,24 +86,26 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
     }
   };
 
-  const allTables = areas.flatMap(a => a.tables);
-  const occupiedCount = allTables.filter(t => t.status === 'occupied' || t.status === 'bill_requested').length;
+  const allTables = (areas || []).flatMap(a => (a && a.tables) || []).filter(Boolean);
+  const occupiedCount = allTables.filter(t => t && (t.status === 'occupied' || t.status === 'bill_requested')).length;
   const emptyCount = Math.max(0, allTables.length - occupiedCount);
   const occupancyPercent = allTables.length > 0 ? ((occupiedCount / allTables.length) * 100).toFixed(1) : '0.0';
   const emptyPercent = (100 - parseFloat(occupancyPercent)).toFixed(1);
 
   const totalOpenOrders = allTables
-    .filter(t => t.active_order)
+    .filter(t => t && t.active_order)
     .reduce((sum, t) => sum + (t.active_order?.grand_total || 0), 0);
 
   // Live KPI values
-  const liveTurnover = stats?.total_turnover ?? 0;
-  const activeTableCount = allTables.filter(t => t.status !== 'empty').length;
+  const liveTurnover = Number(stats?.total_turnover ?? stats?.total_revenue ?? stats?.daily_turnover?.net_sales ?? stats?.kpi?.total_revenue ?? 0);
+  const activeTableCount = allTables.filter(t => t && t.status !== 'empty').length;
 
   // Dynamic Hourly Chart Data from real backend statistics
   const hourlyPoints: { hour: string; turnover: number; orders: number }[] =
     Array.isArray(stats?.chart_data?.hourly_sales) && stats.chart_data.hourly_sales.length > 0
       ? stats.chart_data.hourly_sales
+      : Array.isArray(stats?.hourly_sales) && stats.hourly_sales.length > 0
+      ? stats.hourly_sales.map((h: any) => ({ hour: h.hour, turnover: Number(h.revenue || h.turnover || 0), orders: Number(h.orders || 0) }))
       : [
           { hour: '09:00', turnover: 0, orders: 0 },
           { hour: '11:00', turnover: 0, orders: 0 },
@@ -165,9 +184,9 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
           <div className="flex-1 min-w-0">
             <div className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold truncate">Toplam satış tutarı (Ciro)</div>
             <div className="text-xl font-black text-slate-900 dark:text-white font-mono tracking-tight">
-              ₺{liveTurnover.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₺{Number(liveTurnover || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            <div className="text-[10px] text-slate-400 mt-0.5 font-medium">{stats?.total_orders ?? 0} Adet Adisyon</div>
+            <div className="text-[10px] text-slate-400 mt-0.5 font-medium">{stats?.total_orders ?? stats?.kpi?.total_orders ?? 0} Adet Adisyon</div>
           </div>
         </div>
 
@@ -179,7 +198,7 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
           <div className="flex-1 min-w-0">
             <div className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold truncate">Toplam adisyon sayısı</div>
             <div className="text-xl font-black text-slate-900 dark:text-white font-mono tracking-tight">
-              {stats?.total_orders ?? 0}
+              {stats?.total_orders ?? stats?.kpi?.total_orders ?? 0}
             </div>
             <div className="text-[10px] text-slate-400 mt-0.5 font-medium">{activeTableCount} Aktif Masa</div>
           </div>
@@ -196,7 +215,7 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
           <div className="flex-1 min-w-0">
             <div className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold truncate">Açık masa sipariş toplamı</div>
             <div className="text-xl font-black text-slate-900 dark:text-white font-mono tracking-tight">
-              ₺{totalOpenOrders.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₺{Number(totalOpenOrders || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-bold flex items-center gap-0.5">
               <span>Masalara git ({occupiedCount} Dolu)</span>
@@ -213,7 +232,7 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
           <div className="flex-1 min-w-0">
             <div className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold truncate">Bugünkü toplam gider tutarı</div>
             <div className="text-xl font-black text-slate-900 dark:text-white font-mono tracking-tight">
-              ₺{expensesTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₺{Number(expensesTotal || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <div className="text-[10px] text-slate-400 mt-0.5 font-medium">Kasa harcamaları</div>
           </div>
@@ -307,7 +326,7 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
           <div className="absolute inset-0 flex flex-col justify-between text-[10px] text-slate-400 pointer-events-none pr-4">
             {yAxisSteps.map((val, i) => (
               <div key={i} className="border-b border-slate-100 dark:border-slate-800 flex justify-between">
-                <span>₺{val.toLocaleString('tr-TR')}</span>
+                <span>₺{Number(val || 0).toLocaleString('tr-TR')}</span>
               </div>
             ))}
           </div>
@@ -359,17 +378,17 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300">Bugün Yapılan Ödemeler</h3>
             <span className="text-[11px] font-mono font-bold text-slate-500 dark:text-slate-400">
-              Toplam: ₺{liveTurnover.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              Toplam: ₺{Number(liveTurnover || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           
           <div className="h-48 flex items-end justify-center gap-6 border-b border-slate-200 dark:border-slate-700 pb-2">
             {stats?.daily_turnover?.payment_breakdown ? (
               Object.entries(stats.daily_turnover.payment_breakdown).map(([k, p]: [string, any]) => {
-                const heightPercent = liveTurnover > 0 ? Math.min(100, Math.max(15, (p.amount / liveTurnover) * 100)) : 20;
+                const heightPercent = liveTurnover > 0 ? Math.min(100, Math.max(15, (Number(p?.amount || 0) / liveTurnover) * 100)) : 20;
                 return (
                   <div key={k} className="flex flex-col items-center gap-1.5 flex-1 max-w-[80px]">
-                    <span className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-300">₺{p.amount.toFixed(0)}</span>
+                    <span className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-300">₺{Number(p?.amount || 0).toFixed(0)}</span>
                     <div 
                       style={{ height: `${heightPercent}%` }} 
                       className={`w-full rounded-t-lg shadow-sm transition-all duration-500 ${
@@ -385,7 +404,7 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
             ) : (
               <div className="flex flex-col items-center">
                 <div className="w-32 bg-sky-500 rounded-t-lg h-32 flex items-center justify-center shadow-sm">
-                  <span className="text-white font-mono font-bold text-xs">₺{liveTurnover.toFixed(2)}</span>
+                  <span className="text-white font-mono font-bold text-xs">₺{Number(liveTurnover || 0).toFixed(2)}</span>
                 </div>
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-300 mt-2">Nakit & Kart</span>
               </div>

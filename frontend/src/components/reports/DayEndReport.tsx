@@ -35,7 +35,7 @@ interface DayEndData {
   closed_at: string | null;
   opened_by: string;
   closed_by: string | null;
-  financial_summary: {
+  financial_summary?: {
     gross_sales: number;
     net_turnover: number;
     total_discounts: number;
@@ -49,7 +49,7 @@ interface DayEndData {
     open_orders_count: number;
     average_ticket: number;
   };
-  cash_flow: {
+  cash_flow?: {
     opening_float: number;
     cash_sales: number;
     cash_in: number;
@@ -57,17 +57,30 @@ interface DayEndData {
     expected_drawer_cash: number;
     expenses_list: { category: string; amount: number; type: string; description: string }[];
   };
-  payment_methods: PaymentMethodSummary[];
-  vat_breakdown: {
+  payment_methods?: PaymentMethodSummary[];
+  vat_breakdown?: {
     vat_1: VatSummaryItem;
     vat_10: VatSummaryItem;
     vat_20: VatSummaryItem;
     total_base: number;
     total_tax: number;
   };
-  channels: { name: string; orders: number; turnover: number; share: number }[];
-  waiters: { waiter_name: string; orders_count: number; turnover: number }[];
-  departments: { name: string; quantity: number; turnover: number }[];
+  channels?: { name: string; orders: number; turnover: number; share: number }[];
+  waiters?: { waiter_name: string; orders_count: number; turnover: number }[];
+  departments?: { name: string; quantity: number; turnover: number }[];
+
+  // Legacy flat fields for backwards compatibility
+  net_sales?: number;
+  gross_sales?: number;
+  paid_orders_count?: number;
+  open_orders_count?: number;
+  total_kuver?: number;
+  opening_float?: number;
+  total_discounts?: number;
+  total_expenses?: number;
+  cash_in_drawer?: number;
+  expenses_list?: any[];
+  [key: string]: any;
 }
 
 export const DayEndReport: React.FC = () => {
@@ -312,7 +325,7 @@ export const DayEndReport: React.FC = () => {
         <div className="text-right sm:border-l sm:pl-4 border-slate-300 dark:border-slate-700">
           <span className="text-[11px] opacity-75 uppercase font-bold block">Gün Sonu Net Hasılat</span>
           <span className="text-xl font-black font-mono">
-            ₺{(report?.financial_summary.net_turnover || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ₺{Number(report?.financial_summary?.net_turnover ?? report?.net_sales ?? 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
         </div>
       </div>
@@ -329,11 +342,11 @@ export const DayEndReport: React.FC = () => {
           </div>
           <div className="mt-2">
             <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-              ₺{(report?.financial_summary.net_turnover || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₺{Number(report?.financial_summary?.net_turnover ?? report?.net_sales ?? 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <div className="mt-1 text-[11px] text-slate-400">
-            KDV Dahil Net Tahsilat ({report?.financial_summary.total_orders || 0} Adisyon)
+            KDV Dahil Net Tahsilat ({report?.financial_summary?.total_orders ?? report?.paid_orders_count ?? 0} Adisyon)
           </div>
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-emerald-500" />
         </div>
@@ -348,7 +361,7 @@ export const DayEndReport: React.FC = () => {
           </div>
           <div className="mt-2">
             <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-              ₺{(report?.financial_summary.gross_sales || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₺{Number(report?.financial_summary?.gross_sales ?? report?.gross_sales ?? 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <div className="mt-1 text-[11px] text-slate-400">
@@ -367,11 +380,11 @@ export const DayEndReport: React.FC = () => {
           </div>
           <div className="mt-2">
             <span className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">
-              ₺{(report?.cash_flow.expected_drawer_cash || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₺{Number(report?.cash_flow?.expected_drawer_cash ?? report?.cash_in_drawer ?? 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <div className="mt-1 text-[11px] text-slate-400">
-            Devir: ₺{report?.cash_flow.opening_float || 0} + Nakit: ₺{report?.cash_flow.cash_sales || 0}
+            Devir: ₺{Number(report?.cash_flow?.opening_float ?? report?.opening_float ?? 0).toFixed(2)} + Nakit: ₺{Number(report?.cash_flow?.cash_sales ?? 0).toFixed(2)}
           </div>
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-amber-500" />
         </div>
@@ -386,11 +399,11 @@ export const DayEndReport: React.FC = () => {
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
             <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-              ₺{((report?.financial_summary.total_discounts || 0) + (report?.financial_summary.total_treats || 0)).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+              ₺{Number((report?.financial_summary?.total_discounts ?? report?.total_discounts ?? 0) + (report?.financial_summary?.total_treats ?? 0)).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
             </span>
           </div>
           <div className="mt-1 text-[11px] text-slate-400">
-            İptal: ₺{report?.financial_summary.void_total_amount || 0} ({report?.financial_summary.void_items_count || 0} kalem)
+            İptal: ₺{Number(report?.financial_summary?.void_total_amount ?? 0).toFixed(2)} ({report?.financial_summary?.void_items_count ?? 0} kalem)
           </div>
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-purple-500" />
         </div>
@@ -432,23 +445,23 @@ export const DayEndReport: React.FC = () => {
             </h3>
 
             <div className="space-y-3">
-              {report?.payment_methods.map((pm, idx) => (
+              {(report?.payment_methods || []).map((pm, idx) => (
                 <div key={idx} className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
                   <div className="flex items-center justify-between text-xs font-bold">
                     <span className="text-slate-800 dark:text-slate-200">{pm.name}</span>
                     <span className="font-mono text-sm text-slate-900 dark:text-white">
-                      ₺{pm.amount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₺{Number(pm.amount || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                   <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                     <div 
                       className="h-full rounded-full transition-all"
-                      style={{ width: `${Math.min(100, pm.percent)}%`, backgroundColor: pm.color || '#3b82f6' }}
+                      style={{ width: `${Math.min(100, pm.percent || 0)}%`, backgroundColor: pm.color || '#3b82f6' }}
                     />
                   </div>
                   <div className="flex items-center justify-between text-[11px] text-slate-400">
-                    <span>{pm.count} işlem</span>
-                    <span className="font-bold text-slate-600 dark:text-slate-300">%{pm.percent.toFixed(1)} pay</span>
+                    <span>{pm.count || 0} işlem</span>
+                    <span className="font-bold text-slate-600 dark:text-slate-300">%{Number(pm.percent || 0).toFixed(1)} pay</span>
                   </div>
                 </div>
               ))}
@@ -468,19 +481,19 @@ export const DayEndReport: React.FC = () => {
               <div className="space-y-3 text-xs">
                 <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800">
                   <span className="text-slate-500 font-semibold">Toplam Ödenen Adisyon:</span>
-                  <span className="font-bold">{report?.financial_summary.paid_orders_count || 0} Adet</span>
+                  <span className="font-bold">{report?.financial_summary?.paid_orders_count ?? report?.paid_orders_count ?? 0} Adet</span>
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800">
                   <span className="text-slate-500 font-semibold">Açık / Masada Kalan Sipariş:</span>
-                  <span className="font-bold text-amber-600">{report?.financial_summary.open_orders_count || 0} Adet</span>
+                  <span className="font-bold text-amber-600">{report?.financial_summary?.open_orders_count ?? report?.open_orders_count ?? 0} Adet</span>
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800">
                   <span className="text-slate-500 font-semibold">Masa Başına Ortalama Harcama:</span>
-                  <span className="font-bold font-mono">₺{report?.financial_summary.average_ticket.toFixed(2)}</span>
+                  <span className="font-bold font-mono">₺{Number(report?.financial_summary?.average_ticket ?? 0).toFixed(2)}</span>
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800">
                   <span className="text-slate-500 font-semibold">Toplam Kuver / Misafir:</span>
-                  <span className="font-bold">{report?.financial_summary.total_kuver || 0} Kişi</span>
+                  <span className="font-bold">{report?.financial_summary?.total_kuver ?? report?.total_kuver ?? 0} Kişi</span>
                 </div>
               </div>
             </div>
@@ -489,7 +502,7 @@ export const DayEndReport: React.FC = () => {
               <div>
                 <div className="text-[10px] uppercase font-bold text-slate-400">Tahsil Edilen Toplam Tutar</div>
                 <div className="text-xl font-black font-mono text-emerald-600 dark:text-emerald-400">
-                  ₺{report?.payment_methods.reduce((sum, p) => sum + p.amount, 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                  ₺{Number((report?.payment_methods || []).reduce((sum, p) => sum + (p?.amount || 0), 0)).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                 </div>
               </div>
               <ShieldCheck className="w-8 h-8 text-emerald-500 opacity-60" />
@@ -510,23 +523,23 @@ export const DayEndReport: React.FC = () => {
             <div className="space-y-2.5 text-xs">
               <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40">
                 <span className="text-slate-600 dark:text-slate-300 font-bold">(+) Gün Başı Devir Nakit (Float)</span>
-                <span className="font-mono font-bold">₺{report?.cash_flow.opening_float.toFixed(2)}</span>
+                <span className="font-mono font-bold">₺{Number(report?.cash_flow?.opening_float ?? report?.opening_float ?? 0).toFixed(2)}</span>
               </div>
               <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200 font-bold">
                 <span>(+) Gün İçi Nakit Satışlar</span>
-                <span className="font-mono">₺{report?.cash_flow.cash_sales.toFixed(2)}</span>
+                <span className="font-mono">₺{Number(report?.cash_flow?.cash_sales ?? 0).toFixed(2)}</span>
               </div>
               <div className="flex items-center justify-between p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200 font-bold">
                 <span>(+) Kasa Nakit Girişleri</span>
-                <span className="font-mono">₺{report?.cash_flow.cash_in.toFixed(2)}</span>
+                <span className="font-mono">₺{Number(report?.cash_flow?.cash_in ?? 0).toFixed(2)}</span>
               </div>
               <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200 font-bold">
                 <span>(-) Kasa Çıkışları / Masraflar</span>
-                <span className="font-mono">-₺{report?.cash_flow.cash_out.toFixed(2)}</span>
+                <span className="font-mono">-₺{Number(report?.cash_flow?.cash_out ?? report?.total_expenses ?? 0).toFixed(2)}</span>
               </div>
               <div className="p-4 rounded-xl bg-amber-500 text-white font-bold flex items-center justify-between text-sm shadow-md shadow-amber-500/20">
                 <span>(=) Çekmecede Olması Gereken Nakit</span>
-                <span className="font-mono font-black text-lg">₺{report?.cash_flow.expected_drawer_cash.toFixed(2)}</span>
+                <span className="font-mono font-black text-lg">₺{Number(report?.cash_flow?.expected_drawer_cash ?? report?.cash_in_drawer ?? 0).toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -534,23 +547,23 @@ export const DayEndReport: React.FC = () => {
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-2">
               <FileText className="w-4 h-4 text-purple-600" />
-              Kasa Masraf ve Hareketleri ({report?.cash_flow.expenses_list.length || 0})
+              Kasa Masraf ve Hareketleri ({(report?.cash_flow?.expenses_list || report?.expenses_list || []).length})
             </h3>
 
             <div className="overflow-y-auto max-h-72 space-y-2">
-              {report?.cash_flow.expenses_list.length === 0 ? (
+              {(report?.cash_flow?.expenses_list || report?.expenses_list || []).length === 0 ? (
                 <div className="text-center py-10 text-xs text-slate-400">
                   Bugün kasadan herhangi bir masraf veya para çıkışı yapılmadı.
                 </div>
               ) : (
-                report?.cash_flow.expenses_list.map((exp, idx) => (
+                (report?.cash_flow?.expenses_list || report?.expenses_list || []).map((exp: any, idx: number) => (
                   <div key={idx} className="p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
                     <div>
                       <div className="font-bold text-slate-800 dark:text-slate-200">{exp.category}</div>
                       <div className="text-[10px] text-slate-400">{exp.description}</div>
                     </div>
                     <span className={`font-mono font-extrabold ${exp.type === 'in' ? 'text-emerald-600' : 'text-brand-600'}`}>
-                      {exp.type === 'in' ? '+' : '-'}₺{exp.amount.toFixed(2)}
+                      {exp.type === 'in' ? '+' : '-'}₺{Number(exp.amount || 0).toFixed(2)}
                     </span>
                   </div>
                 ))
@@ -586,36 +599,36 @@ export const DayEndReport: React.FC = () => {
                 <tr>
                   <td className="py-3.5 px-4 font-bold text-blue-600">%1 KDV</td>
                   <td className="py-3.5 px-4 text-slate-400">Temel Gıda / Ekmek / Paket Fırın</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-bold">₺{report?.vat_breakdown.vat_1.base.toFixed(2)}</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-bold text-brand-600">₺{report?.vat_breakdown.vat_1.tax.toFixed(2)}</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900 dark:text-white">₺{report?.vat_breakdown.vat_1.total.toFixed(2)}</td>
+                  <td className="py-3.5 px-4 text-right font-mono font-bold">₺{Number(report?.vat_breakdown?.vat_1?.base ?? 0).toFixed(2)}</td>
+                  <td className="py-3.5 px-4 text-right font-mono font-bold text-brand-600">₺{Number(report?.vat_breakdown?.vat_1?.tax ?? 0).toFixed(2)}</td>
+                  <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900 dark:text-white">₺{Number(report?.vat_breakdown?.vat_1?.total ?? 0).toFixed(2)}</td>
                 </tr>
                 <tr>
                   <td className="py-3.5 px-4 font-bold text-emerald-600">%10 KDV</td>
                   <td className="py-3.5 px-4 text-slate-400">Restoran Yeme-İçme Hizmetleri</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-bold">₺{report?.vat_breakdown.vat_10.base.toFixed(2)}</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-bold text-brand-600">₺{report?.vat_breakdown.vat_10.tax.toFixed(2)}</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900 dark:text-white">₺{report?.vat_breakdown.vat_10.total.toFixed(2)}</td>
+                  <td className="py-3.5 px-4 text-right font-mono font-bold">₺{Number(report?.vat_breakdown?.vat_10?.base ?? 0).toFixed(2)}</td>
+                  <td className="py-3.5 px-4 text-right font-mono font-bold text-brand-600">₺{Number(report?.vat_breakdown?.vat_10?.tax ?? 0).toFixed(2)}</td>
+                  <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900 dark:text-white">₺{Number(report?.vat_breakdown?.vat_10?.total ?? 0).toFixed(2)}</td>
                 </tr>
                 <tr>
                   <td className="py-3.5 px-4 font-bold text-amber-600">%20 KDV</td>
                   <td className="py-3.5 px-4 text-slate-400">Alkollü İçecekler / Özel Tüketim</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-bold">₺{report?.vat_breakdown.vat_20.base.toFixed(2)}</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-bold text-brand-600">₺{report?.vat_breakdown.vat_20.tax.toFixed(2)}</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900 dark:text-white">₺{report?.vat_breakdown.vat_20.total.toFixed(2)}</td>
+                  <td className="py-3.5 px-4 text-right font-mono font-bold">₺{Number(report?.vat_breakdown?.vat_20?.base ?? 0).toFixed(2)}</td>
+                  <td className="py-3.5 px-4 text-right font-mono font-bold text-brand-600">₺{Number(report?.vat_breakdown?.vat_20?.tax ?? 0).toFixed(2)}</td>
+                  <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900 dark:text-white">₺{Number(report?.vat_breakdown?.vat_20?.total ?? 0).toFixed(2)}</td>
                 </tr>
                 <tr className="bg-slate-50 dark:bg-slate-800/80 font-black text-sm">
                   <td colSpan={2} className="py-4 px-4 text-slate-900 dark:text-white uppercase tracking-wider">
                     GENEL TOPLAM (KDV MATRAH VE VERGİ)
                   </td>
                   <td className="py-4 px-4 text-right font-mono text-slate-900 dark:text-white">
-                    ₺{report?.vat_breakdown.total_base.toFixed(2)}
+                    ₺{Number(report?.vat_breakdown?.total_base ?? 0).toFixed(2)}
                   </td>
                   <td className="py-4 px-4 text-right font-mono text-brand-600">
-                    ₺{report?.vat_breakdown.total_tax.toFixed(2)}
+                    ₺{Number(report?.vat_breakdown?.total_tax ?? 0).toFixed(2)}
                   </td>
                   <td className="py-4 px-4 text-right font-mono text-emerald-600 dark:text-emerald-400 text-base">
-                    ₺{((report?.vat_breakdown.total_base || 0) + (report?.vat_breakdown.total_tax || 0)).toFixed(2)}
+                    ₺{Number((report?.vat_breakdown?.total_base || 0) + (report?.vat_breakdown?.total_tax || 0)).toFixed(2)}
                   </td>
                 </tr>
               </tbody>
@@ -634,18 +647,18 @@ export const DayEndReport: React.FC = () => {
             </h3>
 
             <div className="space-y-3">
-              {report?.channels.map((ch, idx) => (
+              {(report?.channels || []).map((ch, idx) => (
                 <div key={idx} className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
                   <div className="flex items-center justify-between text-xs font-bold">
                     <span className="text-slate-800 dark:text-slate-200">{ch.name}</span>
-                    <span className="font-mono text-sm">₺{ch.turnover.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-mono text-sm">₺{Number(ch.turnover || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
                   </div>
                   <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 rounded-full" style={{ width: `${Math.min(100, ch.share)}%` }} />
+                    <div className="h-full bg-blue-600 rounded-full" style={{ width: `${Math.min(100, ch.share || 0)}%` }} />
                   </div>
                   <div className="flex items-center justify-between text-[11px] text-slate-400">
-                    <span>{ch.orders} sipariş</span>
-                    <span className="font-bold text-slate-600 dark:text-slate-300">%{ch.share.toFixed(1)} pay</span>
+                    <span>{ch.orders || 0} sipariş</span>
+                    <span className="font-bold text-slate-600 dark:text-slate-300">%{Number(ch.share || 0).toFixed(1)} pay</span>
                   </div>
                 </div>
               ))}
@@ -661,19 +674,19 @@ export const DayEndReport: React.FC = () => {
             <div className="space-y-3 text-xs">
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 flex items-center justify-between">
                 <span className="text-slate-600 dark:text-slate-400">Toplam İşlem Gören Sipariş:</span>
-                <span className="font-bold text-sm">{report?.financial_summary.total_orders || 0} Adet</span>
+                <span className="font-bold text-sm">{report?.financial_summary?.total_orders ?? report?.paid_orders_count ?? 0} Adet</span>
               </div>
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 flex items-center justify-between">
                 <span className="text-slate-600 dark:text-slate-400">Toplam Misafir (Kuver):</span>
-                <span className="font-bold text-sm">{report?.financial_summary.total_kuver || 0} Kişi</span>
+                <span className="font-bold text-sm">{report?.financial_summary?.total_kuver ?? report?.total_kuver ?? 0} Kişi</span>
               </div>
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 flex items-center justify-between">
                 <span className="text-slate-600 dark:text-slate-400">Kuver Bedeli Hasılatı:</span>
-                <span className="font-mono font-bold text-sm">₺{report?.financial_summary.kuver_revenue.toFixed(2)}</span>
+                <span className="font-mono font-bold text-sm">₺{Number(report?.financial_summary?.kuver_revenue ?? 0).toFixed(2)}</span>
               </div>
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 flex items-center justify-between">
                 <span className="text-slate-600 dark:text-slate-400">Ortalama Adisyon Tutarı:</span>
-                <span className="font-mono font-bold text-sm text-emerald-600">₺{report?.financial_summary.average_ticket.toFixed(2)}</span>
+                <span className="font-mono font-bold text-sm text-emerald-600">₺{Number(report?.financial_summary?.average_ticket ?? 0).toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -689,15 +702,15 @@ export const DayEndReport: React.FC = () => {
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {report?.waiters.map((w, idx) => (
+            {(report?.waiters || []).map((w, idx) => (
               <div key={idx} className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-1.5">
                 <div className="flex items-center justify-between text-xs font-extrabold text-slate-900 dark:text-white">
                   <span>{w.waiter_name}</span>
-                  <span className="font-mono text-emerald-600">₺{w.turnover.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                  <span className="font-mono text-emerald-600">₺{Number(w.turnover || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div className="text-[11px] text-slate-400 flex items-center justify-between">
-                  <span>{w.orders_count} adisyon kapattı</span>
-                  <span>Ort: ₺{(w.orders_count > 0 ? w.turnover / w.orders_count : 0).toFixed(2)}</span>
+                  <span>{w.orders_count || 0} adisyon kapattı</span>
+                  <span>Ort: ₺{((w.orders_count || 0) > 0 ? (w.turnover || 0) / w.orders_count : 0).toFixed(2)}</span>
                 </div>
               </div>
             ))}
@@ -755,7 +768,7 @@ export const DayEndReport: React.FC = () => {
               </div>
 
               <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-[11px] text-amber-800 dark:text-amber-300">
-                Kasadaki beklenen nakit devir tutarı: <strong>₺{(report?.cash_flow.expected_drawer_cash || 0).toFixed(2)}</strong>
+                Kasadaki beklenen nakit devir tutarı: <strong>₺{Number(report?.cash_flow?.expected_drawer_cash ?? report?.cash_in_drawer ?? 0).toFixed(2)}</strong>
               </div>
 
               <div className="flex items-center gap-2 pt-2">
@@ -805,28 +818,28 @@ export const DayEndReport: React.FC = () => {
             <div className="space-y-1">
               <div className="flex justify-between">
                 <span>BRUT SATIS:</span>
-                <span className="font-bold">₺{report?.financial_summary.gross_sales.toFixed(2)}</span>
+                <span className="font-bold">₺{Number(report?.financial_summary?.gross_sales ?? report?.gross_sales ?? 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span>INDIRIMLER:</span>
-                <span>-₺{report?.financial_summary.total_discounts.toFixed(2)}</span>
+                <span>-₺{Number(report?.financial_summary?.total_discounts ?? report?.total_discounts ?? 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span>IKRAMLAR:</span>
-                <span>-₺{report?.financial_summary.total_treats.toFixed(2)}</span>
+                <span>-₺{Number(report?.financial_summary?.total_treats ?? 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between font-black text-xs py-1 border-y border-dashed border-slate-300">
                 <span>NET HASILAT:</span>
-                <span>₺{report?.financial_summary.net_turnover.toFixed(2)}</span>
+                <span>₺{Number(report?.financial_summary?.net_turnover ?? report?.net_sales ?? 0).toFixed(2)}</span>
               </div>
             </div>
 
             <div className="space-y-1 pt-1">
               <div className="font-bold">ODEME DETAYLARI:</div>
-              {report?.payment_methods.map((p, idx) => (
+              {(report?.payment_methods || []).map((p: any, idx: number) => (
                 <div key={idx} className="flex justify-between">
                   <span>{p.name}:</span>
-                  <span>₺{p.amount.toFixed(2)}</span>
+                  <span>₺{Number(p.amount || 0).toFixed(2)}</span>
                 </div>
               ))}
             </div>
@@ -834,27 +847,27 @@ export const DayEndReport: React.FC = () => {
             <div className="space-y-1 pt-1">
               <div className="font-bold">KDV DOKUMU:</div>
               <div className="flex justify-between">
-                <span>%1 KDV (Matrah ₺{report?.vat_breakdown.vat_1.base.toFixed(2)}):</span>
-                <span>₺{report?.vat_breakdown.vat_1.tax.toFixed(2)}</span>
+                <span>%1 KDV (Matrah ₺{Number(report?.vat_breakdown?.vat_1?.base ?? 0).toFixed(2)}):</span>
+                <span>₺{Number(report?.vat_breakdown?.vat_1?.tax ?? 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
-                <span>%10 KDV (Matrah ₺{report?.vat_breakdown.vat_10.base.toFixed(2)}):</span>
-                <span>₺{report?.vat_breakdown.vat_10.tax.toFixed(2)}</span>
+                <span>%10 KDV (Matrah ₺{Number(report?.vat_breakdown?.vat_10?.base ?? 0).toFixed(2)}):</span>
+                <span>₺{Number(report?.vat_breakdown?.vat_10?.tax ?? 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
-                <span>%20 KDV (Matrah ₺{report?.vat_breakdown.vat_20.base.toFixed(2)}):</span>
-                <span>₺{report?.vat_breakdown.vat_20.tax.toFixed(2)}</span>
+                <span>%20 KDV (Matrah ₺{Number(report?.vat_breakdown?.vat_20?.base ?? 0).toFixed(2)}):</span>
+                <span>₺{Number(report?.vat_breakdown?.vat_20?.tax ?? 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between font-bold pt-0.5">
                 <span>TOPLAM KDV:</span>
-                <span>₺{report?.vat_breakdown.total_tax.toFixed(2)}</span>
+                <span>₺{Number(report?.vat_breakdown?.total_tax ?? 0).toFixed(2)}</span>
               </div>
             </div>
 
             <div className="text-center pt-2 space-y-1 text-[10px]">
               <div>------------------------------------------</div>
-              <div>KASADAKI DEVIR NAKIT: ₺{report?.cash_flow.expected_drawer_cash.toFixed(2)}</div>
-              <div>TOPLAM ADISYON: {report?.financial_summary.total_orders} ADET</div>
+              <div>KASADAKI DEVIR NAKIT: ₺{Number(report?.cash_flow?.expected_drawer_cash ?? report?.cash_in_drawer ?? 0).toFixed(2)}</div>
+              <div>TOPLAM ADISYON: {report?.financial_summary?.total_orders ?? report?.paid_orders_count ?? 0} ADET</div>
               <div>MALI DEGERI BULUNMAKTADIR</div>
               <div>AFİYET OLSUN - TESEKKUR EDERIZ</div>
             </div>

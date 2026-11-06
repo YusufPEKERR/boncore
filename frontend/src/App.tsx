@@ -21,6 +21,8 @@ import { QrMenuSimulator } from './components/qr/QrMenuSimulator';
 import { FiscalModal } from './components/fiscal/FiscalModal';
 import { AuditLogViewer } from './components/audit/AuditLogViewer';
 import { BuzzerListModal } from './components/tables/TableActionModals';
+import { BroadcastAnnouncementModal, ActiveAnnouncement } from './components/notifications/BroadcastAnnouncementModal';
+import { KitchenAlertsModal, KitchenReadyAlertItem } from './components/tables/KitchenAlertsModal';
 
 // New Video 3 Screen Components
 import { ProductDefinitions } from './components/products/ProductDefinitions';
@@ -41,6 +43,7 @@ import { KioskCfdView } from './components/modules/KioskCfdView';
 import { LandingPage } from './components/landing/LandingPage';
 import { MasterAdminLayout } from './components/master_admin/MasterAdminLayout';
 import { MasterLoginView } from './components/master_admin/MasterLoginView';
+import { TabErrorBoundary } from './components/common/TabErrorBoundary';
 
 import { Area, Category, Table, StaffUser } from './types';
 import { api } from './services/api';
@@ -49,6 +52,8 @@ import { useWebSocket } from './services/websocket';
 import { useTheme } from './context/ThemeContext';
 import { syncOfflineQueue } from './services/offlineDb';
 import { useRolePermissions, broadcastPermissionsUpdate, mergeWithInitialPermissions } from './services/permissions';
+import { fetchLiveTenantFeatures, saveLocalFeatures, normalizeFeaturesPayload, isTabLicensed } from './services/licensedFeatures';
+import { sendNativeNotification, requestNotificationPermission } from './services/nativeNotifications';
 
 export const App: React.FC = () => {
   // Global Theme Hook (Dark / Light)
@@ -97,15 +102,37 @@ export const App: React.FC = () => {
     if (hash === 'master_login') return 'master_login';
     if (hash === 'login') return 'login';
     if (hash === 'landing') return 'landing';
+
+    const token = localStorage.getItem('boncore_token');
+    const cached = localStorage.getItem('boncore_auth');
+    const rememberDevice = localStorage.getItem('boncore_remember_device') === 'true';
+    const isStandalone = typeof window !== 'undefined' && (
+      (window.navigator as any).standalone === true || 
+      window.matchMedia('(display-mode: standalone)').matches
+    );
+
     if (VALID_TABS.includes(hash)) {
-      const token = localStorage.getItem('boncore_token');
-      const cached = localStorage.getItem('boncore_auth');
       if (token && cached === 'true') {
         return 'app';
       }
       return 'login';
     }
-    // Web sitesine ilk girildiğinde varsayılan olarak pazarlama anasayfası karşılar!
+
+    // Kullanıcı giriş yaptıysa ve cihazı hatırla seçildiyse VEYA ana ekrandan PWA olarak açıldıysa:
+    // Standart olarak doğrudan Masalar / POS sipariş ekranı ('app', 'tables') açılsın!
+    if (token && cached === 'true' && (rememberDevice || isStandalone)) {
+      if (!hash) {
+        window.location.hash = 'tables';
+      }
+      return 'app';
+    }
+
+    // Ana ekrana eklenmiş (PWA) ama henüz giriş yapılmamışsa doğrudan Login ekranı açılsın
+    if (isStandalone) {
+      return 'login';
+    }
+
+    // Web sitesine normal tarayıcıdan ilk girildiğinde pazarlama anasayfası karşılar
     return 'landing';
   };
 
@@ -184,12 +211,35 @@ export const App: React.FC = () => {
         }
       } else if (hash === 'master_login') {
         setViewMode('master_login');
-      } else if (hash === 'landing' || hash === '') {
+      } else if (hash === 'landing') {
         setViewMode('landing');
+      } else if (hash === '') {
+        const token = localStorage.getItem('boncore_token');
+        const authFlag = localStorage.getItem('boncore_auth');
+        const rememberDevice = localStorage.getItem('boncore_remember_device') === 'true';
+        const isStandalone = typeof window !== 'undefined' && (
+          (window.navigator as any).standalone === true || 
+          window.matchMedia('(display-mode: standalone)').matches
+        );
+        const isAuthed = (token && authFlag === 'true') || isAuthenticated;
+        if (isAuthed && (rememberDevice || isStandalone)) {
+          setIsAuthenticated(true);
+          setViewMode('app');
+          setActiveTab('tables');
+          window.location.hash = 'tables';
+        } else if (isStandalone) {
+          setViewMode('login');
+        } else {
+          setViewMode('landing');
+        }
       } else if (hash === 'login') {
         setViewMode('login');
       } else if (VALID_TABS.includes(hash)) {
-        if (isAuthenticated) {
+        const token = localStorage.getItem('boncore_token');
+        const authFlag = localStorage.getItem('boncore_auth');
+        const isAuthed = (token && authFlag === 'true') || isAuthenticated;
+        if (isAuthed) {
+          setIsAuthenticated(true);
           setViewMode('app');
           if (hash !== activeTab) {
             setActiveTab(hash);
@@ -222,16 +272,35 @@ export const App: React.FC = () => {
   // Buzzer Modal
   const [isBuzzerListOpen, setIsBuzzerListOpen] = useState<boolean>(false);
 
+  // Kitchen Ready Alerts
+  const [kitchenAlerts, setKitchenAlerts] = useState<KitchenReadyAlertItem[]>([]);
+  const [isKitchenAlertsOpen, setIsKitchenAlertsOpen] = useState<boolean>(false);
+
   // Live Toast Notifications
   const [toasts, setToasts] = useState<{ id: number; message: string; type?: string }[]>([]);
 
+  // Master Broadcast Announcements
+  const [activeAnnouncement, setActiveAnnouncement] = useState<ActiveAnnouncement | null>(null);
+
   const addToast = (message: string, type = 'info') => {
-    const id = Date.now();
+    const id = Date.now() + Math.random();
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 3000);
+    }, 3500);
   };
+
+  // Listen to system-wide custom toast events from API interceptor and services
+  useEffect(() => {
+    const handleCustomToast = (e: Event) => {
+      const ce = e as CustomEvent<{ message: string; type?: string }>;
+      if (ce.detail?.message) {
+        addToast(ce.detail.message, ce.detail.type || 'info');
+      }
+    };
+    window.addEventListener('boncore_toast', handleCustomToast);
+    return () => window.removeEventListener('boncore_toast', handleCustomToast);
+  }, []);
 
   // Auto-sync offline transactions when network is online or on application start
   useEffect(() => {
@@ -264,16 +333,61 @@ export const App: React.FC = () => {
     }
   };
 
+  // Auto-request native web notification permissions when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      requestNotificationPermission().catch(() => {});
+    }
+  }, [isAuthenticated]);
+
   // Real-time WebSocket connection
   const { isConnected } = useWebSocket('all', (type, data) => {
     if (type === 'WAITER_CALL_ALERT') {
       addToast(`🔔 ${data.table_name}: ${data.reason}!`, 'warning');
+      sendNativeNotification({
+        title: `🔔 Garson Çağrısı: ${data.table_name || 'Masa'}`,
+        body: `${data.reason || 'Masadan servis veya hesap çağrısı geldi!'}`,
+        tag: `waiter-call-${data.table_id || Date.now()}`,
+        requireInteraction: true
+      });
       loadAreas();
     } else if (type === 'KITCHEN_ORDER_READY_ALERT') {
-      addToast(`🍽️ ${data.message}`, 'success');
+      sound.kitchenBell();
+      try {
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          navigator.vibrate([100, 50, 100]);
+        }
+      } catch {}
+
+      const newAlert: KitchenReadyAlertItem = {
+        id: `${data.order_id || Date.now()}-${Date.now()}-${Math.random()}`,
+        order_id: data.order_id || 0,
+        order_no: data.order_no,
+        table_id: data.table_id,
+        table_name: data.table_name || 'Masa',
+        waiter_name: data.waiter_name,
+        items_summary: data.items_summary || data.product_name || 'Sipariş hazır',
+        message: data.message || `Masa ${data.table_name}: Sipariş servise hazır!`,
+        ready_at: data.ready_at || new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+        timestamp: Date.now()
+      };
+
+      setKitchenAlerts(prev => [newAlert, ...prev.filter(a => a.id !== newAlert.id).slice(0, 19)]);
+      
+      // Native Cihaz / Web Push Bildirimi (Uygulama içi yeşil toast yerine doğrudan sistem bildirimi)
+      sendNativeNotification({
+        title: `🍽️ Mutfak Siparişi Hazır! (${data.table_name || 'Masa'})`,
+        body: data.message || `${data.table_name || 'Masa'} siparişi servise hazır! ${data.items_summary ? `(${data.items_summary})` : ''}`,
+        tag: `kitchen-ready-${data.order_id || Date.now()}`
+      });
       loadAreas();
     } else if (type === 'ONLINE_ORDER_INCOMING') {
       addToast(`🛵 ${(data.platform || 'ONLINE').toUpperCase()}: Yeni Sipariş (₺${data.total})`, 'info');
+      sendNativeNotification({
+        title: `🛵 ${(data.platform || 'ONLINE').toUpperCase()} - Yeni Paket Sipariş!`,
+        body: `Tutar: ₺${data.total || 0} - Hazırlanmak üzere mutfağa iletildi.`,
+        tag: `online-order-${data.order_id || Date.now()}`
+      });
       loadAreas();
     } else if (type === 'MENU_UPDATED') {
       loadCategories();
@@ -284,11 +398,96 @@ export const App: React.FC = () => {
       if (data && Array.isArray(data.role_permissions)) {
         broadcastPermissionsUpdate(mergeWithInitialPermissions(data.role_permissions));
       }
-    } else if (type === 'ORDER_CREATED' || type === 'ORDER_UPDATED' || type === 'ORDER_PAID' || type === 'TABLE_MOVED' || type === 'TABLE_MERGED') {
+    } else if (type === 'ORDER_PAID') {
+      if (data && data.order_id) {
+        setKitchenAlerts(prev => prev.filter(a => a.order_id !== data.order_id));
+      }
       loadAreas();
       loadCategories();
+    } else if (type === 'ORDER_CREATED' || type === 'ORDER_UPDATED' || type === 'AREAS_UPDATED' || type === 'TABLE_MOVED' || type === 'TABLE_MERGED' || type === 'TABLE_STATUS_CHANGED') {
+      if (data && data.table_id) {
+        setKitchenAlerts(prev => prev.filter(a => a.table_id !== data.table_id));
+      }
+      loadAreas();
+      loadCategories();
+    } else if (type === 'ANNOUNCEMENT_BROADCAST') {
+      if (data) {
+        sound.kitchenBell();
+        setActiveAnnouncement({
+          id: data.id,
+          title: data.title,
+          content: data.content,
+          banner_type: data.banner_type || 'info',
+          show_as_popup: data.show_as_popup !== false,
+          dismissible: data.dismissible !== false,
+          created_at: data.created_at
+        });
+        addToast(`📢 ${data.title}`, data.banner_type === 'urgent' ? 'error' : data.banner_type === 'warning' ? 'warning' : 'info');
+        
+        // Native Cihaz / Web Bildirimi
+        sendNativeNotification({
+          title: `📢 ${data.title}`,
+          body: data.content || 'SaaS Yönetiminden yeni duyuru yayınlandı.',
+          tag: `announcement-${data.id}`,
+          requireInteraction: data.banner_type === 'urgent'
+        });
+      }
+    } else if (type === 'SUPPORT_TICKET_REPLIED') {
+      sound.kitchenBell();
+      const replyBody = `${data.sender_name || 'Destek Ekibi'}: "${data.message}"`;
+      addToast(`🎫 Destek Talebiniz Yanıtlandı (#${data.ticket_number}): ${replyBody}`, 'info');
+      sendNativeNotification({
+        title: `🎫 Destek Talebi Yanıtlandı (#${data.ticket_number})`,
+        body: replyBody,
+        tag: `ticket-reply-${data.ticket_number || Date.now()}`
+      });
+    } else if (type === 'SUPPORT_TICKET_STATUS_CHANGED') {
+      sound.kitchenBell();
+      const statusText = data.status === 'resolved' ? 'Çözüldü' : data.status === 'in_review' ? 'İnceleniyor' : data.status === 'closed' ? 'Kapatıldı' : data.status;
+      addToast(`🎫 Destek Talebi Güncellendi (#${data.ticket_number}): Durum: ${statusText}`, 'success');
+      sendNativeNotification({
+        title: `🎫 Destek Talebi Güncellendi (#${data.ticket_number})`,
+        body: `Talep durumu "${statusText}" olarak güncellendi.`,
+        tag: `ticket-status-${data.ticket_number || Date.now()}`
+      });
+    } else if (type === 'FEATURES_UPDATED') {
+      if (data) {
+        const updated = normalizeFeaturesPayload(data);
+        saveLocalFeatures(updated);
+        addToast('🔔 Restoran modül lisanslarınız güncellendi.', 'info');
+        sendNativeNotification({
+          title: '🔔 Modül Lisansları Güncellendi',
+          body: 'Restoranınızın aktif modülleri ve lisansları güncellendi.',
+          tag: 'features-updated'
+        });
+      }
+    } else if (type === 'ANNOUNCEMENT_DEACTIVATED') {
+      if (data && data.id) {
+        setActiveAnnouncement(prev => (prev && prev.id === data.id ? null : prev));
+      }
     }
   });
+
+  const loadActiveAnnouncements = async () => {
+    try {
+      const res = await fetch(`/api/announcements/active?_t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setActiveAnnouncement(data[0]);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load active announcements', e);
+    }
+  };
+
+  const handleDismissAnnouncement = async (id: number) => {
+    try {
+      await fetch(`/api/announcements/${id}/dismiss`, { method: 'POST' }).catch(() => null);
+    } catch {}
+    setActiveAnnouncement(null);
+  };
 
   const loadStaffUsers = async () => {
     try {
@@ -304,6 +503,8 @@ export const App: React.FC = () => {
   useEffect(() => {
     loadInitialData();
     loadStaffUsers();
+    loadActiveAnnouncements();
+    fetchLiveTenantFeatures();
   }, []);
 
   const loadInitialData = async () => {
@@ -387,9 +588,29 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleOpenKitchenReadyTable = (tableId?: number | null, tableName?: string) => {
+    sound.beep();
+    const tablesList = (areas || []).flatMap(a => (a && a.tables) || []).filter(Boolean);
+    if (tableId) {
+      const found = tablesList.find(t => t.id === tableId);
+      if (found) {
+        setSelectedTable(found);
+        setActiveTab('pos');
+        return;
+      }
+    }
+    if (tableName) {
+      const found = tablesList.find(t => t.name.toLowerCase() === tableName.toLowerCase());
+      if (found) {
+        setSelectedTable(found);
+        setActiveTab('pos');
+        return;
+      }
+    }
+    setActiveTab('tables');
+  };
+
   const handleLoginSuccess = (user: StaffUser, token?: string, restaurant?: any) => {
-    setCurrentUser(user);
-    setIsAuthenticated(true);
     localStorage.setItem('boncore_auth', 'true');
     localStorage.setItem('boncore_user', JSON.stringify(user));
     if (token) {
@@ -410,11 +631,15 @@ export const App: React.FC = () => {
       const saved = localStorage.getItem('boncore_active_restaurant_name');
       if (saved) setRestaurantTitle(saved);
     }
-    loadInitialData();
-    loadStaffUsers();
+
+    setCurrentUser(user);
+    setIsAuthenticated(true);
     setViewMode('app');
     setActiveTab('tables');
     window.location.hash = 'tables';
+
+    loadInitialData();
+    loadStaffUsers();
     const restSuffix = restaurant?.name ? ` (${restaurant.name})` : '';
     addToast(`Hoş geldiniz, ${user.name}!${restSuffix}`, 'success');
   };
@@ -428,8 +653,17 @@ export const App: React.FC = () => {
     localStorage.removeItem('boncore_user');
     localStorage.removeItem('boncore_selected_table');
     localStorage.removeItem('boncore_active_restaurant_name');
-    setViewMode('landing');
-    window.location.hash = 'landing';
+    const isStandalone = typeof window !== 'undefined' && (
+      (window.navigator as any).standalone === true || 
+      window.matchMedia('(display-mode: standalone)').matches
+    );
+    if (isStandalone) {
+      setViewMode('login');
+      window.location.hash = 'login';
+    } else {
+      setViewMode('landing');
+      window.location.hash = 'landing';
+    }
     addToast('Oturum güvenli bir şekilde kapatıldı.', 'info');
   };
 
@@ -547,7 +781,8 @@ export const App: React.FC = () => {
   }
 
   // 3. Login Screen (Giriş Yap Sayfası)
-  if (viewMode === 'login' || !isAuthenticated) {
+  const hasAuthToken = localStorage.getItem('boncore_auth') === 'true' || Boolean(localStorage.getItem('boncore_token'));
+  if (viewMode === 'login' || (!isAuthenticated && !hasAuthToken)) {
     return (
       <AdisyoLogin
         onLoginSuccess={handleLoginSuccess}
@@ -558,9 +793,9 @@ export const App: React.FC = () => {
   }
 
   // Count active buzzer calls and open tables
-  const allTables = areas.flatMap(a => a.tables);
-  const callingTables = allTables.filter(t => t.waiter_call_reason || t.status === 'waiter_call' || t.status === 'bill_requested');
-  const openTablesCount = allTables.filter(t => t.status === 'occupied' || t.status === 'bill_requested' || t.status === 'waiter_call' || (t.active_order && (t.active_order.grand_total || 0) > 0)).length;
+  const allTables = (areas || []).flatMap(a => (a && a.tables) || []).filter(Boolean);
+  const callingTables = allTables.filter(t => t && (t.waiter_call_reason || t.status === 'waiter_call' || t.status === 'bill_requested'));
+  const openTablesCount = allTables.filter(t => t && (t.status === 'occupied' || t.status === 'bill_printed' || t.status === 'bill_requested' || t.status === 'waiter_call' || (t.active_order && (t.active_order.grand_total || 0) > 0))).length;
 
   return (
     <div className="h-[100dvh] w-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans transition-colors duration-200">
@@ -575,6 +810,8 @@ export const App: React.FC = () => {
         isConnected={isConnected}
         buzzerCount={callingTables.length}
         onOpenBuzzerList={() => setIsBuzzerListOpen(true)}
+        kitchenReadyCount={kitchenAlerts.length}
+        onOpenKitchenAlerts={() => setIsKitchenAlertsOpen(true)}
         theme={theme}
         onToggleTheme={toggleTheme}
         restaurantTitle={restaurantTitle}
@@ -597,7 +834,8 @@ export const App: React.FC = () => {
       />
 
       {/* Main View Area */}
-      <main className="flex-1 flex overflow-hidden relative min-h-0">
+      <main className="flex-1 flex flex-col overflow-hidden relative min-h-0 w-full">
+        <TabErrorBoundary activeTab={activeTab} onResetTab={() => setActiveTab('tables')}>
         {!canTab(activeTab) ? (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-slate-50 dark:bg-slate-950 select-none">
             <div className="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
@@ -606,10 +844,14 @@ export const App: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-base font-black text-slate-900 dark:text-white">
-                  Bu Ekrana Erişim Yetkiniz Bulunmamaktadır
+                  {!isTabLicensed(activeTab) 
+                    ? 'Bu Modül Restoran Lisans Kapsamında Değildir' 
+                    : 'Bu Ekrana Erişim Yetkiniz Bulunmamaktadır'}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                  <strong>{currentUser?.name || 'Kullanıcı'}</strong> ({currentUser?.role || 'Garson'}) rolü için bu ekranın yetkisi <strong>Yetki / İzin Ekranı</strong> üzerinden kapatılmıştır.
+                  {!isTabLicensed(activeTab)
+                    ? 'Bu modül restoranınızın mevcut SaaS abonelik lisansında devre dışı bırakılmıştır. Kullanmak için SaaS Master panelinden ilgili restoranın modül lisansını açınız.'
+                    : <><strong>{currentUser?.name || 'Kullanıcı'}</strong> ({currentUser?.role || 'Garson'}) rolü için bu ekranın yetkisi <strong>Yetki / İzin Ekranı</strong> üzerinden kapatılmıştır.</>}
                 </p>
               </div>
               <button
@@ -769,6 +1011,7 @@ export const App: React.FC = () => {
         {activeTab === 'kiosk' && <KioskCfdView categories={categories} />}
         </>
         )}
+        </TabErrorBoundary>
       </main>
 
       {/* Mobile Bottom Navigation Bar (Visible on phones < md) */}
@@ -852,6 +1095,8 @@ export const App: React.FC = () => {
                 ? 'bg-purple-900 border-purple-400 text-purple-100'
                 : t.type === 'success'
                 ? 'bg-[#107c41] border-emerald-500 text-white'
+                : t.type === 'error'
+                ? 'bg-rose-900 border-rose-500 text-rose-100'
                 : 'bg-slate-900 border-slate-700 text-white'
             }`}
           >
@@ -925,6 +1170,22 @@ export const App: React.FC = () => {
           setSelectedTable(t);
           setActiveTab('pos');
         }}
+      />
+
+      {/* Kitchen Ready Orders List Modal */}
+      <KitchenAlertsModal
+        isOpen={isKitchenAlertsOpen}
+        onClose={() => setIsKitchenAlertsOpen(false)}
+        alerts={kitchenAlerts}
+        onDismiss={(id) => setKitchenAlerts(prev => prev.filter(a => a.id !== id))}
+        onDismissAll={() => setKitchenAlerts([])}
+        onOpenTablePos={handleOpenKitchenReadyTable}
+      />
+
+      {/* Central Broadcast Announcement Modal */}
+      <BroadcastAnnouncementModal
+        announcement={activeAnnouncement}
+        onDismiss={handleDismissAnnouncement}
       />
     </div>
   );

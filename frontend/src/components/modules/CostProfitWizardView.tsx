@@ -40,7 +40,31 @@ export const CostProfitWizardView: React.FC = () => {
       const res = await api.getCostProfitAnalysis();
       if (res) {
         setSummary(res.summary || {});
-        setProducts(res.products || []);
+        const normalized = (res.products || []).map((p: any) => {
+          const uPrice = Number(p.unit_price ?? p.sale_price ?? 0);
+          const uCost = Number(p.unit_cost ?? p.bom_cost ?? 0);
+          const uProfit = Number(p.unit_profit ?? (uPrice - uCost));
+          const mPercent = Number(p.margin_percent ?? (uPrice > 0 ? (uProfit / uPrice) * 100 : 0));
+          const sQty = Number(p.sold_qty ?? 0);
+          const tRev = Number(p.total_revenue ?? (sQty * uPrice));
+          const tProfit = Number(p.total_profit ?? (sQty * uProfit));
+          return {
+            ...p,
+            id: p.id || p.product_id || Math.random(),
+            name: p.name || 'İsimsiz Ürün',
+            category: p.category || p.category_name || 'GENEL',
+            unit_price: uPrice,
+            unit_cost: uCost,
+            unit_profit: uProfit,
+            margin_percent: mPercent,
+            sold_qty: sQty,
+            total_revenue: tRev,
+            total_cost: Number(p.total_cost ?? (sQty * uCost)),
+            total_profit: tProfit,
+            has_recipe: Boolean(p.has_recipe || (p.bom_items && p.bom_items.length > 0))
+          };
+        });
+        setProducts(normalized);
       }
     } catch (e) {
       console.error('Cost profit analysis load failed', e);
@@ -53,22 +77,25 @@ export const CostProfitWizardView: React.FC = () => {
     loadData();
   }, []);
 
-  const categories = ['all', ...Array.from(new Set(products.map(p => p.category)))];
+  const categories = ['all', ...Array.from(new Set(products.map(p => p.category || 'GENEL')))];
 
   const filteredProducts = products.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.category.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCat = selectedCategory === 'all' || p.category === selectedCategory;
-    const matchesMargin = p.margin_percent >= wizardMinMargin;
-    const matchesSold = !wizardOnlySold || p.sold_qty > 0;
+    const catName = p.category || 'GENEL';
+    const prodName = p.name || '';
+    const matchesSearch = prodName.toLowerCase().includes(searchQuery.toLowerCase()) || catName.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCat = selectedCategory === 'all' || catName === selectedCategory;
+    const matchesMargin = Number(p.margin_percent || 0) >= wizardMinMargin;
+    const matchesSold = !wizardOnlySold || Number(p.sold_qty || 0) > 0;
     return matchesSearch && matchesCat && matchesMargin && matchesSold;
   });
 
   // Category aggregation for Report Wizard
   const categoryAggregates = Object.values(
     filteredProducts.reduce((acc: Record<string, any>, p) => {
-      if (!acc[p.category]) {
-        acc[p.category] = {
-          category: p.category,
+      const catKey = p.category || 'GENEL';
+      if (!acc[catKey]) {
+        acc[catKey] = {
+          category: catKey,
           product_count: 0,
           sold_qty: 0,
           total_revenue: 0,
@@ -76,11 +103,11 @@ export const CostProfitWizardView: React.FC = () => {
           total_profit: 0
         };
       }
-      acc[p.category].product_count += 1;
-      acc[p.category].sold_qty += p.sold_qty;
-      acc[p.category].total_revenue += p.total_revenue;
-      acc[p.category].total_cost += p.total_cost;
-      acc[p.category].total_profit += p.total_profit;
+      acc[catKey].product_count += 1;
+      acc[catKey].sold_qty += Number(p.sold_qty || 0);
+      acc[catKey].total_revenue += Number(p.total_revenue || 0);
+      acc[catKey].total_cost += Number(p.total_cost || 0);
+      acc[catKey].total_profit += Number(p.total_profit || 0);
       return acc;
     }, {})
   );
@@ -90,14 +117,14 @@ export const CostProfitWizardView: React.FC = () => {
     const headers = ['Ürün Adı', 'Kategori', 'Birim Satış (TL)', 'Reçete Maliyeti (TL)', 'Birim Kar (TL)', 'Kar Marjı (%)', 'Satılan Adet', 'Toplam Ciro (TL)', 'Toplam Net Kar (TL)'];
     const rows = filteredProducts.map(p => [
       `"${p.name}"`,
-      `"${p.category}"`,
-      p.unit_price.toFixed(2),
-      p.unit_cost.toFixed(2),
-      p.unit_profit.toFixed(2),
-      p.margin_percent.toFixed(1),
-      p.sold_qty.toFixed(2),
-      p.total_revenue.toFixed(2),
-      p.total_profit.toFixed(2)
+      `"${p.category || 'GENEL'}"`,
+      Number(p.unit_price || 0).toFixed(2),
+      Number(p.unit_cost || 0).toFixed(2),
+      Number(p.unit_profit || 0).toFixed(2),
+      Number(p.margin_percent || 0).toFixed(1),
+      Number(p.sold_qty || 0).toFixed(2),
+      Number(p.total_revenue || 0).toFixed(2),
+      Number(p.total_profit || 0).toFixed(2)
     ]);
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -157,7 +184,7 @@ export const CostProfitWizardView: React.FC = () => {
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="text-[11px] font-bold text-slate-400 uppercase">Toplam Satış Cirosu</div>
           <div className="text-xl font-black text-slate-900 dark:text-white mt-1">
-            ₺{(summary.total_revenue || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+            ₺{Number(summary?.total_revenue || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
           </div>
           <div className="text-[10px] text-slate-400 mt-0.5">Gerçekleşen Sipariş Toplamı</div>
         </div>
@@ -165,7 +192,7 @@ export const CostProfitWizardView: React.FC = () => {
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="text-[11px] font-bold text-slate-400 uppercase">Reçete / Satış Maliyeti (COGS)</div>
           <div className="text-xl font-black text-amber-600 dark:text-amber-400 mt-1">
-            ₺{(summary.total_cogs || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+            ₺{Number(summary?.total_cogs || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
           </div>
           <div className="text-[10px] text-slate-400 mt-0.5">Hammadde Tüketim Tutarı</div>
         </div>
@@ -173,17 +200,17 @@ export const CostProfitWizardView: React.FC = () => {
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="text-[11px] font-bold text-slate-400 uppercase">Brüt Kâr</div>
           <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
-            ₺{(summary.gross_profit || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+            ₺{Number(summary?.gross_profit || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
           </div>
           <div className="text-[10px] text-emerald-600 font-bold mt-0.5">
-            Brüt Marj: %{summary.gross_margin_percent || 0}
+            Brüt Marj: %{summary?.gross_margin_percent || 0}
           </div>
         </div>
 
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="text-[11px] font-bold text-slate-400 uppercase">Kasa Masraf / Giderler</div>
           <div className="text-xl font-black text-brand-600 dark:text-emerald-400 mt-1">
-            ₺{(summary.total_expenses || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+            ₺{Number(summary?.total_expenses || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
           </div>
           <div className="text-[10px] text-slate-400 mt-0.5">İşletme Gider Çıkışları</div>
         </div>
@@ -191,10 +218,10 @@ export const CostProfitWizardView: React.FC = () => {
         <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-md">
           <div className="text-[11px] font-bold text-emerald-100 uppercase">Net İşletme Kârı</div>
           <div className="text-xl font-black mt-1">
-            ₺{(summary.net_profit || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+            ₺{Number(summary?.net_profit || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
           </div>
           <div className="text-[10px] text-emerald-100 font-bold mt-0.5">
-            Net Kârlılık Oranı: %{summary.net_margin_percent || 0}
+            Net Kârlılık Oranı: %{summary?.net_margin_percent || 0}
           </div>
         </div>
       </div>
@@ -315,13 +342,13 @@ export const CostProfitWizardView: React.FC = () => {
                   <td className="py-3.5 px-4 font-bold text-slate-600 dark:text-slate-400">{cat.product_count} Ürün</td>
                   <td className="py-3.5 px-4 font-bold">{cat.sold_qty.toFixed(1)}</td>
                   <td className="py-3.5 px-4 font-extrabold text-slate-900 dark:text-white">
-                    ₺{cat.total_revenue.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                    ₺{Number(cat.total_revenue || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                   </td>
                   <td className="py-3.5 px-4 font-bold text-amber-600">
-                    ₺{cat.total_cost.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                    ₺{Number(cat.total_cost || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                   </td>
                   <td className="py-3.5 px-4 text-right font-black text-emerald-600 dark:text-emerald-400 text-sm">
-                    ₺{cat.total_profit.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                    ₺{Number(cat.total_profit || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                   </td>
                 </tr>
               ))}
@@ -353,26 +380,26 @@ export const CostProfitWizardView: React.FC = () => {
                         {p.has_recipe ? 'Reçeteli Tam Maliyet' : 'Tahmini Hammadde (%35)'}
                       </div>
                     </td>
-                    <td className="py-3 px-4 font-semibold text-slate-600 dark:text-slate-400">{p.category}</td>
-                    <td className="py-3 px-4 font-bold">₺{p.unit_price.toFixed(2)}</td>
-                    <td className="py-3 px-4 font-bold text-amber-600 dark:text-amber-400">₺{p.unit_cost.toFixed(2)}</td>
-                    <td className="py-3 px-4 font-extrabold text-emerald-600 dark:text-emerald-400">₺{p.unit_profit.toFixed(2)}</td>
+                    <td className="py-3 px-4 font-semibold text-slate-600 dark:text-slate-400">{p.category || 'GENEL'}</td>
+                    <td className="py-3 px-4 font-bold">₺{Number(p.unit_price || 0).toFixed(2)}</td>
+                    <td className="py-3 px-4 font-bold text-amber-600 dark:text-amber-400">₺{Number(p.unit_cost || 0).toFixed(2)}</td>
+                    <td className="py-3 px-4 font-extrabold text-emerald-600 dark:text-emerald-400">₺{Number(p.unit_profit || 0).toFixed(2)}</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
                         <div className="w-16 h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
                           <div
                             className={`h-full rounded-full ${
-                              p.margin_percent >= 60 ? 'bg-emerald-500' : p.margin_percent >= 40 ? 'bg-amber-500' : 'bg-brand-500'
+                              Number(p.margin_percent || 0) >= 60 ? 'bg-emerald-500' : Number(p.margin_percent || 0) >= 40 ? 'bg-amber-500' : 'bg-brand-500'
                             }`}
-                            style={{ width: `${Math.min(100, Math.max(0, p.margin_percent))}%` }}
+                            style={{ width: `${Math.min(100, Math.max(0, Number(p.margin_percent || 0)))}%` }}
                           />
                         </div>
-                        <span className="font-black text-slate-800 dark:text-slate-200">%{p.margin_percent.toFixed(1)}</span>
+                        <span className="font-black text-slate-800 dark:text-slate-200">%{Number(p.margin_percent || 0).toFixed(1)}</span>
                       </div>
                     </td>
-                    <td className="py-3 px-4 font-bold">{p.sold_qty.toFixed(1)}</td>
+                    <td className="py-3 px-4 font-bold">{Number(p.sold_qty || 0).toFixed(1)}</td>
                     <td className="py-3 px-4 text-right font-black text-emerald-600 dark:text-emerald-400">
-                      ₺{p.total_profit.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                      ₺{Number(p.total_profit || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                     </td>
                   </tr>
                 ))}

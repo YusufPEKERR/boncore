@@ -199,8 +199,10 @@ export const InventoryManagement: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-medium">
               {filteredIngredients.map((ing) => {
-                const totalVal = ing.total_value ?? (ing.current_stock * ing.cost_per_unit);
-                const critLabel = ing.critical_display || (ing.min_stock_alert > 0 ? `${ing.min_stock_alert}` : '-');
+                const curStock = Number(ing.current_stock || 0);
+                const cPerUnit = Number(ing.cost_per_unit || 0);
+                const totalVal = ing.total_value != null ? Number(ing.total_value) : (curStock * cPerUnit);
+                const critLabel = ing.critical_display || (Number(ing.min_stock_alert || 0) > 0 ? `${ing.min_stock_alert}` : '-');
                 return (
                   <tr key={ing.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
                     <td className="py-2.5 px-4">
@@ -211,18 +213,18 @@ export const InventoryManagement: React.FC = () => {
                     <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-white">{ing.name}</td>
                     <td className="py-2.5 px-4 text-slate-600 dark:text-slate-300 font-semibold">{ing.kitchen_group || 'MUTFAK'}</td>
                     <td className="py-2.5 px-4 text-right font-mono font-black text-sm text-slate-900 dark:text-white">
-                      {ing.current_stock.toLocaleString('tr-TR', { maximumFractionDigits: 3 })}
+                      {Number(curStock || 0).toLocaleString('tr-TR', { maximumFractionDigits: 3 })}
                     </td>
                     <td className="py-2.5 px-4 text-center font-mono text-slate-500 dark:text-slate-400">{critLabel}</td>
                     <td className="py-2.5 px-4 text-center font-mono uppercase text-slate-600 dark:text-slate-300">{ing.unit}</td>
                     <td className="py-2.5 px-4 text-right font-mono text-slate-700 dark:text-slate-300">
-                      ₺{ing.cost_per_unit.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₺{Number(cPerUnit || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td className="py-2.5 px-4 text-right font-mono font-black text-emerald-600 dark:text-emerald-400">
-                      ₺{totalVal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₺{Number(totalVal || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td className="py-2.5 px-4">
-                      {ing.current_stock <= 0 ? (
+                      {curStock <= 0 ? (
                         <span className="px-2.5 py-1 rounded-lg bg-brand-500/10 text-brand-600 dark:text-emerald-400 border border-brand-500/30 text-[10px] font-extrabold flex items-center gap-1 w-max">
                           <AlertTriangle className="w-3 h-3" /> TÜKENDİ (0)
                         </span>

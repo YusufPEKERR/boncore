@@ -112,8 +112,8 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
   });
 
   // 100% Real Data Bindings (Zero Fake Fallbacks)
-  const totalTurnover = stats?.total_turnover ?? 0;
-  const totalOrders = stats?.total_orders ?? 0;
+  const totalTurnover = Number(stats?.total_turnover ?? stats?.total_revenue ?? stats?.daily_turnover?.net_sales ?? stats?.kpi?.total_revenue ?? 0);
+  const totalOrders = Number(stats?.total_orders ?? stats?.kpi?.total_orders ?? 0);
   const avgTicket = stats?.average_ticket ?? (totalOrders > 0 ? totalTurnover / totalOrders : 0);
   const totalDiscounts = (stats?.total_discounts ?? 0) + (stats?.total_treats ?? 0);
 
@@ -157,7 +157,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
     orders: []
   };
 
-  const channelData = stats?.channels?.channels || [];
+  const channelData = stats?.channels?.channels || (Array.isArray(stats?.channels) ? stats.channels : []);
 
   const waiterList = Array.isArray(stats?.waiters) ? stats.waiters : [];
 
@@ -736,7 +736,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Toplam Brüt Satış</span>
                   <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                    ₺{dailyData.gross_sales.toFixed(2)}
+                    ₺{Number(dailyData?.gross_sales || 0).toFixed(2)}
                   </div>
                   <div className="text-[11px] text-slate-500 font-medium">İndirim & İkram dahil brüt ciro</div>
                 </div>
@@ -744,7 +744,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Net Satış Cirosu</span>
                   <div className="text-2xl font-black text-emerald-600 font-mono">
-                    ₺{dailyData.net_sales.toFixed(2)}
+                    ₺{Number(dailyData?.net_sales || 0).toFixed(2)}
                   </div>
                   <div className="text-[11px] text-emerald-600 font-bold">Kasaya giren net tahsilat</div>
                 </div>
@@ -752,17 +752,17 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Toplam İndirim & İkram</span>
                   <div className="text-2xl font-black text-amber-600 font-mono">
-                    ₺{(dailyData.total_discounts + dailyData.total_treats).toFixed(2)}
+                    ₺{Number((dailyData?.total_discounts || 0) + (dailyData?.total_treats || 0)).toFixed(2)}
                   </div>
                   <div className="text-[11px] text-slate-500 font-medium">
-                    İndirim: ₺{dailyData.total_discounts.toFixed(2)} | İkram: ₺{dailyData.total_treats.toFixed(2)}
+                    İndirim: ₺{Number(dailyData?.total_discounts || 0).toFixed(2)} | İkram: ₺{Number(dailyData?.total_treats || 0).toFixed(2)}
                   </div>
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Hesaplanan KDV (Toplam)</span>
                   <div className="text-2xl font-black text-blue-600 font-mono">
-                    ₺{(dailyData.vat_summary.vat_1.tax + dailyData.vat_summary.vat_10.tax + dailyData.vat_summary.vat_20.tax).toFixed(2)}
+                    ₺{Number((dailyData?.vat_summary?.vat_1?.tax || 0) + (dailyData?.vat_summary?.vat_10?.tax || 0) + (dailyData?.vat_summary?.vat_20?.tax || 0)).toFixed(2)}
                   </div>
                   <div className="text-[11px] text-slate-500 font-medium">%1, %10 ve %20 KDV toplamı</div>
                 </div>
@@ -794,7 +794,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                       </div>
                       <div className="col-span-2 text-center font-mono">{item.count} Adet</div>
                       <div className="col-span-3 text-right font-mono font-black text-slate-900 dark:text-white">
-                        ₺{item.amount.toFixed(2)}
+                        ₺{Number(item.amount || 0).toFixed(2)}
                       </div>
                       <div className="col-span-3 text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -824,25 +824,25 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                     <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl space-y-1">
                       <div className="flex justify-between font-bold">
                         <span className="text-slate-500">%1 KDV (Temel Gıda / Ekmek)</span>
-                        <span className="font-mono text-emerald-600">₺{dailyData.vat_summary.vat_1.tax.toFixed(2)}</span>
+                        <span className="font-mono text-emerald-600">₺{Number(dailyData?.vat_summary?.vat_1?.tax || 0).toFixed(2)}</span>
                       </div>
-                      <div className="text-[11px] text-slate-400">Matrah: ₺{dailyData.vat_summary.vat_1.base.toFixed(2)}</div>
+                      <div className="text-[11px] text-slate-400">Matrah: ₺{Number(dailyData?.vat_summary?.vat_1?.base || 0).toFixed(2)}</div>
                     </div>
 
                     <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl space-y-1">
                       <div className="flex justify-between font-bold">
                         <span className="text-slate-500">%10 KDV (Yeme - İçme Hizmeti)</span>
-                        <span className="font-mono text-blue-600">₺{dailyData.vat_summary.vat_10.tax.toFixed(2)}</span>
+                        <span className="font-mono text-blue-600">₺{Number(dailyData?.vat_summary?.vat_10?.tax || 0).toFixed(2)}</span>
                       </div>
-                      <div className="text-[11px] text-slate-400">Matrah: ₺{dailyData.vat_summary.vat_10.base.toFixed(2)}</div>
+                      <div className="text-[11px] text-slate-400">Matrah: ₺{Number(dailyData?.vat_summary?.vat_10?.base || 0).toFixed(2)}</div>
                     </div>
 
                     <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl space-y-1">
                       <div className="flex justify-between font-bold">
                         <span className="text-slate-500">%20 KDV (İçecekler & Hizmet)</span>
-                        <span className="font-mono text-purple-600">₺{dailyData.vat_summary.vat_20.tax.toFixed(2)}</span>
+                        <span className="font-mono text-purple-600">₺{Number(dailyData?.vat_summary?.vat_20?.tax || 0).toFixed(2)}</span>
                       </div>
-                      <div className="text-[11px] text-slate-400">Matrah: ₺{dailyData.vat_summary.vat_20.base.toFixed(2)}</div>
+                      <div className="text-[11px] text-slate-400">Matrah: ₺{Number(dailyData?.vat_summary?.vat_20?.base || 0).toFixed(2)}</div>
                     </div>
                   </div>
                 </div>
@@ -874,10 +874,10 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                         </div>
                         <div className="col-span-2 text-center font-mono">{h.orders_count}</div>
                         <div className="col-span-3 text-right font-mono font-black text-slate-900 dark:text-white">
-                          ₺{h.turnover.toFixed(2)}
+                          ₺{Number(h.turnover || 0).toFixed(2)}
                         </div>
                         <div className="col-span-2 text-right font-mono text-slate-500">
-                          ₺{h.avg_ticket.toFixed(2)}
+                          ₺{Number(h.avg_ticket || 0).toFixed(2)}
                         </div>
                         <div className="col-span-2 text-right font-mono font-bold text-emerald-600">
                           %{h.percent}
@@ -908,7 +908,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                     <div className="col-span-2 text-right">Tutar</div>
                   </div>
 
-                  {dailyData.recent_bills.map((b: any) => (
+                  {(dailyData.recent_bills || []).map((b: any) => (
                     <div key={b.id} className="grid grid-cols-12 p-3.5 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
                       <div className="col-span-2 font-mono font-bold text-slate-900 dark:text-white">{b.order_no}</div>
                       <div className="col-span-2 font-bold text-slate-700 dark:text-slate-300">{b.table_name}</div>
@@ -920,7 +920,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                         </span>
                       </div>
                       <div className="col-span-2 text-right font-mono font-black text-slate-900 dark:text-white">
-                        ₺{b.grand_total.toFixed(2)}
+                        ₺{Number(b.grand_total || 0).toFixed(2)}
                       </div>
                     </div>
                   ))}
@@ -1008,7 +1008,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                       return (
                         <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group relative cursor-pointer">
                           <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-slate-900 text-white text-[11px] font-mono font-bold py-1 px-2 rounded-lg whitespace-nowrap shadow-lg z-20">
-                            ₺{item.turnover.toFixed(0)} ({item.orders} Sipariş)
+                            ₺{Number(item.turnover || 0).toFixed(0)} ({item.orders || 0} Sipariş)
                           </div>
 
                           <div
@@ -1043,7 +1043,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                               <span className="text-slate-800 dark:text-slate-200">{cat.category}</span>
                             </div>
                             <span className="font-mono font-black text-slate-900 dark:text-white">
-                              ₺{cat.turnover.toFixed(2)} (%{cat.percent})
+                              ₺{Number(cat.turnover || 0).toFixed(2)} (%{cat.percent})
                             </span>
                           </div>
                           <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-3 overflow-hidden">
@@ -1105,7 +1105,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                       return (
                         <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group relative cursor-pointer">
                           <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-slate-900 text-white text-[11px] font-mono font-bold py-1 px-2 rounded-lg whitespace-nowrap shadow-lg z-20">
-                            ₺{day.turnover.toFixed(0)} ({day.orders} Masa)
+                            ₺{Number(day.turnover || 0).toFixed(0)} ({day.orders || 0} Masa)
                           </div>
 
                           <div
@@ -1150,7 +1150,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                           <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{p.name}</span>
                         </div>
                         <div className="text-lg font-black text-slate-900 dark:text-white font-mono mt-1">
-                          ₺{p.amount.toFixed(2)}
+                          ₺{Number(p.amount || 0).toFixed(2)}
                         </div>
                         <div className="text-[11px] font-bold text-slate-500">%{p.percent} Pay</div>
                       </div>
@@ -1170,38 +1170,38 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Toplam Paket Ciro</span>
-                  <div className="text-2xl font-black text-brand-600 font-mono">₺{deliveryData.total_turnover.toFixed(2)}</div>
-                  <div className="text-[11px] font-bold text-slate-500">{deliveryData.total_orders} Adet Sipariş</div>
+                  <div className="text-2xl font-black text-brand-600 font-mono">₺{Number(deliveryData?.total_turnover || 0).toFixed(2)}</div>
+                  <div className="text-[11px] font-bold text-slate-500">{deliveryData?.total_orders || 0} Adet Sipariş</div>
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Ortalama Paket Tutarı</span>
-                  <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">₺{deliveryData.avg_ticket.toFixed(2)}</div>
+                  <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">₺{Number(deliveryData?.avg_ticket || 0).toFixed(2)}</div>
                   <div className="text-[11px] font-bold text-emerald-600">Sepet Ortalaması</div>
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Dağıtımda (Yolda)</span>
-                  <div className="text-2xl font-black text-amber-500 font-mono">{deliveryData.on_the_way} Adet</div>
+                  <div className="text-2xl font-black text-amber-500 font-mono">{deliveryData?.on_the_way || 0} Adet</div>
                   <div className="text-[11px] font-bold text-amber-600">Kuryeler Teslim Ediyor</div>
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Teslim Edilen</span>
-                  <div className="text-2xl font-black text-emerald-600 font-mono">{deliveryData.delivered} Adet</div>
+                  <div className="text-2xl font-black text-emerald-600 font-mono">{deliveryData?.delivered || 0} Adet</div>
                   <div className="text-[11px] font-bold text-emerald-600">Başarılı Teslimat</div>
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">İptal / İade Paket</span>
-                  <div className="text-2xl font-black text-slate-400 font-mono">{deliveryData.cancelled} Adet</div>
+                  <div className="text-2xl font-black text-slate-400 font-mono">{deliveryData?.cancelled || 0} Adet</div>
                   <div className="text-[11px] font-bold text-slate-500">Müşteri Ulaşılamadı</div>
                 </div>
               </div>
 
               {/* Platform Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                {deliveryData.platforms.map((p: any, idx: number) => (
+                {(deliveryData?.platforms || []).map((p: any, idx: number) => (
                   <div key={idx} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-2">
                     <div className="flex items-center justify-between">
                       <span className={`text-[10px] text-white font-black px-2 py-0.5 rounded-full ${p.badge}`}>
@@ -1210,7 +1210,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                       <span className="text-xs font-mono font-bold text-slate-500">%{p.share}</span>
                     </div>
                     <div className="text-xl font-black text-slate-900 dark:text-white font-mono">
-                      ₺{p.turnover.toFixed(2)}
+                      ₺{Number(p.turnover || 0).toFixed(2)}
                     </div>
                     <div className="text-[11px] text-slate-500">{p.orders} Paket Sipariş</div>
                   </div>
@@ -1237,7 +1237,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                     <div className="col-span-2 text-right">Durumu</div>
                   </div>
 
-                  {deliveryData.couriers.map((c: any) => (
+                  {(deliveryData?.couriers || []).map((c: any) => (
                     <div key={c.id} className="grid grid-cols-12 p-4 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
                       <div className="col-span-3 font-bold text-slate-900 dark:text-white">
                         <div>{c.name}</div>
@@ -1245,10 +1245,10 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                       </div>
                       <div className="col-span-2 text-center font-mono font-bold">{c.deliveries_count} Paket</div>
                       <div className="col-span-2 text-right font-mono font-bold text-emerald-600">
-                        ₺{c.cash_collected.toFixed(2)}
+                        ₺{Number(c.cash_collected || 0).toFixed(2)}
                       </div>
                       <div className="col-span-2 text-right font-mono font-bold text-blue-600">
-                        ₺{c.card_collected.toFixed(2)}
+                        ₺{Number(c.card_collected || 0).toFixed(2)}
                       </div>
                       <div className="col-span-1 text-center font-mono text-slate-500">{c.avg_time}</div>
                       <div className="col-span-2 text-right">
@@ -1299,7 +1299,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                       <div className="col-span-2 text-slate-500 font-medium">{o.payment}</div>
                       <div className="col-span-1 text-center font-mono text-slate-500">{o.time}</div>
                       <div className="col-span-2 text-right">
-                        <div className="font-mono font-black text-slate-900 dark:text-white">₺{o.amount.toFixed(2)}</div>
+                        <div className="font-mono font-black text-slate-900 dark:text-white">₺{Number(o.amount || 0).toFixed(2)}</div>
                         <span className={`text-[10px] font-bold ${o.status === 'Yolda' ? 'text-amber-600' : 'text-emerald-600'}`}>
                           {o.status}
                         </span>
@@ -1318,7 +1318,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
             <div className="space-y-6">
               {/* Top 4 Channel KPI Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {channelData.map((ch: any) => (
+                {(channelData || []).map((ch: any) => (
                   <div key={ch.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -1335,14 +1335,14 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
 
                     <div>
                       <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                        ₺{ch.turnover.toFixed(2)}
+                        ₺{Number(ch.turnover || 0).toFixed(2)}
                       </div>
                       <div className="text-xs text-slate-400 mt-0.5">{ch.description}</div>
                     </div>
 
                     <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between text-xs font-bold text-slate-500">
                       <span>{ch.orders} Sipariş</span>
-                      <span>Ort. ₺{ch.avg_ticket.toFixed(2)}</span>
+                      <span>Ort. ₺{Number(ch.avg_ticket || 0).toFixed(2)}</span>
                     </div>
                   </div>
                 ))}
@@ -1413,10 +1413,10 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                       </div>
                       <div className="col-span-2 text-center font-mono font-bold">{ch.orders} Adet</div>
                       <div className="col-span-2 text-right font-mono font-bold text-slate-600 dark:text-slate-400">
-                        ₺{ch.avg_ticket.toFixed(2)}
+                        ₺{Number(ch.avg_ticket || 0).toFixed(2)}
                       </div>
                       <div className="col-span-2 text-right font-mono font-black text-slate-900 dark:text-white">
-                        ₺{ch.turnover.toFixed(2)}
+                        ₺{Number(ch.turnover || 0).toFixed(2)}
                       </div>
                     </div>
                   ))}
@@ -1577,25 +1577,25 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Toplam İkram Tutarı</span>
-                  <div className="text-2xl font-black text-amber-600 font-mono">₺{complimentaryData.total_treats.toFixed(2)}</div>
+                  <div className="text-2xl font-black text-amber-600 font-mono">₺{Number(complimentaryData?.total_treats || 0).toFixed(2)}</div>
                   <div className="text-[11px] font-bold text-slate-500">Müessese ve Şef İkramları</div>
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Toplam İptal / Zayi</span>
-                  <div className="text-2xl font-black text-brand-600 font-mono">₺{complimentaryData.total_voids.toFixed(2)}</div>
+                  <div className="text-2xl font-black text-brand-600 font-mono">₺{Number(complimentaryData?.total_voids || 0).toFixed(2)}</div>
                   <div className="text-[11px] font-bold text-slate-500">Müdür Onaylı İptaller</div>
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Toplam İskonto & İndirim</span>
-                  <div className="text-2xl font-black text-blue-600 font-mono">₺{complimentaryData.total_discounts.toFixed(2)}</div>
+                  <div className="text-2xl font-black text-blue-600 font-mono">₺{Number(complimentaryData?.total_discounts || 0).toFixed(2)}</div>
                   <div className="text-[11px] font-bold text-slate-500">Kurumsal / Sadakat İndirimi</div>
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Gelir Feragat Oranı</span>
-                  <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">%{complimentaryData.loss_rate_percent}</div>
+                  <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">%{complimentaryData?.loss_rate_percent || 0}</div>
                   <div className="text-[11px] font-bold text-emerald-600">Sağlıklı Tolerans (Hedef &lt;%5)</div>
                 </div>
               </div>
@@ -1678,7 +1678,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                         <div className="col-span-2 text-slate-700 dark:text-slate-300 font-medium">{t.staff}</div>
                         <div className="col-span-2 text-slate-500 text-[11px]">{t.reason}</div>
                         <div className="col-span-1 text-right font-mono font-black text-amber-600">
-                          ₺{t.amount.toFixed(2)}
+                          ₺{Number(t.amount || 0).toFixed(2)}
                         </div>
                       </div>
                     ))}
@@ -1694,7 +1694,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                       <XCircle className="w-4 h-4 text-brand-600" />
                       İptal / İade (Void) Denetim Kayıtları
                     </h3>
-                    <span className="text-xs text-slate-400 font-medium">{complimentaryData.void_items.length} Kayıt</span>
+                    <span className="text-xs text-slate-400 font-medium">{(complimentaryData?.void_items || []).length} Kayıt</span>
                   </div>
 
                   <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
@@ -1707,7 +1707,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                       <div className="col-span-2 text-right">Tutar & Onay</div>
                     </div>
 
-                    {complimentaryData.void_items.map((v: any) => (
+                    {(complimentaryData?.void_items || []).map((v: any) => (
                       <div key={v.id} className="grid grid-cols-12 p-3.5 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
                         <div className="col-span-1 text-center font-mono text-slate-500">{v.time}</div>
                         <div className="col-span-2 font-bold text-slate-900 dark:text-white">{v.table_name}</div>
@@ -1715,7 +1715,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                         <div className="col-span-2 text-slate-700 dark:text-slate-300 font-medium">{v.staff}</div>
                         <div className="col-span-2 text-slate-500 text-[11px]">{v.reason}</div>
                         <div className="col-span-2 text-right">
-                          <div className="font-mono font-black text-brand-600">₺{v.amount.toFixed(2)}</div>
+                          <div className="font-mono font-black text-brand-600">₺{Number(v.amount || 0).toFixed(2)}</div>
                           <div className="text-[10px] text-slate-400 font-medium">{v.approved_by}</div>
                         </div>
                       </div>
@@ -1732,7 +1732,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                       <Percent className="w-4 h-4 text-blue-600" />
                       Uygulanan İskontolar & İndirimler
                     </h3>
-                    <span className="text-xs text-slate-400 font-medium">{complimentaryData.discount_orders.length} Kayıt</span>
+                    <span className="text-xs text-slate-400 font-medium">{(complimentaryData?.discount_orders || []).length} Kayıt</span>
                   </div>
 
                   <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
@@ -1745,7 +1745,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                       <div className="col-span-2 text-right">İndirim Tutarı</div>
                     </div>
 
-                    {complimentaryData.discount_orders.map((d: any) => (
+                    {(complimentaryData?.discount_orders || []).map((d: any) => (
                       <div key={d.id} className="grid grid-cols-12 p-3.5 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
                         <div className="col-span-1 text-center font-mono text-slate-500">{d.time}</div>
                         <div className="col-span-2 font-bold text-slate-900 dark:text-white">{d.table_name}</div>
@@ -1755,7 +1755,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                         <div className="col-span-3 text-slate-500 text-[11px]">{d.reason}</div>
                         <div className="col-span-2 text-slate-700 dark:text-slate-300 font-medium">{d.staff}</div>
                         <div className="col-span-2 text-right font-mono font-black text-blue-600">
-                          -₺{d.amount.toFixed(2)}
+                          -₺{Number(d.amount || 0).toFixed(2)}
                         </div>
                       </div>
                     ))}
@@ -1789,10 +1789,10 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                   <div>
                     <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Toplam Envanter Tutarı</div>
                     <div className="text-2xl font-black text-emerald-600 mt-1 font-mono">
-                      ₺{totalInventoryValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₺{Number(totalInventoryValue || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                     <div className="text-[11px] font-bold text-slate-400 mt-1">
-                      Filtreli: ₺{filteredInventoryValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      Filtreli: ₺{Number(filteredInventoryValue || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                   </div>
                   <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 flex items-center justify-center">
@@ -1859,7 +1859,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                   >
                     <div className="text-xs font-black">TÜM KATEGORİLER ({stockItems.length})</div>
                     <div className={`text-[10px] font-mono font-bold mt-0.5 ${stockCategoryFilter === 'ALL' ? 'text-emerald-100' : 'text-slate-400'}`}>
-                      ₺{totalInventoryValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₺{Number(totalInventoryValue || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                   </button>
 
@@ -1882,7 +1882,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                           </span>
                         </div>
                         <div className={`text-[10px] font-mono font-bold mt-0.5 ${active ? 'text-emerald-100' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                          ₺{c.totalValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ₺{Number(c.totalValue || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                       </button>
                     );
@@ -1997,7 +1997,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                   <div className="text-right">
                     <span className="text-[11px] font-bold text-slate-400 mr-2">Listelenen Toplam Tutar:</span>
                     <span className="text-sm font-black font-mono text-emerald-600">
-                      ₺{filteredInventoryValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₺{Number(filteredInventoryValue || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                 </div>
@@ -2067,7 +2067,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                                     : 'text-slate-900 dark:text-white'
                                 }`}
                               >
-                                {stock.toLocaleString('tr-TR', { maximumFractionDigits: 3 })}
+                                {Number(stock || 0).toLocaleString('tr-TR', { maximumFractionDigits: 3 })}
                               </span>
                             </td>
                             <td className="py-2.5 px-3 text-center font-mono text-slate-500">
@@ -2079,10 +2079,10 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                               </span>
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-700 dark:text-slate-300">
-                              ₺{unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              ₺{Number(unitPrice || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono font-black text-emerald-600 dark:text-emerald-400">
-                              ₺{totalVal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              ₺{Number(totalVal || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
                             <td className="py-2.5 px-3 text-center">
                               <div className="flex items-center justify-center gap-1">
@@ -2121,15 +2121,15 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                             GENEL TOPLAM ({filteredStockItems.length} Stok Kalemi)
                           </td>
                           <td className="py-3.5 px-3 text-right font-mono text-slate-900 dark:text-white">
-                            {filteredStockItems
-                              .reduce((s, i) => s + Number(i.current_stock || 0), 0)
+                            {Number(filteredStockItems
+                              .reduce((s, i) => s + Number(i.current_stock || 0), 0))
                               .toLocaleString('tr-TR', { maximumFractionDigits: 3 })}
                           </td>
                           <td colSpan={3} className="py-3.5 px-3 text-right text-slate-500">
                             Toplam Envanter Değeri:
                           </td>
                           <td className="py-3.5 px-3 text-right font-mono text-sm text-emerald-600 dark:text-emerald-400">
-                            ₺{filteredInventoryValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ₺{Number(filteredInventoryValue || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td />
                         </tr>
@@ -2143,7 +2143,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
 
           {/* TAB: CLOSED BILLS REPORT */}
           {activeTab === 'closed_bills' && (
-            <div className="-m-6 h-[calc(100%+3rem)]">
+            <div className="w-full pb-16">
               <ClosedBillsReport
                 embedded
                 onRefreshGlobalData={() => loadStatistics(dateRange)}

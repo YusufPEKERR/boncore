@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ArrowRight, Merge, RefreshCw, Users, Bell, CheckCircle, ArrowRightLeft } from 'lucide-react';
+import { X, ArrowRight, Merge, RefreshCw, Users, Bell, CheckCircle, ArrowRightLeft, Utensils, Clock, Trash2 } from 'lucide-react';
 import { Table, Area } from '../../types';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';

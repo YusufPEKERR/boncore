@@ -111,7 +111,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             <img 
               src="/icon-192.png" 
               alt="BonCore POS" 
-              className="w-9 h-9 rounded-xl object-contain shadow-sm" 
+              className="w-10 h-10 rounded-xl object-cover shadow-sm shrink-0" 
             />
             <div>
               <div className="flex items-center gap-1.5">

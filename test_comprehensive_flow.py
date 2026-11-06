@@ -112,8 +112,11 @@ def run_all_tests():
     pin_müdür = t.request("POST", "/api/auth/login-pin", {"pin_code": "9999"})
     t.assert_true(pin_müdür and pin_müdür.get("role") == "manager", "PIN 9999 Manager authentication")
 
+    pin_admin = t.request("POST", "/api/auth/login-pin", {"pin_code": "0000"})
+    t.assert_true(pin_admin and pin_admin.get("role") in ["admin", "manager"], "PIN 0000 authentication (Admin)")
+
     # Invalid PIN
-    t.request("POST", "/api/auth/login-pin", {"pin_code": "0000"}, expected_status=(401,))
+    t.request("POST", "/api/auth/login-pin", {"pin_code": "8765"}, expected_status=(401,))
 
     # Staff CRUD
     staff_list = t.request("GET", "/api/auth/staff")

@@ -340,7 +340,13 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
       const cachedServiceRate = localStorage.getItem('boncore_service_rate');
       if (cachedServiceRate) setServiceChargeRate(Number(cachedServiceRate));
       const cachedDiscounts = localStorage.getItem('boncore_discounts');
-      if (cachedDiscounts) setDiscounts(JSON.parse(cachedDiscounts));
+      if (cachedDiscounts) {
+        try {
+          setDiscounts(JSON.parse(cachedDiscounts));
+        } catch (e) {
+          console.warn('Failed to parse cached discounts', e);
+        }
+      }
       const cachedPayments = localStorage.getItem('boncore_payment_methods');
       if (cachedPayments) {
         try {
@@ -817,7 +823,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       </div>
 
                       <div className="col-span-3 text-center font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
-                        {disc.type === 'percent' ? `%${disc.value}` : `₺${disc.value.toFixed(2)}`}
+                        {disc.type === 'percent' ? `%${disc.value}` : `₺${Number(disc.value || 0).toFixed(2)}`}
                       </div>
 
                       <div className="col-span-2 text-center">
@@ -1850,7 +1856,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                         <span>{scaleLiveWeight?.is_stable !== false ? '• DENGELİ (ST)' : '• DENGESİZ (US)'}</span>
                       </div>
                       <div className="text-4xl sm:text-5xl font-black text-emerald-400 tracking-wider py-1 drop-shadow-[0_0_12px_rgba(16,185,129,0.5)]">
-                        {scaleLiveWeight ? scaleLiveWeight.weight.toFixed(3) : '0.000'} <span className="text-xl text-emerald-500/90 font-bold">Kg</span>
+                        {scaleLiveWeight ? Number(scaleLiveWeight.weight || 0).toFixed(3) : '0.000'} <span className="text-xl text-emerald-500/90 font-bold">Kg</span>
                       </div>
                       <div className="text-[11px] text-emerald-400/70 font-semibold truncate">
                         {scaleLiveWeight?.raw || 'Teraziden tartım okumak için butona basın.'}

@@ -631,7 +631,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
   const displayedProducts = useMemo(() => {
     if (searchQuery.trim()) {
       const filtered = orderedCategories
-        .flatMap(c => c.products || [])
+        .flatMap(c => (c && c.products) || [])
         .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
       if (activeSortMode === 'az') {
         return [...filtered].sort((a, b) => a.name.localeCompare(b.name, 'tr', { sensitivity: 'base' }));

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { StaffUser } from '../types';
 import { api } from './api';
+import { isTabLicensed, loadLocalFeatures, TenantFeatures } from './licensedFeatures';
 
 export interface PermissionItem {
   id: string;
@@ -617,8 +618,15 @@ export function checkPermission(
 export function canAccessAppTab(
   permissions: PermissionItem[],
   role: string | undefined | null,
-  tabId: string
+  tabId: string,
+  features?: TenantFeatures
 ): boolean {
+  // 1. FIRST: Check module licensing! If the restaurant has not licensed this module in SaaS,
+  // NO role (including manager / admin) can view or access it!
+  if (!isTabLicensed(tabId, features)) {
+    return false;
+  }
+
   const roleKey = normalizeRoleKey(role);
   // Yetkiler ekranı SADECE yöneticide (manager) gözükür ve sadece yönetici erişebilir!
   if (tabId === 'rights') {
@@ -640,6 +648,7 @@ export function canAccessAppTab(
 
 export function useRolePermissions(currentUser?: StaffUser | null) {
   const [permissions, setPermissions] = useState<PermissionItem[]>(loadLocalPermissions);
+  const [features, setFeatures] = useState<TenantFeatures>(loadLocalFeatures);
 
   const refreshPermissions = useCallback(async () => {
     try {
@@ -664,16 +673,30 @@ export function useRolePermissions(currentUser?: StaffUser | null) {
       }
     };
 
+    const handleFeaturesUpdate = (e: Event) => {
+      const custom = e as CustomEvent<TenantFeatures>;
+      if (custom.detail) {
+        setFeatures(custom.detail);
+      } else {
+        setFeatures(loadLocalFeatures());
+      }
+    };
+
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'boncore_role_permissions') {
         setPermissions(loadLocalPermissions());
       }
+      if (e.key === 'boncore_licensed_features') {
+        setFeatures(loadLocalFeatures());
+      }
     };
 
     window.addEventListener('boncore_permissions_updated', handleCustomUpdate);
+    window.addEventListener('boncore_features_updated', handleFeaturesUpdate);
     window.addEventListener('storage', handleStorage);
     return () => {
       window.removeEventListener('boncore_permissions_updated', handleCustomUpdate);
+      window.removeEventListener('boncore_features_updated', handleFeaturesUpdate);
       window.removeEventListener('storage', handleStorage);
     };
   }, [refreshPermissions]);
@@ -686,8 +709,8 @@ export function useRolePermissions(currentUser?: StaffUser | null) {
   );
 
   const canTab = useCallback(
-    (tabId: string) => canAccessAppTab(permissions, roleKey, tabId),
-    [permissions, roleKey]
+    (tabId: string) => canAccessAppTab(permissions, roleKey, tabId, features),
+    [permissions, roleKey, features]
   );
 
   return {

@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Building2, Plus, Search, Filter, Edit, Users, 
   Trash2, ShieldCheck, CheckCircle2, AlertTriangle, 
-  Clock, DollarSign, ArrowRight, X, Phone, Mail, MapPin 
+  Clock, DollarSign, ArrowRight, X, Phone, Mail, MapPin,
+  QrCode, Tv, Bike, Globe, Receipt, Package, Award,
+  Check, ToggleLeft, ToggleRight, Sparkles, Monitor, Calendar,
+  TrendingUp, CheckCheck, XCircle, RotateCcw
 } from 'lucide-react';
 import { sound } from '../../services/sound';
 
@@ -12,6 +15,137 @@ interface MasterTenantsViewProps {
   onSelectTenantUsers: (tenantId: number) => void;
   onImpersonateTenant: (tenant: any) => void;
 }
+
+export interface TenantFeatureState {
+  feature_qr_menu: boolean;
+  feature_kds: boolean;
+  feature_delivery: boolean;
+  feature_integrations: boolean;
+  feature_e_invoice: boolean;
+  feature_stock_recipe: boolean;
+  feature_loyalty: boolean;
+  feature_hotel: boolean;
+  feature_kiosk: boolean;
+  feature_reservations: boolean;
+  feature_cost_profit: boolean;
+}
+
+export const MODULE_CONFIG = [
+  { 
+    key: 'feature_qr_menu', 
+    label: 'QR Menü & Sipariş', 
+    icon: QrCode, 
+    desc: 'Temassız masa QR menüsü ve dijital sipariş' 
+  },
+  { 
+    key: 'feature_kds', 
+    label: 'KDS Mutfak & Bar', 
+    icon: Tv, 
+    desc: 'Mutfak istasyonları canlı sipariş hazırlık ekranı' 
+  },
+  { 
+    key: 'feature_delivery', 
+    label: 'Paket Servis & CallerID', 
+    icon: Bike, 
+    desc: 'Arayan numara tanıma ve paket kurye yönetimi' 
+  },
+  { 
+    key: 'feature_integrations', 
+    label: 'Platform Entegrasyonları', 
+    icon: Globe, 
+    desc: 'Yemeksepeti, Getir & Trendyol çift yönlü entegrasyon' 
+  },
+  { 
+    key: 'feature_e_invoice', 
+    label: 'E-Fatura & ÖKC Mali', 
+    icon: Receipt, 
+    desc: 'GİB e-Arşiv, e-Fatura ve mali yazarkasa entegrasyonu' 
+  },
+  { 
+    key: 'feature_stock_recipe', 
+    label: 'Reçete & Stok Maliyeti', 
+    icon: Package, 
+    desc: 'Hammadde düşümü, reçete ve anlık birim maliyet' 
+  },
+  { 
+    key: 'feature_loyalty', 
+    label: 'Sadakat & SMS Pazarlama', 
+    icon: Award, 
+    desc: 'Müşteri puan kazanımı ve SMS kampanya merkezi' 
+  },
+  { 
+    key: 'feature_hotel', 
+    label: 'Otel Yönetimi (PMS / Folyo)', 
+    icon: Building2, 
+    desc: 'Oda hesabına adisyon yansıtma ve otel folyo tahsilatı' 
+  },
+  { 
+    key: 'feature_kiosk', 
+    label: 'Self-Servis Kiosk & CFD', 
+    icon: Monitor, 
+    desc: 'Dokunmatik Kiosk ve müşteri çift yönlü çağrı ekranı' 
+  },
+  { 
+    key: 'feature_reservations', 
+    label: 'Masa Rezervasyon & Planlama', 
+    icon: Calendar, 
+    desc: 'Masa rezervasyonları, kapora ve organizasyon takibi' 
+  },
+  { 
+    key: 'feature_cost_profit', 
+    label: 'Maliyet, Kâr & Menü Sihirbazı', 
+    icon: TrendingUp, 
+    desc: 'Menü mühendisliği, hammadde kârlılık ve birim maliyet' 
+  }
+];
+
+export const getRecommendedFeatures = (plan: string): TenantFeatureState => {
+  switch (plan) {
+    case 'starter':
+      return {
+        feature_qr_menu: true,
+        feature_kds: false,
+        feature_delivery: false,
+        feature_integrations: false,
+        feature_e_invoice: false,
+        feature_stock_recipe: false,
+        feature_loyalty: false,
+        feature_hotel: false,
+        feature_kiosk: false,
+        feature_reservations: false,
+        feature_cost_profit: false
+      };
+    case 'enterprise':
+      return {
+        feature_qr_menu: true,
+        feature_kds: true,
+        feature_delivery: true,
+        feature_integrations: true,
+        feature_e_invoice: true,
+        feature_stock_recipe: true,
+        feature_loyalty: true,
+        feature_hotel: true,
+        feature_kiosk: true,
+        feature_reservations: true,
+        feature_cost_profit: true
+      };
+    case 'pro':
+    default:
+      return {
+        feature_qr_menu: true,
+        feature_kds: true,
+        feature_delivery: true,
+        feature_integrations: true,
+        feature_e_invoice: false,
+        feature_stock_recipe: true,
+        feature_loyalty: false,
+        feature_hotel: false,
+        feature_kiosk: false,
+        feature_reservations: true,
+        feature_cost_profit: false
+      };
+  }
+};
 
 export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
   tenants,
@@ -26,6 +160,8 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
   // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [editingTenant, setEditingTenant] = useState<any | null>(null);
+  const [editingFeatures, setEditingFeatures] = useState<TenantFeatureState>(getRecommendedFeatures('pro'));
+  const [loadingFeatures, setLoadingFeatures] = useState<boolean>(false);
 
   // New Tenant Form state
   const [newForm, setNewForm] = useState({
@@ -45,6 +181,7 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
     admin_password: '123456',
     notes: ''
   });
+  const [newFeatures, setNewFeatures] = useState<TenantFeatureState>(getRecommendedFeatures('pro'));
   const [codeManuallyEdited, setCodeManuallyEdited] = useState<boolean>(false);
 
   const slugify = (text: string) => {
@@ -57,6 +194,105 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
       setNewForm(prev => ({ ...prev, name: val, code: slugify(val) }));
     } else {
       setNewForm(prev => ({ ...prev, name: val }));
+    }
+  };
+
+  const handleSelectAllFeatures = (target: 'edit' | 'new') => {
+    sound.beep();
+    const allEnabled: TenantFeatureState = {
+      feature_qr_menu: true,
+      feature_kds: true,
+      feature_delivery: true,
+      feature_integrations: true,
+      feature_e_invoice: true,
+      feature_stock_recipe: true,
+      feature_loyalty: true,
+      feature_hotel: true,
+      feature_kiosk: true,
+      feature_reservations: true,
+      feature_cost_profit: true,
+    };
+    if (target === 'edit') {
+      setEditingFeatures(allEnabled);
+    } else {
+      setNewFeatures(allEnabled);
+    }
+  };
+
+  const handleDeselectAllFeatures = (target: 'edit' | 'new') => {
+    sound.beep();
+    const allDisabled: TenantFeatureState = {
+      feature_qr_menu: false,
+      feature_kds: false,
+      feature_delivery: false,
+      feature_integrations: false,
+      feature_e_invoice: false,
+      feature_stock_recipe: false,
+      feature_loyalty: false,
+      feature_hotel: false,
+      feature_kiosk: false,
+      feature_reservations: false,
+      feature_cost_profit: false,
+    };
+    if (target === 'edit') {
+      setEditingFeatures(allDisabled);
+    } else {
+      setNewFeatures(allDisabled);
+    }
+  };
+
+  const handleResetRecommendedFeatures = (target: 'edit' | 'new', plan: string) => {
+    sound.beep();
+    const rec = getRecommendedFeatures(plan);
+    if (target === 'edit') {
+      setEditingFeatures(rec);
+    } else {
+      setNewFeatures(rec);
+    }
+  };
+
+  const handlePlanChangeNew = (newPlan: string) => {
+    const price = newPlan === 'starter' ? 790 : newPlan === 'enterprise' ? 2990 : 1490;
+    setNewForm(prev => ({ ...prev, plan: newPlan, monthly_price: price }));
+    setNewFeatures(getRecommendedFeatures(newPlan));
+  };
+
+  const handlePlanChangeEdit = (newPlan: string) => {
+    if (!editingTenant) return;
+    const price = newPlan === 'starter' ? 790 : newPlan === 'enterprise' ? 2990 : 1490;
+    setEditingTenant({ ...editingTenant, plan: newPlan, monthly_price: price });
+    setEditingFeatures(getRecommendedFeatures(newPlan));
+  };
+
+  const handleStartEdit = async (tenant: any) => {
+    sound.beep();
+    setEditingTenant({ ...tenant });
+    setLoadingFeatures(true);
+    // Initialize with recommended defaults first
+    setEditingFeatures(getRecommendedFeatures(tenant.plan || 'pro'));
+
+    try {
+      const res = await fetch(`/api/master/tenants/${tenant.id}/features?_t=${Date.now()}`);
+      if (res.ok) {
+        const d = await res.json();
+        setEditingFeatures({
+          feature_qr_menu: Boolean(d.feature_qr_menu),
+          feature_kds: Boolean(d.feature_kds),
+          feature_delivery: Boolean(d.feature_delivery),
+          feature_integrations: Boolean(d.feature_integrations),
+          feature_e_invoice: Boolean(d.feature_e_invoice),
+          feature_stock_recipe: Boolean(d.feature_stock_recipe),
+          feature_loyalty: Boolean(d.feature_loyalty),
+          feature_hotel: d.feature_hotel !== undefined ? Boolean(d.feature_hotel) : true,
+          feature_kiosk: d.feature_kiosk !== undefined ? Boolean(d.feature_kiosk) : true,
+          feature_reservations: d.feature_reservations !== undefined ? Boolean(d.feature_reservations) : true,
+          feature_cost_profit: d.feature_cost_profit !== undefined ? Boolean(d.feature_cost_profit) : true,
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to fetch tenant features', e);
+    } finally {
+      setLoadingFeatures(false);
     }
   };
 
@@ -97,6 +333,19 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
         throw new Error(err.detail || 'Restoran eklenemedi.');
       }
       const data = await res.json();
+
+      // Also initialize feature toggles
+      if (data && data.id) {
+        await fetch(`/api/master/tenants/${data.id}/features`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            plan: newForm.plan,
+            ...newFeatures
+          })
+        }).catch(() => null);
+      }
+
       alert(`Restoran oluşturuldu!\nRestoran Giriş Kodu: ${data.code}\nYönetici Kullanıcı Adı: ${data.admin_username}\nŞifre: ${data.admin_password}\nPIN: ${data.pin_code}`);
       setIsAddModalOpen(false);
       setCodeManuallyEdited(false);
@@ -112,6 +361,7 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
 
     sound.beep();
     try {
+      // 1. Update basic tenant fields
       const res = await fetch(`/api/master/tenants/${editingTenant.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -133,8 +383,35 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || 'Güncelleme başarısız.');
       }
+
+      // 2. Update feature flags via dedicated PUT /api/master/tenants/:id/features
+      const featRes = await fetch(`/api/master/tenants/${editingTenant.id}/features`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan: editingTenant.plan,
+          feature_qr_menu: editingFeatures.feature_qr_menu,
+          feature_kds: editingFeatures.feature_kds,
+          feature_delivery: editingFeatures.feature_delivery,
+          feature_integrations: editingFeatures.feature_integrations,
+          feature_e_invoice: editingFeatures.feature_e_invoice,
+          feature_stock_recipe: editingFeatures.feature_stock_recipe,
+          feature_loyalty: editingFeatures.feature_loyalty,
+          feature_hotel: editingFeatures.feature_hotel,
+          feature_kiosk: editingFeatures.feature_kiosk,
+          feature_reservations: editingFeatures.feature_reservations,
+          feature_cost_profit: editingFeatures.feature_cost_profit,
+          monthly_price: Number(editingTenant.monthly_price),
+          status: editingTenant.status
+        })
+      });
+
+      if (!featRes.ok) {
+        console.warn('Feature update warning');
+      }
+
       const data = await res.json().catch(() => ({}));
-      alert(`Restoran bilgileri ve kullanıcı adı başarıyla "@${data.tenant?.code || editingTenant.code}" olarak güncellendi!`);
+      alert(`Restoran bilgileri ve 11 modül lisansı başarıyla kaydedildi!`);
       setEditingTenant(null);
       onRefresh();
     } catch (err: any) {
@@ -162,10 +439,10 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
         <div>
           <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
             <Building2 className="w-6 h-6 text-emerald-400" />
-            <span>Kayıtlı Restoranlar & İşletmeler ({tenants.length})</span>
+            <span>Kayıtlı Restoranlar & Modül Lisanslama ({tenants.length})</span>
           </h2>
           <p className="text-xs text-slate-400 font-medium mt-0.5">
-            Sisteme üye tüm restoranların aboneliklerini, kullanıcılarını ve şifrelerini buradan yönetebilirsiniz.
+            Sisteme üye restoranların abonelik planlarını, 7 modül anahtarını ve kullanıcılarını buradan yönetin.
           </p>
         </div>
 
@@ -316,8 +593,8 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                         </button>
 
                         <button
-                          onClick={() => { sound.beep(); setEditingTenant({ ...tenant }); }}
-                          title="Restoranı Düzenle"
+                          onClick={() => handleStartEdit(tenant)}
+                          title="Restoranı ve Modül Lisanslarını Düzenle"
                           className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition cursor-pointer"
                         >
                           <Edit className="w-3.5 h-3.5" />
@@ -448,11 +725,7 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                   <label className="block mb-1">Abonelik Planı</label>
                   <select
                     value={newForm.plan}
-                    onChange={(e) => {
-                      const p = e.target.value;
-                      const price = p === 'starter' ? 790 : p === 'enterprise' ? 2990 : 1490;
-                      setNewForm({ ...newForm, plan: p, monthly_price: price });
-                    }}
+                    onChange={(e) => handlePlanChangeNew(e.target.value)}
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
                   >
                     <option value="starter">Başlangıç (₺790 / ay)</option>
@@ -460,15 +733,89 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                     <option value="enterprise">Kurumsal & Zincir (₺2.990 / ay)</option>
                   </select>
                 </div>
+              </div>
 
-                <div>
-                  <label className="block mb-1">Aylık Ücret (₺)</label>
-                  <input
-                    type="number"
-                    value={newForm.monthly_price}
-                    onChange={(e) => setNewForm({ ...newForm, monthly_price: Number(e.target.value) })}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
-                  />
+              {/* 11-Module Licensing Grid for New Tenant */}
+              <div className="p-4 rounded-2xl bg-slate-850 border border-slate-800 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-emerald-400" />
+                      <span>11 Modül Lisans Yetkileri</span>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-normal">
+                      Abonelik paketine göre önerilen modüller; tek tıkla hepsini seçebilir veya özelleştirebilirsiniz.
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                      {Object.values(newFeatures).filter(Boolean).length} / 11 Aktif
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectAllFeatures('new')}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center gap-1 transition cursor-pointer"
+                      title="Tüm modül lisanslarını aç"
+                    >
+                      <CheckCheck className="w-3 h-3" />
+                      <span>Tümünü Aç (Hepsini Seç)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeselectAllFeatures('new')}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[10px] flex items-center gap-1 transition cursor-pointer border border-slate-700"
+                      title="Tüm modülleri kapat"
+                    >
+                      <XCircle className="w-3 h-3" />
+                      <span>Tümünü Kapat</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleResetRecommendedFeatures('new', newForm.plan)}
+                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white font-bold text-[10px] flex items-center gap-1 transition cursor-pointer border border-slate-700"
+                      title="Plana göre önerilen modülleri sıfırla"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Paket Önerisi</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {MODULE_CONFIG.map((m) => {
+                    const Icon = m.icon;
+                    const isChecked = (newFeatures as any)[m.key];
+                    return (
+                      <div 
+                        key={m.key}
+                        onClick={() => setNewFeatures(prev => ({ ...prev, [m.key]: !(prev as any)[m.key] }))}
+                        className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition select-none ${
+                          isChecked 
+                            ? 'bg-emerald-950/40 border-emerald-500/50 text-white shadow-xs' 
+                            : 'bg-slate-800/50 border-slate-750 text-slate-400 opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Icon className={`w-4 h-4 ${isChecked ? 'text-emerald-400' : 'text-slate-500'}`} />
+                          <div>
+                            <div className="text-xs font-bold leading-tight">{m.label}</div>
+                            <div className="text-[10px] text-slate-500 truncate max-w-[170px]">{m.desc}</div>
+                          </div>
+                        </div>
+
+                        {isChecked ? (
+                          <span className="w-5 h-5 rounded-lg bg-emerald-500 text-black flex items-center justify-center font-bold text-[10px]">
+                            ✓
+                          </span>
+                        ) : (
+                          <span className="w-5 h-5 rounded-lg bg-slate-700 text-slate-500 flex items-center justify-center font-bold text-[10px]">
+                            —
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -520,13 +867,14 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
         </div>
       )}
 
-      {/* Modal: Restoran Düzenle */}
+      {/* Modal: Restoran Düzenle & 7-Modül Lisanslama */}
       {editingTenant && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md select-none">
-          <div className="relative w-full max-w-xl bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl p-6 sm:p-8 space-y-5">
+          <div className="relative w-full max-w-2xl bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl p-6 sm:p-8 max-h-[90vh] overflow-y-auto space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-lg font-black text-white">
-                Restoranı Düzenle: {editingTenant.name}
+              <h3 className="text-lg font-black text-white flex items-center gap-2">
+                <Edit className="w-5 h-5 text-emerald-400" />
+                <span>Restoran Düzenle & Modül Lisanslama</span>
               </h3>
               <button onClick={() => setEditingTenant(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
@@ -534,9 +882,23 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
             </div>
 
             <form onSubmit={handleUpdateTenant} className="space-y-4 text-xs font-bold text-slate-300">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block mb-1">Restoran Adı</label>
+                  <label className="block mb-1">Restoran Giriş Kodu (Kullanıcı Adı)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono font-bold">@</span>
+                    <input
+                      type="text"
+                      required
+                      value={editingTenant.code || ''}
+                      onChange={(e) => setEditingTenant({ ...editingTenant, code: e.target.value.toLowerCase().replace(/[^a-z0-9\-_]/g, '') })}
+                      className="w-full pl-7 pr-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-emerald-400 font-mono font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block mb-1">Restoran Adı (Şirket Unvanı)</label>
                   <input
                     type="text"
                     required
@@ -545,48 +907,17 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold"
                   />
                 </div>
-
-                <div>
-                  <label className="block mb-1 text-emerald-400 flex items-center justify-between">
-                    <span>Giriş Kullanıcı Adı</span>
-                    <span className="text-[10px] text-slate-400 font-normal">Girişte kullanılır</span>
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono font-bold">@</span>
-                    <input
-                      type="text"
-                      required
-                      value={editingTenant.code || ''}
-                      onChange={(e) => setEditingTenant({ ...editingTenant, code: e.target.value.toLowerCase().replace(/[^a-z0-9\-_]/g, '') })}
-                      className="w-full pl-7 pr-3.5 py-2.5 rounded-xl bg-slate-800 border border-emerald-500/50 text-emerald-300 font-mono font-bold focus:border-emerald-400 focus:outline-none"
-                      placeholder="restoran-kodu"
-                    />
-                  </div>
-                </div>
               </div>
 
-              {/* POS Ekranında ve Adisyonda Görünen Başlık (Görseldeki Alttaki İsim) */}
-              <div className="p-3.5 rounded-2xl bg-emerald-950/20 border border-emerald-500/40 space-y-1.5">
-                <label className="block text-emerald-300 font-black text-xs flex items-center justify-between">
-                  <span>🏪 POS Ekranı & Adisyon Başlığı (Menü Altındaki İsim)</span>
-                  <span className="text-[10px] text-emerald-400 font-bold">Canlı Ekrana Yansır</span>
-                </label>
+              <div>
+                <label className="block mb-1">POS Ekranı ve Fiş Başlığı</label>
                 <input
                   type="text"
-                  required
-                  value={editingTenant.display_name ?? editingTenant.name ?? ''}
+                  value={editingTenant.display_name ?? ''}
                   onChange={(e) => setEditingTenant({ ...editingTenant, display_name: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-850 border border-emerald-500/60 text-white font-black text-xs focus:border-emerald-400 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-emerald-300 font-bold"
                   placeholder="Örn: FATİH ÇİFTLİĞİ"
                 />
-                <p className="text-[11px] text-slate-400 font-medium">
-                  POS ekranının sol üst köşesinde (<strong>BonCore POS</strong> logosunun hemen altında) ve adisyon fişlerinin tepesinde görünen isimdir.
-                </p>
-              </div>
-
-              <div className="text-[11px] text-slate-400 bg-slate-850 p-2.5 rounded-xl border border-slate-800">
-                💡 <strong>Kullanıcı Adı Bilgisi:</strong> Personeller giriş ekranında kullanıcı adı olarak 
-                <strong className="text-emerald-400 ml-1">@{editingTenant.code}</strong> girer; şifre veya PIN kodu ise kullanıcının yetkisini belirler. Değiştirdiğinizde işletmenin veritabanı kesintisiz olarak yeni kullanıcı adına taşınır.
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -594,11 +925,7 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                   <label className="block mb-1">Abonelik Planı</label>
                   <select
                     value={editingTenant.plan}
-                    onChange={(e) => {
-                      const p = e.target.value;
-                      const price = p === 'starter' ? 790 : p === 'enterprise' ? 2990 : 1490;
-                      setEditingTenant({ ...editingTenant, plan: p, monthly_price: price });
-                    }}
+                    onChange={(e) => handlePlanChangeEdit(e.target.value)}
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white"
                   >
                     <option value="starter">Başlangıç (₺790)</option>
@@ -641,6 +968,92 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                 </div>
               </div>
 
+              {/* R1: 11-Module Feature Toggles Grid */}
+              <div className="p-4 rounded-2xl bg-slate-850 border border-emerald-500/30 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-emerald-400" />
+                      <span>11-Modül Lisanslama & Özellik İzinleri</span>
+                    </h4>
+                    <p className="text-[10px] text-slate-400 font-normal">
+                      Abonelik paketine göre önerilen modüller; tümünü açabilir veya dilediğinizi özelleştirebilirsiniz.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                      {Object.values(editingFeatures).filter(Boolean).length} / 11 Aktif
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectAllFeatures('edit')}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center gap-1 transition cursor-pointer"
+                      title="Tüm 11 modül lisansını aç"
+                    >
+                      <CheckCheck className="w-3 h-3" />
+                      <span>Tümünü Aç (Hepsini Seç)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeselectAllFeatures('edit')}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[10px] flex items-center gap-1 transition cursor-pointer border border-slate-700"
+                      title="Tüm modülleri kapat"
+                    >
+                      <XCircle className="w-3 h-3" />
+                      <span>Tümünü Kapat</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleResetRecommendedFeatures('edit', editingTenant.plan)}
+                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white font-bold text-[10px] flex items-center gap-1 transition cursor-pointer border border-slate-700"
+                      title="Plana göre önerilen modülleri sıfırla"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Paket Önerisi</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  {MODULE_CONFIG.map((m) => {
+                    const Icon = m.icon;
+                    const isChecked = (editingFeatures as any)[m.key];
+                    return (
+                      <div 
+                        key={m.key}
+                        onClick={() => setEditingFeatures(prev => ({ ...prev, [m.key]: !(prev as any)[m.key] }))}
+                        className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition select-none ${
+                          isChecked 
+                            ? 'bg-emerald-950/40 border-emerald-500/60 text-white shadow-sm' 
+                            : 'bg-slate-800/40 border-slate-750 text-slate-400 opacity-60 hover:opacity-100'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className={`p-1.5 rounded-lg ${isChecked ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold leading-tight">{m.label}</div>
+                            <div className="text-[10px] text-slate-400 truncate max-w-[170px]">{m.desc}</div>
+                          </div>
+                        </div>
+
+                        {isChecked ? (
+                          <span className="w-6 h-6 rounded-lg bg-emerald-500 text-black flex items-center justify-center font-black text-xs shadow-sm">
+                            ✓
+                          </span>
+                        ) : (
+                          <span className="w-6 h-6 rounded-lg bg-slate-750 text-slate-500 flex items-center justify-center font-bold text-xs">
+                            ✕
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="flex justify-end gap-3 pt-3">
                 <button
                   type="button"
@@ -653,7 +1066,7 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                   type="submit"
                   className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black"
                 >
-                  Değişiklikleri Kaydet
+                  Değişiklikleri ve Lisansları Kaydet
                 </button>
               </div>
             </form>

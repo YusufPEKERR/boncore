@@ -55,10 +55,14 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
       const res = await fetch(`/api/master/tenants/${tenantId}/users?_t=${Date.now()}`, { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        setUsers(data);
+        const userList = Array.isArray(data) ? data : (Array.isArray(data?.users) ? data.users : []);
+        setUsers(userList);
+      } else {
+        setUsers([]);
       }
     } catch (e) {
       console.warn('Failed to load users for tenant', e);
+      setUsers([]);
     } finally {
       setLoading(false);
     }
@@ -260,7 +264,7 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
           </div>
 
           <div className="text-xs font-bold text-slate-400">
-            Toplam <b className="text-emerald-400">{users.length}</b> Tanımlı Kullanıcı
+            Toplam <b className="text-emerald-400">{(Array.isArray(users) ? users : []).length}</b> Tanımlı Kullanıcı
           </div>
         </div>
       )}
@@ -286,14 +290,14 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
                     Kullanıcılar yükleniyor...
                   </td>
                 </tr>
-              ) : users.length === 0 ? (
+              ) : (Array.isArray(users) ? users : []).length === 0 ? (
                 <tr>
                   <td colSpan={6} className="text-center py-8 text-slate-500">
                     Bu restorana ait kayıtlı kullanıcı bulunmuyor.
                   </td>
                 </tr>
               ) : (
-                users.map((u) => (
+                (Array.isArray(users) ? users : []).map((u) => (
                   <tr key={u.id} className="hover:bg-slate-850/60 transition">
                     <td className="py-3.5 px-4">
                       <div className="font-black text-white text-sm">{u.name}</div>

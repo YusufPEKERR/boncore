@@ -370,7 +370,7 @@ export const ProductSalesReport: React.FC = () => {
           </div>
           <div className="mt-2 flex items-baseline gap-1">
             <span className="text-2xl font-black text-slate-900 dark:text-white">
-              ₺{(data?.total_revenue || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₺{Number(data?.total_revenue || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <div className="mt-1 text-[11px] text-slate-400">
@@ -389,7 +389,7 @@ export const ProductSalesReport: React.FC = () => {
           </div>
           <div className="mt-2 flex items-baseline gap-1">
             <span className="text-2xl font-black text-slate-900 dark:text-white">
-              {(data?.total_quantity_sold || 0).toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+              {Number(data?.total_quantity_sold || 0).toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
             </span>
             <span className="text-xs text-slate-400 font-bold">Porsiyon / Adet / Kg</span>
           </div>
@@ -459,14 +459,14 @@ export const ProductSalesReport: React.FC = () => {
               >
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-slate-800 dark:text-slate-200 line-clamp-1">{cat.category}</span>
-                  <span className="font-mono font-extrabold text-brand-600">%{cat.share.toFixed(1)}</span>
+                  <span className="font-mono font-extrabold text-brand-600">%{Number(cat.share || 0).toFixed(1)}</span>
                 </div>
                 <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-brand-600 rounded-full" style={{ width: `${Math.min(100, cat.share)}%` }} />
+                  <div className="h-full bg-brand-600 rounded-full" style={{ width: `${Math.min(100, cat.share || 0)}%` }} />
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
-                  <span>₺{cat.turnover.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
-                  <span>{cat.quantity} ad/kg</span>
+                  <span>₺{Number(cat.turnover || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                  <span>{cat.quantity || 0} ad/kg</span>
                 </div>
               </div>
             ))}
@@ -484,7 +484,7 @@ export const ProductSalesReport: React.FC = () => {
             </h2>
           </div>
           <span className="text-xs text-slate-400">
-            Filtrelenen ciro: ₺{filteredAndSortedItems.reduce((acc, i) => acc + i.total_turnover, 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+            Filtrelenen ciro: ₺{Number(filteredAndSortedItems.reduce((acc, i) => acc + (Number(i.total_turnover) || 0), 0) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
           </span>
         </div>
 
@@ -567,7 +567,7 @@ export const ProductSalesReport: React.FC = () => {
                       {item.unit === 'Kg' ? `${item.total_quantity.toFixed(3)} kg` : `${item.total_quantity} ad`}
                     </td>
                     <td className="py-3 px-3 text-right font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
-                      ₺{item.total_turnover.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₺{Number(item.total_turnover || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td className="py-3 px-3">
                       <div className="space-y-1">

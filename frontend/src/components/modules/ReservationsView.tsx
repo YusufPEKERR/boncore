@@ -47,8 +47,42 @@ export const ReservationsView: React.FC = () => {
     setLoading(true);
     try {
       const res = await api.getReservations();
-      if (res) {
-        setReservations(res.reservations || []);
+      const rawList = Array.isArray(res) ? res : (Array.isArray(res?.reservations) ? res.reservations : (Array.isArray(res?.items) ? res.items : []));
+      if (rawList.length > 0 || Array.isArray(res)) {
+        const enriched = rawList.map((r: any) => ({
+          id: String(r.id || Math.random()),
+          guest_name: r.guest_name || 'Misafir',
+          phone: r.phone || '',
+          guests_count: Number(r.guests_count || r.guests || 2),
+          date: r.date || new Date().toISOString().slice(0, 10),
+          time: r.time || '19:00',
+          table_name: r.table_name || 'Masa',
+          status: r.status || 'confirmed',
+          notes: r.notes || '',
+          deposit: Number(r.deposit || r.deposit_paid || 0)
+        }));
+        setReservations(enriched);
+        setSummary({
+          total_reservations: enriched.length,
+          confirmed_count: enriched.filter((r: any) => r.status === 'confirmed').length,
+          seated_count: enriched.filter((r: any) => r.status === 'seated').length,
+          expected_guests: enriched.reduce((acc: number, r: any) => acc + (r.guests_count || 0), 0)
+        });
+      } else if (res) {
+        const rawRes = res.reservations || [];
+        const enriched = rawRes.map((r: any) => ({
+          id: String(r.id || Math.random()),
+          guest_name: r.guest_name || 'Misafir',
+          phone: r.phone || '',
+          guests_count: Number(r.guests_count || r.guests || 2),
+          date: r.date || new Date().toISOString().slice(0, 10),
+          time: r.time || '19:00',
+          table_name: r.table_name || 'Masa',
+          status: r.status || 'confirmed',
+          notes: r.notes || '',
+          deposit: Number(r.deposit || r.deposit_paid || 0)
+        }));
+        setReservations(enriched);
         setSummary(res.summary || {});
       }
     } catch (e) {
