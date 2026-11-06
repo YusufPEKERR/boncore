@@ -2156,6 +2156,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 
 	group.Get("/agent/poll", func(c *fiber.Ctx) error {
 		terminalID := strings.TrimSpace(c.Query("terminal_id"))
+		clientIP := c.IP()
 		nowTs := float64(time.Now().Unix())
 
 		bridgeMu.Lock()
@@ -2172,7 +2173,27 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 				continue
 			}
 
-			if cmdTarget == "" || cmdTarget == terminalID || strings.Contains(terminalID, cmdTarget) || strings.Contains(cmdTarget, terminalID) {
+			isMatch := false
+			if cmdTarget == "" || cmdTarget == terminalID {
+				isMatch = true
+			} else if strings.Contains(terminalID, cmdTarget) || strings.Contains(cmdTarget, terminalID) {
+				isMatch = true
+			} else if clientIP != "" && (clientIP == cmdTarget || strings.Contains(cmdTarget, clientIP)) {
+				isMatch = true
+			} else {
+				// If target was an IP (e.g. 192.168.1.101), check against terminalID
+				cleanTarget := strings.ReplaceAll(cmdTarget, ".", "_")
+				if strings.Contains(terminalID, cleanTarget) || strings.Contains(cleanTarget, terminalID) {
+					isMatch = true
+				}
+			}
+
+			// Single-agent fallback: if any command is waiting, give it to the active polling agent
+			if !isMatch && len(pendingBridgeCommands) > 0 {
+				isMatch = true
+			}
+
+			if isMatch {
 				delete(pendingBridgeCommands, reqID)
 				return c.JSON(fiber.Map{
 					"has_command": true,
@@ -2356,7 +2377,46 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 
 		terminals := loadTerminalsList(db)
 		nowTs := float64(time.Now().Unix())
-		// If targetTID is empty, pick the active online terminal
+
+		// Resolve target terminal by ID, IP, or owned printer
+		for _, t := range terminals {
+			currID := fmt.Sprintf("%v", t["id"])
+			currTID := fmt.Sprintf("%v", t["terminal_id"])
+			currIP := fmt.Sprintf("%v", t["local_ip"])
+
+			if targetTID != "" && (currID == targetTID || currTID == targetTID || currIP == targetTID) {
+				targetTID = currID
+				break
+			}
+		}
+
+		// If targetTID still empty, find terminal that owns one of the cleanPrinters
+		if targetTID == "" && len(cleanPrinters) > 0 {
+			for _, t := range terminals {
+				currID := fmt.Sprintf("%v", t["id"])
+				var tPrs []string
+				if rawPrs, ok := t["printers"].([]interface{}); ok {
+					for _, rp := range rawPrs {
+						tPrs = append(tPrs, fmt.Sprintf("%v", rp))
+					}
+				} else if strPrs, ok := t["printers"].([]string); ok {
+					tPrs = strPrs
+				}
+				for _, cp := range cleanPrinters {
+					for _, tp := range tPrs {
+						if tp == cp {
+							targetTID = currID
+							break
+						}
+					}
+				}
+				if targetTID != "" {
+					break
+				}
+			}
+		}
+
+		// If targetTID is still empty, pick the active online terminal
 		if targetTID == "" {
 			for _, t := range terminals {
 				lastTs, _ := t["last_heartbeat_ts"].(float64)
@@ -2373,12 +2433,13 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			targetTID = fmt.Sprintf("%v", terminals[0]["id"])
 		}
 
-		// If no printers specified, take all printers from the target terminal
+		// If no printers specified, take all printers from the target terminal or active terminals
 		if len(cleanPrinters) == 0 {
 			for _, t := range terminals {
 				currID := fmt.Sprintf("%v", t["id"])
 				currTID := fmt.Sprintf("%v", t["terminal_id"])
-				if currID == targetTID || currTID == targetTID {
+				currIP := fmt.Sprintf("%v", t["local_ip"])
+				if targetTID == "" || currID == targetTID || currTID == targetTID || currIP == targetTID {
 					if rawPrs, ok := t["printers"].([]interface{}); ok {
 						for _, rp := range rawPrs {
 							if rps := fmt.Sprintf("%v", rp); rps != "" {
@@ -2386,9 +2447,11 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 							}
 						}
 					} else if strPrs, ok := t["printers"].([]string); ok {
-						cleanPrinters = strPrs
+						cleanPrinters = append(cleanPrinters, strPrs...)
 					}
-					break
+					if len(cleanPrinters) > 0 {
+						break
+					}
 				}
 			}
 		}
@@ -2404,9 +2467,9 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		}
 		bridgeMu.Unlock()
 
-		// Wait up to 3 seconds for agent to report back
+		// Wait up to 4.5 seconds for agent to report back
 		var finalResult map[string]interface{}
-		for i := 0; i < 30; i++ {
+		for i := 0; i < 45; i++ {
 			time.Sleep(100 * time.Millisecond)
 			bridgeMu.Lock()
 			if res, ok := completedBridgeResults[reqID]; ok {
@@ -2421,6 +2484,10 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		if finalResult != nil {
 			ok, _ := finalResult["success"].(bool)
 			msg, _ := finalResult["message"].(string)
+			errMsg, _ := finalResult["error"].(string)
+			if !ok && errMsg == "" {
+				errMsg = msg
+			}
 			if msg == "" {
 				msg = "Seçili yazıcıya test fişi başarıyla gönderildi!"
 			}
@@ -2428,6 +2495,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 				"success": ok,
 				"status":  "ok",
 				"message": msg,
+				"error":   errMsg,
 				"results": finalResult["results"],
 			})
 		}

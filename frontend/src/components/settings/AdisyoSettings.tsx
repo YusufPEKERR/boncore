@@ -206,7 +206,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
       if (res.success) {
         setPrinterTestStatus({ loading: false, success: true, message: res.message || `${displayName} (${localIp}) yazıcısından test fişi başarıyla çıktı!` });
       } else {
-        setPrinterTestStatus({ loading: false, success: false, message: res.error || 'Yazdırma isteği tamamlanamadı.' });
+        setPrinterTestStatus({ loading: false, success: false, message: res.error || res.message || 'Yazdırma isteği tamamlanamadı.' });
       }
     } catch (e: any) {
       setPrinterTestStatus({ loading: false, success: false, message: e.message || 'Hata oluştu' });
@@ -228,7 +228,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
       if (res.success) {
         setPrinterTestStatus({ loading: false, success: true, message: res.message || 'Seçili yazıcılara test fişi başarıyla gönderildi!' });
       } else {
-        setPrinterTestStatus({ loading: false, success: false, message: res.error || 'Yazdırma isteği tamamlanamadı.' });
+        setPrinterTestStatus({ loading: false, success: false, message: res.error || res.message || 'Yazdırma isteği tamamlanamadı.' });
       }
     } catch (e: any) {
       setPrinterTestStatus({ loading: false, success: false, message: e.message || 'Hata oluştu' });
