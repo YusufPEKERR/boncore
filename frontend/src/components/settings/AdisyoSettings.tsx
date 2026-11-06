@@ -117,7 +117,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [printerTestStatus, setPrinterTestStatus] = useState<{ loading: boolean; message?: string; success?: boolean } | null>(null);
   const [customPrinterInput, setCustomPrinterInput] = useState<string>('');
   const [printerSearchQuery, setPrinterSearchQuery] = useState<string>('');
-  const [showVirtualPrinters, setShowVirtualPrinters] = useState<boolean>(true);
+  const [showVirtualPrinters, setShowVirtualPrinters] = useState<boolean>(false);
   const [downloadingAgent, setDownloadingAgent] = useState<boolean>(false);
   const [downloadStatusText, setDownloadStatusText] = useState<string>('');
 
@@ -1762,9 +1762,15 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                                           {term.name}
                                         </span>
                                         <span className="text-slate-300 dark:text-slate-600">•</span>
-                                        <span className={isVirtual ? 'text-slate-400' : 'text-emerald-600 dark:text-emerald-400 font-bold'}>
-                                          {isVirtual ? 'Sanal Yazıcı' : 'Termal / POS'}
-                                        </span>
+                                        {isVirtual ? (
+                                          <span className="text-amber-700 dark:text-amber-300 font-black bg-amber-100/90 dark:bg-amber-950/60 px-2 py-0.5 rounded text-[10px] border border-amber-300 dark:border-amber-800">
+                                            ⚠️ Sanal Yazıcı (Kağıt Çıkarmaz)
+                                          </span>
+                                        ) : (
+                                          <span className="text-emerald-700 dark:text-emerald-300 font-black bg-emerald-100/90 dark:bg-emerald-950/60 px-2 py-0.5 rounded text-[10px] border border-emerald-300 dark:border-emerald-800">
+                                            ✓ Fiziki Termal / POS Yazıcı (Kağıt Çıkarır)
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
                                   </div>

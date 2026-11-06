@@ -2491,6 +2491,20 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			if msg == "" {
 				msg = "Seçili yazıcıya test fişi başarıyla gönderildi!"
 			}
+
+			// Inform user if only virtual printers were tested
+			hasOnlyVirtual := len(cleanPrinters) > 0
+			for _, cp := range cleanPrinters {
+				low := strings.ToLower(cp)
+				if !strings.Contains(low, "pdf") && !strings.Contains(low, "xps") && !strings.Contains(low, "onenote") && !strings.Contains(low, "fax") && !strings.Contains(low, "anydesk") {
+					hasOnlyVirtual = false
+					break
+				}
+			}
+			if ok && hasOnlyVirtual {
+				msg = fmt.Sprintf("%s (Bilgi: Seçtiğiniz yazıcı sanal bir PDF/OneNote yazıcısıdır ve kağıt çıktısı vermez. Kağıt çıktısı almak için lütfen 'DYMO' veya termal adisyon yazıcınızı seçin.)", msg)
+			}
+
 			return c.JSON(fiber.Map{
 				"success": ok,
 				"status":  "ok",

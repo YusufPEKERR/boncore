@@ -230,6 +230,25 @@ def print_slip_to_printer(printer_name: str, raw_text: str) -> bool:
     tr_map = str.maketrans("çÇğĞıİöÖşŞüÜ", "cCgGiIoOsSuU")
     clean_text = raw_text.translate(tr_map)
 
+    # Sanal Yazıcı Kontrolü (PDF, OneNote, XPS, vb.)
+    p_low = printer_name.lower()
+    is_virtual = any(v in p_low for v in ["pdf", "onenote", "xps", "fax", "anydesk"])
+    if is_virtual:
+        try:
+            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+            if not os.path.exists(desktop):
+                desktop = os.path.expanduser("~")
+            preview_file = os.path.join(desktop, "BonCore_Fis_Onizleme.txt")
+            with open(preview_file, "w", encoding="utf-8") as f:
+                f.write(clean_text)
+            try:
+                os.startfile(preview_file)
+            except Exception:
+                pass
+            return True
+        except Exception as e:
+            print(f"Virtual printer preview error: {e}")
+
     # ESC/POS init + metin + kağıt besleme & kesme (GS V B 0)
     esc_init = b"\x1b\x40"
     esc_cut = b"\n\n\n\n\x1d\x56\x42\x00"
