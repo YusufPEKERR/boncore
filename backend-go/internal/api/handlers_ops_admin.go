@@ -8,7 +8,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
-	"net/url"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1709,8 +1709,17 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 					content = bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
 					content = bytes.ReplaceAll(content, []byte("\n"), []byte("\r\n"))
 				}
-				w, err := zw.Create(fname)
-				if err == nil {
+				var w io.Writer
+				if strings.HasSuffix(fname, ".exe") {
+					header := &zip.FileHeader{
+						Name:   fname,
+						Method: zip.Store, // Exe is already PyInstaller-compressed; Store avoids 3s CPU bottleneck
+					}
+					w, err = zw.CreateHeader(header)
+				} else {
+					w, err = zw.Create(fname)
+				}
+				if err == nil && w != nil {
 					_, _ = w.Write(content)
 				}
 			}
@@ -1763,7 +1772,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		c.Set("Pragma", "no-cache")
 		c.Set("Expires", "0")
 		c.Set("Access-Control-Expose-Headers", "Content-Disposition")
-		c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"boncore-hardware-agent-%s.zip\"; filename*=UTF-8''boncore-hardware-agent-%s.zip", cleanAscii, url.PathEscape(safeName)))
+		c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"boncore-hardware-agent-%s.zip\"", cleanAscii))
 		return c.Send(buf.Bytes())
 	})
 

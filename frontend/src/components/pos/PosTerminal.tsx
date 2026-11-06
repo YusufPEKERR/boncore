@@ -888,6 +888,61 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     };
   };
 
+  const getPrinterStatus = (prKey: string): { isOnline: boolean; reason: string } => {
+    const label = formatPrinterLabel(prKey);
+    const targetPr = label.name.toLowerCase().trim();
+    const targetIp = label.ip?.trim();
+
+    if (!scaleTerminals || scaleTerminals.length === 0) {
+      return { isOnline: false, reason: 'Donanım Ajanı Çevrimdışı' };
+    }
+
+    if (targetIp) {
+      const matchTerm = scaleTerminals.find(t => 
+        (t as any).local_ip === targetIp || t.id.includes(targetIp.replace(/\./g, '_'))
+      );
+      if (!matchTerm) {
+        return { isOnline: false, reason: `Terminal Bulunamadı (${targetIp})` };
+      }
+      if (!matchTerm.is_online) {
+        return { isOnline: false, reason: 'Bağlantı Yok • Terminal Çevrimdışı' };
+      }
+      const termPrinters = ((matchTerm as any).printers || []).map((p: string) => p.toLowerCase().trim());
+      if (termPrinters.length > 0 && !termPrinters.some((p: string) => p.includes(targetPr) || targetPr.includes(p))) {
+        return { isOnline: false, reason: 'Yazıcı Hazır Değil / Algılanamadı' };
+      }
+      return { isOnline: true, reason: 'Bağlı & Hazır' };
+    }
+
+    const matchingOnlineTerm = scaleTerminals.find(t => {
+      if (!t.is_online) return false;
+      const termPrinters = ((t as any).printers || []).map((p: string) => p.toLowerCase().trim());
+      return termPrinters.some((p: string) => p.includes(targetPr) || targetPr.includes(p));
+    });
+
+    if (matchingOnlineTerm) {
+      return { isOnline: true, reason: `Bağlı & Hazır (${matchingOnlineTerm.name})` };
+    }
+
+    const anyOnline = scaleTerminals.some(t => t.is_online);
+    if (!anyOnline) {
+      return { isOnline: false, reason: 'Bağlantı Yok • Ajan Çevrimdışı' };
+    }
+
+    return { isOnline: false, reason: 'Bağlantı Yok • Yazıcı Algılanamadı' };
+  };
+
+  // Yazıcı modalı açıkken terminallerin anlık online/offline durumlarını takip et
+  useEffect(() => {
+    if (!isPrinterSelectModalOpen) return;
+    const interval = setInterval(() => {
+      localHardware.getTerminals().then(res => {
+        if (res?.terminals) setScaleTerminals(res.terminals as any);
+      }).catch(() => {});
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isPrinterSelectModalOpen]);
+
   const handlePrintBill = async () => {
     if (!canOrderGeneral && !canPrintBill) {
       sound.warning();
@@ -908,6 +963,14 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       showToast('Aktif seçili yazıcı bulunamadı! Lütfen Ayarlar > Yazıcılar menüsünden en az bir yazıcı seçin veya tanımlayın.', 'error');
       return;
     }
+
+    // Terminalleri anında tazeleyelim ki online/offline durumları tam güncel olsun
+    try {
+      const res = await localHardware.getTerminals();
+      if (res?.terminals) {
+        setScaleTerminals(res.terminals as any);
+      }
+    } catch {}
 
     // 2. Garsona seçili yazıcılardan hangisinde yazdıracağını seçtirmek için modalı aç
     setAvailablePrinters(activePrinters);
@@ -2826,46 +2889,94 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             {/* Printer Options List */}
             <div className="space-y-2.5 max-h-64 overflow-y-auto pr-0.5">
               {/* Option to Print to All if multiple printers */}
-              {availablePrinters.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => executePrintBill(availablePrinters)}
-                  className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 border-2 border-emerald-500/60 hover:border-emerald-600 text-left transition flex items-center justify-between group cursor-pointer shadow-sm active:scale-[0.99]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md">
-                      <Printer className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-black text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
-                        <span>Tüm Seçili Yazıcılara Yazdır</span>
-                        <span className="px-1.5 py-0.5 rounded-md bg-emerald-600 text-white font-mono text-[10px]">
-                          {availablePrinters.length} Adet
-                        </span>
+              {availablePrinters.length > 1 && (() => {
+                const onlinePrinters = availablePrinters.filter(pr => getPrinterStatus(pr).isOnline);
+                const isAllDisabled = onlinePrinters.length === 0;
+
+                return (
+                  <button
+                    type="button"
+                    disabled={isAllDisabled}
+                    onClick={() => {
+                      if (isAllDisabled) {
+                        sound.warning();
+                        showToast('Bağlantı kurulabilen aktif bir yazıcı bulunamadı.', 'error');
+                        return;
+                      }
+                      executePrintBill(onlinePrinters);
+                    }}
+                    className={`w-full p-3.5 rounded-2xl border-2 text-left transition flex items-center justify-between group shadow-sm ${
+                      isAllDisabled
+                        ? 'bg-slate-100/70 dark:bg-slate-800/40 border-dashed border-rose-300 dark:border-rose-900/40 opacity-60 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 border-emerald-500/60 hover:border-emerald-600 cursor-pointer active:scale-[0.99]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-md ${
+                        isAllDisabled ? 'bg-rose-500 text-white' : 'bg-emerald-600 text-white'
+                      }`}>
+                        <Printer className="w-5 h-5" />
                       </div>
-                      <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 mt-0.5">
-                        Fişi tüm aktif yazıcılara aynı anda gönderir
+                      <div>
+                        <div className="text-xs font-black text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                          <span>Tüm Seçili Yazıcılara Yazdır</span>
+                          <span className={`px-1.5 py-0.5 rounded-md font-mono text-[10px] text-white ${
+                            isAllDisabled ? 'bg-rose-500' : 'bg-emerald-600'
+                          }`}>
+                            {onlinePrinters.length} / {availablePrinters.length} Bağlı
+                          </span>
+                        </div>
+                        <div className="text-[11px] font-semibold mt-0.5 flex items-center gap-1.5">
+                          <span className={`inline-block w-2.5 h-2.5 rounded-full ${
+                            isAllDisabled ? 'bg-rose-500 animate-pulse shadow-sm shadow-rose-500/50' : 'bg-emerald-500 shadow-sm shadow-emerald-500/50'
+                          }`}></span>
+                          <span className={isAllDisabled ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-emerald-700 dark:text-emerald-400'}>
+                            {isAllDisabled ? 'Hiçbir yazıcıya ulaşılamıyor (Bağlantı Yok)' : 'Fişi tüm aktif ve bağlı yazıcılara aynı anda gönderir'}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <span className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-black shadow-sm group-hover:bg-emerald-700 transition shrink-0">
-                    Hepsine Yazdır
-                  </span>
-                </button>
-              )}
+                    <span className={`px-3 py-1.5 rounded-xl text-xs font-black shadow-sm transition shrink-0 ${
+                      isAllDisabled
+                        ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                        : 'bg-emerald-600 text-white group-hover:bg-emerald-700'
+                    }`}>
+                      {isAllDisabled ? 'Yazdırılamaz' : 'Hepsine Yazdır'}
+                    </span>
+                  </button>
+                );
+              })()}
 
               {/* Individual Printers */}
               {availablePrinters.map((prKey, idx) => {
                 const label = formatPrinterLabel(prKey);
+                const status = getPrinterStatus(prKey);
+
                 return (
                   <button
                     key={idx}
                     type="button"
-                    onClick={() => executePrintBill([prKey])}
-                    className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 hover:border-emerald-500 dark:hover:border-emerald-500 text-left transition flex items-center justify-between group cursor-pointer hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20 active:scale-[0.99]"
+                    disabled={!status.isOnline}
+                    onClick={() => {
+                      if (!status.isOnline) {
+                        sound.warning();
+                        showToast(`"${label.name}" yazıcısına ulaşılamıyor: ${status.reason}`, 'error');
+                        return;
+                      }
+                      executePrintBill([prKey]);
+                    }}
+                    className={`w-full p-3.5 rounded-2xl border text-left transition flex items-center justify-between group ${
+                      status.isOnline
+                        ? 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700/80 hover:border-emerald-500 dark:hover:border-emerald-500 hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20 active:scale-[0.99] cursor-pointer'
+                        : 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/50 opacity-70 cursor-not-allowed'
+                    }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 flex items-center justify-center shrink-0 group-hover:text-emerald-600 group-hover:border-emerald-400 transition">
+                      <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 transition ${
+                        status.isOnline
+                          ? 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 group-hover:text-emerald-600 group-hover:border-emerald-400'
+                          : 'bg-rose-100 dark:bg-rose-900/50 border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-300'
+                      }`}>
                         <Printer className="w-4 h-4" />
                       </div>
                       <div className="min-w-0">
@@ -2873,15 +2984,27 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                           {label.name}
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
-                          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
-                            {label.ip ? `IP: ${label.ip}` : 'Aktif Termal Yazıcı'}
+                          <span className={`inline-block w-2.5 h-2.5 rounded-full ${
+                            status.isOnline
+                              ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50'
+                              : 'bg-rose-500 animate-pulse shadow-sm shadow-rose-500/50'
+                          }`}></span>
+                          <span className={`text-[10px] font-semibold ${
+                            status.isOnline
+                              ? 'text-emerald-700 dark:text-emerald-400 font-mono'
+                              : 'text-rose-600 dark:text-rose-400 font-bold'
+                          }`}>
+                            {status.isOnline ? `${label.ip ? `IP: ${label.ip} • ` : ''}${status.reason}` : `Bağlantı Yok • ${status.reason}`}
                           </span>
                         </div>
                       </div>
                     </div>
-                    <span className="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 group-hover:bg-emerald-600 text-slate-700 dark:text-slate-200 group-hover:text-white text-xs font-black transition shrink-0">
-                      Yazdır
+                    <span className={`px-3 py-1.5 rounded-xl text-xs font-black transition shrink-0 ${
+                      status.isOnline
+                        ? 'bg-slate-200 dark:bg-slate-700 group-hover:bg-emerald-600 text-slate-700 dark:text-slate-200 group-hover:text-white'
+                        : 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                    }`}>
+                      {status.isOnline ? 'Yazdır' : 'Yazdırılamaz'}
                     </span>
                   </button>
                 );

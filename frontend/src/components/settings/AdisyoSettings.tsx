@@ -121,10 +121,10 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [downloadingAgent, setDownloadingAgent] = useState<boolean>(false);
   const [downloadStatusText, setDownloadStatusText] = useState<string>('');
 
-  const handleDownloadAgentZip = async (customTerminalName?: string) => {
+  const handleDownloadAgentZip = (customTerminalName?: string) => {
     if (downloadingAgent) return;
     setDownloadingAgent(true);
-    setDownloadStatusText('Hazırlanıyor...');
+    setDownloadStatusText('İndirme Başlatılıyor...');
     sound.beep();
     try {
       const restaurantCode = localStorage.getItem('boncore_restaurant_code') || 'fatihciftligi';
@@ -134,34 +134,30 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
       if (termName) {
         params.set('terminal_name', termName);
       }
+      const safeName = (termName || restaurantCode).replace(/[\\/:*?"<>|]/g, '_');
       const url = `/api/scale/download-agent?${params.toString()}`;
 
-      setDownloadStatusText('İndiriliyor...');
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const tempLink = document.createElement('a');
-      tempLink.href = blobUrl;
-      const safeName = (termName || restaurantCode).replace(/[\\/:*?"<>|]/g, '_');
-      tempLink.download = `boncore-hardware-agent-${safeName}.zip`;
-      document.body.appendChild(tempLink);
-      tempLink.click();
-      document.body.removeChild(tempLink);
-      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 30000);
+      // Doğrudan browser linkiyle indirme:
+      // Blob/bellek yükü oluşturmaz, tarayıcının yerel indirme kuyruğuna doğrudan gönderir
+      // Chrome'daki "Sitede dosyaya ulaşılamadı" (ERR_FILE_NOT_FOUND) hatasını tamamen çözer
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `boncore-hardware-agent-${safeName}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
       setDownloadStatusText('İndirme Başlatıldı!');
       setTimeout(() => setDownloadStatusText(''), 3000);
     } catch (err) {
-      console.warn('Fetch blob download fallback:', err);
+      console.warn('Download link fallback:', err);
       const restaurantCode = localStorage.getItem('boncore_restaurant_code') || 'fatihciftligi';
       const termName = customTerminalName?.trim() || '';
       const fallbackUrl = `/api/scale/download-agent?restaurant_code=${encodeURIComponent(restaurantCode)}${termName ? `&terminal_name=${encodeURIComponent(termName)}` : ''}`;
-      window.open(fallbackUrl, '_blank');
+      window.location.href = fallbackUrl;
       setDownloadStatusText('');
     } finally {
-      setDownloadingAgent(false);
+      setTimeout(() => setDownloadingAgent(false), 1500);
     }
   };
 
