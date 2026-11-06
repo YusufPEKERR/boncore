@@ -188,7 +188,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
 
   const handleSingleTestPrint = async (qualifiedKey: string, displayName: string, localIp: string) => {
     sound.beep();
-    setPrinterTestStatus({ loading: true, message: `${displayName} (${localIp}) yazıcısına test fişi gönderiliyor...`, success: true });
+    setPrinterTestStatus({ loading: true, message: `${displayName} yazıcısına test fişi gönderiliyor, cihazdan onay bekleniyor...`, success: true });
     try {
       const res = await localHardware.printReceipt({
         printers: [qualifiedKey],
@@ -204,7 +204,8 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
           '================================\n\n\n\n'
       });
       if (res.success) {
-        setPrinterTestStatus({ loading: false, success: true, message: res.message || `${displayName} (${localIp}) yazıcısından test fişi başarıyla çıktı!` });
+        setPrinterTestStatus({ loading: false, success: true, message: res.message || `${displayName} yazıcısından test fişi başarıyla çıktı!` });
+        setTimeout(() => setPrinterTestStatus(null), 9000);
       } else {
         setPrinterTestStatus({ loading: false, success: false, message: res.error || res.message || 'Yazdırma isteği tamamlanamadı.' });
       }
@@ -219,7 +220,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
       return;
     }
     sound.beep();
-    setPrinterTestStatus({ loading: true });
+    setPrinterTestStatus({ loading: true, message: 'Seçili yazıcılara test fişi gönderiliyor, cihazlardan onay bekleniyor...' });
     try {
       const res = await localHardware.printReceipt({
         printers: selectedPrinters,
@@ -227,6 +228,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
       });
       if (res.success) {
         setPrinterTestStatus({ loading: false, success: true, message: res.message || 'Seçili yazıcılara test fişi başarıyla gönderildi!' });
+        setTimeout(() => setPrinterTestStatus(null), 9000);
       } else {
         setPrinterTestStatus({ loading: false, success: false, message: res.error || res.message || 'Yazdırma isteği tamamlanamadı.' });
       }

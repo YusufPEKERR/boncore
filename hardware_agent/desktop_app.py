@@ -249,10 +249,14 @@ def print_slip_to_printer(printer_name: str, raw_text: str) -> bool:
         except Exception as e:
             print(f"Virtual printer preview error: {e}")
 
-    # ESC/POS init + metin + kağıt besleme & kesme (GS V B 0)
+    # Satır sonlarını Windows CRLF formatına getir
+    clean_text = clean_text.replace("\r\n", "\n").replace("\n", "\r\n")
+
+    # ESC/POS init + metin + Form Feed (Dymo/Etiket boşaltma \x0c) + kağıt besleme & kesme (GS V B 0)
     esc_init = b"\x1b\x40"
-    esc_cut = b"\n\n\n\n\x1d\x56\x42\x00"
-    raw_data = esc_init + clean_text.encode("latin-1", errors="replace") + esc_cut
+    esc_feed = b"\r\n\r\n\r\n\x0c"
+    esc_cut = b"\x1d\x56\x42\x00"
+    raw_data = esc_init + clean_text.encode("latin-1", errors="replace") + esc_feed + esc_cut
 
     # 1. win32print RAW Spooler (Sessiz, doğrudan porta basar)
     try:
@@ -272,13 +276,13 @@ def print_slip_to_printer(printer_name: str, raw_text: str) -> bool:
     except Exception as e:
         print(f"win32print error on {printer_name}:", e)
 
-    # 2. Notepad /p fallback
+    # 2. Notepad /pt fallback (Doğrudan ilgili yazıcı adına gönderir)
     try:
         import tempfile
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, suffix=".txt") as tf:
             tf.write(clean_text)
             temp_path = tf.name
-        subprocess.run(["notepad.exe", "/p", temp_path], timeout=5)
+        subprocess.run(["notepad.exe", "/pt", temp_path, printer_name], timeout=5)
         try:
             os.remove(temp_path)
         except Exception:
@@ -1331,8 +1335,8 @@ class BonCoreHardwareDesktopApp:
                             timeout=5.0
                         )
 
-                # Emir yokken 1 saniye bekle (Ağ yükünü ve soket yıpranmasını önler)
-                time.sleep(1.0)
+                # Emir yokken 0.5 saniye bekle (Hızlı tepki ve düşük gecikme)
+                time.sleep(0.5)
 
             except Exception:
                 self.server_success_count = 0

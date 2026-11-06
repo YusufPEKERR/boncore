@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"net/url"
@@ -2159,12 +2160,21 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		clientIP := c.IP()
 		nowTs := float64(time.Now().Unix())
 
+		db, _, _ := getTenantDB(c, svc)
+		var terminals []map[string]interface{}
+		if db != nil {
+			terminals = loadTerminalsList(db)
+		}
+
 		bridgeMu.Lock()
 		defer bridgeMu.Unlock()
 
-		// Check if there is any pending command for this terminal (or unassigned command)
+		// Check if there is any pending command for this terminal (FIFO: oldest first)
+		var oldestReqID string
+		var oldestCmd map[string]interface{}
+		var oldestTs float64 = 99999999999
+
 		for reqID, cmd := range pendingBridgeCommands {
-			cmdTarget, _ := cmd["terminal_id"].(string)
 			cmdTs, _ := cmd["created_at"].(float64)
 
 			// Drop commands older than 25 seconds
@@ -2173,36 +2183,85 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 				continue
 			}
 
+			cmdTarget, _ := cmd["terminal_id"].(string)
+			cmdPrinters, _ := cmd["printers"].([]string)
+
 			isMatch := false
-			if cmdTarget == "" || cmdTarget == terminalID {
+
+			// 1. Direct terminal ID or substring match
+			if cmdTarget != "" && (cmdTarget == terminalID || strings.Contains(terminalID, cmdTarget) || strings.Contains(cmdTarget, terminalID)) {
 				isMatch = true
-			} else if strings.Contains(terminalID, cmdTarget) || strings.Contains(cmdTarget, terminalID) {
-				isMatch = true
-			} else if clientIP != "" && (clientIP == cmdTarget || strings.Contains(cmdTarget, clientIP)) {
-				isMatch = true
-			} else {
-				// If target was an IP (e.g. 192.168.1.101), check against terminalID
+			}
+
+			// 2. IP match
+			if !isMatch && cmdTarget != "" {
 				cleanTarget := strings.ReplaceAll(cmdTarget, ".", "_")
 				if strings.Contains(terminalID, cleanTarget) || strings.Contains(cleanTarget, terminalID) {
 					isMatch = true
 				}
+				if clientIP != "" && (clientIP == cmdTarget || strings.Contains(cmdTarget, clientIP)) {
+					isMatch = true
+				}
 			}
 
-			// Single-agent fallback: if any command is waiting, give it to the active polling agent
-			if !isMatch && len(pendingBridgeCommands) > 0 {
+			// 3. Printer ownership check: does this terminal own the target printer?
+			if !isMatch && len(cmdPrinters) > 0 && len(terminals) > 0 {
+				for _, t := range terminals {
+					tID := fmt.Sprintf("%v", t["id"])
+					tTID := fmt.Sprintf("%v", t["terminal_id"])
+					tIP := fmt.Sprintf("%v", t["local_ip"])
+					cleanIP := strings.ReplaceAll(tIP, ".", "_")
+
+					if tID == terminalID || tTID == terminalID || strings.Contains(terminalID, cleanIP) {
+						var prs []string
+						if rawPrs, ok := t["printers"].([]interface{}); ok {
+							for _, rp := range rawPrs {
+								prs = append(prs, fmt.Sprintf("%v", rp))
+							}
+						} else if strPrs, ok := t["printers"].([]string); ok {
+							prs = strPrs
+						}
+
+						for _, targetPr := range cmdPrinters {
+							for _, myPr := range prs {
+								if strings.EqualFold(myPr, targetPr) {
+									isMatch = true
+									break
+								}
+							}
+							if isMatch {
+								break
+							}
+						}
+					}
+					if isMatch {
+						break
+					}
+				}
+			}
+
+			// 4. Unassigned command fallback (only if cmdTarget is completely empty)
+			if !isMatch && cmdTarget == "" {
 				isMatch = true
 			}
 
-			if isMatch {
-				delete(pendingBridgeCommands, reqID)
-				return c.JSON(fiber.Map{
-					"has_command": true,
-					"req_id":      reqID,
-					"action":      cmd["action"],
-					"printers":    cmd["printers"],
-					"raw_text":    cmd["raw_text"],
-				})
+			if isMatch && cmdTs < oldestTs {
+				oldestTs = cmdTs
+				oldestReqID = reqID
+				oldestCmd = cmd
 			}
+		}
+
+		if oldestReqID != "" && oldestCmd != nil {
+			delete(pendingBridgeCommands, oldestReqID)
+			log.Printf("[BRIDGE POLL] Dispatched command %s to terminal %s (action=%s, printers=%v)", oldestReqID, terminalID, oldestCmd["action"], oldestCmd["printers"])
+			return c.JSON(fiber.Map{
+				"has_command": true,
+				"req_id":      oldestReqID,
+				"action":      oldestCmd["action"],
+				"printers":    oldestCmd["printers"],
+				"raw_text":    oldestCmd["raw_text"],
+			})
 		}
 
 		return c.JSON(fiber.Map{
@@ -2227,6 +2286,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		_ = c.BodyParser(&payload)
 
 		reqID := fmt.Sprintf("%v", payload["req_id"])
+		log.Printf("[BRIDGE REPORT] Received report for %s: success=%v, msg=%v, results=%v", reqID, payload["success"], payload["message"], payload["results"])
 		if reqID != "" && reqID != "<nil>" {
 			bridgeMu.Lock()
 			completedBridgeResults[reqID] = payload
@@ -2466,10 +2526,11 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			"created_at":  nowTs,
 		}
 		bridgeMu.Unlock()
+		log.Printf("[BRIDGE PRINT] Enqueued %s for targetTID=%s, cleanPrinters=%v, totalPending=%d", reqID, targetTID, cleanPrinters, len(pendingBridgeCommands))
 
-		// Wait up to 4.5 seconds for agent to report back
+		// Wait up to 6 seconds for agent to report back
 		var finalResult map[string]interface{}
-		for i := 0; i < 45; i++ {
+		for i := 0; i < 60; i++ {
 			time.Sleep(100 * time.Millisecond)
 			bridgeMu.Lock()
 			if res, ok := completedBridgeResults[reqID]; ok {
@@ -2514,12 +2575,35 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			})
 		}
 
-		// Command was dispatched to queue; return success: true so UI confirms it
+		// Agent did not report back within 6 seconds:
+		// Check if any agent is currently online
+		hasOnlineAgent := false
+		for _, t := range terminals {
+			lastTs, _ := t["last_heartbeat_ts"].(float64)
+			if lastTs == 0 {
+				lastTs, _ = t["last_seen"].(float64)
+			}
+			if (nowTs - lastTs) < 25.0 {
+				hasOnlineAgent = true
+				break
+			}
+		}
+
+		if !hasOnlineAgent {
+			return c.JSON(fiber.Map{
+				"success": false,
+				"status":  "error",
+				"error":   "Kasa bilgisayarında BonCore Donanım Ajanı çevrimdışı. Lütfen ajanı açın ve tekrar deneyin.",
+				"message": "Kasa bilgisayarında BonCore Donanım Ajanı çevrimdışı. Lütfen ajanı açın ve tekrar deneyin.",
+			})
+		}
+
+		// Agent is online but printer/queue took longer
 		return c.JSON(fiber.Map{
-			"success": true,
-			"status":  "ok",
-			"queued":  true,
-			"message": "Seçili yazıcılara test fişi başarıyla gönderildi!",
+			"success": false,
+			"status":  "timeout",
+			"error":   "Yazıcı kuyruğu zaman aşımına uğradı. Yazıcının açık ve hazır olduğunu kontrol edip tekrar deneyin.",
+			"message": "Yazıcı kuyruğu zaman aşımına uğradı. Yazıcının açık ve hazır olduğunu kontrol edip tekrar deneyin.",
 		})
 	})
 
