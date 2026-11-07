@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { X, Printer, Check, Search, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { X, Check, Search, Trash2, AlertCircle } from 'lucide-react';
 import { PrinterConfig } from '../../types';
 import { sound } from '../../services/sound';
 
@@ -35,12 +35,20 @@ const GreenToggle: React.FC<{
           onChange(!checked);
         }
       }}
-      className={`flex items-center justify-between py-2 cursor-pointer select-none group ${
+      className={`flex items-center justify-between py-2.5 cursor-pointer select-none group ${
         disabled ? 'opacity-40 cursor-not-allowed' : ''
       }`}
     >
       <div className="flex-1 pr-3">
-        {label && <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{label}</div>}
+        {label && (
+          <div className={`text-xs font-bold transition-colors ${
+            checked
+              ? 'text-emerald-700 dark:text-emerald-400'
+              : 'text-slate-800 dark:text-slate-200'
+          }`}>
+            {label}
+          </div>
+        )}
         {sublabel && <div className="text-[10px] text-slate-400 mt-0.5">{sublabel}</div>}
       </div>
 
@@ -59,6 +67,8 @@ const GreenToggle: React.FC<{
   );
 };
 
+const normCat = (s: string) => String(s || '').trim().toLocaleUpperCase('tr-TR');
+
 export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
   isOpen,
   onClose,
@@ -72,7 +82,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
   const [name, setName] = useState('');
   const [targetPrinter, setTargetPrinter] = useState('');
   const [printerTypes, setPrinterTypes] = useState({
-    adisyon: true,
+    adisyon: false,
     kitchen: false,
     abiyer: false,
     courier: false
@@ -89,49 +99,88 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
   });
   const [assignToThisDevice, setAssignToThisDevice] = useState(true);
   const [searchCategory, setSearchCategory] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Config değiştiğinde formu doldur
+  // Arka plandaki 3 saniyelik terminal taraması (detectedPrinters referans değişimi)
+  // açık olan modaldaki kullanıcı seçimlerini sıfırlamasın diye yalnızca açılışta dolduruyoruz.
+  const initializedKeyRef = useRef<string>('');
+
   useEffect(() => {
+    if (!isOpen) {
+      initializedKeyRef.current = '';
+      setErrorMsg(null);
+      setSearchCategory('');
+      return;
+    }
+
+    const currentModalKey = config ? `${config.id}::${config.target_printer}` : '__new__';
+    if (initializedKeyRef.current === currentModalKey) {
+      return;
+    }
+    initializedKeyRef.current = currentModalKey;
+
     if (config) {
       setName(config.name || '');
-      setTargetPrinter(config.target_printer || '');
+
+      // Hedef yazıcıyı algılanan yazıcılarla eşleştir
+      let resolvedTarget = config.target_printer || '';
+      if (resolvedTarget && !detectedPrinters.some(p => p.qualifiedKey === resolvedTarget)) {
+        const plainTarget = resolvedTarget.includes('::') ? resolvedTarget.split('::')[1] : resolvedTarget;
+        const matched = detectedPrinters.find(
+          p => p.displayName.toLowerCase() === plainTarget.toLowerCase()
+        );
+        if (matched) {
+          resolvedTarget = matched.qualifiedKey;
+        }
+      }
+      setTargetPrinter(resolvedTarget);
+
+      const rawGroups = Array.isArray(config.kitchen_groups) ? config.kitchen_groups : [];
+      const availNormMap = new Map<string, string>();
+      availableCategories.forEach(c => availNormMap.set(normCat(c), c));
+
+      const validGroups = availableCategories.length > 0
+        ? rawGroups
+            .map(g => availNormMap.get(normCat(g)))
+            .filter((g): g is string => Boolean(g))
+        : rawGroups;
+
+      const uniqueValidGroups = Array.from(new Set(validGroups));
+      setKitchenGroups(uniqueValidGroups);
+
       setPrinterTypes({
-        adisyon: config.printer_types?.adisyon ?? true,
-        kitchen: config.printer_types?.kitchen ?? false,
-        abiyer: config.printer_types?.abiyer ?? false,
-        courier: config.printer_types?.courier ?? false
+        adisyon: Boolean(config.printer_types?.adisyon),
+        kitchen: uniqueValidGroups.length > 0 ? true : Boolean(config.printer_types?.kitchen),
+        abiyer: Boolean(config.printer_types?.abiyer),
+        courier: Boolean(config.printer_types?.courier)
       });
       setMainChannel(config.revenue_center?.main_channel ?? true);
-      const rawGroups = config.kitchen_groups || [];
-      const validGroups = availableCategories.length > 0 
-        ? rawGroups.filter(g => availableCategories.includes(g)) 
-        : rawGroups;
-      setKitchenGroups(validGroups);
-      setPrintOnOrderSave(config.settings?.print_on_order_save ?? false);
-      setPrintOnIntegration(config.settings?.print_on_integration_approved ?? false);
+      setPrintOnOrderSave(Boolean(config.settings?.print_on_order_save));
+      setPrintOnIntegration(Boolean(config.settings?.print_on_integration_approved));
       setCopies({
-        table_order: config.settings?.copies?.table_order || 1,
-        takeaway_order: config.settings?.copies?.takeaway_order || 1,
-        delivery_order: config.settings?.copies?.delivery_order || 1,
-        post_payment: config.settings?.copies?.post_payment || 1
+        table_order: Math.max(1, Number(config.settings?.copies?.table_order) || 1),
+        takeaway_order: Math.max(1, Number(config.settings?.copies?.takeaway_order) || 1),
+        delivery_order: Math.max(1, Number(config.settings?.copies?.delivery_order) || 1),
+        post_payment: Math.max(1, Number(config.settings?.copies?.post_payment) || 1)
       });
       setAssignToThisDevice(config.settings?.assign_to_this_device ?? true);
     } else {
-      // Yeni yazıcı varsayılanları
-      const firstDetected = detectedPrinters.length > 0 ? detectedPrinters[0].qualifiedKey : '';
-      const defaultName = detectedPrinters.length > 0 ? detectedPrinters[0].displayName : 'Yeni Yazıcı';
+      // Yeni yazıcı varsayılanları (Fiziksel yazıcı varsa ilkini seç, kategoriler boş başlasın)
+      const firstPhysical = detectedPrinters.find(p => !p.isVirtual) || detectedPrinters[0];
+      const firstDetected = firstPhysical ? firstPhysical.qualifiedKey : '';
+      const defaultName = firstPhysical ? firstPhysical.displayName : 'Yeni Yazıcı';
       setName(defaultName);
       setTargetPrinter(firstDetected);
       setPrinterTypes({
-        adisyon: true,
-        kitchen: true,
+        adisyon: false,
+        kitchen: false,
         abiyer: false,
         courier: false
       });
       setMainChannel(true);
-      setKitchenGroups(availableCategories);
-      setPrintOnOrderSave(true);
-      setPrintOnIntegration(true);
+      setKitchenGroups([]);
+      setPrintOnOrderSave(false);
+      setPrintOnIntegration(false);
       setCopies({
         table_order: 1,
         takeaway_order: 1,
@@ -140,55 +189,95 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
       });
       setAssignToThisDevice(true);
     }
-  }, [config, detectedPrinters, availableCategories, isOpen]);
+  }, [isOpen, config, detectedPrinters, availableCategories]);
 
   // Kategorileri filtrele
   const filteredCategories = useMemo(() => {
     if (!searchCategory.trim()) return availableCategories;
-    const q = searchCategory.toLowerCase().trim();
-    return availableCategories.filter(c => c.toLowerCase().includes(q));
+    const q = normCat(searchCategory);
+    return availableCategories.filter(c => normCat(c).includes(q));
   }, [availableCategories, searchCategory]);
+
+  const isCategorySelected = (cat: string): boolean => {
+    const targetNorm = normCat(cat);
+    return kitchenGroups.some(g => normCat(g) === targetNorm);
+  };
 
   const handleToggleCategory = (cat: string) => {
     setKitchenGroups(prev => {
-      const exists = prev.includes(cat);
-      if (exists) {
-        return prev.filter(c => c !== cat);
-      } else {
-        return [...prev, cat];
-      }
+      const targetNorm = normCat(cat);
+      const exists = prev.some(g => normCat(g) === targetNorm);
+      const next = exists
+        ? prev.filter(g => normCat(g) !== targetNorm)
+        : [...prev, cat];
+
+      // Kategori seçildiğinde Mutfak türünü otomatik aktif et, hiç kategori kalmadıysa kapat
+      setPrinterTypes(pt => ({
+        ...pt,
+        kitchen: next.length > 0,
+        abiyer: next.length > 0 ? false : pt.abiyer
+      }));
+
+      return next;
     });
   };
 
   const handleSelectAllCategories = () => {
     sound.beep();
     setKitchenGroups([...availableCategories]);
+    if (availableCategories.length > 0) {
+      setPrinterTypes(prev => ({ ...prev, kitchen: true, abiyer: false }));
+    }
   };
 
   const handleClearAllCategories = () => {
     sound.beep();
     setKitchenGroups([]);
+    setPrinterTypes(prev => ({ ...prev, kitchen: false }));
   };
 
   const handleSave = () => {
+    if (!targetPrinter.trim()) {
+      sound.warning();
+      setErrorMsg('Lütfen "Bulunan Yazıcılar" listesinden bir yazıcı seçin.');
+      return;
+    }
+
     sound.cashDrawer();
-    const cleanName = name.trim() || 'Yazıcı';
-    const configId = config?.id || `printer-${Date.now()}`;
+    const fallbackName = targetPrinter.includes('::')
+      ? targetPrinter.split('::')[1]
+      : targetPrinter;
+    const cleanName = name.trim() || fallbackName || 'Yazıcı';
+
+    // Sadece geçerli kategorileri kaydet
+    const availNormMap = new Map<string, string>();
+    availableCategories.forEach(c => availNormMap.set(normCat(c), c));
+    const finalKitchenGroups = availableCategories.length > 0
+      ? Array.from(
+          new Set(
+            kitchenGroups
+              .map(g => availNormMap.get(normCat(g)) || g.trim())
+              .filter(Boolean)
+          )
+        )
+      : kitchenGroups;
+
+    const hasCategories = finalKitchenGroups.length > 0;
 
     const newConfig: PrinterConfig = {
-      id: configId,
+      id: targetPrinter,
       name: cleanName,
       target_printer: targetPrinter,
       printer_types: {
         adisyon: printerTypes.adisyon,
-        kitchen: printerTypes.kitchen,
+        kitchen: hasCategories ? true : false,
         abiyer: printerTypes.abiyer,
         courier: printerTypes.courier
       },
       revenue_center: {
         main_channel: mainChannel
       },
-      kitchen_groups: kitchenGroups,
+      kitchen_groups: finalKitchenGroups,
       settings: {
         print_on_order_save: printOnOrderSave,
         print_on_integration_approved: printOnIntegration,
@@ -203,22 +292,32 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
     };
 
     onSave(newConfig);
-    onClose();
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs animate-fadeIn"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          sound.beep();
+          onClose();
+        }
+      }}
+    >
       <div className="w-full max-w-5xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh]">
         
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
           <div>
             <h3 className="text-xl font-black text-slate-900 dark:text-white">Yazıcı Ayarları</h3>
-            <p className="text-xs text-slate-500 font-semibold mt-0.5">Yazıcı Bilgileri</p>
+            <p className="text-xs text-slate-500 font-semibold mt-0.5">
+              Yazıcı Bilgileri ve Otomatik Kategori Çıktı Yönlendirmesi
+            </p>
           </div>
           <button
+            type="button"
             onClick={() => {
               sound.beep();
               onClose();
@@ -228,6 +327,13 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {errorMsg && (
+          <div className="mx-6 mt-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
 
         {/* Modal 3-Column Body */}
         <div className="p-6 overflow-y-auto flex-1 grid grid-cols-1 md:grid-cols-3 gap-5 bg-slate-50/50 dark:bg-slate-950/40">
@@ -260,7 +366,15 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                 </label>
                 <select
                   value={targetPrinter}
-                  onChange={(e) => setTargetPrinter(e.target.value)}
+                  onChange={(e) => {
+                    const nextTarget = e.target.value;
+                    setTargetPrinter(nextTarget);
+                    setErrorMsg(null);
+                    const foundDp = detectedPrinters.find(dp => dp.qualifiedKey === nextTarget);
+                    if (foundDp && (!name.trim() || name === 'Yeni Yazıcı')) {
+                      setName(foundDp.displayName);
+                    }
+                  }}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden cursor-pointer"
                 >
                   <option value="">-- Yazıcı Seçin --</option>
@@ -270,7 +384,9 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                     </option>
                   ))}
                   {targetPrinter && !detectedPrinters.some(p => p.qualifiedKey === targetPrinter) && (
-                    <option value={targetPrinter}>{targetPrinter} (Özel)</option>
+                    <option value={targetPrinter}>
+                      {targetPrinter.includes('::') ? targetPrinter.split('::')[1] : targetPrinter} ({targetPrinter})
+                    </option>
                   )}
                 </select>
               </div>
@@ -284,14 +400,21 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                 <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
                   <GreenToggle
                     label="Adisyon"
+                    sublabel="Yazdır ve Hızlı Öde butonlarında bu yazıcıdan adisyon fişi çıkar"
                     checked={printerTypes.adisyon}
-                    onChange={(v) => setPrinterTypes(prev => ({ ...prev, adisyon: v }))}
+                    onChange={(v) => setPrinterTypes(prev => ({ ...prev, adisyon: v, abiyer: v ? false : prev.abiyer }))}
                   />
 
                   <GreenToggle
                     label="Mutfak"
+                    sublabel="Seçilen mutfak grubu kategorilerinden sipariş girildiğinde otomatik çıkar"
                     checked={printerTypes.kitchen}
-                    onChange={(v) => setPrinterTypes(prev => ({ ...prev, kitchen: v }))}
+                    onChange={(v) => {
+                      setPrinterTypes(prev => ({ ...prev, kitchen: v, abiyer: v ? false : prev.abiyer }));
+                      if (!v) {
+                        setKitchenGroups([]);
+                      }
+                    }}
                   />
 
                   <GreenToggle
@@ -301,6 +424,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                     onChange={(v) => {
                       if (v) {
                         setPrinterTypes({ adisyon: false, kitchen: false, abiyer: true, courier: false });
+                        setKitchenGroups([]);
                       } else {
                         setPrinterTypes(prev => ({ ...prev, abiyer: false }));
                       }
@@ -310,7 +434,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                   <GreenToggle
                     label="Kurye"
                     checked={printerTypes.courier}
-                    onChange={(v) => setPrinterTypes(prev => ({ ...prev, courier: v }))}
+                    onChange={(v) => setPrinterTypes(prev => ({ ...prev, courier: v, abiyer: v ? false : prev.abiyer }))}
                   />
                 </div>
               </div>
@@ -339,14 +463,14 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={handleSelectAllCategories}
-                  className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-bold hover:bg-emerald-100 transition cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-bold hover:bg-emerald-100 transition cursor-pointer"
                 >
                   Tümünü Seç
                 </button>
                 <button
                   type="button"
                   onClick={handleClearAllCategories}
-                  className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold hover:bg-slate-200 transition cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold hover:bg-slate-200 transition cursor-pointer"
                 >
                   Temizle
                 </button>
@@ -360,28 +484,28 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                 type="text"
                 value={searchCategory}
                 onChange={(e) => setSearchCategory(e.target.value)}
-                placeholder="Kategori veya grup ara..."
+                placeholder="Kategori ara..."
                 className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
               />
             </div>
 
-            <p className="text-[10px] text-slate-400 mb-2">
-              Aşağıdaki kutucuklar işaretlendiğinde, bu kategorilerden sipariş girildiğinde fiş otomatik bu yazıcıdan çıkacaktır.
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-2 leading-relaxed">
+              Siparişe eklenen ürünün kategorisi ile aşağıda işaretlediğiniz kategori <strong>aynıysa</strong> bu yazıcıdan otomatik fiş çıkar, seçili değilse çıkmaz.
             </p>
 
             {/* Kategori Switch Listesi */}
             <div className="flex-1 overflow-y-auto max-h-[380px] divide-y divide-slate-100 dark:divide-slate-800/80 pr-1 select-none">
               {filteredCategories.length === 0 ? (
                 <div className="py-8 text-center text-xs text-slate-400">
-                  Eşleşen kategori bulunamadı.
+                  Kategori bulunamadı.
                 </div>
               ) : (
                 filteredCategories.map((cat) => {
-                  const isChecked = kitchenGroups.includes(cat);
+                  const isChecked = isCategorySelected(cat);
                   return (
                     <GreenToggle
                       key={cat}
-                      label={cat.toUpperCase()}
+                      label={cat.toLocaleUpperCase('tr-TR')}
                       checked={isChecked}
                       onChange={() => handleToggleCategory(cat)}
                     />
@@ -390,9 +514,12 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
               )}
             </div>
 
-            <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-right">
-              <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                {kitchenGroups.length} / {availableCategories.length} Kategori Seçili
+            <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <span className="text-[10px] text-slate-400 font-semibold">
+                {kitchenGroups.length === 0 ? 'Hiçbir kategori seçilmedi (Mutfak fişi çıkmaz)' : 'Seçili kategoriler aktif'}
+              </span>
+              <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">
+                {kitchenGroups.length} / {availableCategories.length} Seçili
               </span>
             </div>
           </div>
@@ -437,7 +564,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                       min={1}
                       max={10}
                       value={copies.table_order}
-                      onChange={(e) => setCopies({ ...copies, table_order: Number(e.target.value) || 1 })}
+                      onChange={(e) => setCopies({ ...copies, table_order: Math.max(1, Number(e.target.value) || 1) })}
                       className="w-16 px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-center font-black text-xs text-slate-900 dark:text-white"
                     />
                   </div>
@@ -449,7 +576,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                       min={1}
                       max={10}
                       value={copies.takeaway_order}
-                      onChange={(e) => setCopies({ ...copies, takeaway_order: Number(e.target.value) || 1 })}
+                      onChange={(e) => setCopies({ ...copies, takeaway_order: Math.max(1, Number(e.target.value) || 1) })}
                       className="w-16 px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-center font-black text-xs text-slate-900 dark:text-white"
                     />
                   </div>
@@ -461,7 +588,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                       min={1}
                       max={10}
                       value={copies.delivery_order}
-                      onChange={(e) => setCopies({ ...copies, delivery_order: Number(e.target.value) || 1 })}
+                      onChange={(e) => setCopies({ ...copies, delivery_order: Math.max(1, Number(e.target.value) || 1) })}
                       className="w-16 px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-center font-black text-xs text-slate-900 dark:text-white"
                     />
                   </div>
@@ -473,7 +600,7 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                       min={1}
                       max={10}
                       value={copies.post_payment}
-                      onChange={(e) => setCopies({ ...copies, post_payment: Number(e.target.value) || 1 })}
+                      onChange={(e) => setCopies({ ...copies, post_payment: Math.max(1, Number(e.target.value) || 1) })}
                       className="w-16 px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-center font-black text-xs text-slate-900 dark:text-white"
                     />
                   </div>
@@ -504,15 +631,14 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                 type="button"
                 onClick={() => {
                   sound.warning();
-                  if (confirm(`"${name}" yazıcı profilini silmek istediğinize emin misiniz?`)) {
-                    onDelete(config.id);
-                    onClose();
+                  if (confirm(`"${name}" yazıcı ayarlarını sıfırlamak/silmek istediğinize emin misiniz?`)) {
+                    onDelete(config.id || config.target_printer);
                   }
                 }}
                 className="px-3.5 py-2 text-xs font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
               >
                 <Trash2 className="w-4 h-4" />
-                <span>Profili Sil</span>
+                <span>Ayarları Sıfırla</span>
               </button>
             )}
           </div>
@@ -529,7 +655,6 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
               Vazgeç
             </button>
 
-            {/* Kullanıcının istediği YEŞİL buton: Kırmızı değil! */}
             <button
               type="button"
               onClick={handleSave}

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
-import { localHardware } from '../../services/localHardware';
+import { localHardware, sanitizePrinterConfigs } from '../../services/localHardware';
 import { PaymentMethodConfig, PrinterConfig } from '../../types';
 import { ReceiptDesignSettings, ReceiptDesignConfig, defaultReceiptDesign } from './ReceiptDesignSettings';
 import { PrinterSettingsModal } from './PrinterSettingsModal';
@@ -171,23 +171,22 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     return ['microsoft print to pdf', 'microsoft xps', 'onenote', 'fax', 'anydesk printer', 'send to onenote'].some(k => low.includes(k));
   };
 
-  // Menü kategorilerini dinamik çek (Sadece restoranda kayıtlı gerçek kategoriler)
+  // Menü kategorilerini dinamik çek (Sadece sipariş edilebilen POS kategorileri)
   useEffect(() => {
     api.getCategories().then(cats => {
       if (cats && cats.length > 0) {
-        const catNames = cats
+        const orderableCats = cats.filter(c => (c.show_in_pos ?? true) !== false);
+        const sourceCats = orderableCats.length > 0 ? orderableCats : cats;
+        const catNames = sourceCats
           .map(c => c.name?.trim())
           .filter((name): name is string => Boolean(name));
-        const uniqueCats = Array.from(new Set(catNames)).sort((a, b) => a.localeCompare(b, 'tr'));
+        const uniqueCats = Array.from(new Set(catNames));
         setAvailableCategories(uniqueCats);
 
         // Kayıtlı yazıcı konfigürasyonlarını temizle (olmayan kategorileri kaldır)
         setPrinterConfigs(prev => {
-          const sanitized = prev.map(cfg => ({
-            ...cfg,
-            kitchen_groups: (cfg.kitchen_groups || []).filter(g => uniqueCats.includes(g))
-          }));
-          localHardware.savePrinterConfigs(sanitized).catch(() => {});
+          const sanitized = sanitizePrinterConfigs(prev, uniqueCats);
+          localStorage.setItem('boncore_printer_configs', JSON.stringify(sanitized));
           return sanitized;
         });
       }
@@ -221,40 +220,56 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     return list;
   }, [terminalsList]);
 
+  const isMatchingPrinterConfig = (c: PrinterConfig, qualifiedKey?: string, plainName?: string): boolean => {
+    const key = (qualifiedKey || '').trim();
+    const name = (plainName || (key.includes('::') ? key.split('::')[1] : key)).trim();
+    const cTarget = (c.target_printer || '').trim();
+    const cPlain = cTarget.includes('::') ? cTarget.split('::')[1] : cTarget;
+
+    if (key && (cTarget === key || c.id === key)) return true;
+    if (name && cPlain && cPlain.toLowerCase() === name.toLowerCase()) return true;
+    return false;
+  };
+
   const handleOpenPrinterConfig = (qualifiedKey?: string, displayName?: string) => {
     sound.beep();
-    const key = qualifiedKey || '';
-    const name = displayName || '';
+    const key = (qualifiedKey || '').trim();
+    const name = (displayName || '').trim();
+
+    if (!key && !name) {
+      setEditingPrinterConfig(null);
+      setIsPrinterModalOpen(true);
+      return;
+    }
 
     // Önce kayıtlı bir config var mı ara
-    const found = printerConfigs.find(c =>
-      (key && c.target_printer === key) ||
-      (name && c.target_printer === name) ||
-      (name && c.name?.toLowerCase() === name.toLowerCase())
-    );
+    const found = printerConfigs.find(c => isMatchingPrinterConfig(c, key, name));
 
     if (found) {
-      setEditingPrinterConfig(found);
+      setEditingPrinterConfig({
+        ...found,
+        target_printer: key || found.target_printer
+      });
     } else {
-      // Bulunamadıysa bu yazıcı için varsayılan bir profil taslağı oluştur
+      // Bulunamadıysa bu yazıcı için temiz bir profil taslağı oluştur (kategoriler boş başlar!)
       const defaultName = name || (key ? key.split('::').pop() : 'Yeni Yazıcı');
       const newConfig: PrinterConfig = {
-        id: key || `printer_${Date.now()}`,
+        id: key || name || `printer_${Date.now()}`,
         name: defaultName || 'Yeni Yazıcı',
         target_printer: key || name,
         printer_types: {
-          adisyon: true,
-          kitchen: true,
+          adisyon: false,
+          kitchen: false,
           abiyer: false,
           courier: false,
         },
         revenue_center: {
           main_channel: true,
         },
-        kitchen_groups: [...availableCategories],
+        kitchen_groups: [],
         settings: {
           print_on_order_save: false,
-          print_on_integration_approved: true,
+          print_on_integration_approved: false,
           copies: {
             table_order: 1,
             takeaway_order: 1,
@@ -271,24 +286,27 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
 
   const handleSavePrinterConfig = async (savedConfig: PrinterConfig) => {
     sound.beep();
-    const existingIndex = printerConfigs.findIndex(c => c.id === savedConfig.id || (savedConfig.target_printer && c.target_printer === savedConfig.target_printer));
-    let updated: PrinterConfig[];
-    if (existingIndex >= 0) {
-      updated = [...printerConfigs];
-      updated[existingIndex] = savedConfig;
-    } else {
-      updated = [...printerConfigs, savedConfig];
-    }
-    setPrinterConfigs(updated);
-    await localHardware.savePrinterConfigs(updated);
+    const filtered = printerConfigs.filter(
+      c => !isMatchingPrinterConfig(c, savedConfig.target_printer, savedConfig.name) && c.id !== savedConfig.id
+    );
+    const updated = [...filtered, savedConfig];
+    const cleanList = sanitizePrinterConfigs(updated, availableCategories.length > 0 ? availableCategories : undefined);
+    setPrinterConfigs(cleanList);
+    await localHardware.savePrinterConfigs(cleanList);
     setSelectedPrinters(localHardware.getSelectedPrinters());
     setIsPrinterModalOpen(false);
     setEditingPrinterConfig(null);
+    setPrinterTestStatus({
+      loading: false,
+      success: true,
+      message: `"${savedConfig.name}" yazıcı ayarları güncellendi (${savedConfig.kitchen_groups.length} mutfak kategorisi, Adisyon: ${savedConfig.printer_types.adisyon ? 'Açık' : 'Kapalı'}).`
+    });
+    setTimeout(() => setPrinterTestStatus(null), 5000);
   };
 
   const handleDeletePrinterConfig = async (configId: string) => {
     sound.beep();
-    const updated = printerConfigs.filter(c => c.id !== configId);
+    const updated = printerConfigs.filter(c => c.id !== configId && c.target_printer !== configId);
     setPrinterConfigs(updated);
     await localHardware.savePrinterConfigs(updated);
     setSelectedPrinters(localHardware.getSelectedPrinters());
@@ -296,20 +314,56 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     setEditingPrinterConfig(null);
   };
 
-  const handleTogglePrinter = (qualifiedKey: string, plainName?: string) => {
+  const handleTogglePrinter = async (qualifiedKey: string, plainName?: string) => {
     sound.beep();
-    setSelectedPrinters(prev => {
-      const hasQualified = prev.includes(qualifiedKey);
-      const hasPlain = plainName ? prev.includes(plainName) : false;
-      let updated: string[];
-      if (hasQualified || hasPlain) {
-        updated = prev.filter(p => p !== qualifiedKey && p !== plainName);
+    const existingCfg = printerConfigs.find(c => isMatchingPrinterConfig(c, qualifiedKey, plainName));
+    const isCurrentlySelected = selectedPrinters.includes(qualifiedKey) || (plainName ? selectedPrinters.includes(plainName) : false);
+
+    if (isCurrentlySelected) {
+      // Seçimi kaldır: Bu yazıcının aktif görevlerini kapat
+      const updatedConfigs = printerConfigs.map(c => {
+        if (isMatchingPrinterConfig(c, qualifiedKey, plainName)) {
+          return {
+            ...c,
+            printer_types: { ...c.printer_types, adisyon: false, kitchen: false },
+            kitchen_groups: []
+          };
+        }
+        return c;
+      });
+      setPrinterConfigs(updatedConfigs);
+      await localHardware.savePrinterConfigs(updatedConfigs);
+      setSelectedPrinters(localHardware.getSelectedPrinters());
+    } else {
+      // Seç: Eğer config yoksa Adisyon açık olarak oluştur, varsa Adisyon'u aktif et
+      let updatedConfigs: PrinterConfig[];
+      if (existingCfg) {
+        updatedConfigs = printerConfigs.map(c =>
+          isMatchingPrinterConfig(c, qualifiedKey, plainName)
+            ? { ...c, target_printer: qualifiedKey, printer_types: { ...c.printer_types, adisyon: true } }
+            : c
+        );
       } else {
-        updated = [...prev, qualifiedKey];
+        const newCfg: PrinterConfig = {
+          id: qualifiedKey,
+          name: plainName || (qualifiedKey.includes('::') ? qualifiedKey.split('::')[1] : qualifiedKey),
+          target_printer: qualifiedKey,
+          printer_types: { adisyon: true, kitchen: false, abiyer: false, courier: false },
+          revenue_center: { main_channel: true },
+          kitchen_groups: [],
+          settings: {
+            print_on_order_save: false,
+            print_on_integration_approved: false,
+            copies: { table_order: 1, takeaway_order: 1, delivery_order: 1, post_payment: 1 },
+            assign_to_this_device: true,
+          },
+        };
+        updatedConfigs = [...printerConfigs, newCfg];
       }
-      localHardware.setSelectedPrinters(updated);
-      return updated;
-    });
+      setPrinterConfigs(updatedConfigs);
+      await localHardware.savePrinterConfigs(updatedConfigs);
+      setSelectedPrinters(localHardware.getSelectedPrinters());
+    }
   };
 
   const handleSingleTestPrint = async (qualifiedKey: string, displayName: string, localIp: string) => {
@@ -502,6 +556,24 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
               console.warn('Failed to parse cached receipt design', e);
             }
           }
+        }
+
+        if (data.printer_configs && Array.isArray(data.printer_configs)) {
+          const cleanConfigs = sanitizePrinterConfigs(data.printer_configs);
+          setPrinterConfigs(cleanConfigs);
+          localStorage.setItem('boncore_printer_configs', JSON.stringify(cleanConfigs));
+          const activeTargets = cleanConfigs
+            .filter(c =>
+              c.target_printer && (
+                c.printer_types?.adisyon ||
+                (c.kitchen_groups && c.kitchen_groups.length > 0) ||
+                c.printer_types?.courier ||
+                c.printer_types?.abiyer
+              )
+            )
+            .map(c => c.target_printer);
+          localHardware.setSelectedPrinters(activeTargets);
+          setSelectedPrinters(activeTargets);
         }
       }
     } catch (err) {
@@ -1849,14 +1921,20 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                           <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-2.5">
                             {filteredPrinters.map((prName) => {
                               const qualifiedKey = `${ipAddr}::${prName}`;
-                              const isSelected = selectedPrinters.includes(qualifiedKey) || selectedPrinters.includes(prName);
                               const isVirtual = isVirtualPrinter(prName);
-                              const printerCfg = printerConfigs.find(c => 
-                                c.target_printer === qualifiedKey || 
-                                c.target_printer === prName || 
-                                c.id === qualifiedKey || 
-                                (c.name && c.name.toLowerCase() === prName.toLowerCase())
+                              const printerCfg = printerConfigs.find(c =>
+                                isMatchingPrinterConfig(c, qualifiedKey, prName)
                               );
+                              const catCount = printerCfg?.kitchen_groups?.length || 0;
+                              const hasActiveRole = Boolean(
+                                printerCfg?.printer_types?.adisyon ||
+                                catCount > 0 ||
+                                printerCfg?.printer_types?.courier ||
+                                printerCfg?.printer_types?.abiyer
+                              );
+                              const isSelected = printerCfg
+                                ? hasActiveRole
+                                : (selectedPrinters.includes(qualifiedKey) || selectedPrinters.includes(prName));
 
                               return (
                                 <div
@@ -1915,9 +1993,12 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                                             ✓ Adisyon
                                           </span>
                                         )}
-                                        {printerCfg?.printer_types?.kitchen && (
-                                          <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                                            🍳 Mutfak ({printerCfg.kitchen_groups?.length || 0} Kat.)
+                                        {catCount > 0 && (
+                                          <span
+                                            className="px-1.5 py-0.5 rounded text-[10px] font-black bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
+                                            title={printerCfg?.kitchen_groups?.join(', ')}
+                                          >
+                                            🍳 Mutfak ({catCount} Kat.)
                                           </span>
                                         )}
                                         {printerCfg?.printer_types?.courier && (
@@ -1925,9 +2006,14 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                                             🛵 Kurye
                                           </span>
                                         )}
-                                        {!printerCfg && (
+                                        {printerCfg?.printer_types?.abiyer && (
+                                          <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 border border-sky-300 dark:border-sky-800">
+                                            🛎️ Abiyer
+                                          </span>
+                                        )}
+                                        {!hasActiveRole && (
                                           <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                                            Tıkla & Yapılandır
+                                            Tıkla & Kategori / Çıktı Seç
                                           </span>
                                         )}
                                       </div>

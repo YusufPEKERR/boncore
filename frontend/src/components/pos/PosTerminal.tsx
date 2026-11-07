@@ -9,7 +9,7 @@ import {
 import { Category, Product, OrderItem, Table, Order, StaffUser, Area } from '../../types';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
-import { localHardware } from '../../services/localHardware';
+import { localHardware, sanitizePrinterConfigs } from '../../services/localHardware';
 import { useWebSocket } from '../../services/websocket';
 import { ProductModifierModal } from './ProductModifierModal';
 import { printThermalReceipt } from '../fiscal/FiscalModal';
@@ -357,6 +357,10 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         const mergedPerms = mergeWithInitialPermissions(data.role_permissions);
         setRolePermissions(mergedPerms);
         broadcastPermissionsUpdate(mergedPerms);
+      }
+      if (data.printer_configs && Array.isArray(data.printer_configs)) {
+        const cleanConfigs = sanitizePrinterConfigs(data.printer_configs);
+        localStorage.setItem('boncore_printer_configs', JSON.stringify(cleanConfigs));
       }
     } catch (err) {
       let cachedDiscounts = defaultPosDiscounts;
@@ -893,16 +897,34 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         const waiterName = currentUser?.name || 'Garson';
         const orderType = activeTable ? 'table' : 'takeaway';
 
-        const printItems = unsavedItems.map(item => ({
-          product_id: item.product_id,
-          product_name: item.product_name,
-          quantity: item.quantity,
-          variant: item.variant_name,
-          variant_name: item.variant_name,
-          selected_modifiers: item.selected_modifiers,
-          kitchen_note: item.kitchen_note,
-          course_stage: item.course_stage,
-        }));
+        const printItems = unsavedItems.map(item => {
+          // 1. Önce bu ürünün hangi kategoride olduğunu bul
+          let foundCategoryName = '';
+          for (const cat of categories) {
+            if (
+              cat.products &&
+              cat.products.some(
+                p =>
+                  Number(p.id) === Number(item.product_id) ||
+                  String(p.name || '').trim().toLocaleUpperCase('tr-TR') === String(item.product_name || '').trim().toLocaleUpperCase('tr-TR')
+              )
+            ) {
+              foundCategoryName = cat.name;
+              break;
+            }
+          }
+          return {
+            product_id: item.product_id,
+            product_name: item.product_name,
+            category_name: foundCategoryName,
+            quantity: item.quantity,
+            variant: item.variant_name,
+            variant_name: item.variant_name,
+            selected_modifiers: item.selected_modifiers,
+            kitchen_note: item.kitchen_note,
+            course_stage: item.course_stage,
+          };
+        });
 
         localHardware.printKitchenTicketsForOrder({
           orderNo,
@@ -910,7 +932,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           waiterName,
           orderType,
           items: printItems,
-          categories: categories.map(c => ({ id: c.id, name: c.name })),
+          orderNote: orderNote || undefined,
+          categories: categories,
         }).then(res => {
           if (res?.success && res.dispatchedPrinters.length > 0) {
             console.log(`Mutfak fişleri otomatik yazdırıldı: ${res.dispatchedPrinters.join(', ')}`);
@@ -1510,6 +1533,10 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         const mergedPerms = mergeWithInitialPermissions(data.role_permissions);
         setRolePermissions(mergedPerms);
         broadcastPermissionsUpdate(mergedPerms);
+      }
+      if (data.printer_configs && Array.isArray(data.printer_configs)) {
+        const cleanConfigs = sanitizePrinterConfigs(data.printer_configs);
+        localStorage.setItem('boncore_printer_configs', JSON.stringify(cleanConfigs));
       }
     }
 

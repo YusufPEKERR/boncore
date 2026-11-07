@@ -10,7 +10,83 @@ import { api } from './api';
 import { PrinterConfig } from '../types';
 
 const LOCAL_AGENT_URL = 'http://127.0.0.1:9099';
-const TIMEOUT_MS = 4000;
+
+const isVirtualPrinterName = (name: string): boolean => {
+  const low = (name || '').toLowerCase();
+  return [
+    'microsoft print to pdf',
+    'microsoft xps',
+    'onenote',
+    'fax',
+    'anydesk printer',
+    'send to onenote'
+  ].some(k => low.includes(k));
+};
+
+/**
+ * Eski otomatik oluşturulmuş sahte/bozuk yazıcı profillerini temizler.
+ */
+export const sanitizePrinterConfigs = (rawList: any[], validCategoryNames?: string[]): PrinterConfig[] => {
+  if (!Array.isArray(rawList)) return [];
+
+  const validUpperSet = validCategoryNames && validCategoryNames.length > 0
+    ? new Set(validCategoryNames.map(c => c.trim().toLocaleUpperCase('tr-TR')))
+    : null;
+
+  const byTarget = new Map<string, PrinterConfig>();
+
+  for (const item of rawList) {
+    if (!item || typeof item !== 'object') continue;
+    const target = String(item.target_printer || '').trim();
+    if (!target) continue;
+
+    const rawGroups: string[] = Array.isArray(item.kitchen_groups)
+      ? item.kitchen_groups.map((g: any) => String(g).trim()).filter(Boolean)
+      : [];
+
+    const cleanedGroups = validUpperSet
+      ? rawGroups.filter(g => validUpperSet.has(g.toLocaleUpperCase('tr-TR')))
+      : rawGroups;
+
+    // Eski otomatik üretilen (printer-1, printer-2 vb.) ve hiç kategori seçilmemiş sanal yazıcı kayıtlarını atla
+    const isAutoLegacyId = /^printer-\d+$/.test(String(item.id || ''));
+    if (isAutoLegacyId && cleanedGroups.length === 0 && isVirtualPrinterName(target)) {
+      continue;
+    }
+
+    const hasKitchenGroups = cleanedGroups.length > 0;
+    const cleanCfg: PrinterConfig = {
+      id: String(item.id || target),
+      name: String(item.name || (target.includes('::') ? target.split('::')[1] : target)).trim(),
+      target_printer: target,
+      printer_types: {
+        adisyon: Boolean(item.printer_types?.adisyon),
+        kitchen: hasKitchenGroups ? true : Boolean(item.printer_types?.kitchen && hasKitchenGroups),
+        abiyer: Boolean(item.printer_types?.abiyer),
+        courier: Boolean(item.printer_types?.courier),
+      },
+      revenue_center: {
+        main_channel: item.revenue_center?.main_channel ?? true,
+      },
+      kitchen_groups: cleanedGroups,
+      settings: {
+        print_on_order_save: Boolean(item.settings?.print_on_order_save && !isAutoLegacyId),
+        print_on_integration_approved: Boolean(item.settings?.print_on_integration_approved),
+        copies: {
+          table_order: Math.max(1, Number(item.settings?.copies?.table_order) || 1),
+          takeaway_order: Math.max(1, Number(item.settings?.copies?.takeaway_order) || 1),
+          delivery_order: Math.max(1, Number(item.settings?.copies?.delivery_order) || 1),
+          post_payment: Math.max(1, Number(item.settings?.copies?.post_payment) || 1),
+        },
+        assign_to_this_device: item.settings?.assign_to_this_device ?? true,
+      },
+    };
+
+    byTarget.set(target, cleanCfg);
+  }
+
+  return Array.from(byTarget.values());
+};
 
 export interface ScaleReadResult {
   success: boolean;
@@ -32,7 +108,6 @@ export const localHardware = {
    * Tarayıcı HTTPS kısıtlamalarını aşmak için önce Sunucu Bulut Rölesini kontrol eder.
    */
   async checkAgentStatus(): Promise<{ isOnline: boolean; version?: string; localIp?: string }> {
-    // 1. Bulut Sunucu Rölesi üzerinden kontrol et (HTTPS ile %100 uyumlu, Mixed-Content engeline takılmaz!)
     try {
       const cloudStatus = await api.getAgentStatus();
       if (cloudStatus && cloudStatus.isOnline) {
@@ -46,7 +121,6 @@ export const localHardware = {
       // cloud relay check failed, try direct
     }
 
-    // 2. Doğrudan yerel HTTP soketini dene (Eğer sayfa localhost üzerindeyse)
     try {
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), 1000);
@@ -115,12 +189,18 @@ export const localHardware = {
   },
 
   /**
-   * Kullanıcının bu tarayıcıda seçtiği yazıcı listesini getirir.
+   * Kullanıcının bu tarayıcıda seçtiği aktif yazıcı listesini getirir.
    */
   getSelectedPrinters(): string[] {
     try {
       const saved = localStorage.getItem('boncore_selected_printers');
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(p => typeof p === 'string' && p.trim().length > 0);
+        }
+      }
+      return [];
     } catch {
       return [];
     }
@@ -131,7 +211,8 @@ export const localHardware = {
    */
   setSelectedPrinters(printers: string[]): void {
     try {
-      localStorage.setItem('boncore_selected_printers', JSON.stringify(printers));
+      const unique = Array.from(new Set(printers.filter(Boolean)));
+      localStorage.setItem('boncore_selected_printers', JSON.stringify(unique));
     } catch {}
   },
 
@@ -173,41 +254,11 @@ export const localHardware = {
       const saved = localStorage.getItem('boncore_printer_configs');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+        if (Array.isArray(parsed)) {
+          return sanitizePrinterConfigs(parsed);
         }
       }
     } catch {}
-
-    const selected = this.getSelectedPrinters();
-    if (selected.length > 0) {
-      return selected.map((p, idx) => ({
-        id: `printer-${idx + 1}`,
-        name: p.includes('::') ? p.split('::')[1] : p,
-        target_printer: p,
-        printer_types: {
-          adisyon: true,
-          kitchen: true,
-          abiyer: false,
-          courier: false
-        },
-        revenue_center: {
-          main_channel: true
-        },
-        kitchen_groups: [],
-        settings: {
-          print_on_order_save: true,
-          print_on_integration_approved: true,
-          copies: {
-            table_order: 1,
-            takeaway_order: 1,
-            delivery_order: 1,
-            post_payment: 1
-          },
-          assign_to_this_device: true
-        }
-      }));
-    }
 
     return [];
   },
@@ -217,11 +268,25 @@ export const localHardware = {
    */
   async savePrinterConfigs(configs: PrinterConfig[]): Promise<void> {
     try {
-      localStorage.setItem('boncore_printer_configs', JSON.stringify(configs));
-      const activeTargets = configs.map(c => c.target_printer).filter(Boolean);
+      const sanitized = sanitizePrinterConfigs(configs);
+      localStorage.setItem('boncore_printer_configs', JSON.stringify(sanitized));
+
+      // Yalnızca aktif bir görevi (Adisyon, Kategori seçili Mutfak, Kurye veya Abiyer) olan yazıcıları seçili listesine ekle
+      const activeTargets = sanitized
+        .filter(c =>
+          c.target_printer && (
+            c.printer_types?.adisyon ||
+            (c.kitchen_groups && c.kitchen_groups.length > 0) ||
+            c.printer_types?.courier ||
+            c.printer_types?.abiyer
+          )
+        )
+        .map(c => c.target_printer);
+
       this.setSelectedPrinters(activeTargets);
+
       try {
-        await api.updateSettings({ printer_configs: configs });
+        await api.updateSettings({ printer_configs: sanitized });
       } catch (err) {
         console.warn('Yazıcı profilleri sunucuya eşitlenemedi:', err);
       }
@@ -251,28 +316,15 @@ export const localHardware = {
   getAdisyonPrinterConfigs(): PrinterConfig[] {
     const configs = this.getPrinterConfigs();
     const adisyonConfigs = configs.filter(c => c.printer_types?.adisyon && c.target_printer);
-    if (adisyonConfigs.length > 0) {
-      return adisyonConfigs;
-    }
-    const selected = this.getSelectedPrinters();
-    return selected.map(p => ({
-      id: `default-${p}`,
-      name: p.includes('::') ? p.split('::')[1] : p,
-      target_printer: p,
-      printer_types: { adisyon: true, kitchen: false, abiyer: false, courier: false },
-      revenue_center: { main_channel: true },
-      kitchen_groups: [],
-      settings: {
-        print_on_order_save: false,
-        print_on_integration_approved: false,
-        copies: { table_order: 1, takeaway_order: 1, delivery_order: 1, post_payment: 1 },
-        assign_to_this_device: true
-      }
-    }));
+    return adisyonConfigs;
   },
 
   /**
-   * Mutfak sipariş fişini, kategori/mutfak grubu eşleşmelerine göre ilgili yazıcılara otomatik yönlendirir.
+   * Mutfak sipariş fişini, kategori eşleşmelerine göre ilgili yazıcılara otomatik yönlendirir.
+   * KURAL:
+   * 1. Siparişe eklenen her ürünün hangi kategoride olduğuna bakılır.
+   * 2. Yazıcılardan hangisi o kategoriyi (kitchen_groups) seçmişse ona bakılır.
+   * 3. İkisi de aynıysa o yazıcıdan fiş yazdırılır; eşleşme yoksa kesinlikle yazdırılmaz.
    */
   async printKitchenTicketsForOrder(params: {
     orderNo: string;
@@ -282,6 +334,7 @@ export const localHardware = {
     items: Array<{
       product_id?: number;
       product_name: string;
+      category_name?: string;
       quantity: number;
       variant?: string;
       variant_name?: string;
@@ -301,11 +354,20 @@ export const localHardware = {
     const dateStr = new Date().toLocaleDateString('tr-TR');
     const timeStr = new Date().toLocaleTimeString('tr-TR');
 
-    const catMap = new Map<number, string>();
+    // Ürün ID -> Kategori Adı ve Ürün Adı -> Kategori Adı haritalarını hazırla
+    const catByIdMap = new Map<number, string>();
+    const catByNameMap = new Map<string, string>();
     if (params.categories && Array.isArray(params.categories)) {
       params.categories.forEach(c => {
+        const catName = String(c.name || '').trim();
+        if (!catName) return;
         (c.products || []).forEach((p: any) => {
-          catMap.set(p.id, c.name);
+          if (p.id !== undefined && p.id !== null) {
+            catByIdMap.set(Number(p.id), catName);
+          }
+          if (p.name) {
+            catByNameMap.set(String(p.name).trim().toLocaleUpperCase('tr-TR'), catName);
+          }
         });
       });
     }
@@ -313,31 +375,42 @@ export const localHardware = {
     for (const cfg of configs) {
       if (!cfg.target_printer) continue;
 
-      const isKitchen = !!cfg.printer_types?.kitchen;
-      const printOnSave = !!cfg.settings?.print_on_order_save;
+      // Bu yazıcıda seçili olan kategorileri al
+      const selectedPrinterCategories = Array.isArray(cfg.kitchen_groups)
+        ? cfg.kitchen_groups
+            .map(g => String(g || '').trim().toLocaleUpperCase('tr-TR'))
+            .filter(Boolean)
+        : [];
 
-      if (!isKitchen && !printOnSave) continue;
+      // Yazıcıda hiçbir kategori seçilmemişse bu yazıcıdan fiş çıkarma!
+      if (selectedPrinterCategories.length === 0) {
+        continue;
+      }
 
+      // Siparişteki ürünlerin kategorisine bak ve yazıcının seçtiği kategorilerle birebir karşılaştır
       const matchingItems = params.items.filter(it => {
-        if (printOnSave) return true;
+        const rawItemCat =
+          it.category_name ||
+          (it.product_id !== undefined && it.product_id !== null ? catByIdMap.get(Number(it.product_id)) : '') ||
+          catByNameMap.get(String(it.product_name || '').trim().toLocaleUpperCase('tr-TR')) ||
+          '';
 
-        if (!cfg.kitchen_groups || cfg.kitchen_groups.length === 0) return true;
+        const normItemCat = String(rawItemCat).trim().toLocaleUpperCase('tr-TR');
+        if (!normItemCat) return false;
 
-        const itemCatName = it.product_id ? (catMap.get(it.product_id) || '') : '';
-        const normItemCat = itemCatName.trim().toUpperCase();
-
-        return cfg.kitchen_groups.some(g => {
-          const normG = g.trim().toUpperCase();
-          return normG === normItemCat || it.product_name.toUpperCase().includes(normG);
-        });
+        // İkisi de aynı kategoriyse true, değilse false
+        return selectedPrinterCategories.includes(normItemCat);
       });
 
-      if (matchingItems.length === 0) continue;
+      // Eşleşen ürün yoksa bu yazıcıya kesinlikle yazdırma!
+      if (matchingItems.length === 0) {
+        continue;
+      }
 
       let copies = 1;
       const copySettings = cfg.settings?.copies;
       if (copySettings) {
-        if (params.orderType === 'dine_in' && copySettings.table_order) {
+        if ((params.orderType === 'dine_in' || params.orderType === 'table') && copySettings.table_order) {
           copies = Math.max(1, copySettings.table_order);
         } else if (params.orderType === 'takeaway' && copySettings.takeaway_order) {
           copies = Math.max(1, copySettings.takeaway_order);
@@ -348,10 +421,10 @@ export const localHardware = {
 
       const lines: string[] = [];
       lines.push('================================');
-      lines.push(`     *** ${cfg.name.toUpperCase()} SİPARİŞİ ***     `);
+      lines.push(`     *** ${cfg.name.toLocaleUpperCase('tr-TR')} SİPARİŞİ ***     `);
       lines.push('================================');
       lines.push(`Masa:    ${params.tableName}`);
-      lines.push(`Adisyon: #${params.orderNo}`);
+      lines.push(`Adisyon: ${params.orderNo.startsWith('#') ? params.orderNo : '#' + params.orderNo}`);
       lines.push(`Garson:  ${params.waiterName}`);
       lines.push(`Tarih:   ${dateStr} ${timeStr}`);
       lines.push('--------------------------------');
