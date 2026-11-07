@@ -308,7 +308,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
 
       {/* Table Move Active Notification Banner */}
       {tableToMove && (
-        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white px-3 sm:px-4 py-2.5 flex items-center justify-between shadow-md z-30 animate-slideDown shrink-0">
+        <div className="bg-gradient-to-r from-[#28702a] via-[#338d35] to-emerald-600 text-white px-3 sm:px-4 py-2.5 flex items-center justify-between shadow-md z-30 animate-slideDown shrink-0 border-b border-emerald-500/30">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
               <ArrowRightLeft className="w-4 h-4 text-white animate-pulse" />
@@ -320,7 +320,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
                   {tableToMove.name} ➔ Hedef Boş Masa
                 </span>
               </div>
-              <p className="text-[11px] text-blue-100 truncate">
+              <p className="text-[11px] text-emerald-100 truncate">
                 Adisyonu aktarmak istediğiniz boş masaya dokununuz.
               </p>
             </div>
