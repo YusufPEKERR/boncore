@@ -7,6 +7,8 @@ import { Table, Order, PaymentItem, PaymentMethodConfig, StaffUser } from '../..
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
 import { useRolePermissions } from '../../services/permissions';
+import { localHardware } from '../../services/localHardware';
+import { printThermalReceipt } from '../fiscal/FiscalModal';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -427,7 +429,101 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
 
       if (shouldPrint) {
-        onViewFiscal(order.id);
+        try {
+          try {
+            await api.printTableBill(order.id, cashierName);
+          } catch (billErr) {
+            console.warn('printTableBill uyarısı:', billErr);
+          }
+
+          let fiscalDoc: any = null;
+          try {
+            fiscalDoc = await api.getEAdisyon(order.id);
+          } catch (docErr) {
+            console.warn('getEAdisyon uyarısı:', docErr);
+          }
+
+          const activeItems = (order.items || []).filter(it => !it.is_voided);
+          const calcSubtotal = activeItems.reduce((sum, it) => sum + Number(it.total_price || 0), 0);
+          const finalGrandTotal = Number(order.grand_total || calcSubtotal || effectiveAmount || 0);
+          const vat10Tax = Number(((finalGrandTotal / 1.1) * 0.1).toFixed(2));
+          const methodLabel = method === 'cash' ? 'NAKİT' : method === 'credit_card' ? 'KREDİ KARTI' : 'AÇIK HESAP';
+
+          if (!fiscalDoc || fiscalDoc.error || fiscalDoc.detail || !Array.isArray(fiscalDoc.items) || fiscalDoc.items.length === 0) {
+            const now = new Date();
+            fiscalDoc = {
+              ettn: fiscalDoc?.ettn || `EAD-${now.getTime()}`,
+              doc_no: fiscalDoc?.doc_no || `ADS-${order.id}`,
+              date: fiscalDoc?.date || now.toLocaleDateString('tr-TR'),
+              time: fiscalDoc?.time || now.toLocaleTimeString('tr-TR'),
+              company_title: localStorage.getItem('boncore_active_restaurant_name') || 'BONCORE RESTORAN',
+              table_name: table?.name || order.table_name || 'Masa',
+              waiter_name: order.waiter_name || cashierName || 'Garson',
+              cashier_name: cashierName || 'Kasiyer',
+              items: activeItems.map(it => ({
+                product_name: it.product_name,
+                variant: (it as any).variant_name || (it as any).variant || '',
+                quantity: it.quantity,
+                unit_price: it.unit_price,
+                total_price: it.total_price || Number((it.quantity * it.unit_price).toFixed(2))
+              })),
+              subtotal: Number(order.subtotal || calcSubtotal || 0),
+              discount: Number(order.discount_amount || 0),
+              treat: Number(order.treat_amount || 0),
+              kuver: Number(order.kuver_total || 0),
+              service_charge: Number(order.service_charge || 0),
+              grand_total: finalGrandTotal,
+              payments: [
+                ...(order.payments || []).map(p => ({
+                  method: p.method,
+                  label: p.method === 'cash' ? 'NAKİT' : p.method === 'credit_card' ? 'KREDİ KARTI' : 'AÇIK HESAP',
+                  amount: p.amount
+                })),
+                ...(effectiveAmount > 0 ? [{
+                  method,
+                  label: methodLabel,
+                  amount: effectiveAmount
+                }] : [])
+              ],
+              vat_summary: {
+                vat_10: { rate: 10, tax: vat10Tax }
+              }
+            };
+          } else {
+            // Gelen dokümanda ödeme bilgisi eksikse yapılan ödemeyi ekle
+            if (!Array.isArray(fiscalDoc.payments) || fiscalDoc.payments.length === 0) {
+              fiscalDoc.payments = effectiveAmount > 0 ? [{
+                method,
+                label: methodLabel,
+                amount: effectiveAmount
+              }] : [];
+            }
+          }
+
+          const adisyonConfigs = localHardware.getAdisyonPrinterConfigs();
+          const adisyonPrinters = adisyonConfigs.map(c => c.target_printer).filter(Boolean);
+          const targetPrinters = adisyonPrinters.length > 0 ? adisyonPrinters : (localHardware.getSelectedPrinters() || []);
+
+          if (targetPrinters.length > 0) {
+            const allConfigs = localHardware.getPrinterConfigs();
+            for (const prKey of targetPrinters) {
+              const cfg = allConfigs.find(c => c.target_printer === prKey || c.id === prKey);
+              const copies = Math.max(
+                1,
+                shouldCloseTable
+                  ? (cfg?.settings?.copies?.post_payment || cfg?.settings?.copies?.table_order || 1)
+                  : (cfg?.settings?.copies?.table_order || 1)
+              );
+              for (let copyIdx = 0; copyIdx < copies; copyIdx++) {
+                await printThermalReceipt(fiscalDoc, [prKey]);
+              }
+            }
+          } else {
+            await printThermalReceipt(fiscalDoc);
+          }
+        } catch (printErr) {
+          console.warn('Ödeme sonrası Adisyo fiş yazdırma uyarısı:', printErr);
+        }
       }
 
       // Sadece 'Öde ve Kapat' veya 'Öde, Yazdır ve Kapat' dendiğinde masayı kapat ve çık
