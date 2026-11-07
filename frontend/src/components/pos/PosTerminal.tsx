@@ -145,6 +145,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [isFastPayModalOpen, setIsFastPayModalOpen] = useState<boolean>(false);
   const [isNoteModalOpen, setIsNoteModalOpen] = useState<boolean>(false);
   const [isPrinterSelectModalOpen, setIsPrinterSelectModalOpen] = useState<boolean>(false);
+  const [printerModalMode, setPrinterModalMode] = useState<'print_bill' | 'fast_pay'>('print_bill');
+  const [pendingFastPayMethod, setPendingFastPayMethod] = useState<'cash' | 'credit_card' | null>(null);
   const [currentAreas, setCurrentAreas] = useState<Area[]>(areas || []);
 
   useEffect(() => {
@@ -955,17 +957,18 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     };
   };
 
-  const getPrinterStatus = (prKey: string): { isOnline: boolean; reason: string } => {
+  const getPrinterStatus = (prKey: string, customTerminals?: any[]): { isOnline: boolean; reason: string } => {
     const label = formatPrinterLabel(prKey);
     const targetPr = label.name.toLowerCase().trim();
     const targetIp = label.ip?.trim();
+    const terms = customTerminals || scaleTerminals;
 
-    if (!scaleTerminals || scaleTerminals.length === 0) {
+    if (!terms || terms.length === 0) {
       return { isOnline: false, reason: 'Donanım Ajanı Çevrimdışı' };
     }
 
     if (targetIp) {
-      const matchTerm = scaleTerminals.find(t => 
+      const matchTerm = terms.find(t => 
         (t as any).local_ip === targetIp || t.id.includes(targetIp.replace(/\./g, '_'))
       );
       if (!matchTerm) {
@@ -981,7 +984,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return { isOnline: true, reason: 'Bağlı & Hazır' };
     }
 
-    const matchingOnlineTerm = scaleTerminals.find(t => {
+    const matchingOnlineTerm = terms.find(t => {
       if (!t.is_online) return false;
       const termPrinters = ((t as any).printers || []).map((p: string) => p.toLowerCase().trim());
       return termPrinters.some((p: string) => p.includes(targetPr) || targetPr.includes(p));
@@ -991,12 +994,30 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return { isOnline: true, reason: `Bağlı & Hazır (${matchingOnlineTerm.name})` };
     }
 
-    const anyOnline = scaleTerminals.some(t => t.is_online);
+    const anyOnline = terms.some(t => t.is_online);
     if (!anyOnline) {
       return { isOnline: false, reason: 'Bağlantı Yok • Ajan Çevrimdışı' };
     }
 
     return { isOnline: false, reason: 'Bağlantı Yok • Yazıcı Algılanamadı' };
+  };
+
+  const getAvailablePrintersList = (currentTerminals?: any[]): string[] => {
+    const selected = localHardware.getSelectedPrinters() || [];
+    const list = [...selected];
+    const terms = currentTerminals || scaleTerminals || [];
+    terms.forEach(t => {
+      if (t.printers && Array.isArray(t.printers)) {
+        const ipAddr = (t as any).local_ip || t.id;
+        t.printers.forEach((pName: string) => {
+          const qualified = `${ipAddr}::${pName}`;
+          if (!list.includes(qualified) && !list.includes(pName)) {
+            list.push(qualified);
+          }
+        });
+      }
+    });
+    return list;
   };
 
   // Yazıcı modalı açıkken terminallerin anlık online/offline durumlarını takip et
@@ -1023,24 +1044,27 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return;
     }
 
-    // 1. Aktif seçili yazıcıları kontrol et
-    const activePrinters = localHardware.getSelectedPrinters();
-    if (!activePrinters || activePrinters.length === 0) {
-      sound.warning();
-      showToast('Aktif seçili yazıcı bulunamadı! Lütfen Ayarlar > Yazıcılar menüsünden en az bir yazıcı seçin veya tanımlayın.', 'error');
-      return;
-    }
-
     // Terminalleri anında tazeleyelim ki online/offline durumları tam güncel olsun
+    let currentTerms = scaleTerminals;
     try {
       const res = await localHardware.getTerminals();
       if (res?.terminals) {
-        setScaleTerminals(res.terminals as any);
+        currentTerms = res.terminals as any;
+        setScaleTerminals(currentTerms);
       }
     } catch {}
 
-    // 2. Garsona seçili yazıcılardan hangisinde yazdıracağını seçtirmek için modalı aç
-    setAvailablePrinters(activePrinters);
+    const allPrinters = getAvailablePrintersList(currentTerms);
+    if (!allPrinters || allPrinters.length === 0) {
+      sound.warning();
+      showToast('Tanımlı veya bağlı yazıcı bulunamadı! Lütfen Ayarlar > Yazıcılar menüsünden en az bir yazıcı seçin veya donanım ajanını çalıştırın.', 'error');
+      return;
+    }
+
+    // Garsona seçili yazıcılardan hangisinde yazdıracağını seçtirmek için modalı aç
+    setPrinterModalMode('print_bill');
+    setPendingFastPayMethod(null);
+    setAvailablePrinters(allPrinters);
     setIsPrinterSelectModalOpen(true);
   };
 
@@ -1124,7 +1148,45 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return;
     }
     sound.beep();
+
+    // 1. Terminalleri tazeleyelim ki anlık online/offline durumları kesin olsun
+    let currentTerms = scaleTerminals;
+    try {
+      const res = await localHardware.getTerminals();
+      if (res?.terminals) {
+        currentTerms = res.terminals as any;
+        setScaleTerminals(currentTerms);
+      }
+    } catch {}
+
+    // 2. Varsayılan / seçili yazıcıları al ve çevrimiçi olanları filtrele
+    const activePrinters = localHardware.getSelectedPrinters();
+    const onlineSelectedPrinters = (activePrinters || []).filter(pr => getPrinterStatus(pr, currentTerms).isOnline);
+
+    const isMissingDefault = !activePrinters || activePrinters.length === 0;
+    const isDefaultOfflineOrNoConnection = onlineSelectedPrinters.length === 0;
+
+    // KURAL: Eğer yazıcı bağlantısı yoksa, varsayılan yazıcı seçilmemişse veya varsayılan yazıcı çevrimdışı ise:
+    // Yazıcı seçtir (aynı yazdır butonundaki gibi)
+    if (isMissingDefault || isDefaultOfflineOrNoConnection) {
+      setIsFastPayModalOpen(false);
+      setPrinterModalMode('fast_pay');
+      setPendingFastPayMethod(method);
+      const allPrs = getAvailablePrintersList(currentTerms);
+      setAvailablePrinters(allPrs);
+      setIsPrinterSelectModalOpen(true);
+      return;
+    }
+
+    // Varsayılan yazıcı mevcut ve çevrimiçi -> Doğrudan tahsil et ve fiş yazdır
+    await executeFastPayment(method, onlineSelectedPrinters);
+  };
+
+  const executeFastPayment = async (method: 'cash' | 'credit_card', printersToUse: string[]) => {
+    setIsFastPayModalOpen(false);
+    setIsPrinterSelectModalOpen(false);
     setLoading(true);
+
     try {
       let targetOrderId = activeOrderId;
       const unsavedItems = cartItems.filter(i => !i.id);
@@ -1137,31 +1199,65 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           kuver_count: 0
         };
         const orderRes = await api.createOrder(payload);
-        targetOrderId = orderRes.order_id;
+        targetOrderId = orderRes.order_id || orderRes.id;
       } else if (activeOrderId && unsavedItems.length > 0) {
         await api.addItemsToOrder(activeOrderId, unsavedItems, currentUser?.name || 'Garson');
       }
 
-      if (targetOrderId) {
-        const payAmount = (existingOrder && unsavedItems.length === 0 && existingOrder.remaining_total > 0)
-          ? existingOrder.remaining_total
-          : grandTotal;
-        await api.settlePayment({
-          order_id: targetOrderId,
-          payments: [{ method, amount: payAmount }],
-          cashier_name: currentUser?.name || 'Garson',
-          close_table: true
-        });
-        setIsFastPayModalOpen(false);
-        sound.cashDrawer();
-        onRefreshData();
-        onBackToTables();
+      if (!targetOrderId) {
+        showToast('İşlem yapılacak adisyon veya sipariş bulunamadı.', 'error');
+        return;
       }
+
+      const payAmount = (existingOrder && unsavedItems.length === 0 && existingOrder.remaining_total > 0)
+        ? existingOrder.remaining_total
+        : grandTotal;
+
+      await api.settlePayment({
+        order_id: targetOrderId,
+        payments: [{ method, amount: payAmount }],
+        cashier_name: currentUser?.name || 'Garson',
+        close_table: true
+      });
+
+      sound.cashDrawer();
+
+      // Fiş yazdırma işlemi
+      let printSuccess = false;
+      if (printersToUse && printersToUse.length > 0) {
+        try {
+          await api.printTableBill(targetOrderId, currentUser?.name);
+          const fiscalDoc = await api.getEAdisyon(targetOrderId);
+          if (fiscalDoc) {
+            await printThermalReceipt(fiscalDoc, printersToUse);
+            printSuccess = true;
+          }
+        } catch (printErr: any) {
+          console.warn('Hızlı ödeme fiş yazdırma uyarısı:', printErr);
+        }
+      }
+
+      const methodLabel = method === 'cash' ? 'Nakit' : 'Kredi Kartı';
+      if (printSuccess) {
+        const prLabel = printersToUse.length === 1
+          ? formatPrinterLabel(printersToUse[0]).name
+          : `${printersToUse.length} Yazıcıya`;
+        showToast(`₺${payAmount.toFixed(2)} ${methodLabel} ödemesi alındı ve fiş "${prLabel}" yazıcısına gönderildi.`, 'success');
+      } else if (printersToUse && printersToUse.length > 0) {
+        showToast(`₺${payAmount.toFixed(2)} ${methodLabel} ödemesi alındı ancak yazıcıya ulaşılamadı.`, 'error');
+      } else {
+        showToast(`₺${payAmount.toFixed(2)} ${methodLabel} ödemesi alındı ve masa kapatıldı.`, 'success');
+      }
+
+      onRefreshData();
+      onBackToTables();
     } catch (err: any) {
       showToast(err.message || 'Hızlı ödeme işlemi başarısız.', 'error');
       sound.warning();
     } finally {
       setLoading(false);
+      setPendingFastPayMethod(null);
+      setPrinterModalMode('print_bill');
     }
   };
 
@@ -2953,28 +3049,41 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         </div>
       )}
 
-      {/* Yazıcı Seçimi Modalı */}
+      {/* Yazıcı Seçimi Modalı (Normal Yazdır ve Hızlı Öde & Yazdır Akışı) */}
       {isPrinterSelectModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn font-sans">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
             {/* Header */}
             <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/30 shrink-0">
-                  <Printer className="w-6 h-6" />
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border shrink-0 ${
+                  printerModalMode === 'fast_pay'
+                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                    : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                }`}>
+                  {printerModalMode === 'fast_pay' ? <Zap className="w-6 h-6 fill-amber-500" /> : <Printer className="w-6 h-6" />}
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900 dark:text-white leading-tight">
-                    Yazıcı Seçimi
+                    {printerModalMode === 'fast_pay' ? 'Hızlı Öde • Fiş Yazıcı Seçimi' : 'Yazıcı Seçimi'}
                   </h3>
                   <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
+                    {printerModalMode === 'fast_pay' && (
+                      <span className="font-bold text-amber-600 dark:text-amber-400">
+                        {pendingFastPayMethod === 'cash' ? 'Nakit Ödeme • ' : 'Kredi Kartı • '}
+                      </span>
+                    )}
                     {activeTable ? `Masa: ${activeTable.name}` : 'Adisyon'} • Toplam: <strong className="font-mono text-emerald-600 dark:text-emerald-400">₺{grandTotal.toFixed(2)}</strong>
                   </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setIsPrinterSelectModalOpen(false)}
+                onClick={() => {
+                  setIsPrinterSelectModalOpen(false);
+                  setPendingFastPayMethod(null);
+                  setPrinterModalMode('print_bill');
+                }}
                 className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
                 title="Kapat"
               >
@@ -2982,10 +3091,21 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               </button>
             </div>
 
-            {/* Prompt */}
-            <div className="text-xs font-bold text-slate-600 dark:text-slate-300">
-              Adisyon fişinin yazdırılacağı yazıcıyı seçiniz:
-            </div>
+            {/* Prompt / Info Banner */}
+            {printerModalMode === 'fast_pay' ? (
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-[11px] font-semibold text-amber-700 dark:text-amber-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-500 mt-0.5" />
+                <span>
+                  {localHardware.getSelectedPrinters().length === 0
+                    ? 'Varsayılan yazıcı seçilmemiş. Fişin yazdırılacağı yazıcıyı seçiniz:'
+                    : 'Varsayılan yazıcı çevrimdışı veya bağlantı yok. Fiş için aktif bir yazıcı seçiniz:'}
+                </span>
+              </div>
+            ) : (
+              <div className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                Adisyon fişinin yazdırılacağı yazıcıyı seçiniz:
+              </div>
+            )}
 
             {/* Printer Options List */}
             <div className="space-y-2.5 max-h-64 overflow-y-auto pr-0.5">
@@ -3004,7 +3124,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                         showToast('Bağlantı kurulabilen aktif bir yazıcı bulunamadı.', 'error');
                         return;
                       }
-                      executePrintBill(onlinePrinters);
+                      if (printerModalMode === 'fast_pay' && pendingFastPayMethod) {
+                        executeFastPayment(pendingFastPayMethod, onlinePrinters);
+                      } else {
+                        executePrintBill(onlinePrinters);
+                      }
                     }}
                     className={`w-full p-3.5 rounded-2xl border-2 text-left transition flex items-center justify-between group shadow-sm ${
                       isAllDisabled
@@ -3042,7 +3166,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                         ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
                         : 'bg-emerald-600 text-white group-hover:bg-emerald-700'
                     }`}>
-                      {isAllDisabled ? 'Yazdırılamaz' : 'Hepsine Yazdır'}
+                      {isAllDisabled ? 'Yazdırılamaz' : (printerModalMode === 'fast_pay' ? 'Hepsine Yazdır & Kapat' : 'Hepsine Yazdır')}
                     </span>
                   </button>
                 );
@@ -3064,7 +3188,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                         showToast(`"${label.name}" yazıcısına ulaşılamıyor: ${status.reason}`, 'error');
                         return;
                       }
-                      executePrintBill([prKey]);
+                      if (printerModalMode === 'fast_pay' && pendingFastPayMethod) {
+                        executeFastPayment(pendingFastPayMethod, [prKey]);
+                      } else {
+                        executePrintBill([prKey]);
+                      }
                     }}
                     className={`w-full p-3.5 rounded-2xl border text-left transition flex items-center justify-between group ${
                       status.isOnline
@@ -3105,7 +3233,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                         ? 'bg-slate-200 dark:bg-slate-700 group-hover:bg-emerald-600 text-slate-700 dark:text-slate-200 group-hover:text-white'
                         : 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
                     }`}>
-                      {status.isOnline ? 'Yazdır' : 'Yazdırılamaz'}
+                      {status.isOnline ? (printerModalMode === 'fast_pay' ? 'Öde & Yazdır' : 'Yazdır') : 'Yazdırılamaz'}
                     </span>
                   </button>
                 );
@@ -3114,12 +3242,27 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
             {/* Footer */}
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                Ayarlar &gt; Donanım &amp; Yazıcılar sekmesinden yönetilebilir.
-              </span>
+              {printerModalMode === 'fast_pay' && pendingFastPayMethod ? (
+                <button
+                  type="button"
+                  onClick={() => executeFastPayment(pendingFastPayMethod, [])}
+                  className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs transition cursor-pointer"
+                  title="Yazıcı olmadan sadece ödemeyi al ve masayı kapat"
+                >
+                  Fişsiz Öde &amp; Kapat
+                </button>
+              ) : (
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                  Ayarlar &gt; Donanım &amp; Yazıcılar sekmesinden yönetilebilir.
+                </span>
+              )}
               <button
                 type="button"
-                onClick={() => setIsPrinterSelectModalOpen(false)}
+                onClick={() => {
+                  setIsPrinterSelectModalOpen(false);
+                  setPendingFastPayMethod(null);
+                  setPrinterModalMode('print_bill');
+                }}
                 className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 transition cursor-pointer"
               >
                 Vazgeç
