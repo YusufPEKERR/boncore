@@ -18,6 +18,7 @@ import winreg
 from datetime import datetime
 import urllib.request
 import urllib.error
+import urllib.parse
 import requests
 
 # GUI & Tray
@@ -28,9 +29,9 @@ from PIL import Image, ImageDraw
 
 AGENT_VERSION = "2.2.0"
 APP_TITLE = "BonCore Donanım Köprüsü"
+IPC_PORT = 49231
 
 # PyInstaller --onefile modunda __file__ geçici _MEI klasörünü gösterir ve kapanınca silinir!
-# Bu nedenle ayarları hem .exe yanına, hem %APPDATA%\BonCoreAgent klasörüne, hem de Windows Registry'ye kalıcı kaydediyoruz.
 if getattr(sys, "frozen", False):
     EXE_DIR = os.path.dirname(sys.executable)
 else:
@@ -50,6 +51,7 @@ DEFAULT_CONFIG = {
     "scale_default_ip": "192.168.1.150",
     "scale_default_port": 2004,
     "auto_start": True,
+    "start_hidden": True,
     "minimize_to_tray": True,
     "show_notifications": True,
     "user_customized": False
@@ -76,12 +78,12 @@ def _load_reg_settings() -> dict:
     data = {}
     try:
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, SETTINGS_REG_KEY, 0, winreg.KEY_READ)
-        for field in ["server_url", "terminal_id", "terminal_name", "scale_default_ip", "scale_default_port", "user_customized", "restaurant_code"]:
+        for field in ["server_url", "terminal_id", "terminal_name", "scale_default_ip", "scale_default_port", "user_customized", "restaurant_code", "start_hidden"]:
             try:
                 val, _ = winreg.QueryValueEx(key, field)
                 if field == "scale_default_port":
                     data[field] = int(val)
-                elif field == "user_customized":
+                elif field in ("user_customized", "start_hidden"):
                     data[field] = (str(val).lower() == "true")
                 else:
                     data[field] = str(val)
@@ -95,7 +97,7 @@ def _load_reg_settings() -> dict:
 def _save_reg_settings(cfg: dict):
     try:
         key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, SETTINGS_REG_KEY)
-        for field in ["server_url", "terminal_id", "terminal_name", "scale_default_ip", "scale_default_port", "user_customized", "restaurant_code"]:
+        for field in ["server_url", "terminal_id", "terminal_name", "scale_default_ip", "scale_default_port", "user_customized", "restaurant_code", "start_hidden"]:
             if field in cfg and cfg[field] is not None:
                 winreg.SetValueEx(key, field, 0, winreg.REG_SZ, str(cfg[field]))
         winreg.CloseKey(key)
@@ -105,7 +107,7 @@ def _save_reg_settings(cfg: dict):
 def load_config():
     cfg = DEFAULT_CONFIG.copy()
     local_rc = None
-    # 1. Önce .exe yanındaki config.json dosyasını oku (ZIP'ten ilk çıktığında)
+    # 1. Önce .exe yanındaki config.json dosyasını oku
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -143,23 +145,20 @@ def load_config():
     return cfg
 
 def save_config(cfg):
-    # 1. %APPDATA%\BonCoreAgent\config.json içine kaydet
     try:
         os.makedirs(APPDATA_DIR, exist_ok=True)
         with open(APPDATA_CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
     except Exception:
         pass
-    # 2. .exe yanındaki config.json içine kaydet
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
     except Exception:
         pass
-    # 3. Windows Registry içine kaydet
     _save_reg_settings(cfg)
 
-# --- WINDOWS BAŞLANGIÇ KAYDI (AUTOSTART) ---
+# --- WINDOWS BAŞLANGIÇ KAYDI (AUTOSTART - GİZLİ BAŞLATMA) ---
 REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 REG_NAME = "BonCoreHardwareAgent"
 
@@ -168,15 +167,20 @@ def set_windows_autostart(enable=True):
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_PATH, 0, winreg.KEY_ALL_ACCESS)
         if enable:
             if getattr(sys, 'frozen', False):
-                app_path = f'"{sys.executable}"'
+                app_path = f'"{sys.executable}" --hidden'
             else:
-                app_path = f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+                app_path = f'"{sys.executable}" "{os.path.abspath(__file__)}" --hidden'
             winreg.SetValueEx(key, REG_NAME, 0, winreg.REG_SZ, app_path)
-        else:
             try:
-                winreg.DeleteValue(key, REG_NAME)
-            except FileNotFoundError:
+                winreg.SetValueEx(key, "BonCoreAgent", 0, winreg.REG_SZ, app_path)
+            except Exception:
                 pass
+        else:
+            for name in [REG_NAME, "BonCoreAgent"]:
+                try:
+                    winreg.DeleteValue(key, name)
+                except FileNotFoundError:
+                    pass
         winreg.CloseKey(key)
         return True
     except Exception as e:
@@ -186,10 +190,15 @@ def set_windows_autostart(enable=True):
 def is_windows_autostart():
     try:
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_PATH, 0, winreg.KEY_READ)
-        winreg.QueryValueEx(key, REG_NAME)
+        for name in [REG_NAME, "BonCoreAgent"]:
+            try:
+                val, _ = winreg.QueryValueEx(key, name)
+                if val:
+                    winreg.CloseKey(key)
+                    return True
+            except FileNotFoundError:
+                pass
         winreg.CloseKey(key)
-        return True
-    except FileNotFoundError:
         return False
     except Exception:
         return False
@@ -252,13 +261,13 @@ def print_slip_to_printer(printer_name: str, raw_text: str) -> bool:
     # Satır sonlarını Windows CRLF formatına getir
     clean_text = clean_text.replace("\r\n", "\n").replace("\n", "\r\n")
 
-    # ESC/POS init + metin + Form Feed (Dymo/Etiket boşaltma \x0c) + kağıt besleme & kesme (GS V B 0)
+    # ESC/POS init + metin + Form Feed + kağıt kesme (GS V B 0)
     esc_init = b"\x1b\x40"
     esc_feed = b"\r\n\r\n\r\n\x0c"
     esc_cut = b"\x1d\x56\x42\x00"
     raw_data = esc_init + clean_text.encode("latin-1", errors="replace") + esc_feed + esc_cut
 
-    # 1. win32print RAW Spooler (Sessiz, doğrudan porta basar)
+    # 1. win32print RAW Spooler
     try:
         import win32print
         hPrinter = win32print.OpenPrinter(printer_name)
@@ -276,7 +285,7 @@ def print_slip_to_printer(printer_name: str, raw_text: str) -> bool:
     except Exception as e:
         print(f"win32print error on {printer_name}:", e)
 
-    # 2. Notepad /pt fallback (Doğrudan ilgili yazıcı adına gönderir)
+    # 2. Notepad /pt fallback
     try:
         import tempfile
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, suffix=".txt") as tf:
@@ -305,7 +314,6 @@ def parse_cas_cl3000(raw_bytes: bytes, raw_str: str):
     if " g" in raw_str.lower() and "kg" not in raw_str.lower():
         unit = "g"
 
-    # 1. RegEx ile ondalıklı sayı ara (Örn: "1.250", "+  0.450 kg", "0.000")
     match_float = re.search(r'([+-]?\s*\d+\.\d+)', raw_str)
     weight = 0.0
     found = False
@@ -323,13 +331,11 @@ def parse_cas_cl3000(raw_bytes: bytes, raw_str: str):
             pass
 
     if not found:
-        # 2. Ondalıksız tam sayı ara (Örn: " 1250 g" veya CAS 6-digit weight "001250")
         match_int = re.search(r'([+-]?\s*\d{2,})', raw_str)
         if match_int:
             try:
                 val_str = match_int.group(1).replace(" ", "")
                 val = float(val_str)
-                # 50 ve üzeri sayı ise gramdır (Örn: 1250 gram = 1.250 kg)
                 if val >= 50 or unit == "g":
                     weight = round(val / 1000.0, 3)
                 else:
@@ -339,10 +345,8 @@ def parse_cas_cl3000(raw_bytes: bytes, raw_str: str):
                 pass
 
     if not found and len(raw_bytes) >= 3:
-        # 3. Binary / BCD paket çözücü (CAS CL binary format)
         for i in range(len(raw_bytes) - 2):
             chunk = raw_bytes[i:i+4]
-            # ASCII rakam bloğu var mı
             digits = [chr(b) for b in chunk if 0x30 <= b <= 0x39]
             if len(digits) >= 3:
                 try:
@@ -361,11 +365,7 @@ def parse_cas_cl3000(raw_bytes: bytes, raw_str: str):
         "found": found
     }
 
-# --- SERİ (COM) PORT VE ETHERNET TCP OTOMATİK TARTIM MOTORU ---
 def read_from_serial_ports():
-    """
-    Bilgisayara takılı tüm COM portlarını (RS-232 / USB-Serial) tarar ve canlı ağırlık arar.
-    """
     try:
         import serial
         import serial.tools.list_ports
@@ -375,10 +375,8 @@ def read_from_serial_ports():
             for baud in [9600, 4800, 19200]:
                 try:
                     with serial.Serial(port_name, baud, timeout=0.25) as ser:
-                        # 1. Stream dinle
                         chunk = ser.read(256)
                         if not chunk:
-                            # 2. Komut gönder
                             for cmd in [b"W\r", b"W", b"\x05", b"Q\r"]:
                                 ser.write(cmd)
                                 time.sleep(0.06)
@@ -408,12 +406,6 @@ def read_from_serial_ports():
     return None
 
 def encode_cas_cl_packet(opcode: bytes, address: int = 0, data: bytes = b"") -> bytes:
-    """
-    CAS CL-3000 / CL-5000 Resmi İletişim Protokolü Paket Kodlayıcı
-    Header: Opcode (2B) + Address (4B LE) + ',' + Data Length (2B LE) + ':'
-    Body: Data (Max 512B) + ':'
-    Tail: Checksum (1B: Address[0]...':' % 0x100) + CR (0x0D)
-    """
     buf = bytearray()
     buf.extend(opcode)
     buf.extend(struct.pack("<I", address))
@@ -428,24 +420,6 @@ def encode_cas_cl_packet(opcode: bytes, address: int = 0, data: bytes = b"") -> 
     return bytes(buf)
 
 def parse_cas_cl_response(raw_bytes: bytes):
-    """
-    CAS CL-3000 / CL-5000 Native Binary Status (WN) Paket Ayrıştırıcı
-    Header: 'WN' + ScaleID (4B) + ',' + Length (2B) + ':'
-    Data (30B):
-      Offset 0: Load Flag (0:Zero, 1:Non-zero, 2:Overload)
-      Offset 1: Stable Flag (0:Unstable, 1:Stable)
-      Offset 2: Tare Flag (0:No tare, 1:Tare)
-      Offset 3: Dual Range
-      Offset 4: Weight Unit (0:kg)
-      Offset 5: Weight Decimal Point (genelde 3)
-      Offset 6: Price Decimal Point
-      Offset 8..12: Tare (4B INT32U)
-      Offset 12..16: Weight (4B INT32S - Signed 32-bit Integer)
-      Offset 16..20: Unit Price
-      Offset 20..24: Total Price
-      Offset 24..28: PLU Number
-      Offset 28..30: Dept Number
-    """
     if not raw_bytes or len(raw_bytes) < 12:
         return None
 
@@ -463,10 +437,8 @@ def parse_cas_cl_response(raw_bytes: bytes):
                 unit_str = "kg" if unit_code == 0 else "lb"
                 dec_pt = status_data[5]
                 divisor = float(10 ** dec_pt) if 1 <= dec_pt <= 4 else 1000.0
-                
                 weight_int = struct.unpack("<i", status_data[12:16])[0]
                 weight_kg = round(weight_int / divisor, 3)
-                
                 return {
                     "found": True,
                     "weight": max(0.0, weight_kg),
@@ -490,7 +462,6 @@ def try_read_from_socket(ip: str, port: int, timeout: float = 1.0):
         sock.settimeout(min(timeout, 1.0))
         sock.connect((ip, port))
 
-        # 1. Aşama: Stream (Sürekli akış) dinle (0.15 sn)
         sock.settimeout(0.15)
         try:
             chunk = sock.recv(512)
@@ -499,123 +470,101 @@ def try_read_from_socket(ip: str, port: int, timeout: float = 1.0):
         except Exception:
             pass
 
-        # 2. Aşama: CAS CL-3000 Native İkili Paketleri ve ASCII Komutları
         if not all_chunks:
-            cmds = [
-                encode_cas_cl_packet(b"RN", 0),    # CAS CL-3000 Status (Scale ID 0)
-                encode_cas_cl_packet(b"RN", 1),    # CAS CL-3000 Status (Scale ID 1 - Default)
-                encode_cas_cl_packet(b"RN", 255),  # CAS CL Broadcast Status
-                encode_cas_cl_packet(b"RV", 0),    # CAS CL Version
-                encode_cas_cl_packet(b"RV", 1),
-                b"W\r",                            # CAS Standart CR
-                b"W\r\n",                          # CAS Standart CRLF
-                b"W",                              # Tek bayt
-                b"\x05",                           # ENQ
-                b"\x0200RC00\x03",                 # CL-Works Read Current
-                b"\x0200W00\x03",                  # CL-Works Read Weight
-                b"\x02W\x03",                      # STX W ETX
-                b"Q\r"                             # CAS Q
+            wn_request = encode_cas_cl_packet(b"WN", 0, b"")
+            commands = [
+                wn_request,
+                b"W\r\n",
+                b"W\r",
+                b"\x05",
+                b"Q\r\n",
+                b"S\r\n",
+                b"\x0200\x03\r\n"
             ]
-            sock.settimeout(0.2)
-            for cmd in cmds:
+            for cmd in commands:
                 try:
                     sock.sendall(cmd)
+                    time.sleep(0.06)
+                    sock.settimeout(0.2)
                     chunk = sock.recv(512)
-                    if chunk and len(chunk) > 0:
+                    if chunk:
                         all_chunks.append(chunk)
-                        if parse_cas_cl_response(chunk):
-                            break
-                        joined = b"".join(all_chunks)
-                        if b"kg" in joined.lower() or b"g" in joined.lower() or any(0x30 <= b <= 0x39 for b in joined):
-                            break
+                        break
                 except Exception:
-                    pass
+                    continue
 
-        data = b"".join(all_chunks)
-        return {"connected": True, "data": data, "port": port}
-    except Exception as e:
-        return {"connected": False, "data": b"", "port": port, "error": str(e)}
+        if all_chunks:
+            full_raw = b"".join(all_chunks)
+            native_res = parse_cas_cl_response(full_raw)
+            if native_res and native_res.get("found"):
+                return {
+                    "success": True,
+                    "weight": native_res["weight"],
+                    "unit": native_res["unit"],
+                    "grams": native_res["grams"],
+                    "is_stable": native_res["is_stable"],
+                    "raw": f"CAS-WN: {native_res['weight']} {native_res['unit']}",
+                    "hex": full_raw.hex(),
+                    "source": f"CAS-CL TCP ({ip}:{port})"
+                }
+
+            raw_str = full_raw.decode("latin-1", errors="ignore").strip()
+            parsed = parse_cas_cl3000(full_raw, raw_str)
+            if parsed.get("found"):
+                return {
+                    "success": True,
+                    "weight": parsed["weight"],
+                    "unit": parsed["unit"],
+                    "grams": parsed["grams"],
+                    "is_stable": parsed["is_stable"],
+                    "raw": raw_str,
+                    "hex": full_raw.hex(),
+                    "source": f"Ethernet ({ip}:{port})"
+                }
+    except Exception:
+        pass
     finally:
         if sock:
             try:
                 sock.close()
             except Exception:
                 pass
+    return None
 
-def read_cas_scale(ip: str, port: int = 2004, timeout: float = 2.0):
-    # 0. Önce bağlı Seri / COM portları dene (Eğer RS232/USB kablosu takılıysa)
-    ser_res = read_from_serial_ports()
-    if ser_res and ser_res.get("success"):
-        return ser_res
+def read_cas_scale(target_ip: str = "192.168.1.150", target_port: int = 2004, timeout: float = 2.0):
+    ports_to_try = [target_port]
+    for alt_p in [2004, 5000, 4001, 23, 8000]:
+        if alt_p not in ports_to_try:
+            ports_to_try.append(alt_p)
 
-    # 1. Önce belirtilen Ethernet portunu dene
-    res = try_read_from_socket(ip, port, timeout=1.2)
-    working_port = port
-    data = res.get("data", b"")
-    open_ports = []
-    if res.get("connected"):
-        open_ports.append(port)
+    for p in ports_to_try:
+        res = try_read_from_socket(target_ip, p, timeout=min(timeout, 0.8))
+        if res and res.get("success"):
+            return res
 
-    # 2. Eğer belirtilen porttan veri gelmediyse, diğer standart terazi portlarını hızlıca tara
-    if not data or len(data.strip()) == 0:
-        candidate_ports = [20304, 2004, 1001, 5000, 4001, 2001, 8000, 8080, 9000, 3000, 65500, 23]
-        for p in candidate_ports:
-            if p == port:
-                continue
-            scan_res = try_read_from_socket(ip, p, timeout=0.25)
-            if scan_res.get("connected"):
-                open_ports.append(p)
-                p_data = scan_res.get("data", b"")
-                if p_data and len(p_data.strip()) > 0:
-                    data = p_data
-                    working_port = p
-                    break
+    serial_res = read_from_serial_ports()
+    if serial_res and serial_res.get("success"):
+        return serial_res
 
-    raw_str = data.decode("latin-1", errors="ignore").strip() if data else ""
+    # Ağdaki diğer standart CAS IP'leri dene
+    base_prefix = target_ip.rsplit(".", 1)[0]
+    for last_octet in [150, 151, 152, 200, 100, 20]:
+        alt_ip = f"{base_prefix}.{last_octet}"
+        if alt_ip != target_ip:
+            res = try_read_from_socket(alt_ip, target_port, timeout=0.25)
+            if res and res.get("success"):
+                return res
 
-    # Önce CAS CL Native WN paket kontrolü
-    if data:
-        cl_res = parse_cas_cl_response(data)
-        if cl_res and cl_res.get("found"):
-            return {
-                "success": True,
-                "weight": cl_res["weight"],
-                "unit": cl_res["unit"],
-                "grams": cl_res["grams"],
-                "is_stable": cl_res["is_stable"],
-                "raw": raw_str,
-                "hex": data.hex(),
-                "ip": ip,
-                "port": working_port,
-                "open_ports": open_ports,
-                "protocol": cl_res.get("protocol")
-            }
-
-    if not data:
-        return {
-            "success": False,
-            "weight": 0.0,
-            "raw": "",
-            "hex": "",
-            "open_ports": open_ports,
-            "error": f"Teraziye baglandi (Acik port: {open_ports}) ancak terazi tartim verisi gondermiyor. Terazinin acik ve kefesinde agirlik oldugundan emin olun."
-        }
-
-    parsed = parse_cas_cl3000(data, raw_str)
     return {
-        "success": True,
-        "weight": parsed["weight"],
-        "unit": parsed["unit"],
-        "grams": parsed["grams"],
-        "is_stable": parsed["is_stable"],
-        "raw": raw_str,
-        "hex": data.hex(),
-        "ip": ip,
-        "port": working_port,
-        "open_ports": open_ports
+        "success": False,
+        "error": f"CAS CL-3000 terazisine ulaşılamadı ({target_ip}:{target_port}).",
+        "weight": 0.0,
+        "grams": 0,
+        "unit": "kg",
+        "is_stable": False
     }
 
-def ping_scale_tcp(ip: str, port: int = 2004, timeout: float = 1.5):
+def ping_scale_tcp(ip: str, port: int = 2004, timeout: float = 1.0) -> bool:
     sock = None
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -634,25 +583,68 @@ def ping_scale_tcp(ip: str, port: int = 2004, timeout: float = 1.5):
 # --- TRAY ICON OLUŞTURUCU ---
 def create_tray_image(is_ok=True):
     width, height = 64, 64
-    bg_color = (16, 185, 129) if is_ok else (239, 68, 68)  # Yeşil veya Kırmızı
+    bg_color = (16, 185, 129) if is_ok else (239, 68, 68)  # Zümrüt Yeşili veya Canlı Kırmızı
     image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     dc = ImageDraw.Draw(image)
     # Dış yuvarlak zemin
-    dc.rounded_rectangle([(4, 4), (60, 60)], radius=16, fill=bg_color)
-    # İç beyaz terazi/B harfi
-    dc.ellipse([(20, 20), (44, 44)], fill=(255, 255, 255))
+    dc.rounded_rectangle([(3, 3), (61, 61)], radius=18, fill=bg_color)
+    # İç beyaz kantar/B amblemi
+    dc.ellipse([(18, 18), (46, 46)], fill=(255, 255, 255))
+    dc.rectangle([(28, 14), (36, 50)], fill=bg_color)
     return image
 
-# --- ANA UYGULAMA SINIFI ---
-class BonCoreHardwareDesktopApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title(APP_TITLE)
-        self.root.geometry("540x620")
-        self.root.minsize(500, 580)
-        self.root.configure(bg="#0f172a")  # Slate-900
+# --- TEK KOPYA & IPC HABERLEŞMESİ ---
+def check_single_instance_or_signal():
+    """
+    Eğer uygulama zaten arka planda çalışıyorsa:
+    --hidden parametresi ile geldiyse sessizce kapanır.
+    Masaüstünden normal tıklandıysa çalışan kopyaya 'SHOW' sinyali gönderip pencereyi öne çıkarır.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(('127.0.0.1', IPC_PORT))
+        s.listen(2)
+        return s
+    except OSError:
+        is_hidden = any(arg in sys.argv for arg in ["--hidden", "--minimized", "-h"])
+        if not is_hidden:
+            try:
+                sender = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sender.connect(('127.0.0.1', IPC_PORT))
+                sender.sendall(b"SHOW\n")
+                sender.close()
+            except Exception:
+                pass
+        sys.exit(0)
 
+def start_ipc_listener(ipc_socket, callback_show):
+    def _listen():
+        while True:
+            try:
+                conn, _ = ipc_socket.accept()
+                data = conn.recv(64)
+                if b"SHOW" in data:
+                    callback_show()
+                conn.close()
+            except Exception:
+                break
+    t = threading.Thread(target=_listen, daemon=True)
+    t.start()
+
+
+# --- ANA UYGULAMA SINIFI (MODERN WEB TEMASI) ---
+class BonCoreHardwareDesktopApp:
+    def __init__(self, root, is_hidden=False):
+        self.root = root
+        self.is_hidden = is_hidden
         self.cfg = load_config()
+
+        self.root.title(f"{APP_TITLE} • v{AGENT_VERSION}")
+        self.root.configure(bg="#0b0f19")  # BonCore Obsidian Dark
+
+        # Pencere konumu ve boyutu
+        self.center_window(580, 720)
+        self.root.minsize(520, 640)
 
         # Otomatik başlangıç ayarını kontrol et ve uygula
         if self.cfg.get("auto_start", True):
@@ -664,7 +656,7 @@ class BonCoreHardwareDesktopApp:
         self.last_weight = 0.000
         self.printers_list = []
 
-        # Dayanıklı Bağlantı & Debounce Sayaçları (Sürekli kopma-bağlanma bildirimini engeller)
+        # Dayanıklı Bağlantı & Debounce Sayaçları
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": f"BonCoreAgent/{AGENT_VERSION}"})
         self.server_fail_count = 0
@@ -672,26 +664,37 @@ class BonCoreHardwareDesktopApp:
         self.scale_fail_count = 0
         self.scale_success_count = 0
 
-        # Önceki durumlar (Bildirim tetiklemek için)
         self.prev_server_ok = None
         self.prev_scale_ok = None
-
-        # Ajan dinleme durumu
         self.is_running = True
 
         # Tray Icon Hazırla
         self.tray_icon = None
         self.setup_tray()
 
-        # GUI Oluştur
+        # Modern UI Oluştur
         self.setup_ui()
+
+        # Gizli mod kontrolü: Windows başlangıcında pencereyi hiç gösterme
+        if self.is_hidden or self.cfg.get("start_hidden", True):
+            self.root.withdraw()
 
         # Kapatma olayını yakala (Simgeye küçült)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close_clicked)
 
-        # Arka plan kontrol ve haberleşme iş parçacıklarını başlat
+        # Arka plan iş parçacıklarını başlat
         threading.Thread(target=self.device_monitor_loop, daemon=True).start()
         threading.Thread(target=self.cloud_relay_loop, daemon=True).start()
+
+    def center_window(self, width=580, height=720):
+        try:
+            screen_width = self.root.winfo_screenwidth()
+            screen_height = self.root.winfo_screenheight()
+            x = max(0, int((screen_width - width) / 2))
+            y = max(0, int((screen_height - height) / 2) - 30)
+            self.root.geometry(f"{width}x{height}+{x}+{y}")
+        except Exception:
+            self.root.geometry(f"{width}x{height}")
 
     def show_toast(self, title, message):
         """Windows Bildirim Alanı (Toast) Bildirimi Gönderir"""
@@ -706,7 +709,8 @@ class BonCoreHardwareDesktopApp:
     def setup_tray(self):
         menu = pystray.Menu(
             pystray.MenuItem("BonCore Panelini Aç", self.show_window_from_tray, default=True),
-            pystray.MenuItem("Durum: Kontrol Ediliyor...", lambda: None, enabled=False),
+            pystray.MenuItem("Test Fişi Yazdır", lambda: threading.Thread(target=self.test_print_sample, daemon=True).start()),
+            pystray.MenuItem("Anlık Terazi Oku", lambda: self.manual_read_scale()),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Tamamen Kapat ve Çık", self.quit_app)
         )
@@ -722,7 +726,6 @@ class BonCoreHardwareDesktopApp:
         self.root.focus_force()
 
     def sync_entries_to_config(self, user_action=False):
-        """Ekrandaki kutularda yazılı olan en son değerleri otomatik olarak kalıcı hafızaya kaydeder."""
         try:
             changed = False
             new_url = self.ent_server_url.get().strip().rstrip("/")
@@ -739,7 +742,7 @@ class BonCoreHardwareDesktopApp:
             new_name = self.ent_terminal_name.get().strip()
             if new_name and new_name != self.cfg.get("terminal_name"):
                 self.cfg["terminal_name"] = new_name
-                self.lbl_title.config(text=f"BonCore Donanım Köprüsü • {new_name}")
+                self.lbl_title.config(text=f"BonCore • {new_name}")
                 changed = True
 
             new_ip = self.ent_scale_ip.get().strip()
@@ -790,8 +793,8 @@ class BonCoreHardwareDesktopApp:
         if self.cfg.get("minimize_to_tray", True):
             self.root.withdraw()
             self.show_toast(
-                "BonCore Arka Planda Çalışıyor",
-                "Donanım köprüsü saatin yanında çalışmaya devam ediyor. POS ekranınız teraziyi ve yazıcıları kullanabilir."
+                "BonCore Arka Planda Aktif",
+                "Donanım köprüsü arka planda saatin yanında çalışmaya devam ediyor. POS ekranınız teraziyi ve yazıcıları kesintisiz kullanabilir."
             )
         else:
             self.quit_app()
@@ -808,254 +811,336 @@ class BonCoreHardwareDesktopApp:
         self.root.destroy()
         sys.exit(0)
 
+    # ==============================================================
+    # MODERN WEB TASARIMLI GRAFİK ARAYÜZ (SLATE & EMERALD)
+    # ==============================================================
     def setup_ui(self):
-        # Header Bar
-        header = tk.Frame(self.root, bg="#1e293b", height=70, padx=20, pady=12)
+        # 1. HEADER (Obsidian #0c1424, Alt Yeşil Çizgi #10b981)
+        header = tk.Frame(self.root, bg="#0c1424", height=78, padx=20, pady=12)
         header.pack(fill="x", side="top")
 
-        title_box = tk.Frame(header, bg="#1e293b")
-        title_box.pack(side="left")
+        # Sol Başlık ve Amblem
+        brand_box = tk.Frame(header, bg="#0c1424")
+        brand_box.pack(side="left", fill="y")
+
+        # Yeşil BonCore Logo Rozeti
+        logo_badge = tk.Label(
+            brand_box,
+            text=" B ",
+            font=("Segoe UI", 13, "bold"),
+            fg="#ffffff",
+            bg="#10b981",
+            padx=8,
+            pady=4,
+            relief="flat"
+        )
+        logo_badge.pack(side="left", padx=(0, 12))
+
+        title_info = tk.Frame(brand_box, bg="#0c1424")
+        title_info.pack(side="left")
 
         t_name = self.cfg.get("terminal_name", "Kasa 1")
         self.lbl_title = tk.Label(
-            title_box, 
-            text=f"BonCore Donanım Köprüsü • {t_name}", 
-            font=("Segoe UI", 13, "bold"), 
-            fg="#f8fafc", 
-            bg="#1e293b"
+            title_info,
+            text=f"BonCore • {t_name}",
+            font=("Segoe UI", 13, "bold"),
+            fg="#ffffff",
+            bg="#0c1424"
         )
         self.lbl_title.pack(anchor="w")
 
         local_ip = get_local_ip()
         self.lbl_sub = tk.Label(
-            title_box, 
-            text=f"Kasa IP: {local_ip} • ID: {self.cfg.get('terminal_id', 'kasa-1')} • v{AGENT_VERSION}", 
-            font=("Segoe UI", 9), 
-            fg="#94a3b8", 
-            bg="#1e293b"
+            title_info,
+            text=f"IP: {local_ip}  •  ID: {self.cfg.get('terminal_id', 'kasa-1')}  •  v{AGENT_VERSION}",
+            font=("Segoe UI", 9),
+            fg="#94a3b8",
+            bg="#0c1424"
         )
         self.lbl_sub.pack(anchor="w")
 
-        # Canlı Durum Rozeti
+        # Sağ: Canlı Durum Rozeti (Pill Badge)
         self.badge_status = tk.Label(
             header,
             text="● KONTROL EDİLİYOR",
             font=("Segoe UI", 9, "bold"),
-            fg="#e2e8f0",
-            bg="#334155",
-            padx=10,
-            pady=4
-        )
-        self.badge_status.pack(side="right")
-
-        # Container
-        content = tk.Frame(self.root, bg="#0f172a", padx=16, pady=12)
-        content.pack(fill="both", expand=True)
-
-        # CARD 1: BULUT SUNUCU BAĞLANTISI
-        card_server = tk.LabelFrame(
-            content,
-            text=" 🌐 Bulut POS Sunucusu ",
-            font=("Segoe UI", 10, "bold"),
-            fg="#38bdf8",
-            bg="#1e293b",
-            padx=14,
-            pady=10,
+            fg="#facc15",
+            bg="#451a03",
+            padx=12,
+            pady=6,
             relief="solid",
             bd=1
         )
+        self.badge_status.pack(side="right")
+
+        # Ayırıcı Yeşil Şerit
+        accent_line = tk.Frame(self.root, bg="#10b981", height=2)
+        accent_line.pack(fill="x", side="top")
+
+        # 2. SCROLLABLE CONTENT BODY (Karanlık Web Sayfası Akışı)
+        canvas = tk.Canvas(self.root, bg="#0b0f19", highlightthickness=0)
+        scrollbar = tk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
+        self.scroll_content = tk.Frame(canvas, bg="#0b0f19", padx=18, pady=12)
+
+        self.scroll_content.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas_window = canvas.create_window((0, 0), window=self.scroll_content, anchor="nw")
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        self.root.bind_all("<MouseWheel>", _on_mousewheel)
+
+        canvas.pack(side="top", fill="both", expand=True)
+
+        # -------------------------------------------------------------
+        # KART 1: BULUT SUNUCU & RESTORAN EŞLEŞMESİ
+        # -------------------------------------------------------------
+        card_server = tk.Frame(self.scroll_content, bg="#131b2e", padx=16, pady=14, highlightbackground="#1f293d", highlightthickness=1)
         card_server.pack(fill="x", pady=6)
 
-        f_srv = tk.Frame(card_server, bg="#1e293b")
-        f_srv.pack(fill="x")
+        c1_head = tk.Frame(card_server, bg="#131b2e")
+        c1_head.pack(fill="x", pady=(0, 10))
+        tk.Label(c1_head, text="🌐  Bulut POS Sunucusu & Restoran Eşleşmesi", font=("Segoe UI", 10, "bold"), fg="#38bdf8", bg="#131b2e").pack(side="left")
 
-        tk.Label(f_srv, text="Sunucu Adresi:", font=("Segoe UI", 9), fg="#94a3b8", bg="#1e293b").grid(row=0, column=0, sticky="w")
-        self.ent_server_url = tk.Entry(f_srv, font=("Segoe UI", 9, "bold"), fg="#f8fafc", bg="#0f172a", relief="flat", insertbackground="white")
+        # Sunucu Adresi
+        f_srv = tk.Frame(card_server, bg="#131b2e")
+        f_srv.pack(fill="x", pady=4)
+        tk.Label(f_srv, text="Sunucu URL:", font=("Segoe UI", 9), fg="#94a3b8", bg="#131b2e", width=14, anchor="w").pack(side="left")
+        self.ent_server_url = tk.Entry(f_srv, font=("Segoe UI", 9, "bold"), fg="#f8fafc", bg="#0b0f19", relief="flat", insertbackground="#10b981", highlightbackground="#1f293d", highlightcolor="#10b981", highlightthickness=1)
         self.ent_server_url.insert(0, self.cfg.get("server_url", "http://77.67.29.77"))
-        self.ent_server_url.grid(row=0, column=1, sticky="ew", padx=8)
+        self.ent_server_url.pack(side="left", fill="x", expand=True, padx=(4, 8), ipady=3)
+        btn_save_url = tk.Button(f_srv, text="Kaydet", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#059669", activebackground="#047857", relief="flat", padx=10, pady=3, cursor="hand2", command=self.save_server_url)
+        btn_save_url.pack(side="right")
 
-        btn_save_url = tk.Button(f_srv, text="Kaydet", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#0284c7", activebackground="#0369a1", relief="flat", padx=8, command=self.save_server_url)
-        btn_save_url.grid(row=0, column=2)
-        f_srv.columnconfigure(1, weight=1)
-
-        # Restoran Kodu Ayarı
-        f_rc = tk.Frame(card_server, bg="#1e293b")
-        f_rc.pack(fill="x", pady=(8, 0))
-
-        tk.Label(f_rc, text="Restoran Kodu:", font=("Segoe UI", 9), fg="#94a3b8", bg="#1e293b").grid(row=0, column=0, sticky="w")
-        self.ent_restaurant_code = tk.Entry(f_rc, font=("Segoe UI", 9, "bold"), fg="#10b981", bg="#0f172a", relief="flat", insertbackground="white")
+        # Restoran Kodu
+        f_rc = tk.Frame(card_server, bg="#131b2e")
+        f_rc.pack(fill="x", pady=4)
+        tk.Label(f_rc, text="Restoran Kodu:", font=("Segoe UI", 9), fg="#94a3b8", bg="#131b2e", width=14, anchor="w").pack(side="left")
+        self.ent_restaurant_code = tk.Entry(f_rc, font=("Segoe UI", 9, "bold"), fg="#34d399", bg="#0b0f19", relief="flat", insertbackground="#10b981", highlightbackground="#1f293d", highlightcolor="#10b981", highlightthickness=1)
         self.ent_restaurant_code.insert(0, self.cfg.get("restaurant_code", "boncore-kadikoy"))
-        self.ent_restaurant_code.grid(row=0, column=1, sticky="ew", padx=8)
+        self.ent_restaurant_code.pack(side="left", fill="x", expand=True, padx=(4, 8), ipady=3)
+        btn_save_rc = tk.Button(f_rc, text="Eşleştir", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#059669", activebackground="#047857", relief="flat", padx=10, pady=3, cursor="hand2", command=self.save_restaurant_code)
+        btn_save_rc.pack(side="right")
 
-        btn_save_rc = tk.Button(f_rc, text="Restoranı Seç", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#059669", activebackground="#047857", relief="flat", padx=8, command=self.save_restaurant_code)
-        btn_save_rc.grid(row=0, column=2)
-        f_rc.columnconfigure(1, weight=1)
-
-        # Kasa İsmi Ayarı
-        f_kasa = tk.Frame(card_server, bg="#1e293b")
-        f_kasa.pack(fill="x", pady=(8, 0))
-
-        tk.Label(f_kasa, text="Kasa / İstasyon Adı:", font=("Segoe UI", 9), fg="#94a3b8", bg="#1e293b").grid(row=0, column=0, sticky="w")
-        self.ent_terminal_name = tk.Entry(f_kasa, font=("Segoe UI", 9, "bold"), fg="#38bdf8", bg="#0f172a", relief="flat", insertbackground="white")
+        # Kasa İstasyon Adı
+        f_kasa = tk.Frame(card_server, bg="#131b2e")
+        f_kasa.pack(fill="x", pady=4)
+        tk.Label(f_kasa, text="Kasa / İstasyon:", font=("Segoe UI", 9), fg="#94a3b8", bg="#131b2e", width=14, anchor="w").pack(side="left")
+        self.ent_terminal_name = tk.Entry(f_kasa, font=("Segoe UI", 9, "bold"), fg="#60a5fa", bg="#0b0f19", relief="flat", insertbackground="#10b981", highlightbackground="#1f293d", highlightcolor="#10b981", highlightthickness=1)
         self.ent_terminal_name.insert(0, self.cfg.get("terminal_name", "Kasa 1"))
-        self.ent_terminal_name.grid(row=0, column=1, sticky="ew", padx=8)
-
-        btn_save_kasa = tk.Button(f_kasa, text="İsmi Güncelle", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#8b5cf6", activebackground="#7c3aed", relief="flat", padx=8, command=self.save_terminal_name)
-        btn_save_kasa.grid(row=0, column=2)
-        f_kasa.columnconfigure(1, weight=1)
+        self.ent_terminal_name.pack(side="left", fill="x", expand=True, padx=(4, 8), ipady=3)
+        btn_save_kasa = tk.Button(f_kasa, text="Güncelle", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#059669", activebackground="#047857", relief="flat", padx=10, pady=3, cursor="hand2", command=self.save_terminal_name)
+        btn_save_kasa.pack(side="right")
 
         self.lbl_server_status = tk.Label(
             card_server,
             text="Durum: Sunucuya bağlanılıyor...",
-            font=("Segoe UI", 9, "bold"),
-            fg="#f59e0b",
-            bg="#1e293b"
+            font=("Segoe UI", 9),
+            fg="#facc15",
+            bg="#131b2e"
         )
-        self.lbl_server_status.pack(anchor="w", pady=(6, 0))
+        self.lbl_server_status.pack(anchor="w", pady=(8, 0))
 
-        # CARD 2: CAS CL-3000 TERAZİ DURUMU
-        card_scale = tk.LabelFrame(
-            content,
-            text=" ⚖️ CAS CL-3000 / CL-5000 Terazi (Ethernet TCP/IP) ",
-            font=("Segoe UI", 10, "bold"),
-            fg="#4ade80",
-            bg="#1e293b",
-            padx=14,
-            pady=10,
-            relief="solid",
-            bd=1
-        )
+        # -------------------------------------------------------------
+        # KART 2: CAS TERAZİ ENTEGRASYONU (CL-3000 / CL-5000 / DİJİTAL)
+        # -------------------------------------------------------------
+        card_scale = tk.Frame(self.scroll_content, bg="#131b2e", padx=16, pady=14, highlightbackground="#1f293d", highlightthickness=1)
         card_scale.pack(fill="x", pady=6)
 
-        f_scale = tk.Frame(card_scale, bg="#1e293b")
-        f_scale.pack(fill="x")
+        c2_head = tk.Frame(card_scale, bg="#131b2e")
+        c2_head.pack(fill="x", pady=(0, 10))
+        tk.Label(c2_head, text="⚖️  CAS CL-3000 / CL-5000 Terazi (Ethernet TCP/IP & RS-232)", font=("Segoe UI", 10, "bold"), fg="#34d399", bg="#131b2e").pack(side="left")
 
-        tk.Label(f_scale, text="Terazi IP:", font=("Segoe UI", 9), fg="#94a3b8", bg="#1e293b").grid(row=0, column=0, sticky="w")
-        self.ent_scale_ip = tk.Entry(f_scale, font=("Segoe UI", 9, "bold"), fg="#4ade80", bg="#0f172a", relief="flat", insertbackground="white", width=16)
+        # IP & Port Satırı
+        f_scale = tk.Frame(card_scale, bg="#131b2e")
+        f_scale.pack(fill="x", pady=4)
+
+        tk.Label(f_scale, text="Terazi IP:", font=("Segoe UI", 9), fg="#94a3b8", bg="#131b2e").pack(side="left")
+        self.ent_scale_ip = tk.Entry(f_scale, font=("Segoe UI", 9, "bold"), fg="#34d399", bg="#0b0f19", relief="flat", insertbackground="#10b981", highlightbackground="#1f293d", highlightcolor="#10b981", highlightthickness=1, width=16)
         self.ent_scale_ip.insert(0, self.cfg.get("scale_default_ip", "192.168.1.150"))
-        self.ent_scale_ip.grid(row=0, column=1, padx=6)
+        self.ent_scale_ip.pack(side="left", padx=6, ipady=3)
 
-        tk.Label(f_scale, text="Port:", font=("Segoe UI", 9), fg="#94a3b8", bg="#1e293b").grid(row=0, column=2, padx=(6, 2))
-        self.ent_scale_port = tk.Entry(f_scale, font=("Segoe UI", 9, "bold"), fg="#4ade80", bg="#0f172a", relief="flat", insertbackground="white", width=6)
+        tk.Label(f_scale, text="Port:", font=("Segoe UI", 9), fg="#94a3b8", bg="#131b2e").pack(side="left", padx=(6, 2))
+        self.ent_scale_port = tk.Entry(f_scale, font=("Segoe UI", 9, "bold"), fg="#34d399", bg="#0b0f19", relief="flat", insertbackground="#10b981", highlightbackground="#1f293d", highlightcolor="#10b981", highlightthickness=1, width=6)
         self.ent_scale_port.insert(0, str(self.cfg.get("scale_default_port", 2004)))
-        self.ent_scale_port.grid(row=0, column=3, padx=4)
+        self.ent_scale_port.pack(side="left", padx=4, ipady=3)
 
-        btn_save_scale = tk.Button(f_scale, text="Ayarla", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#16a34a", activebackground="#15803d", relief="flat", padx=8, command=self.save_scale_params)
-        btn_save_scale.grid(row=0, column=4, padx=4)
+        btn_save_scale = tk.Button(f_scale, text="Bağlan & Kaydet", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#059669", activebackground="#047857", relief="flat", padx=10, pady=3, cursor="hand2", command=self.save_scale_params)
+        btn_save_scale.pack(side="left", padx=(6, 0))
 
-        # Dijital Kantar Göstergesi
-        f_display = tk.Frame(card_scale, bg="#022c22", padx=12, pady=8, highlightbackground="#059669", highlightthickness=1)
-        f_display.pack(fill="x", pady=8)
+        # Yüksek Teknolojili Dijital Gösterge Kutusu (Emerald Display)
+        f_display = tk.Frame(card_scale, bg="#022c22", padx=16, pady=10, highlightbackground="#059669", highlightthickness=1)
+        f_display.pack(fill="x", pady=10)
 
+        disp_left = tk.Frame(f_display, bg="#022c22")
+        disp_left.pack(side="left")
+
+        tk.Label(disp_left, text="CANLI AĞIRLIK", font=("Segoe UI", 8, "bold"), fg="#059669", bg="#022c22").pack(anchor="w")
         self.lbl_weight_val = tk.Label(
-            f_display,
-            text="0.000 Kg",
-            font=("Consolas", 22, "bold"),
+            disp_left,
+            text="0.000 kg",
+            font=("Consolas", 24, "bold"),
             fg="#34d399",
             bg="#022c22"
         )
-        self.lbl_weight_val.pack(side="left")
+        self.lbl_weight_val.pack(anchor="w")
+
+        disp_right = tk.Frame(f_display, bg="#022c22")
+        disp_right.pack(side="right")
 
         self.lbl_scale_conn = tk.Label(
-            f_display,
+            disp_right,
             text="● Terazi Aranıyor...",
             font=("Segoe UI", 9, "bold"),
             fg="#94a3b8",
             bg="#022c22"
         )
-        self.lbl_scale_conn.pack(side="right")
+        self.lbl_scale_conn.pack(anchor="e", pady=(0, 4))
 
-        # CARD 3: YAZICILAR
-        card_printers = tk.LabelFrame(
-            content,
-            text=" 🖨️ Windows Termal Yazıcıları ",
-            font=("Segoe UI", 10, "bold"),
-            fg="#cbd5e1",
-            bg="#1e293b",
-            padx=14,
-            pady=8,
-            relief="solid",
-            bd=1
+        btn_read_now = tk.Button(
+            disp_right,
+            text="⚡ Anlık Tartım Oku",
+            font=("Segoe UI", 8, "bold"),
+            fg="#ffffff",
+            bg="#059669",
+            activebackground="#047857",
+            relief="flat",
+            padx=10,
+            pady=3,
+            cursor="hand2",
+            command=self.manual_read_scale
         )
+        btn_read_now.pack(anchor="e")
+
+        # -------------------------------------------------------------
+        # KART 3: WINDOWS TERMAL YAZICILARI (ESC/POS)
+        # -------------------------------------------------------------
+        card_printers = tk.Frame(self.scroll_content, bg="#131b2e", padx=16, pady=14, highlightbackground="#1f293d", highlightthickness=1)
         card_printers.pack(fill="x", pady=6)
+
+        c3_head = tk.Frame(card_printers, bg="#131b2e")
+        c3_head.pack(fill="x", pady=(0, 8))
+        tk.Label(c3_head, text="🖨️  Windows Termal Fiş Yazıcıları (ESC/POS)", font=("Segoe UI", 10, "bold"), fg="#f8fafc", bg="#131b2e").pack(side="left")
+
+        btn_test_print = tk.Button(
+            c3_head,
+            text="📄 Test Fişi Yazdır",
+            font=("Segoe UI", 8, "bold"),
+            fg="#ffffff",
+            bg="#0284c7",
+            activebackground="#0369a1",
+            relief="flat",
+            padx=10,
+            pady=3,
+            cursor="hand2",
+            command=self.test_print_sample
+        )
+        btn_test_print.pack(side="right")
 
         self.lbl_printers = tk.Label(
             card_printers,
-            text="Yazıcılar taranıyor...",
+            text="Sistem yazıcıları taranıyor...",
             font=("Segoe UI", 9),
             fg="#cbd5e1",
-            bg="#1e293b",
+            bg="#131b2e",
             justify="left"
         )
-        self.lbl_printers.pack(anchor="w")
+        self.lbl_printers.pack(anchor="w", pady=(4, 0))
 
-        # AYARLAR VE SEÇENEKLER
-        card_opts = tk.Frame(content, bg="#0f172a", pady=4)
-        card_opts.pack(fill="x", pady=4)
+        # -------------------------------------------------------------
+        # KART 4: SİSTEM & BAŞLANGIÇ AYARLARI
+        # -------------------------------------------------------------
+        card_opts = tk.Frame(self.scroll_content, bg="#131b2e", padx=16, pady=12, highlightbackground="#1f293d", highlightthickness=1)
+        card_opts.pack(fill="x", pady=6)
+
+        tk.Label(card_opts, text="⚙️  Sistem ve Başlangıç Tercihleri", font=("Segoe UI", 10, "bold"), fg="#f8fafc", bg="#131b2e").pack(anchor="w", pady=(0, 6))
 
         self.var_autostart = tk.BooleanVar(value=is_windows_autostart())
         chk_autostart = tk.Checkbutton(
             card_opts,
-            text="Bilgisayar açıldığında otomatik başlasın (Kur ve Unut)",
+            text="Bilgisayar açıldığında otomatik ve arka planda (gizli) başlasın",
             variable=self.var_autostart,
             command=self.toggle_autostart,
             font=("Segoe UI", 9),
             fg="#e2e8f0",
-            bg="#0f172a",
-            selectcolor="#1e293b",
-            activebackground="#0f172a",
-            activeforeground="#e2e8f0"
+            bg="#131b2e",
+            selectcolor="#0b0f19",
+            activebackground="#131b2e",
+            activeforeground="#34d399"
         )
-        chk_autostart.pack(anchor="w")
+        chk_autostart.pack(anchor="w", pady=2)
 
         self.var_notif = tk.BooleanVar(value=self.cfg.get("show_notifications", True))
         chk_notif = tk.Checkbutton(
             card_opts,
-            text="Bağlantı kesildiğinde / bağlandığında Windows bildirimi göster",
+            text="Cihaz ve ağ bağlantısı koptuğunda / bağlandığında Windows bildirimi göster",
             variable=self.var_notif,
             command=self.toggle_notif,
             font=("Segoe UI", 9),
             fg="#e2e8f0",
-            bg="#0f172a",
-            selectcolor="#1e293b",
-            activebackground="#0f172a",
-            activeforeground="#e2e8f0"
+            bg="#131b2e",
+            selectcolor="#0b0f19",
+            activebackground="#131b2e",
+            activeforeground="#34d399"
         )
-        chk_notif.pack(anchor="w")
+        chk_notif.pack(anchor="w", pady=2)
 
-        # ALT BUTONLAR
-        btn_frame = tk.Frame(self.root, bg="#1e293b", height=50, padx=16, pady=10)
-        btn_frame.pack(fill="x", side="bottom")
+        # 3. FOOTER ACTION BAR (Obsidian #0c1424, Üst İnce Çizgi #1f293d)
+        footer = tk.Frame(self.root, bg="#0c1424", height=54, padx=20, pady=10, highlightbackground="#1f293d", highlightthickness=1)
+        footer.pack(fill="x", side="bottom")
 
         btn_min = tk.Button(
-            btn_frame,
-            text="Saatin Yanına Küçült (Gizle)",
+            footer,
+            text="Saatin Yanında Gizle (Arka Plan)",
             font=("Segoe UI", 9, "bold"),
-            fg="#ffffff",
-            bg="#334155",
-            activebackground="#475569",
+            fg="#f8fafc",
+            bg="#1e293b",
+            activebackground="#334155",
             relief="flat",
             padx=14,
-            pady=4,
+            pady=5,
+            cursor="hand2",
             command=self.on_close_clicked
         )
         btn_min.pack(side="left")
 
         btn_exit = tk.Button(
-            btn_frame,
-            text="Uygulamadan Çık",
+            footer,
+            text="Kapat ve Çık",
             font=("Segoe UI", 9),
             fg="#ef4444",
-            bg="#1e293b",
-            activebackground="#292524",
+            bg="#131b2e",
+            activebackground="#450a0a",
             relief="flat",
-            padx=10,
-            pady=4,
+            padx=12,
+            pady=5,
+            cursor="hand2",
             command=self.quit_app
         )
         btn_exit.pack(side="right")
 
-        # Kutulardan çıkıldığında veya Enter'a basıldığında otomatik kaydet (Butona basmayı unutsa bile sıfırlanmasın)
+        btn_refresh = tk.Button(
+            footer,
+            text="Yenile",
+            font=("Segoe UI", 9),
+            fg="#94a3b8",
+            bg="#131b2e",
+            activebackground="#334155",
+            relief="flat",
+            padx=12,
+            pady=5,
+            cursor="hand2",
+            command=self.refresh_all_devices
+        )
+        btn_refresh.pack(side="right", padx=8)
+
+        # Kutulardan çıkıldığında veya Enter'a basıldığında otomatik kaydet
         for ent in [self.ent_server_url, self.ent_restaurant_code, self.ent_terminal_name, self.ent_scale_ip, self.ent_scale_port]:
             ent.bind("<FocusOut>", lambda e: self.sync_entries_to_config(user_action=True))
             ent.bind("<Return>", lambda e: self.sync_entries_to_config(user_action=True))
@@ -1067,7 +1152,7 @@ class BonCoreHardwareDesktopApp:
             self.cfg["user_customized"] = True
             save_config(self.cfg)
             threading.Thread(target=self._push_immediate_heartbeat, daemon=True).start()
-            messagebox.showinfo("Başarılı", "Sunucu adresi kalıcı olarak kaydedildi.")
+            messagebox.showinfo("Başarılı", "Bulut sunucu adresi kalıcı olarak kaydedildi.")
 
     def save_restaurant_code(self):
         new_rc = self.ent_restaurant_code.get().strip().lower()
@@ -1076,7 +1161,7 @@ class BonCoreHardwareDesktopApp:
             self.cfg["user_customized"] = True
             save_config(self.cfg)
             threading.Thread(target=self._push_immediate_heartbeat, daemon=True).start()
-            messagebox.showinfo("Başarılı", f"Restoran kodu kalıcı olarak kaydedildi: {new_rc}\nArtık bu restoranın terazileri ve kasaları ile eşleşecek.")
+            messagebox.showinfo("Başarılı", f"Restoran kodu kalıcı olarak kaydedildi: {new_rc}\nBu restoranın masa ve terazileri ile otomatik eşleşecek.")
 
     def save_terminal_name(self):
         new_name = self.ent_terminal_name.get().strip()
@@ -1084,9 +1169,9 @@ class BonCoreHardwareDesktopApp:
             self.cfg["terminal_name"] = new_name
             self.cfg["user_customized"] = True
             save_config(self.cfg)
-            self.lbl_title.config(text=f"BonCore Donanım Köprüsü • {new_name}")
+            self.lbl_title.config(text=f"BonCore • {new_name}")
             threading.Thread(target=self._push_immediate_heartbeat, daemon=True).start()
-            messagebox.showinfo("Başarılı", f"Kasa ismi kalıcı olarak kaydedildi: {new_name}")
+            messagebox.showinfo("Başarılı", f"Kasa adı kaydedildi: {new_name}")
 
     def save_scale_params(self):
         ip = self.ent_scale_ip.get().strip()
@@ -1096,11 +1181,12 @@ class BonCoreHardwareDesktopApp:
         self.cfg["user_customized"] = True
         save_config(self.cfg)
         threading.Thread(target=self._push_immediate_heartbeat, daemon=True).start()
-        messagebox.showinfo("Başarılı", f"Terazi adresi kalıcı olarak kaydedildi: {ip}:{port}")
+        threading.Thread(target=self.manual_read_scale, daemon=True).start()
 
     def toggle_autostart(self):
         val = self.var_autostart.get()
         self.cfg["auto_start"] = val
+        self.cfg["start_hidden"] = True
         save_config(self.cfg)
         set_windows_autostart(val)
 
@@ -1108,22 +1194,98 @@ class BonCoreHardwareDesktopApp:
         self.cfg["show_notifications"] = self.var_notif.get()
         save_config(self.cfg)
 
+    def manual_read_scale(self):
+        scale_ip = self.ent_scale_ip.get().strip() or self.cfg.get("scale_default_ip", "192.168.1.150")
+        scale_port = int(self.ent_scale_port.get().strip() or str(self.cfg.get("scale_default_port", 2004)))
+
+        def _read():
+            res = read_cas_scale(scale_ip, scale_port, timeout=1.8)
+            if res.get("success"):
+                w = res["weight"]
+                self.last_weight = w
+                stable_txt = " (Sabit)" if res.get("is_stable") else " (Hareketli)"
+                self.root.after(0, lambda: self.lbl_weight_val.config(text=f"{w:.3f} kg"))
+                self.root.after(0, lambda: self.lbl_scale_conn.config(
+                    text=f"🟢 BAĞLI ({scale_ip}){stable_txt}",
+                    fg="#34d399"
+                ))
+            else:
+                self.root.after(0, lambda: self.lbl_scale_conn.config(
+                    text=f"🔴 TARTIM ALINAMADI ({scale_ip})",
+                    fg="#f87171"
+                ))
+        threading.Thread(target=_read, daemon=True).start()
+
+    def test_print_sample(self):
+        printers = self.printers_list or get_windows_printers()
+        if not printers:
+            messagebox.showwarning("Yazıcı Yok", "Bilgisayara bağlı termal yazıcı bulunamadı!")
+            return
+
+        virtual_kw = ("pdf", "xps", "onenote", "fax")
+        target_printer = None
+        for p in printers:
+            if not any(k in p.lower() for k in virtual_kw):
+                target_printer = p
+                break
+        if not target_printer:
+            target_printer = printers[0]
+
+        now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+        t_name = self.cfg.get("terminal_name", "Kasa 1")
+        rc = self.cfg.get("restaurant_code", "boncore")
+
+        sample_receipt = (
+            "================================\n"
+            "    BONCORE DONANIM KOPRUSU     \n"
+            "         TEST CIKTISI           \n"
+            "================================\n"
+            f"Tarih   : {now_str}\n"
+            f"Kasa    : {t_name}\n"
+            f"Restoran: {rc}\n"
+            f"Yazici  : {target_printer}\n"
+            "--------------------------------\n"
+            "Donanim Koprusu ve Spooler\n"
+            "basariyla iletisim kurdu.\n"
+            "Termal kagit kesme aktif.\n"
+            "================================\n"
+        )
+        try:
+            ok = print_slip_to_printer(target_printer, sample_receipt)
+            if ok:
+                messagebox.showinfo("Başarılı", f"Test fişi '{target_printer}' yazıcısına başarıyla gönderildi!")
+            else:
+                messagebox.showerror("Hata", f"'{target_printer}' yazıcısına test fişi gönderilemedi.")
+        except Exception as ex:
+            messagebox.showerror("Hata", f"Yazdırma hatası: {ex}")
+
+    def refresh_all_devices(self):
+        threading.Thread(target=self._push_immediate_heartbeat, daemon=True).start()
+        threading.Thread(target=self.manual_read_scale, daemon=True).start()
+        try:
+            printers = get_windows_printers()
+            self.printers_list = printers
+            p_text = "\n".join([f"• 🖨️ {p} (Hazır)" for p in printers]) if printers else "Tanımlı yerel yazıcı bulunamadı."
+            self.lbl_printers.config(text=p_text)
+        except Exception:
+            pass
+
     # --- ARKA PLAN CİHAZ VE AĞ İZLEYİCİSİ ---
     def device_monitor_loop(self):
         while self.is_running:
-            # 1. Yazıcıları tara (her 10 sn)
+            # 1. Yazıcıları tara (her döngüde kontrol et)
             try:
                 printers = get_windows_printers()
                 self.printers_list = printers
-                p_text = "\n".join([f"• {p} (Hazır)" for p in printers]) if printers else "Tanımlı yerel yazıcı bulunamadı."
+                p_text = "\n".join([f"• 🖨️ {p} (Hazır)" for p in printers]) if printers else "Tanımlı yerel yazıcı bulunamadı."
                 self.root.after(0, lambda t=p_text: self.lbl_printers.config(text=t))
             except Exception:
                 pass
 
-            # 2. Terazi ping testi (Debounce ile kararlı kontrol)
+            # 2. Terazi ping testi
             scale_ip = self.cfg.get("scale_default_ip", "192.168.1.150")
             scale_port = int(self.cfg.get("scale_default_port", 2004))
-            scale_ok = ping_scale_tcp(scale_ip, scale_port, timeout=2.0)
+            scale_ok = ping_scale_tcp(scale_ip, scale_port, timeout=1.8)
 
             if scale_ok:
                 self.scale_fail_count = 0
@@ -1134,19 +1296,18 @@ class BonCoreHardwareDesktopApp:
                         self.show_toast("✅ Terazi Bağlandı", f"CAS CL-3000 terazisine bağlandı ({scale_ip}:{scale_port}).")
                     self.prev_scale_ok = True
 
-                # CANLI AĞIRLIĞI DÜZENLİ OKU VE EKRANDA GÖSTER
+                # Canlı ağırlığı oku
                 try:
-                    read_res = read_cas_scale(scale_ip, scale_port, timeout=1.0)
+                    read_res = read_cas_scale(scale_ip, scale_port, timeout=0.8)
                     if read_res.get("success"):
                         w = read_res["weight"]
                         self.last_weight = w
-                        self.root.after(0, lambda val=w: self.lbl_weight_val.config(text=f"{val:.3f} Kg"))
+                        self.root.after(0, lambda val=w: self.lbl_weight_val.config(text=f"{val:.3f} kg"))
                 except Exception as ex:
                     print("Live scale read error:", ex)
             else:
                 self.scale_success_count = 0
                 self.scale_fail_count += 1
-                # Anlık dalgalanmaları önlemek için üst üste 3 başarısız ping (yaklaşık 12 sn) beklenir
                 if self.scale_fail_count >= 3 and self.scale_connected:
                     self.scale_connected = False
                     if self.prev_scale_ok is not False:
@@ -1162,7 +1323,7 @@ class BonCoreHardwareDesktopApp:
                 color_scale = "#f87171"
             self.root.after(0, lambda s=txt_scale, c=color_scale: self.lbl_scale_conn.config(text=s, fg=c))
 
-            # Tepsi simgesini güncelle (Genel durum)
+            # Tepsi simgesi güncelle
             all_ok = self.server_connected and self.scale_connected
             if self.tray_icon:
                 try:
@@ -1182,7 +1343,7 @@ class BonCoreHardwareDesktopApp:
             now = time.time()
 
             try:
-                # 1. Heartbeat - her 4 saniyede bir gönderilir (her döngüde değil!)
+                # 1. Heartbeat
                 if now - last_heartbeat_time >= 4.0:
                     rc = self.cfg.get("restaurant_code", "").strip()
                     hb_payload = {
@@ -1208,7 +1369,8 @@ class BonCoreHardwareDesktopApp:
                     )
                     hb_resp.raise_for_status()
                     hb_json = hb_resp.json()
-                    # Sunucuda bu IP için kayıtlı özel isim/terazi IP/port varsa ve yerelde henüz özelleştirilmemişse senkronize et
+
+                    # Sunucudan gelen isim veya parametre güncellemesi varsa senkronize et
                     srv_name = hb_json.get("terminal_name")
                     srv_scale_ip = hb_json.get("scale_ip")
                     srv_scale_port = hb_json.get("scale_port")
@@ -1217,7 +1379,7 @@ class BonCoreHardwareDesktopApp:
                         self.cfg["terminal_name"] = srv_name
                         cfg_updated_from_srv = True
                         self.root.after(0, lambda n=srv_name: (
-                            self.lbl_title.config(text=f"BonCore Donanım Köprüsü • {n}"),
+                            self.lbl_title.config(text=f"BonCore • {n}"),
                             self.ent_terminal_name.delete(0, tk.END),
                             self.ent_terminal_name.insert(0, n)
                         ))
@@ -1239,8 +1401,10 @@ class BonCoreHardwareDesktopApp:
                         save_config(self.cfg)
                     last_heartbeat_time = now
 
-                # 2. Poll - Emir Dinleme (Reused Keep-Alive TCP Socket)
+                # 2. Poll - Emir Dinleme
                 t_id = self.cfg.get("terminal_id", "kasa-1")
+                rc = self.cfg.get("restaurant_code", "").strip()
+                headers = {"X-Restaurant-Code": rc} if rc else {}
                 poll_url = f"{server_url}/api/scale/agent/poll?terminal_id={t_id}"
                 if rc:
                     poll_url += f"&restaurant_code={urllib.parse.quote(rc)}"
@@ -1252,7 +1416,6 @@ class BonCoreHardwareDesktopApp:
                 poll_resp.raise_for_status()
                 poll_data = poll_resp.json()
 
-                # Başarılı istek -> Sayaçları sıfırla ve gerekirse bağlıya çek
                 self.server_fail_count = 0
                 self.server_success_count += 1
 
@@ -1263,15 +1426,15 @@ class BonCoreHardwareDesktopApp:
                         fg="#34d399"
                     ))
                     self.root.after(0, lambda: self.badge_status.config(
-                        text="● SİSTEM AKTİF",
-                        bg="#166534",
-                        fg="#86efac"
+                        text="● ÇEVRİMİÇİ • BAĞLI",
+                        bg="#064e3b",
+                        fg="#34d399"
                     ))
                     if self.prev_server_ok is False:
-                        self.show_toast("✅ Sunucu Bağlandı", "BonCore POS sunucusuna başarıyla bağlanıldı.")
+                        self.show_toast("✅ Sunucu Bağlandı", "BonCore POS bulut sunucusuna başarıyla bağlanıldı.")
                     self.prev_server_ok = True
 
-                # Emir varsa yerine getir
+                # Emir icra et
                 if poll_data.get("has_command"):
                     req_id = poll_data["req_id"]
                     action = poll_data.get("action", "read_weight")
@@ -1287,7 +1450,7 @@ class BonCoreHardwareDesktopApp:
                         if res.get("success"):
                             w = res["weight"]
                             self.last_weight = w
-                            self.root.after(0, lambda val=w: self.lbl_weight_val.config(text=f"{val:.3f} Kg"))
+                            self.root.after(0, lambda val=w: self.lbl_weight_val.config(text=f"{val:.3f} kg"))
 
                         self.session.post(
                             f"{server_url}/api/scale/agent/report",
@@ -1335,14 +1498,12 @@ class BonCoreHardwareDesktopApp:
                             timeout=5.0
                         )
 
-                # Emir yokken 0.5 saniye bekle (Hızlı tepki ve düşük gecikme)
                 time.sleep(0.5)
 
             except Exception:
                 self.server_success_count = 0
                 self.server_fail_count += 1
 
-                # Yalnızca üst üste 3 başarısız denemede kopma uyarısı verilir (Debounce)
                 if self.server_fail_count >= 3 and self.server_connected:
                     self.server_connected = False
                     self.root.after(0, lambda: self.lbl_server_status.config(
@@ -1351,8 +1512,8 @@ class BonCoreHardwareDesktopApp:
                     ))
                     self.root.after(0, lambda: self.badge_status.config(
                         text="● SUNUCU BAĞLANTISI YOK",
-                        bg="#7f1d1d",
-                        fg="#fca5a5"
+                        bg="#450a0a",
+                        fg="#f87171"
                     ))
                     if self.prev_server_ok is True:
                         self.show_toast("⚠️ Sunucu Bağlantısı Kesildi!", "BonCore bulut sunucusu ile bağlantı koptu. Otomatik tekrar bağlanılıyor...")
@@ -1363,8 +1524,20 @@ class BonCoreHardwareDesktopApp:
             time.sleep(0.3)
 
 def main():
+    ipc_sock = check_single_instance_or_signal()
+
     root = tk.Tk()
-    app = BonCoreHardwareDesktopApp(root)
+
+    # Eğer Windows başlangıcında veya --hidden ile çağrıldıysa pencereyi hiç gösterme
+    is_hidden = any(arg in sys.argv for arg in ["--hidden", "--minimized", "-h"])
+    if is_hidden:
+        root.withdraw()
+
+    app = BonCoreHardwareDesktopApp(root, is_hidden=is_hidden)
+
+    if ipc_sock:
+        start_ipc_listener(ipc_sock, lambda: root.after(0, app._deiconify_window))
+
     root.mainloop()
 
 if __name__ == "__main__":
