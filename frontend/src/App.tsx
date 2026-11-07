@@ -891,7 +891,9 @@ export const App: React.FC = () => {
         {activeTab === 'pos' && (
           <PosTerminal
             categories={categories}
+            areas={areas}
             activeTable={selectedTable}
+            onSelectTable={handleSelectTable}
             onBackToTables={handleBackToTables}
             currentUser={currentUser}
             onOpenCheckout={handleOpenCheckout}

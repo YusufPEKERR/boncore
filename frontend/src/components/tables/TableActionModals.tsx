@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ArrowRight, Merge, RefreshCw, Users, Bell, CheckCircle, ArrowRightLeft, Utensils, Clock, Trash2 } from 'lucide-react';
+import { X, ArrowRight, Merge, RefreshCw, Users, Bell, CheckCircle, ArrowRightLeft, Utensils, Clock, Trash2, Search } from 'lucide-react';
 import { Table, Area } from '../../types';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
@@ -10,17 +10,50 @@ export const MoveTableModal: React.FC<{
   onClose: () => void;
   areas: Area[];
   sourceTable: Table | null;
+  sourceOrderTotal?: number;
   operatorName: string;
-  onSuccess: () => void;
-}> = ({ isOpen, onClose, areas, sourceTable, operatorName, onSuccess }) => {
+  onBeforeMove?: () => Promise<void>;
+  onSuccess: (targetTable?: Table) => void;
+}> = ({ isOpen, onClose, areas, sourceTable, sourceOrderTotal, operatorName, onBeforeMove, onSuccess }) => {
   const [targetId, setTargetId] = useState<number | null>(null);
+  const [selectedAreaId, setSelectedAreaId] = useState<number | 'ALL'>('ALL');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
 
+  useEffect(() => {
+    if (isOpen) {
+      setTargetId(null);
+      setError('');
+      setSearchQuery('');
+    }
+  }, [isOpen]);
+
   if (!isOpen || !sourceTable) return null;
 
-  const allTables = areas.flatMap(a => a.tables);
-  const availableTargets = allTables.filter(t => t.id !== sourceTable.id && t.status === 'empty');
+  // Tüm masaları bölge isimleriyle birlikte düzleştir
+  const allTablesWithArea = (areas || []).flatMap(a =>
+    (a.tables || []).map(t => ({
+      ...t,
+      areaName: a.name,
+      areaId: a.id
+    }))
+  );
+
+  // Sadece boş ve kaynak masadan farklı olan hedef masalar
+  const availableTargets = allTablesWithArea.filter(t => t.id !== sourceTable.id && t.status === 'empty');
+
+  // Bölge ve arama filtrelemesi
+  const filteredTargets = availableTargets.filter(t => {
+    if (selectedAreaId !== 'ALL' && t.areaId !== selectedAreaId) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      return t.name.toLowerCase().includes(q) || t.areaName.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const selectedTarget = availableTargets.find(t => t.id === targetId);
 
   const handleMove = async () => {
     if (!targetId) {
@@ -28,10 +61,14 @@ export const MoveTableModal: React.FC<{
       return;
     }
     setLoading(true);
+    setError('');
     try {
+      if (onBeforeMove) {
+        await onBeforeMove();
+      }
       await api.moveTable(sourceTable.id, targetId, operatorName);
       sound.beep();
-      onSuccess();
+      onSuccess(selectedTarget);
       onClose();
     } catch (err: any) {
       setError(err.message || 'Masa taşınamadı.');
@@ -41,55 +78,177 @@ export const MoveTableModal: React.FC<{
     }
   };
 
+  const displayTotal = sourceOrderTotal !== undefined 
+    ? sourceOrderTotal 
+    : (sourceTable.active_order?.grand_total ?? 0);
+
   return (
     <div className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none font-sans animate-fadeIn">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl text-slate-900 dark:text-slate-100">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <ArrowRight className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            <h3 className="text-lg font-black text-slate-900 dark:text-white">Masa Taşı (Transfer)</h3>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl text-slate-900 dark:text-slate-100 flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-3 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-2xl bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-500/30 shrink-0">
+              <ArrowRightLeft className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900 dark:text-white leading-tight">
+                Masa Taşı (Transfer)
+              </h3>
+              <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
+                Adisyonu başka bir boş masaya aktarın
+              </p>
+            </div>
           </div>
-          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg"><X className="w-5 h-5" /></button>
+          <button 
+            onClick={onClose} 
+            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl mb-4 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-          <span>Kaynak Masa:</span>
-          <span className="font-bold text-blue-600 dark:text-blue-400 text-sm bg-blue-50 dark:bg-blue-500/20 px-3 py-1 rounded-xl">
-            {sourceTable.name} ({sourceTable.active_order?.grand_total.toFixed(2) || 0} ₺)
+        {/* Kaynak Masa Bilgi Kartı */}
+        <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-200 dark:border-blue-900/60 rounded-2xl mb-3.5 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-slate-500 dark:text-slate-400">Kaynak:</span>
+            <span className="font-black text-blue-700 dark:text-blue-300 text-sm">
+              {sourceTable.name}
+            </span>
+          </div>
+          <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-xs bg-emerald-100/70 dark:bg-emerald-950/60 px-2.5 py-1 rounded-xl">
+            Açık Tutar: ₺{Number(displayTotal || 0).toFixed(2)}
           </span>
         </div>
 
-        <div className="mb-4">
-          <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block">Hedef Boş Masa Seçiniz:</label>
-          <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto pr-1">
-            {availableTargets.map((t) => (
+        {/* Bölge Sekmeleri (Area Tabs) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-2 shrink-0 no-scrollbar">
+          <button
+            type="button"
+            onClick={() => { sound.beep(); setSelectedAreaId('ALL'); }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-black transition shrink-0 cursor-pointer ${
+              selectedAreaId === 'ALL'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
+            }`}
+          >
+            Tümü ({availableTargets.length})
+          </button>
+          {(areas || []).map(a => {
+            const countInArea = availableTargets.filter(t => t.areaId === a.id).length;
+            return (
               <button
-                key={t.id}
-                onClick={() => { sound.beep(); setTargetId(t.id); setError(''); }}
-                className={`py-2.5 px-2 rounded-xl font-bold text-xs border transition ${
-                  targetId === t.id
-                    ? 'bg-blue-600 border-blue-400 text-white shadow-md'
-                    : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                key={a.id}
+                type="button"
+                onClick={() => { sound.beep(); setSelectedAreaId(a.id); }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                  selectedAreaId === a.id
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
                 }`}
               >
-                {t.name}
+                <span>{a.name}</span>
+                <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-md ${
+                  selectedAreaId === a.id ? 'bg-blue-700 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                }`}>
+                  {countInArea}
+                </span>
               </button>
-            ))}
-          </div>
-          {availableTargets.length === 0 && (
-            <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 font-semibold">Şu anda boş masa bulunmuyor.</p>
+            );
+          })}
+        </div>
+
+        {/* Hızlı Arama Kutusu */}
+        <div className="relative mb-2.5 shrink-0">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Boş masa ara (örn: Salon 3, Bahçe)..."
+            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
+          />
+        </div>
+
+        {/* Boş Masa Seçim Izgarası */}
+        <div className="flex-1 overflow-y-auto pr-1 min-h-[140px] max-h-60 mb-3">
+          {filteredTargets.length > 0 ? (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {filteredTargets.map((t) => {
+                const isSelected = targetId === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => { sound.beep(); setTargetId(t.id); setError(''); }}
+                    className={`p-2.5 rounded-2xl border text-center transition flex flex-col items-center justify-center gap-1 cursor-pointer active:scale-95 ${
+                      isSelected
+                        ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/30 ring-2 ring-blue-400/40'
+                        : 'bg-slate-50 hover:bg-blue-50/50 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+                    }`}
+                  >
+                    <span className="font-black text-xs leading-tight truncate w-full">
+                      {t.name}
+                    </span>
+                    <span className={`text-[10px] font-semibold truncate w-full ${
+                      isSelected ? 'text-blue-100' : 'text-slate-400 dark:text-slate-500'
+                    }`}>
+                      {t.areaName}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400 text-xs">
+              <span className="font-bold">Bu alanda seçilebilecek boş masa bulunamadı.</span>
+            </div>
           )}
         </div>
 
-        {error && <div className="mb-3 text-xs text-brand-600 dark:text-emerald-400 bg-emerald-50 dark:bg-brand-500/10 p-2.5 rounded-xl font-bold">{error}</div>}
+        {/* Seçilen Hedef Masa Özeti */}
+        {selectedTarget && (
+          <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 mb-3 text-xs flex items-center justify-between shrink-0">
+            <span className="text-slate-600 dark:text-slate-300 font-semibold">Hedef Seçim:</span>
+            <span className="font-black text-blue-700 dark:text-blue-300 flex items-center gap-1">
+              <span>{sourceTable.name}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+              <span>{selectedTarget.name} ({selectedTarget.areaName})</span>
+            </span>
+          </div>
+        )}
 
-        <button
-          onClick={handleMove}
-          disabled={loading || !targetId}
-          className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-black text-xs transition shadow-md"
-        >
-          {loading ? 'Taşınıyor...' : 'MASAYI TAŞI'}
-        </button>
+        {error && (
+          <div className="mb-3 text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 p-2.5 rounded-xl font-bold shrink-0">
+            {error}
+          </div>
+        )}
+
+        {/* Eylem Butonları */}
+        <div className="flex items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800 shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-1/3 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition cursor-pointer"
+          >
+            Vazgeç
+          </button>
+          <button
+            type="button"
+            onClick={handleMove}
+            disabled={loading || !targetId}
+            className="w-2/3 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-black text-xs transition shadow-md shadow-blue-600/30 flex items-center justify-center gap-2 cursor-pointer"
+          >
+            {loading ? (
+              <span>Taşınıyor...</span>
+            ) : (
+              <>
+                <ArrowRightLeft className="w-4 h-4" />
+                <span>{selectedTarget ? `${selectedTarget.name} Masasına Taşı` : 'Masayı Taşı'}</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

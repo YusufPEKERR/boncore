@@ -4,21 +4,24 @@ import {
   Tag, Zap, RefreshCw, 
   ChevronUp, AlertCircle, FileText, 
   Utensils, DollarSign, X, CheckCircle2, CreditCard, Banknote, Scale,
-  ArrowDownAZ, ArrowUpZA, Clock, User 
+  ArrowDownAZ, ArrowUpZA, Clock, User, ArrowRightLeft 
 } from 'lucide-react';
-import { Category, Product, OrderItem, Table, Order, StaffUser } from '../../types';
+import { Category, Product, OrderItem, Table, Order, StaffUser, Area } from '../../types';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
 import { localHardware } from '../../services/localHardware';
 import { useWebSocket } from '../../services/websocket';
 import { ProductModifierModal } from './ProductModifierModal';
+import { MoveTableModal } from '../tables/TableActionModals';
 import { printThermalReceipt } from '../fiscal/FiscalModal';
 import { initialPermissions, mergeWithInitialPermissions, PermissionItem } from '../permissions/RightsManagement';
 import { broadcastPermissionsUpdate } from '../../services/permissions';
 
 interface PosTerminalProps {
   categories: Category[];
+  areas?: Area[];
   activeTable: Table | null;
+  onSelectTable?: (table: Table) => void;
   onBackToTables: () => void;
   currentUser: StaffUser | null;
   onOpenCheckout: (orderId: number, table: Table | null) => void;
@@ -28,7 +31,9 @@ interface PosTerminalProps {
 
 export const PosTerminal: React.FC<PosTerminalProps> = ({
   categories,
+  areas = [],
   activeTable,
+  onSelectTable,
   onBackToTables,
   currentUser,
   onOpenCheckout,
@@ -139,6 +144,19 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [isFastPayModalOpen, setIsFastPayModalOpen] = useState<boolean>(false);
   const [isNoteModalOpen, setIsNoteModalOpen] = useState<boolean>(false);
   const [isPrinterSelectModalOpen, setIsPrinterSelectModalOpen] = useState<boolean>(false);
+  const [isMoveTableModalOpen, setIsMoveTableModalOpen] = useState<boolean>(false);
+  const [currentAreas, setCurrentAreas] = useState<Area[]>(areas || []);
+
+  useEffect(() => {
+    if (areas && areas.length > 0) {
+      setCurrentAreas(areas);
+    } else {
+      api.getAreas().then(res => {
+        if (res && res.length > 0) setCurrentAreas(res);
+      }).catch(() => {});
+    }
+  }, [areas]);
+
   const [availablePrinters, setAvailablePrinters] = useState<string[]>([]);
   const [orderNote, setOrderNote] = useState<string>('');
   const [isDiscountModalOpen, setIsDiscountModalOpen] = useState<boolean>(false);
@@ -300,6 +318,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const canTreat = useMemo(() => canTreatItem || canCloseComplimentary, [canTreatItem, canCloseComplimentary]);
   const canViewStock = useMemo(() => hasPerm('def_stock_view', true), [hasPerm]);
   const canPrintBill = useMemo(() => hasPerm('order_manual_print', true), [hasPerm]);
+  const canMoveTable = useMemo(() => hasPerm('order_table_move_merge', true), [hasPerm]);
 
   // Load existing order
   useEffect(() => {
@@ -873,6 +892,43 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     }
   };
 
+  const handleOpenMoveTableModal = async () => {
+    if (!activeTable) {
+      sound.warning();
+      showToast('Taşınacak aktif bir masa seçili değil.', 'error');
+      return;
+    }
+    if (!canMoveTable) {
+      sound.warning();
+      showToast('Masa taşıma yetkiniz bulunmamaktadır.', 'error');
+      return;
+    }
+
+    try {
+      const freshAreas = await api.getAreas();
+      if (freshAreas && freshAreas.length > 0) {
+        setCurrentAreas(freshAreas);
+      }
+    } catch {}
+
+    sound.beep();
+    setIsMoveTableModalOpen(true);
+  };
+
+  const handleTableMoveSuccess = async (targetTable?: Table) => {
+    setIsMoveTableModalOpen(false);
+    onRefreshData();
+
+    if (targetTable) {
+      showToast(`"${activeTable?.name}" masası "${targetTable.name}" masasına başarıyla taşındı.`, 'success');
+      if (onSelectTable) {
+        onSelectTable(targetTable);
+      }
+    } else {
+      showToast(`Masa "${activeTable?.name}" başarıyla taşındı.`, 'success');
+    }
+  };
+
   const formatPrinterLabel = (p: string) => {
     if (!p) return { name: 'Termal Yazıcı', ip: '' };
     if (p.includes('::')) {
@@ -1334,6 +1390,17 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               <h2 className="font-extrabold text-base text-slate-900 dark:text-white">
                 {activeTable ? activeTable.name : 'Hızlı Satış'}
               </h2>
+              {activeTable && canMoveTable && (
+                <button
+                  type="button"
+                  onClick={handleOpenMoveTableModal}
+                  className="px-2 py-0.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/70 dark:hover:bg-blue-900/70 border border-blue-200 dark:border-blue-800/80 text-blue-700 dark:text-blue-300 font-extrabold text-[11px] flex items-center gap-1 transition cursor-pointer shadow-xs active:scale-95"
+                  title="Masayı Başka Masaya Taşı"
+                >
+                  <ArrowRightLeft className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                  <span>Masa Taşı</span>
+                </button>
+              )}
               {activeTable && (activeTable.active_order?.created_at || activeTable.opened_at) && (
                 <span className="font-mono text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg flex items-center gap-1.5" title="Masa Açılış Süresi">
                   <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -1344,6 +1411,16 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           </div>
 
           <div className="flex items-center gap-1">
+            {activeTable && canMoveTable && (
+              <button 
+                type="button"
+                onClick={handleOpenMoveTableModal}
+                className="p-1.5 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 rounded-lg bg-blue-50/80 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/60 transition cursor-pointer"
+                title="Masayı Başka Masaya Taşı"
+              >
+                <ArrowRightLeft className="w-4 h-4" />
+              </button>
+            )}
             <button 
               onClick={() => setIsNoteModalOpen(true)}
               className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-200/50"
@@ -1866,6 +1943,19 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 title="İndirim Uygula"
               >
                 <DollarSign className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Table Transfer Button ⇄ */}
+            {activeTable && canMoveTable && (
+              <button
+                type="button"
+                onClick={handleOpenMoveTableModal}
+                className="px-2.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 transition cursor-pointer bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 shadow-xs active:scale-95 shrink-0"
+                title="Masayı Başka Masaya Taşı"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span className="hidden sm:inline">Masa Taşı</span>
               </button>
             )}
 
@@ -3035,6 +3125,38 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           onClose={() => setSelectedProductForModal(null)}
           product={selectedProductForModal}
           onAddToCart={handleAddModifiedItem}
+        />
+      )}
+
+      {/* Masa Taşıma (Transfer) Modalı */}
+      {isMoveTableModalOpen && activeTable && (
+        <MoveTableModal
+          isOpen={isMoveTableModalOpen}
+          onClose={() => setIsMoveTableModalOpen(false)}
+          areas={currentAreas}
+          sourceTable={activeTable}
+          sourceOrderTotal={existingOrder?.grand_total || grandTotal}
+          operatorName={currentUser?.name || 'Garson'}
+          onSuccess={handleTableMoveSuccess}
+          onBeforeMove={async () => {
+            const unsavedItems = cartItems.filter(i => !i.id);
+            if (unsavedItems.length > 0) {
+              const targetOrderId = activeOrderId || existingOrder?.id;
+              if (targetOrderId) {
+                await api.addItemsToOrder(targetOrderId, unsavedItems, currentUser?.name || 'Garson');
+              } else {
+                const res = await api.createOrder({
+                  table_id: activeTable.id,
+                  order_type: 'dine_in',
+                  items: unsavedItems,
+                  waiter_name: currentUser?.name || 'Garson',
+                  notes: orderNote || null,
+                  kuver_count: 0
+                });
+                if (res?.order_id) await loadOrder(res.order_id);
+              }
+            }
+          }}
         />
       )}
     </div>
