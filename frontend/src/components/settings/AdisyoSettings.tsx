@@ -9,8 +9,9 @@ import {
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
 import { localHardware } from '../../services/localHardware';
-import { PaymentMethodConfig } from '../../types';
+import { PaymentMethodConfig, PrinterConfig } from '../../types';
 import { ReceiptDesignSettings, ReceiptDesignConfig, defaultReceiptDesign } from './ReceiptDesignSettings';
+import { PrinterSettingsModal } from './PrinterSettingsModal';
 
 export const defaultPaymentMethods: PaymentMethodConfig[] = [
   { id: 'cash', name: 'Nakit Türk Lirası (TRY)', icon: '💵', desc: 'Kasada anlık nakit tahsilat', is_active: true },
@@ -114,6 +115,12 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [scaleLiveWeight, setScaleLiveWeight] = useState<{ weight: number; is_stable?: boolean; raw?: string; simulated?: boolean; message?: string } | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedPrinters, setSelectedPrinters] = useState<string[]>(() => localHardware.getSelectedPrinters());
+  const [printerConfigs, setPrinterConfigs] = useState<PrinterConfig[]>(() => localHardware.getPrinterConfigs());
+  const [editingPrinterConfig, setEditingPrinterConfig] = useState<PrinterConfig | null>(null);
+  const [isPrinterModalOpen, setIsPrinterModalOpen] = useState<boolean>(false);
+  const [availableCategories, setAvailableCategories] = useState<string[]>([
+    'MUTFAK', 'KAHVALTI', 'KURU GIDA', 'BAHARAT', 'DETERJAN', 'PEÇETE', 'İÇECEK', 'KASAP', 'MANAV', 'AMBALAJ', 'MENÜLER', 'PALYAÇO'
+  ]);
   const [printerTestStatus, setPrinterTestStatus] = useState<{ loading: boolean; message?: string; success?: boolean } | null>(null);
   const [customPrinterInput, setCustomPrinterInput] = useState<string>('');
   const [printerSearchQuery, setPrinterSearchQuery] = useState<string>('');
@@ -164,6 +171,118 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const isVirtualPrinter = (pName: string) => {
     const low = (pName || '').toLowerCase();
     return ['microsoft print to pdf', 'microsoft xps', 'onenote', 'fax', 'anydesk printer', 'send to onenote'].some(k => low.includes(k));
+  };
+
+  // Menü kategorilerini dinamik çek
+  useEffect(() => {
+    api.getCategories().then(cats => {
+      if (cats && cats.length > 0) {
+        const catNames = cats.map(c => c.name?.trim()).filter(Boolean);
+        setAvailableCategories(prev => Array.from(new Set([...catNames, ...prev])));
+      }
+    }).catch(err => console.warn('Kategori listesi alınamadı:', err));
+  }, []);
+
+  // Algılanan tüm yazıcıların listesi (Modal için)
+  const detectedPrintersList = React.useMemo(() => {
+    const list: Array<{
+      qualifiedKey: string;
+      displayName: string;
+      localIp: string;
+      terminalName: string;
+      isVirtual?: boolean;
+    }> = [];
+
+    terminalsList.forEach(term => {
+      const ip = term.local_ip || term.id;
+      (term.printers || []).forEach(pName => {
+        const key = `${ip}::${pName}`;
+        list.push({
+          qualifiedKey: key,
+          displayName: pName,
+          localIp: ip,
+          terminalName: term.name || ip,
+          isVirtual: isVirtualPrinter(pName),
+        });
+      });
+    });
+
+    return list;
+  }, [terminalsList]);
+
+  const handleOpenPrinterConfig = (qualifiedKey?: string, displayName?: string) => {
+    sound.beep();
+    const key = qualifiedKey || '';
+    const name = displayName || '';
+
+    // Önce kayıtlı bir config var mı ara
+    const found = printerConfigs.find(c =>
+      (key && c.target_printer === key) ||
+      (name && c.target_printer === name) ||
+      (name && c.name?.toLowerCase() === name.toLowerCase())
+    );
+
+    if (found) {
+      setEditingPrinterConfig(found);
+    } else {
+      // Bulunamadıysa bu yazıcı için varsayılan bir profil taslağı oluştur
+      const defaultName = name || (key ? key.split('::').pop() : 'Yeni Yazıcı');
+      const newConfig: PrinterConfig = {
+        id: key || `printer_${Date.now()}`,
+        name: defaultName || 'Yeni Yazıcı',
+        target_printer: key || name,
+        printer_types: {
+          adisyon: true,
+          kitchen: true,
+          abiyer: false,
+          courier: false,
+        },
+        revenue_center: {
+          main_channel: true,
+        },
+        kitchen_groups: [...availableCategories],
+        settings: {
+          print_on_order_save: false,
+          print_on_integration_approved: true,
+          copies: {
+            table_order: 1,
+            takeaway_order: 1,
+            delivery_order: 1,
+            post_payment: 1,
+          },
+          assign_to_this_device: true,
+        },
+      };
+      setEditingPrinterConfig(newConfig);
+    }
+    setIsPrinterModalOpen(true);
+  };
+
+  const handleSavePrinterConfig = async (savedConfig: PrinterConfig) => {
+    sound.beep();
+    const existingIndex = printerConfigs.findIndex(c => c.id === savedConfig.id || (savedConfig.target_printer && c.target_printer === savedConfig.target_printer));
+    let updated: PrinterConfig[];
+    if (existingIndex >= 0) {
+      updated = [...printerConfigs];
+      updated[existingIndex] = savedConfig;
+    } else {
+      updated = [...printerConfigs, savedConfig];
+    }
+    setPrinterConfigs(updated);
+    await localHardware.savePrinterConfigs(updated);
+    setSelectedPrinters(localHardware.getSelectedPrinters());
+    setIsPrinterModalOpen(false);
+    setEditingPrinterConfig(null);
+  };
+
+  const handleDeletePrinterConfig = async (configId: string) => {
+    sound.beep();
+    const updated = printerConfigs.filter(c => c.id !== configId);
+    setPrinterConfigs(updated);
+    await localHardware.savePrinterConfigs(updated);
+    setSelectedPrinters(localHardware.getSelectedPrinters());
+    setIsPrinterModalOpen(false);
+    setEditingPrinterConfig(null);
   };
 
   const handleTogglePrinter = (qualifiedKey: string, plainName?: string) => {
@@ -1580,7 +1699,15 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenPrinterConfig('', '')}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md shadow-emerald-600/30 flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer whitespace-nowrap"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>+ Yeni Yazıcı Tanımla</span>
+                    </button>
                     <button
                       type="button"
                       onClick={handleTestPrint}
@@ -1588,7 +1715,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black text-xs shadow-md shadow-blue-600/30 flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer whitespace-nowrap"
                     >
                       <Printer className="w-4 h-4" />
-                      <span>{printerTestStatus?.loading ? 'Yazdırılıyor...' : 'Seçili Yazıcılara Test Fişi Yazdır'}</span>
+                      <span>{printerTestStatus?.loading ? 'Yazdırılıyor...' : 'Seçili Yazıcılara Test Fişi'}</span>
                     </button>
                   </div>
                 </div>
@@ -1713,31 +1840,44 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                               const qualifiedKey = `${ipAddr}::${prName}`;
                               const isSelected = selectedPrinters.includes(qualifiedKey) || selectedPrinters.includes(prName);
                               const isVirtual = isVirtualPrinter(prName);
+                              const printerCfg = printerConfigs.find(c => 
+                                c.target_printer === qualifiedKey || 
+                                c.target_printer === prName || 
+                                c.id === qualifiedKey || 
+                                (c.name && c.name.toLowerCase() === prName.toLowerCase())
+                              );
 
                               return (
                                 <div
                                   key={qualifiedKey}
-                                  onClick={() => handleTogglePrinter(qualifiedKey, prName)}
+                                  onClick={() => handleOpenPrinterConfig(qualifiedKey, prName)}
                                   className={`p-3 px-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
                                     isSelected
-                                      ? 'border-blue-600 bg-blue-50/90 dark:bg-blue-950/40 shadow-sm ring-1 ring-blue-500'
+                                      ? 'border-emerald-600 bg-emerald-50/70 dark:bg-emerald-950/30 shadow-sm ring-1 ring-emerald-500'
                                       : isVirtual
                                       ? 'border-slate-200/70 dark:border-slate-800/70 bg-white/60 dark:bg-slate-800/40 opacity-80 hover:opacity-100'
-                                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/90 hover:border-blue-400 dark:hover:border-blue-700'
+                                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/90 hover:border-emerald-400 dark:hover:border-emerald-700'
                                   }`}
                                 >
                                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                                    <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition shrink-0 ${
-                                      isSelected 
-                                        ? 'bg-blue-600 border-blue-600 text-white shadow-xs' 
-                                        : 'border-slate-400 bg-slate-50 dark:bg-slate-700'
-                                    }`}>
+                                    <div
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleTogglePrinter(qualifiedKey, prName);
+                                      }}
+                                      title={isSelected ? "Seçimi Kaldır" : "Yazıcıyı Seç"}
+                                      className={`w-5 h-5 rounded-md flex items-center justify-center border transition shrink-0 cursor-pointer ${
+                                        isSelected 
+                                          ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs' 
+                                          : 'border-slate-400 bg-slate-50 dark:bg-slate-700 hover:border-emerald-500'
+                                      }`}
+                                    >
                                       {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                                     </div>
 
-                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
                                       isSelected
-                                        ? 'bg-blue-600 text-white shadow-xs'
+                                        ? 'bg-emerald-600 text-white shadow-xs'
                                         : isVirtual
                                         ? 'bg-slate-100 dark:bg-slate-700 text-slate-400'
                                         : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
@@ -1746,29 +1886,49 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                                     </div>
 
                                     <div className="min-w-0 flex-1">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-xs font-black text-slate-900 dark:text-white truncate" title={prName}>
-                                          {prName}
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-xs font-black text-slate-900 dark:text-white truncate" title={printerCfg?.name || prName}>
+                                          {printerCfg?.name || prName}
                                         </span>
+                                        {printerCfg?.name && printerCfg.name !== prName && (
+                                          <span className="text-[10px] font-semibold text-slate-400 font-mono">
+                                            ({prName})
+                                          </span>
+                                        )}
                                       </div>
-                                      <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-semibold">
-                                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+
+                                      {/* Yapılandırılmış Çıktı Türü ve Mutfak Grupları Rozetleri */}
+                                      <div className="flex items-center gap-1 mt-1 flex-wrap">
+                                        {printerCfg?.printer_types?.adisyon && (
+                                          <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                            ✓ Adisyon
+                                          </span>
+                                        )}
+                                        {printerCfg?.printer_types?.kitchen && (
+                                          <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                            🍳 Mutfak ({printerCfg.kitchen_groups?.length || 0} Kat.)
+                                          </span>
+                                        )}
+                                        {printerCfg?.printer_types?.courier && (
+                                          <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 dark:border-purple-800">
+                                            🛵 Kurye
+                                          </span>
+                                        )}
+                                        {!printerCfg && (
+                                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                                            Tıkla & Yapılandır
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center gap-1.5 mt-1 text-[10px] font-semibold">
+                                        <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
                                           {ipAddr}
                                         </span>
                                         <span className="text-slate-300 dark:text-slate-600">•</span>
                                         <span className="text-slate-500 dark:text-slate-400 truncate">
                                           {term.name}
                                         </span>
-                                        <span className="text-slate-300 dark:text-slate-600">•</span>
-                                        {isVirtual ? (
-                                          <span className="text-amber-700 dark:text-amber-300 font-black bg-amber-100/90 dark:bg-amber-950/60 px-2 py-0.5 rounded text-[10px] border border-amber-300 dark:border-amber-800">
-                                            ⚠️ Sanal Yazıcı (Kağıt Çıkarmaz)
-                                          </span>
-                                        ) : (
-                                          <span className="text-emerald-700 dark:text-emerald-300 font-black bg-emerald-100/90 dark:bg-emerald-950/60 px-2 py-0.5 rounded text-[10px] border border-emerald-300 dark:border-emerald-800">
-                                            ✓ Fiziki Termal / POS Yazıcı (Kağıt Çıkarır)
-                                          </span>
-                                        )}
                                       </div>
                                     </div>
                                   </div>
@@ -1778,20 +1938,26 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
+                                        handleOpenPrinterConfig(qualifiedKey, prName);
+                                      }}
+                                      className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black flex items-center gap-1 shadow-sm transition active:scale-95 cursor-pointer"
+                                      title="Yazıcı Ayarları ve Mutfak Kategorilerini Belirle"
+                                    >
+                                      <Settings className="w-3.5 h-3.5" />
+                                      <span>Ayarlar</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
                                         handleSingleTestPrint(qualifiedKey, prName, ipAddr);
                                       }}
-                                      className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-blue-600 hover:text-white dark:bg-slate-700 dark:hover:bg-blue-600 text-slate-700 dark:text-slate-200 text-[10px] font-black transition cursor-pointer"
+                                      className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-[10px] font-black transition cursor-pointer"
                                       title={`${ipAddr} üzerindeki ${prName} yazıcısına test fişi gönder`}
                                     >
                                       Test
                                     </button>
-                                    <span className={`text-[10px] uppercase px-2 py-0.5 rounded-full shrink-0 border ${
-                                      isSelected
-                                        ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 font-black'
-                                        : 'bg-slate-100 dark:bg-slate-700 text-slate-500 border-slate-200 dark:border-slate-600 font-bold'
-                                    }`}>
-                                      {isSelected ? '✓ SEÇİLİ' : 'SEÇ'}
-                                    </span>
                                   </div>
                                 </div>
                               );
@@ -1820,14 +1986,14 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       type="button"
                       onClick={() => {
                         const trimmed = customPrinterInput.trim();
-                        if (trimmed && !selectedPrinters.includes(trimmed)) {
-                          handleTogglePrinter(trimmed);
+                        if (trimmed) {
+                          handleOpenPrinterConfig(trimmed, trimmed);
                           setCustomPrinterInput('');
                         }
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition whitespace-nowrap cursor-pointer"
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-sm"
                     >
-                      Ekle & Seç
+                      + Tanımla & Yapılandır
                     </button>
                   </div>
                 </div>
@@ -2420,6 +2586,20 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
           </div>
         </div>
       )}
+
+      {/* 3 Sütunlu Yeşil Temalı Gelişmiş Yazıcı Ayarları Modalı */}
+      <PrinterSettingsModal
+        isOpen={isPrinterModalOpen}
+        onClose={() => {
+          setIsPrinterModalOpen(false);
+          setEditingPrinterConfig(null);
+        }}
+        config={editingPrinterConfig}
+        detectedPrinters={detectedPrintersList}
+        availableCategories={availableCategories}
+        onSave={handleSavePrinterConfig}
+        onDelete={handleDeletePrinterConfig}
+      />
     </div>
   );
 };

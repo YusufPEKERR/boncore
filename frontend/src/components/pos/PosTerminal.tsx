@@ -884,6 +884,42 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         await api.createOrder(payload);
       }
       sound.kitchenBell();
+
+      // Otomatik Mutfak & Kategori Dağıtımlı Fiş Çıktısı:
+      // Restoran Tanımlamalarında seçilen mutfak gruplarına (kategorilere) göre ilgili yazıcılara otomatik fiş gönder
+      try {
+        const orderNo = activeOrderId ? `#${String(activeOrderId).slice(-4)}` : `#${Date.now().toString().slice(-4)}`;
+        const tableName = activeTable?.name || 'Paket / Hızlı Satış';
+        const waiterName = currentUser?.name || 'Garson';
+        const orderType = activeTable ? 'table' : 'takeaway';
+
+        const printItems = unsavedItems.map(item => ({
+          product_id: item.product_id,
+          product_name: item.product_name,
+          quantity: item.quantity,
+          variant: item.variant_name,
+          variant_name: item.variant_name,
+          selected_modifiers: item.selected_modifiers,
+          kitchen_note: item.kitchen_note,
+          course_stage: item.course_stage,
+        }));
+
+        localHardware.printKitchenTicketsForOrder({
+          orderNo,
+          tableName,
+          waiterName,
+          orderType,
+          items: printItems,
+          categories: categories.map(c => ({ id: c.id, name: c.name })),
+        }).then(res => {
+          if (res?.success && res.dispatchedPrinters.length > 0) {
+            console.log(`Mutfak fişleri otomatik yazdırıldı: ${res.dispatchedPrinters.join(', ')}`);
+          }
+        }).catch(err => console.warn('Otomatik mutfak çıktısı hatası:', err));
+      } catch (err) {
+        console.warn('Mutfak fişi oluşturma hatası:', err);
+      }
+
       onRefreshData();
       onBackToTables();
     } catch (err: any) {
@@ -1061,6 +1097,21 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return;
     }
 
+    // Adisyon kutucuğu işaretlenmiş yazıcıları al
+    const adisyonConfigs = localHardware.getAdisyonPrinterConfigs();
+    const adisyonPrinters = adisyonConfigs.map(c => c.target_printer).filter(Boolean);
+    const targetPrinters = adisyonPrinters.length > 0 ? adisyonPrinters : (localHardware.getSelectedPrinters() || []);
+
+    // Bu hedef yazıcıların online olanlarını filtrele
+    const onlineTargets = (targetPrinters || []).filter(pr => getPrinterStatus(pr, currentTerms).isOnline);
+
+    // Eğer en az bir adisyon yazıcısı online ise doğrudan o yazıcı(lar)a yazdır!
+    // Birden fazla adisyon yazıcısı seçilmişse tümüne aynı anda fiş çıkar
+    if (onlineTargets.length > 0) {
+      await executePrintBill(onlineTargets);
+      return;
+    }
+
     // Garsona seçili yazıcılardan hangisinde yazdıracağını seçtirmek için modalı aç
     setPrinterModalMode('print_bill');
     setPendingFastPayMethod(null);
@@ -1155,7 +1206,14 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           };
         }
 
-        await printThermalReceipt(fiscalDoc, printersToUse);
+        const allConfigs = localHardware.getPrinterConfigs();
+        for (const prKey of printersToUse) {
+          const cfg = allConfigs.find(c => c.target_printer === prKey || c.id === prKey);
+          const copies = Math.max(1, cfg?.settings?.copies?.table_order || 1);
+          for (let copyIdx = 0; copyIdx < copies; copyIdx++) {
+            await printThermalReceipt(fiscalDoc, [prKey]);
+          }
+        }
       } catch (printErr) {
         console.warn('Adisyon fiş yazdırma önizleme uyarısı:', printErr);
       }
@@ -1317,7 +1375,14 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           }
 
           if (fiscalDoc && Array.isArray(fiscalDoc.items) && fiscalDoc.items.length > 0) {
-            await printThermalReceipt(fiscalDoc, printersToUse);
+            const allConfigs = localHardware.getPrinterConfigs();
+            for (const prKey of printersToUse) {
+              const cfg = allConfigs.find(c => c.target_printer === prKey || c.id === prKey);
+              const copies = Math.max(1, cfg?.settings?.copies?.post_payment || cfg?.settings?.copies?.table_order || 1);
+              for (let copyIdx = 0; copyIdx < copies; copyIdx++) {
+                await printThermalReceipt(fiscalDoc, [prKey]);
+              }
+            }
             printSuccess = true;
           }
         } catch (printErr: any) {

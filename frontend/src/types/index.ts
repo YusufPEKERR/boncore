@@ -314,3 +314,30 @@ export interface FiscalDoc {
   qr_code_content: string;
   xml_content: string;
 }
+
+export interface PrinterConfig {
+  id: string;
+  name: string;
+  target_printer: string;
+  printer_types: {
+    adisyon: boolean;
+    kitchen: boolean;
+    abiyer: boolean;
+    courier: boolean;
+  };
+  revenue_center: {
+    main_channel: boolean;
+  };
+  kitchen_groups: string[];
+  settings: {
+    print_on_order_save: boolean;
+    print_on_integration_approved: boolean;
+    copies: {
+      table_order: number;
+      takeaway_order: number;
+      delivery_order: number;
+      post_payment: number;
+    };
+    assign_to_this_device: boolean;
+  };
+}
