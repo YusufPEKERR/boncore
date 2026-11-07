@@ -216,6 +216,7 @@ func (dm *DatabaseManager) GetTenantDB(tenantCode string) (*gorm.DB, error) {
 		gormDB, pool, err := dm.connectPostgres(dsn)
 		if err == nil {
 			_ = dm.AutoMigrateTenant(gormDB)
+			dm.EnsureTenantManager(gormDB, cleanCode)
 			dm.tenantGorms[cleanCode] = gormDB
 			dm.tenantPools[cleanCode] = pool
 			return gormDB, nil
@@ -243,6 +244,7 @@ func (dm *DatabaseManager) GetTenantDB(tenantCode string) (*gorm.DB, error) {
 		return nil, err
 	}
 	_ = dm.AutoMigrateTenant(gormDB)
+	dm.EnsureTenantManager(gormDB, cleanCode)
 	dm.tenantGorms[cleanCode] = gormDB
 	return gormDB, nil
 }
@@ -664,6 +666,31 @@ func (dm *DatabaseManager) AutoMigrateTenant(db *gorm.DB) error {
 	}
 
 	return nil
+}
+
+// EnsureTenantManager guarantees that every restaurant tenant database always has at least
+// one active manager/admin user, preventing permanent lockout.
+func (dm *DatabaseManager) EnsureTenantManager(db *gorm.DB, tenantCode string) {
+	if db == nil {
+		return
+	}
+	var count int64
+	db.Model(&models.StaffUser{}).Where("LOWER(role) IN ? AND is_active = ?", []string{"manager", "admin", "superadmin", "müdür", "mudur", "yönetici", "yonetici"}, true).Count(&count)
+	if count == 0 {
+		uname := fmt.Sprintf("%s_admin", tenantCode)
+		if strings.TrimSpace(tenantCode) == "" {
+			uname = "admin"
+		}
+		pin := "9999"
+		defaultMgr := models.StaffUser{
+			Name:     "Kemal Müdür",
+			Role:     "manager",
+			PinCode:  pin,
+			Username: &uname,
+			IsActive: true,
+		}
+		_ = db.Create(&defaultMgr)
+	}
 }
 
 // WithRowLock applies PostgreSQL `SELECT ... FOR UPDATE` row-level locking inside transactions

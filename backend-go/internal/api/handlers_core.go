@@ -409,6 +409,22 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 		if err := c.BodyParser(&payload); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz veri.")
 		}
+		roleLow := strings.ToLower(strings.TrimSpace(user.Role))
+		isMgr := roleLow == "manager" || roleLow == "admin" || roleLow == "superadmin" || roleLow == "müdür" || roleLow == "mudur" || roleLow == "yönetici" || roleLow == "yonetici"
+
+		if isMgr {
+			if payload.IsActive != nil && !*payload.IsActive {
+				return fiber.NewError(fiber.StatusBadRequest, "Yönetici (Müdür) hesabı sistem güvenliği gereği pasife alınamaz!")
+			}
+			if payload.Role != nil && *payload.Role != "" {
+				newRoleLow := strings.ToLower(strings.TrimSpace(*payload.Role))
+				newIsMgr := newRoleLow == "manager" || newRoleLow == "admin" || newRoleLow == "superadmin" || newRoleLow == "müdür" || newRoleLow == "mudur" || newRoleLow == "yönetici" || newRoleLow == "yonetici"
+				if !newIsMgr {
+					return fiber.NewError(fiber.StatusBadRequest, "Yönetici hesabının rolü değiştirilemez!")
+				}
+			}
+		}
+
 		if payload.Name != nil && strings.TrimSpace(*payload.Name) != "" {
 			user.Name = strings.TrimSpace(*payload.Name)
 		}
@@ -442,6 +458,19 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 		if err := db.First(&user, userID).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Personel bulunamadı.")
 		}
+
+		roleLow := strings.ToLower(strings.TrimSpace(user.Role))
+		isMgr := roleLow == "manager" || roleLow == "admin" || roleLow == "superadmin" || roleLow == "müdür" || roleLow == "mudur" || roleLow == "yönetici" || roleLow == "yonetici"
+		if isMgr {
+			return fiber.NewError(fiber.StatusBadRequest, "Yönetici (Müdür / Admin) hesabı sistem güvenliği gereği hiçbir şekilde silinemez!")
+		}
+
+		var activeMgrCount int64
+		db.Model(&models.StaffUser{}).Where("LOWER(role) IN ? AND is_active = ?", []string{"manager", "admin", "superadmin", "müdür", "mudur", "yönetici", "yonetici"}, true).Count(&activeMgrCount)
+		if activeMgrCount == 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "Sistemde en az bir aktif yönetici hesabı bulunmalıdır, işlem engellendi!")
+		}
+
 		db.Delete(&user)
 		return c.JSON(fiber.Map{"status": "success", "message": "Personel silindi."})
 	})

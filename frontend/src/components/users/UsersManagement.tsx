@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, UserPlus, Search, Edit3, Trash2, Key, 
   CheckCircle2, XCircle, AlertTriangle, Shield, Phone, Mail, MoreVertical, 
-  Eye, EyeOff, ChevronDown, ChevronUp, X 
+  Eye, EyeOff, ChevronDown, ChevronUp, X, Lock
 } from 'lucide-react';
 import { StaffUser } from '../../types';
 import { sound } from '../../services/sound';
@@ -161,11 +161,29 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
     setIsModalOpen(true);
   };
 
+  const isManagerRole = (role?: string) => {
+    if (!role) return false;
+    const r = role.toLowerCase().trim();
+    return ['manager', 'admin', 'superadmin', 'müdür', 'mudur', 'yönetici', 'yonetici'].includes(r);
+  };
+
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     sound.beep();
     try {
       if (editingUser) {
+        if (isManagerRole(editingUser.role)) {
+          if (!isManagerRole(formRole)) {
+            showToast('Yönetici hesabının yetki grubu değiştirilemez!', 'error');
+            sound.warning();
+            return;
+          }
+          if (!formActive) {
+            showToast('Yönetici hesabı pasife alınamaz!', 'error');
+            sound.warning();
+            return;
+          }
+        }
         await api.updateStaff(editingUser.id, {
           name: formName,
           username: formUsername.trim() || undefined,
@@ -196,6 +214,12 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
   };
 
   const handleDeleteUser = async (id: number) => {
+    const target = users.find(u => u.id === id);
+    if (target && isManagerRole(target.role)) {
+      showToast('Yönetici (Müdür / Admin) hesabı sistem güvenliği gereği hiçbir şekilde silinemez!', 'error');
+      sound.warning();
+      return;
+    }
     if (confirm('Bu kullanıcıyı silmek istediğinize emin misiniz?')) {
       sound.beep();
       try {
@@ -379,13 +403,22 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                     >
                       <Edit3 className="w-4 h-4" />
                     </button>
-                    <button
-                      onClick={() => handleDeleteUser(u.id)}
-                      className="p-2 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                      title="Sil"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {isManagerRole(u.role) ? (
+                      <span
+                        className="p-2 text-slate-400 dark:text-slate-600 cursor-not-allowed rounded-lg flex items-center justify-center"
+                        title="Yönetici hesabı sistem güvenliği gereği hiçbir şekilde silinemez"
+                      >
+                        <Lock className="w-4 h-4" />
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleDeleteUser(u.id)}
+                        className="p-2 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                        title="Sil"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -441,11 +474,28 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                 </label>
 
                 <div
-                  onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
-                  className="w-full pb-2 border-b-2 border-brand-600 flex items-center justify-between cursor-pointer font-bold text-sm text-slate-900 dark:text-white"
+                  onClick={() => {
+                    if (editingUser && isManagerRole(editingUser.role)) {
+                      showToast('Yönetici hesabının yetki grubu güvenlik nedeniyle değiştirilemez.', 'error');
+                      return;
+                    }
+                    setIsRoleDropdownOpen(!isRoleDropdownOpen);
+                  }}
+                  className={`w-full pb-2 border-b-2 border-brand-600 flex items-center justify-between font-bold text-sm text-slate-900 dark:text-white ${
+                    editingUser && isManagerRole(editingUser.role) ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'
+                  }`}
                 >
-                  <span>{getRoleLabel(formRole)}</span>
-                  {isRoleDropdownOpen ? (
+                  <span className="flex items-center gap-2">
+                    {getRoleLabel(formRole)}
+                    {editingUser && isManagerRole(editingUser.role) && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                        <Lock className="w-3 h-3" /> Sabit Rol
+                      </span>
+                    )}
+                  </span>
+                  {editingUser && isManagerRole(editingUser.role) ? (
+                    <Lock className="w-4 h-4 text-slate-400" />
+                  ) : isRoleDropdownOpen ? (
                     <ChevronUp className="w-4 h-4 text-brand-600" />
                   ) : (
                     <ChevronDown className="w-4 h-4 text-slate-400" />
@@ -568,7 +618,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
 
               {/* Bottom Actions */}
               <div className="flex items-center justify-end gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                {editingUser && (
+                {editingUser && !isManagerRole(editingUser.role) && (
                   <button
                     type="button"
                     onClick={() => handleDeleteUser(editingUser.id)}
