@@ -62,22 +62,27 @@ def main():
 
     ensure_environment_path()
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    backend_dir = os.path.join(base_dir, "backend")
+    backend_go_dir = os.path.join(base_dir, "backend-go")
     frontend_dir = os.path.join(base_dir, "frontend")
 
     backend_proc = None
     frontend_proc = None
 
     try:
-        # 1. Start Backend
-        print("[1/2] FastAPI Backend başlatılıyor (Port 8000)...")
+        # 1. Start Go Fiber Backend
+        print("[1/2] Go Fiber Backend başlatılıyor (Port 8000)...")
+        go_exe = os.path.join(backend_go_dir, "boncore-pos-server.exe")
+        if not os.path.isfile(go_exe):
+            print("  -> boncore-pos-server.exe derleniyor...")
+            subprocess.run(["go", "build", "-o", "boncore-pos-server.exe", "./cmd/server"], cwd=backend_go_dir, check=True)
+
         backend_proc = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"],
-            cwd=backend_dir
+            [go_exe],
+            cwd=backend_go_dir
         )
 
         import urllib.request
-        print("  -> Backend veritabanı ve önbellek açılışı bekleniyor...")
+        print("  -> Backend veritabanı ve API açılışı bekleniyor...")
         for _ in range(30):
             try:
                 with urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=1) as resp:
@@ -99,7 +104,7 @@ def main():
         print("  ✨ BONCORE SİSTEMİ AKTİF VE KULLANIMA HAZIR!")
         print("=" * 60)
         print("  🖥️  POS & Web Arayüzü : http://localhost (Port 80)")
-        print("  📖 API Dokümantasyonu  : http://localhost:8000/docs")
+        print("  ⚡ Go POS Server       : http://localhost:8000/health")
         print("  ⚡ WebSocket Hub       : ws://localhost:8000/ws/all")
         print("------------------------------------------------------------")
         print("  🔑 Hızlı PIN Giriş Kodları:")
