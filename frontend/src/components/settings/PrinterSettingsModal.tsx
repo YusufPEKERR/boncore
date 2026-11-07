@@ -102,7 +102,11 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
         courier: config.printer_types?.courier ?? false
       });
       setMainChannel(config.revenue_center?.main_channel ?? true);
-      setKitchenGroups(config.kitchen_groups || []);
+      const rawGroups = config.kitchen_groups || [];
+      const validGroups = availableCategories.length > 0 
+        ? rawGroups.filter(g => availableCategories.includes(g)) 
+        : rawGroups;
+      setKitchenGroups(validGroups);
       setPrintOnOrderSave(config.settings?.print_on_order_save ?? false);
       setPrintOnIntegration(config.settings?.print_on_integration_approved ?? false);
       setCopies({

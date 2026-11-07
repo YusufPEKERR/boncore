@@ -118,9 +118,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [printerConfigs, setPrinterConfigs] = useState<PrinterConfig[]>(() => localHardware.getPrinterConfigs());
   const [editingPrinterConfig, setEditingPrinterConfig] = useState<PrinterConfig | null>(null);
   const [isPrinterModalOpen, setIsPrinterModalOpen] = useState<boolean>(false);
-  const [availableCategories, setAvailableCategories] = useState<string[]>([
-    'MUTFAK', 'KAHVALTI', 'KURU GIDA', 'BAHARAT', 'DETERJAN', 'PEÇETE', 'İÇECEK', 'KASAP', 'MANAV', 'AMBALAJ', 'MENÜLER', 'PALYAÇO'
-  ]);
+  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [printerTestStatus, setPrinterTestStatus] = useState<{ loading: boolean; message?: string; success?: boolean } | null>(null);
   const [customPrinterInput, setCustomPrinterInput] = useState<string>('');
   const [printerSearchQuery, setPrinterSearchQuery] = useState<string>('');
@@ -173,12 +171,25 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     return ['microsoft print to pdf', 'microsoft xps', 'onenote', 'fax', 'anydesk printer', 'send to onenote'].some(k => low.includes(k));
   };
 
-  // Menü kategorilerini dinamik çek
+  // Menü kategorilerini dinamik çek (Sadece restoranda kayıtlı gerçek kategoriler)
   useEffect(() => {
     api.getCategories().then(cats => {
       if (cats && cats.length > 0) {
-        const catNames = cats.map(c => c.name?.trim()).filter(Boolean);
-        setAvailableCategories(prev => Array.from(new Set([...catNames, ...prev])));
+        const catNames = cats
+          .map(c => c.name?.trim())
+          .filter((name): name is string => Boolean(name));
+        const uniqueCats = Array.from(new Set(catNames)).sort((a, b) => a.localeCompare(b, 'tr'));
+        setAvailableCategories(uniqueCats);
+
+        // Kayıtlı yazıcı konfigürasyonlarını temizle (olmayan kategorileri kaldır)
+        setPrinterConfigs(prev => {
+          const sanitized = prev.map(cfg => ({
+            ...cfg,
+            kitchen_groups: (cfg.kitchen_groups || []).filter(g => uniqueCats.includes(g))
+          }));
+          localHardware.savePrinterConfigs(sanitized).catch(() => {});
+          return sanitized;
+        });
       }
     }).catch(err => console.warn('Kategori listesi alınamadı:', err));
   }, []);
