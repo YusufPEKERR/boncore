@@ -2,11 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, Edit3, MoreVertical, Clock, 
   ArrowRight, Merge, RefreshCw, FileText, CheckCircle, ArrowRightLeft,
-  LayoutGrid, MapPin, Search, ArrowUpDown, ChevronDown, User, Hash, AlertCircle, Printer, Utensils
+  LayoutGrid, MapPin, Search, ArrowUpDown, ChevronDown, User, Hash, AlertCircle, Printer, Utensils, X
 } from 'lucide-react';
 import { Area, Table, StaffUser } from '../../types';
 import { sound } from '../../services/sound';
-import { MoveTableModal, MergeTableModal, TransferItemsModal } from './TableActionModals';
+import { MergeTableModal, TransferItemsModal } from './TableActionModals';
 import { useRolePermissions } from '../../services/permissions';
 
 interface FloorViewProps {
@@ -18,6 +18,10 @@ interface FloorViewProps {
   loading?: boolean;
   floorSection?: 'tables' | 'orders';
   onFloorSectionChange?: (section: 'tables' | 'orders') => void;
+  tableToMove?: Table | null;
+  onStartMoveTable?: (table: Table) => void;
+  onCancelMoveTable?: () => void;
+  onConfirmMoveTable?: (targetTable: Table) => void;
 }
 
 interface OpenTableItem extends Table {
@@ -32,7 +36,11 @@ export const FloorView: React.FC<FloorViewProps> = ({
   onClearBuzzer,
   loading = false,
   floorSection: externalFloorSection,
-  onFloorSectionChange
+  onFloorSectionChange,
+  tableToMove,
+  onStartMoveTable,
+  onCancelMoveTable,
+  onConfirmMoveTable
 }) => {
   const [internalFloorSection, setInternalFloorSection] = useState<'tables' | 'orders'>(() => {
     return (localStorage.getItem('boncore_floor_section') as 'tables' | 'orders') || 'tables';
@@ -77,7 +85,6 @@ export const FloorView: React.FC<FloorViewProps> = ({
   const [orderAreaFilter, setOrderAreaFilter] = useState<number | 'all'>('all');
 
   // Modals
-  const [isMoveOpen, setIsMoveOpen] = useState<boolean>(false);
   const [isMergeOpen, setIsMergeOpen] = useState<boolean>(false);
   const [isTransferItemsOpen, setIsTransferItemsOpen] = useState<boolean>(false);
   const [activeActionTableId, setActiveActionTableId] = useState<number | null>(null);
@@ -188,6 +195,27 @@ export const FloorView: React.FC<FloorViewProps> = ({
 
   const handleTableClick = (table: Table) => {
     sound.beep();
+    if (tableToMove) {
+      if (table.id === tableToMove.id) {
+        sound.warning();
+        window.dispatchEvent(new CustomEvent('boncore_toast', {
+          detail: { message: 'Taşınacak hedef masa kaynak masayla aynı olamaz!', type: 'warning' }
+        }));
+        return;
+      }
+      const isOccupied = table.status === 'occupied' || table.status === 'bill_printed' || !!table.active_order;
+      if (isOccupied) {
+        sound.warning();
+        window.dispatchEvent(new CustomEvent('boncore_toast', {
+          detail: { message: `"${table.name}" masası dolu! Lütfen boş bir masa seçiniz.`, type: 'error' }
+        }));
+        return;
+      }
+      if (onConfirmMoveTable) {
+        onConfirmMoveTable(table);
+      }
+      return;
+    }
     onSelectTable(table);
   };
 
@@ -278,6 +306,35 @@ export const FloorView: React.FC<FloorViewProps> = ({
         </div>
       </div>
 
+      {/* Table Move Active Notification Banner */}
+      {tableToMove && (
+        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white px-3 sm:px-4 py-2.5 flex items-center justify-between shadow-md z-30 animate-slideDown shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <ArrowRightLeft className="w-4 h-4 text-white animate-pulse" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-black text-xs sm:text-sm tracking-tight uppercase">Masa Taşıma Modu</span>
+                <span className="px-2 py-0.5 rounded-full bg-white/20 text-[11px] font-bold font-mono">
+                  {tableToMove.name} ➔ Hedef Boş Masa
+                </span>
+              </div>
+              <p className="text-[11px] text-blue-100 truncate">
+                Adisyonu aktarmak istediğiniz boş masaya dokununuz.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => onCancelMoveTable?.()}
+            className="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>İptal Et</span>
+          </button>
+        </div>
+      )}
+
       {/* SECTION 1: MASALAR (BÖLGELER VE IZGARA / KROKI) */}
       {currentFloorSection === 'tables' && (
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -350,12 +407,22 @@ export const FloorView: React.FC<FloorViewProps> = ({
                   const hasReadyFood = !!table.has_ready_items || !!table.active_order?.has_ready_items;
                   const isMenuOpen = activeActionTableId === table.id;
 
+                  const isSourceTable = !!(tableToMove && table.id === tableToMove.id);
+                  const isTargetCandidate = !!(tableToMove && !isSourceTable && !isOccupied && !isReserved);
+                  const isMoveBlocked = !!(tableToMove && !isSourceTable && (isOccupied || isReserved));
+
                   return (
                     <div
                       key={table.id}
                       onClick={() => handleTableClick(table)}
                       className={`h-32 sm:h-40 rounded-2xl p-3 sm:p-4 flex flex-col justify-between cursor-pointer transition-all duration-150 pos-touch-card relative border shadow-sm hover:shadow-md ${
-                        hasReadyFood
+                        isSourceTable
+                          ? 'bg-blue-100 dark:bg-blue-950/80 border-blue-500 text-blue-950 dark:text-blue-100 ring-4 ring-blue-500/70 shadow-lg scale-102 z-20 animate-pulse'
+                          : isTargetCandidate
+                          ? 'bg-emerald-50/90 dark:bg-emerald-950/50 border-emerald-500 text-slate-900 dark:text-white ring-2 ring-emerald-500 ring-dashed hover:ring-solid hover:scale-105 shadow-md z-20'
+                          : isMoveBlocked
+                          ? 'bg-slate-100/60 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 text-slate-400 opacity-40 cursor-not-allowed'
+                          : hasReadyFood
                           ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-500 text-slate-900 dark:text-white ring-2 ring-emerald-500/40 shadow-md'
                           : hasBuzzer
                           ? 'bg-purple-50 dark:bg-purple-950/50 border-purple-400 text-purple-900 dark:text-purple-100 animate-pulse'
@@ -376,6 +443,18 @@ export const FloorView: React.FC<FloorViewProps> = ({
                             <h3 className="font-extrabold text-base text-slate-900 dark:text-white tracking-tight leading-tight">
                               {table.name}
                             </h3>
+                            {isSourceTable && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-blue-600 text-white font-black text-[9px] flex items-center gap-1 shadow-sm uppercase tracking-wide">
+                                <ArrowRightLeft className="w-2.5 h-2.5" />
+                                <span>KAYNAK</span>
+                              </span>
+                            )}
+                            {isTargetCandidate && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-emerald-600 text-white font-black text-[9px] flex items-center gap-1 shadow-sm uppercase tracking-wide animate-pulse">
+                                <CheckCircle className="w-2.5 h-2.5" />
+                                <span>BURAYA TAŞI</span>
+                              </span>
+                            )}
                             {hasReadyFood && (
                               <span 
                                 title={`Mutfakta Servise Hazır: ${table.ready_items_summary || table.active_order?.ready_items_summary || 'Sipariş hazır'}`}
@@ -416,15 +495,20 @@ export const FloorView: React.FC<FloorViewProps> = ({
                                 {canMoveMergeTable && (
                                   <>
                                     <button
-                                      onClick={() => { setIsMoveOpen(true); setActiveActionTableId(null); }}
-                                      className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                                      onClick={() => {
+                                        if (onStartMoveTable) {
+                                          onStartMoveTable(table);
+                                        }
+                                        setActiveActionTableId(null);
+                                      }}
+                                      className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2 cursor-pointer"
                                     >
-                                      <ArrowRight className="w-3.5 h-3.5 text-blue-500" />
+                                      <ArrowRightLeft className="w-3.5 h-3.5 text-blue-500" />
                                       <span>Masa Taşı</span>
                                     </button>
                                     <button
                                       onClick={() => { setIsMergeOpen(true); setActiveActionTableId(null); }}
-                                      className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                                      className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2 cursor-pointer"
                                     >
                                       <Merge className="w-3.5 h-3.5 text-amber-500" />
                                       <span>Masa Birleştir</span>
@@ -523,6 +607,10 @@ export const FloorView: React.FC<FloorViewProps> = ({
                 const posX = table.x || 50;
                 const posY = table.y || 50;
 
+                const isSourceTable = !!(tableToMove && table.id === tableToMove.id);
+                const isTargetCandidate = !!(tableToMove && !isSourceTable && !isOccupied && !isReserved);
+                const isMoveBlocked = !!(tableToMove && !isSourceTable && (isOccupied || isReserved));
+
                 return (
                   <div
                     key={table.id}
@@ -536,7 +624,13 @@ export const FloorView: React.FC<FloorViewProps> = ({
                     className={`absolute flex flex-col justify-between p-3 border select-none cursor-pointer hover:scale-105 active:scale-95 transition-all shadow-sm ${
                       isRound ? 'rounded-full text-center' : 'rounded-2xl'
                     } ${
-                      hasReadyFood
+                      isSourceTable
+                        ? 'bg-blue-100 dark:bg-blue-950/80 border-blue-500 text-blue-950 dark:text-blue-100 ring-4 ring-blue-500 shadow-xl z-30 animate-pulse'
+                        : isTargetCandidate
+                        ? 'bg-emerald-50/90 dark:bg-emerald-950/50 border-emerald-500 text-slate-900 dark:text-white ring-2 ring-emerald-500 ring-dashed hover:ring-solid hover:scale-105 shadow-md z-30'
+                        : isMoveBlocked
+                        ? 'bg-slate-100/60 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 text-slate-400 opacity-40 cursor-not-allowed z-10'
+                        : hasReadyFood
                         ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-500 text-slate-900 dark:text-white shadow-md ring-2 ring-emerald-500/50 z-20'
                         : hasBuzzer
                         ? 'bg-purple-50 dark:bg-purple-950/50 border-purple-400 text-purple-900 dark:text-purple-100 shadow-md animate-pulse z-20'
@@ -556,6 +650,18 @@ export const FloorView: React.FC<FloorViewProps> = ({
                         <h4 className="font-black text-sm tracking-tight truncate leading-tight">
                           {table.name}
                         </h4>
+                        {isSourceTable && (
+                          <span className="px-1 py-0.5 rounded bg-blue-600 text-white font-black text-[8px] flex items-center gap-0.5 shrink-0">
+                            <ArrowRightLeft className="w-2 h-2" />
+                            <span>KAYNAK</span>
+                          </span>
+                        )}
+                        {isTargetCandidate && (
+                          <span className="px-1 py-0.5 rounded bg-emerald-600 text-white font-black text-[8px] flex items-center gap-0.5 shrink-0 animate-pulse">
+                            <CheckCircle className="w-2 h-2" />
+                            <span>SEÇ</span>
+                          </span>
+                        )}
                         {hasReadyFood && (
                           <span className="px-1 py-0.5 rounded bg-emerald-600 text-white font-black text-[8px] flex items-center gap-0.5 shrink-0 animate-pulse" title={`Mutfakta Hazır: ${table.ready_items_summary || table.active_order?.ready_items_summary || 'Sipariş'}`}>
                             <Utensils className="w-2.5 h-2.5" />
@@ -807,10 +913,15 @@ export const FloorView: React.FC<FloorViewProps> = ({
                               {canMoveMergeTable && (
                                 <>
                                   <button
-                                    onClick={() => { setIsMoveOpen(true); setActiveActionTableId(null); }}
-                                    className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                                    onClick={() => {
+                                      if (onStartMoveTable) {
+                                        onStartMoveTable(table);
+                                      }
+                                      setActiveActionTableId(null);
+                                    }}
+                                    className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2 cursor-pointer"
                                   >
-                                    <ArrowRight className="w-3.5 h-3.5 text-blue-500" />
+                                    <ArrowRightLeft className="w-3.5 h-3.5 text-blue-500" />
                                     <span>Masa Taşı</span>
                                   </button>
                                   <button
@@ -868,15 +979,6 @@ export const FloorView: React.FC<FloorViewProps> = ({
       )}
 
       {/* Modals */}
-      <MoveTableModal
-        isOpen={isMoveOpen}
-        onClose={() => setIsMoveOpen(false)}
-        areas={areas}
-        sourceTable={selectedTableForAction}
-        operatorName={currentUser?.name || 'Garson'}
-        onSuccess={onRefreshAreas}
-      />
-
       <MergeTableModal
         isOpen={isMergeOpen}
         onClose={() => setIsMergeOpen(false)}

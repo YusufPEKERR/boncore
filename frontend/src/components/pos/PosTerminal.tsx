@@ -12,7 +12,6 @@ import { api } from '../../services/api';
 import { localHardware } from '../../services/localHardware';
 import { useWebSocket } from '../../services/websocket';
 import { ProductModifierModal } from './ProductModifierModal';
-import { MoveTableModal } from '../tables/TableActionModals';
 import { printThermalReceipt } from '../fiscal/FiscalModal';
 import { initialPermissions, mergeWithInitialPermissions, PermissionItem } from '../permissions/RightsManagement';
 import { broadcastPermissionsUpdate } from '../../services/permissions';
@@ -27,6 +26,7 @@ interface PosTerminalProps {
   onOpenCheckout: (orderId: number, table: Table | null) => void;
   onOpenFiscalModal: (orderId: number) => void;
   onRefreshData: () => void;
+  onStartMoveTable?: (table: Table) => void;
 }
 
 export const PosTerminal: React.FC<PosTerminalProps> = ({
@@ -38,7 +38,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   currentUser,
   onOpenCheckout,
   onOpenFiscalModal,
-  onRefreshData
+  onRefreshData,
+  onStartMoveTable
 }) => {
   const visibleCategories = useMemo(() => {
     return categories
@@ -144,7 +145,6 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [isFastPayModalOpen, setIsFastPayModalOpen] = useState<boolean>(false);
   const [isNoteModalOpen, setIsNoteModalOpen] = useState<boolean>(false);
   const [isPrinterSelectModalOpen, setIsPrinterSelectModalOpen] = useState<boolean>(false);
-  const [isMoveTableModalOpen, setIsMoveTableModalOpen] = useState<boolean>(false);
   const [currentAreas, setCurrentAreas] = useState<Area[]>(areas || []);
 
   useEffect(() => {
@@ -904,28 +904,39 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return;
     }
 
-    try {
-      const freshAreas = await api.getAreas();
-      if (freshAreas && freshAreas.length > 0) {
-        setCurrentAreas(freshAreas);
+    // Sepette henüz kaydedilmemiş ürünler varsa önce siparişe ekleyelim
+    const unsavedItems = cartItems.filter(i => !i.id);
+    if (unsavedItems.length > 0) {
+      try {
+        setLoading(true);
+        const targetOrderId = activeOrderId || existingOrder?.id;
+        if (targetOrderId) {
+          await api.addItemsToOrder(targetOrderId, unsavedItems, currentUser?.name || 'Garson');
+        } else {
+          const res = await api.createOrder({
+            table_id: activeTable.id,
+            order_type: 'dine_in',
+            items: unsavedItems,
+            waiter_name: currentUser?.name || 'Garson',
+            notes: orderNote || null,
+            kuver_count: 0
+          });
+          if (res?.order_id) await loadOrder(res.order_id);
+        }
+      } catch (err: any) {
+        showToast(err.message || 'Sipariş kaydedilemedi.', 'error');
+        setLoading(false);
+        return;
+      } finally {
+        setLoading(false);
       }
-    } catch {}
+    }
 
     sound.beep();
-    setIsMoveTableModalOpen(true);
-  };
-
-  const handleTableMoveSuccess = async (targetTable?: Table) => {
-    setIsMoveTableModalOpen(false);
-    onRefreshData();
-
-    if (targetTable) {
-      showToast(`"${activeTable?.name}" masası "${targetTable.name}" masasına başarıyla taşındı.`, 'success');
-      if (onSelectTable) {
-        onSelectTable(targetTable);
-      }
+    if (onStartMoveTable) {
+      onStartMoveTable(activeTable);
     } else {
-      showToast(`Masa "${activeTable?.name}" başarıyla taşındı.`, 'success');
+      onBackToTables();
     }
   };
 
@@ -3125,38 +3136,6 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           onClose={() => setSelectedProductForModal(null)}
           product={selectedProductForModal}
           onAddToCart={handleAddModifiedItem}
-        />
-      )}
-
-      {/* Masa Taşıma (Transfer) Modalı */}
-      {isMoveTableModalOpen && activeTable && (
-        <MoveTableModal
-          isOpen={isMoveTableModalOpen}
-          onClose={() => setIsMoveTableModalOpen(false)}
-          areas={currentAreas}
-          sourceTable={activeTable}
-          sourceOrderTotal={existingOrder?.grand_total || grandTotal}
-          operatorName={currentUser?.name || 'Garson'}
-          onSuccess={handleTableMoveSuccess}
-          onBeforeMove={async () => {
-            const unsavedItems = cartItems.filter(i => !i.id);
-            if (unsavedItems.length > 0) {
-              const targetOrderId = activeOrderId || existingOrder?.id;
-              if (targetOrderId) {
-                await api.addItemsToOrder(targetOrderId, unsavedItems, currentUser?.name || 'Garson');
-              } else {
-                const res = await api.createOrder({
-                  table_id: activeTable.id,
-                  order_type: 'dine_in',
-                  items: unsavedItems,
-                  waiter_name: currentUser?.name || 'Garson',
-                  notes: orderNote || null,
-                  kuver_count: 0
-                });
-                if (res?.order_id) await loadOrder(res.order_id);
-              }
-            }
-          }}
         />
       )}
     </div>

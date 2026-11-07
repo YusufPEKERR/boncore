@@ -568,6 +568,60 @@ export const App: React.FC = () => {
     setActiveTab('pos');
   };
 
+  // Table Move (Direct Floor Selection Workflow)
+  const [tableToMove, setTableToMove] = useState<Table | null>(null);
+
+  const handleStartMoveTable = (table: Table) => {
+    setTableToMove(table);
+    setActiveTab('tables');
+    setFloorSection('tables');
+    sound.beep();
+    addToast(`"${table.name}" masası seçildi. Taşımak istediğiniz hedef boş masaya dokununuz.`, 'info');
+  };
+
+  const handleCancelMoveTable = () => {
+    setTableToMove(null);
+    sound.beep();
+    addToast('Masa taşıma işlemi iptal edildi.', 'info');
+  };
+
+  const handleConfirmMoveTable = async (targetTable: Table) => {
+    if (!tableToMove) return;
+    if (targetTable.id === tableToMove.id) {
+      sound.warning();
+      addToast('Kaynak masa ile hedef masa aynı olamaz!', 'warning');
+      return;
+    }
+
+    const isOccupied = targetTable.status === 'occupied' || targetTable.status === 'bill_printed' || !!targetTable.active_order;
+    if (isOccupied) {
+      sound.warning();
+      addToast(`"${targetTable.name}" masası dolu! Lütfen boş bir masa seçiniz.`, 'error');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `"${tableToMove.name}" masasındaki adisyon "${targetTable.name}" masasına taşınacak. Onaylıyor musunuz?`
+    );
+    if (!confirmed) return;
+
+    try {
+      sound.beep();
+      await api.moveTable(tableToMove.id, targetTable.id, currentUser?.name || 'Garson');
+      addToast(`"${tableToMove.name}" masası "${targetTable.name}" masasına başarıyla taşındı!`, 'success');
+      setTableToMove(null);
+      await loadAreas();
+      setSelectedTable(targetTable);
+      try {
+        localStorage.setItem('boncore_selected_table', JSON.stringify(targetTable));
+      } catch {}
+      setActiveTab('pos');
+    } catch (err: any) {
+      sound.warning();
+      addToast(err.message || 'Masa taşınamadı.', 'error');
+    }
+  };
+
   const handleBackToTables = () => {
     sound.beep();
     setSelectedTable(null);
@@ -885,6 +939,10 @@ export const App: React.FC = () => {
             loading={loadingAreas}
             floorSection={floorSection}
             onFloorSectionChange={setFloorSection}
+            tableToMove={tableToMove}
+            onStartMoveTable={handleStartMoveTable}
+            onCancelMoveTable={handleCancelMoveTable}
+            onConfirmMoveTable={handleConfirmMoveTable}
           />
         )}
 
@@ -899,6 +957,7 @@ export const App: React.FC = () => {
             onOpenCheckout={handleOpenCheckout}
             onOpenFiscalModal={(id) => setActiveFiscalOrderId(id)}
             onRefreshData={loadAreas}
+            onStartMoveTable={handleStartMoveTable}
           />
         )}
 
