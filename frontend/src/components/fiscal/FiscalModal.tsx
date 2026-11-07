@@ -13,6 +13,121 @@ interface FiscalModalProps {
   orderId: number | null;
 }
 
+const isVirtualPrinterTarget = (name: string): boolean => {
+  const low = (name || '').toLowerCase();
+  return ['pdf', 'onenote', 'xps', 'fax', 'anydesk'].some(v => low.includes(v));
+};
+
+const formatReceiptDate = (rawDate?: string): string => {
+  if (!rawDate) return new Date().toLocaleDateString('tr-TR');
+  const trimmed = String(rawDate).trim();
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
+  if (isoMatch) {
+    return `${isoMatch[3]}.${isoMatch[2]}.${isoMatch[1]}`;
+  }
+  return trimmed;
+};
+
+const formatReceiptTime = (rawTime?: string): string => {
+  if (!rawTime) return new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  const trimmed = String(rawTime).trim();
+  const hmMatch = /^(\d{2}:\d{2})/.exec(trimmed);
+  if (hmMatch) {
+    return hmMatch[1];
+  }
+  return trimmed;
+};
+
+const formatPaymentLabel = (raw?: string): string => {
+  const val = String(raw || '').trim();
+  const low = val.toLocaleLowerCase('tr-TR');
+  if (low === 'cash' || low === 'nakit') return 'Nakit';
+  if (low === 'credit_card' || low === 'kredi kartı' || low === 'kredi karti') return 'Kredi Kartı';
+  if (low === 'open_account' || low === 'açık hesap' || low === 'acik hesap') return 'Açık Hesap';
+  if (low === 'sodexo') return 'Sodexo';
+  if (low === 'multinet') return 'Multinet';
+  if (low === 'ticket') return 'Ticket';
+  return val || 'Nakit';
+};
+
+const buildThermalRawText = (
+  doc: any,
+  headerTitle: string,
+  formattedDate: string,
+  formattedTime: string,
+  vat10Tax: number,
+  footerMsg: string,
+  footerSub: string
+): string => {
+  const W = 40;
+  const line = '-'.repeat(W);
+  const padLR = (left: string, right: string) => {
+    const space = Math.max(1, W - left.length - right.length);
+    return left + ' '.repeat(space) + right;
+  };
+  const centerText = (txt: string) => {
+    if (txt.length >= W) return txt;
+    const leftPad = Math.floor((W - txt.length) / 2);
+    return ' '.repeat(leftPad) + txt;
+  };
+
+  const lines: string[] = [];
+  lines.push(centerText(headerTitle));
+  lines.push(line);
+  lines.push(padLR(`Masa: ${doc.table_name || 'Masa'}`, `Tarih: ${formattedDate}`));
+  lines.push(padLR(`Garson: ${doc.waiter_name || '-'}`, `Saat: ${formattedTime}`));
+  lines.push(`Kasiyer: ${doc.cashier_name || 'Kasiyer'}`);
+  lines.push(line);
+  lines.push('ÜRÜN               ADET    BİRİM   TUTAR');
+  lines.push(line);
+
+  (doc.items || []).forEach((it: any) => {
+    const name = String(it.product_name || '').slice(0, 18).padEnd(18, ' ');
+    const qtyNum = Number(it.quantity || 0);
+    const qtyStr = (Number.isInteger(qtyNum) ? String(qtyNum) : qtyNum.toFixed(2)).padStart(5, ' ');
+    const unitStr = Number(it.unit_price || 0).toFixed(2).padStart(8, ' ');
+    const totalStr = Number(it.total_price || 0).toFixed(2).padStart(8, ' ');
+    lines.push(`${name}${qtyStr} ${unitStr}${totalStr}`);
+    const variant = it.variant || it.variant_name;
+    if (variant) {
+      lines.push(` (${variant})`);
+    }
+  });
+
+  lines.push(line);
+  lines.push(padLR('Ara Toplam:', `₺${Number(doc.subtotal || 0).toFixed(2)}`));
+  if (Number(doc.kuver || 0) > 0) {
+    lines.push(padLR('Kuver Bedeli:', `₺${Number(doc.kuver).toFixed(2)}`));
+  }
+  if (Number(doc.service_charge || 0) > 0) {
+    lines.push(padLR('Servis Bedeli:', `₺${Number(doc.service_charge).toFixed(2)}`));
+  }
+  if (Number(doc.discount || 0) > 0) {
+    lines.push(padLR('İndirim:', `-₺${Number(doc.discount).toFixed(2)}`));
+  }
+  if (Number(doc.treat || 0) > 0) {
+    lines.push(padLR('İkram:', `-₺${Number(doc.treat).toFixed(2)}`));
+  }
+  lines.push(padLR('KDV (%10 Dahil):', `₺${vat10Tax.toFixed(2)}`));
+  lines.push(line);
+  lines.push(padLR('GENEL TOPLAM:', `₺${Number(doc.grand_total || 0).toFixed(2)}`));
+
+  if (Array.isArray(doc.payments) && doc.payments.length > 0) {
+    lines.push(line);
+    doc.payments.forEach((p: any) => {
+      const pLbl = formatPaymentLabel(p.label || p.method);
+      lines.push(padLR(`✓ ÖDEME (${pLbl}):`, `₺${Number(p.amount || 0).toFixed(2)}`));
+    });
+  }
+
+  lines.push(line);
+  if (footerMsg) lines.push(centerText(footerMsg));
+  if (footerSub) lines.push(centerText(footerSub));
+  lines.push('\n\n\n');
+
+  return lines.join('\n');
+};
+
 export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) => {
   if (!doc || doc.error || doc.detail) {
     console.warn('printThermalReceipt çağrıldı ancak doküman geçersiz veya hata içeriyor:', doc);
@@ -24,16 +139,58 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
     return;
   }
 
-  // 1. Kasa bilgisayarinda secili termal yazicilar varsa dogrudan ajan uzerinden yazdir
+  let design: any = doc.receipt_design;
+  if (!design) {
+    try {
+      const cached = localStorage.getItem('boncore_receipt_design');
+      if (cached) design = JSON.parse(cached);
+    } catch (e) {}
+  }
+
+  const activeRestName = localStorage.getItem('boncore_active_restaurant_name') || '';
+  const customHeader = design?.header_title && design.header_title !== 'BONCORE RESTORAN' && design.header_title !== 'BONCORE RESTORAN & LOUNGE'
+    ? design.header_title
+    : '';
+  const docHeader = doc.company_title && doc.company_title !== 'BONCORE RESTORAN' && doc.company_title !== 'BONCORE RESTORAN & LOUNGE'
+    ? doc.company_title
+    : '';
+  const headerTitle = (customHeader || activeRestName || docHeader || 'FATİH ÇİFTLİĞİ').toLocaleUpperCase('tr-TR');
+
+  const formattedDate = formatReceiptDate(doc.date);
+  const formattedTime = formatReceiptTime(doc.time);
+  const grandTotalNum = Number(doc.grand_total || 0);
+  const vat10Tax = Number(
+    doc.vat_summary?.vat_10?.tax !== undefined
+      ? doc.vat_summary.vat_10.tax
+      : (grandTotalNum * 10) / 110
+  );
+
+  const footerMsg = design?.footer_message || 'TEŞEKKÜR EDERİZ • AFİYET OLSUN!';
+  const footerSub = design?.footer_sub || 'Mali değeri yoktur, bilgi fişidir.';
+
+  const rawText = buildThermalRawText(
+    doc,
+    headerTitle,
+    formattedDate,
+    formattedTime,
+    vat10Tax,
+    footerMsg,
+    footerSub
+  );
+
+  // 1. Kasa bilgisayarinda secili FİZİKSEL termal yazicilar varsa dogrudan ajan uzerinden yazdir
   const selectedPrinters = (targetPrinters && targetPrinters.length > 0)
     ? targetPrinters
     : localHardware.getSelectedPrinters();
 
-  if (selectedPrinters && selectedPrinters.length > 0) {
+  const physicalPrinters = (selectedPrinters || []).filter(p => !isVirtualPrinterTarget(p));
+
+  if (physicalPrinters.length > 0) {
     try {
       const res = await localHardware.printReceipt({
-        printers: selectedPrinters,
-        document: doc
+        printers: physicalPrinters,
+        document: doc,
+        rawText
       });
       if (res && res.success) {
         return;
@@ -43,7 +200,7 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
     }
   }
 
-  // 2. Ajan veya secili yazici yoksa tarayici uzerinden yazdir (Fallback)
+  // 2. Ajan veya fiziksel yazici yoksa tarayici uzerinden görsel şablonla yazdir
   try {
     let iframe = document.getElementById('boncore-thermal-print-frame') as HTMLIFrameElement | null;
     if (!iframe) {
@@ -58,76 +215,37 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
       document.body.appendChild(iframe);
     }
 
+    const paperWidth = design?.paper_width === '58mm' ? '58mm' : '80mm';
+    const bodyWidth = design?.paper_width === '58mm' ? '52mm' : '74mm';
+
     const itemsRows = (doc.items || [])
-      .map(
-        (it: any) => `
-        <tr>
-          <td style="padding:3px 0;font-weight:600;">${it.product_name}${it.variant ? ` (${it.variant})` : ''}</td>
-          <td style="padding:3px 0;text-align:center;">${Number.isInteger(Number(it.quantity)) ? it.quantity : Number(Number(it.quantity).toFixed(3)) + ' Kg'}</td>
-          <td style="padding:3px 0;text-align:right;">₺${Number(it.unit_price || 0).toFixed(2)}</td>
-          <td style="padding:3px 0;text-align:right;font-weight:700;">₺${Number(it.total_price || 0).toFixed(2)}</td>
-        </tr>`
-      )
+      .map((it: any) => {
+        const qtyNum = Number(it.quantity || 0);
+        const qtyDisplay = Number.isInteger(qtyNum) ? String(qtyNum) : `${Number(qtyNum.toFixed(3))} Kg`;
+        const variant = it.variant || it.variant_name;
+        return `
+        <div class="item-block">
+          <div class="item-row">
+            <span class="col-name">${it.product_name}</span>
+            <span class="col-qty">${qtyDisplay}</span>
+            <span class="col-unit">${Number(it.unit_price || 0).toFixed(2)}</span>
+            <span class="col-total">${Number(it.total_price || 0).toFixed(2)}</span>
+          </div>
+          ${variant ? `<div class="item-variant">(${variant})</div>` : ''}
+        </div>`;
+      })
       .join('');
 
     const paymentsRows = (doc.payments || [])
-      .map(
-        (p: any) => `
-        <div style="display:flex;justify-content:space-between;font-weight:800;font-size:12px;margin-top:2px;">
-          <span>ÖDEME (${p.label || p.method}):</span>
+      .map((p: any) => {
+        const pLbl = formatPaymentLabel(p.label || p.method);
+        return `
+        <div class="row pay-row">
+          <span>✓ ÖDEME (${pLbl}):</span>
           <span>₺${Number(p.amount || 0).toFixed(2)}</span>
-        </div>`
-      )
+        </div>`;
+      })
       .join('');
-
-    let design: any = doc.receipt_design;
-    if (!design) {
-      try {
-        const cached = localStorage.getItem('boncore_receipt_design');
-        if (cached) design = JSON.parse(cached);
-      } catch (e) {}
-    }
-    const paperWidth = design?.paper_width === '58mm' ? '58mm' : '80mm';
-    const bodyWidth = design?.paper_width === '58mm' ? '52mm' : '74mm';
-    
-    // Tipografi kuralları
-    const headerFontSize = design?.header_size === 'xlarge' ? '17px' : design?.header_size === 'medium' ? '13px' : '15px';
-    const headerFontWeight = design?.header_weight === 'black' ? '900' : design?.header_weight === 'bold' ? '700' : design?.header_weight === 'semibold' ? '600' : '400';
-
-    const bodyFontSize = design?.body_size === 'large' ? '12.5px' : design?.body_size === 'small' ? '10px' : '11px';
-    const bodyFontWeight = design?.body_weight === 'black' ? '900' : design?.body_weight === 'bold' ? '700' : design?.body_weight === 'semibold' ? '600' : '400';
-
-    const subFontSize = design?.sub_size === 'normal' ? '10.5px' : design?.sub_size === 'xs' ? '8.5px' : '9.5px';
-    const subFontWeight = design?.sub_weight === 'black' ? '900' : design?.sub_weight === 'bold' ? '700' : design?.sub_weight === 'semibold' ? '600' : '400';
-
-    const totalWeight = design?.total_weight === 'bold' ? '700' : design?.total_weight === 'extrabold' ? '800' : '900';
-
-    // Çizgi ve Ayırıcı Kuralları (Düz Çizgi, Kalınlık)
-    const dividerStyle = design?.divider_style || 'solid';
-    const dividerThickness = design?.divider_thickness !== undefined ? design?.divider_thickness : 2;
-
-    const headerTitle = design?.header_title || doc.company_title || 'BONCORE RESTORAN';
-    const headerSub = design?.header_sub ? `<div class="center receipt-sub" style="margin-bottom:2px;">${design.header_sub}</div>` : '';
-    const footerMsg = design?.footer_message || 'TEŞEKKÜR EDERİZ • AFİYET OLSUN!';
-    const footerSub = design?.footer_sub ? `<div class="center receipt-sub" style="color:#555;margin-top:2px;">${design.footer_sub}</div>` : '';
-    const wifiInfo = design?.wifi_name ? `<div class="center receipt-sub" style="margin-top:3px;border-top:${dividerThickness}px ${dividerStyle} #000;padding-top:2px;">📶 Wi-Fi: <b>${design.wifi_name}</b> ${design.wifi_password ? `(Şifre: <b>${design.wifi_password}</b>)` : ''}</div>` : '';
-    const instagramInfo = design?.instagram ? `<div class="center receipt-sub">📷 Instagram: <b>${design.instagram}</b></div>` : '';
-    const customNote = design?.custom_note ? `<div class="center receipt-sub" style="font-style:italic;margin-top:2px;">${design.custom_note}</div>` : '';
-
-    // VKN ve E-Adisyon Fişi başlığı dinamik gösterimi (Adres & Şirket Bilgilerinden)
-    const vknValue = doc.vkn || localStorage.getItem('boncore_tax_number') || '3779901422';
-    const showVkn = design?.show_vkn !== false;
-    const showEAdisyon = design?.show_e_adisyon_title !== false;
-    const eAdisyonTitle = design?.e_adisyon_title_text || 'E-ADİSYON FİŞİ';
-
-    let vknAndTitleLine = '';
-    if (showVkn && showEAdisyon) {
-      vknAndTitleLine = `<div class="center receipt-sub">VKN: ${vknValue} • ${eAdisyonTitle}</div>`;
-    } else if (showVkn) {
-      vknAndTitleLine = `<div class="center receipt-sub">VKN: ${vknValue}</div>`;
-    } else if (showEAdisyon) {
-      vknAndTitleLine = `<div class="center receipt-sub">${eAdisyonTitle}</div>`;
-    }
 
     const html = `<!DOCTYPE html>
 <html>
@@ -136,85 +254,147 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
   <title>Adisyo Fişi - ${doc.doc_no || ''}</title>
   <style>
     @page { size: ${paperWidth} auto; margin: 3mm; }
+    * { box-sizing: border-box; }
     body {
-      font-family: 'Courier New', Courier, monospace;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
       width: ${bodyWidth};
       margin: 0 auto;
-      padding: 4px;
-      color: #000;
-      font-size: ${bodyFontSize};
-      line-height: 1.35;
+      padding: 8px 6px;
+      color: #0f172a;
+      background: #ffffff;
+      font-size: 12px;
+      line-height: 1.45;
     }
     .center { text-align: center; }
-    .bold { font-weight: 700; }
-    .receipt-header { font-size: ${headerFontSize}; font-weight: ${headerFontWeight}; }
-    .receipt-body { font-size: ${bodyFontSize}; font-weight: ${bodyFontWeight}; }
-    .receipt-sub { font-size: ${subFontSize}; font-weight: ${subFontWeight}; }
-    .receipt-total { font-size: 14px; font-weight: ${totalWeight}; }
-    .divider { border-top: ${dividerThickness}px ${dividerStyle} #000; margin: 6px 0; }
-    .double-divider { border-top: ${Math.max(dividerThickness, 2)}px solid #000; margin: 6px 0; }
-    table { width: 100%; border-collapse: collapse; font-size: ${bodyFontSize}; font-weight: ${bodyFontWeight}; }
-    th { border-bottom: 1px solid #000; padding-bottom: 3px; text-align: left; font-size: ${subFontSize}; font-weight: 700; }
-    .row { display: flex; justify-content: space-between; margin: 2px 0; }
+    .receipt-header {
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .divider {
+      border-top: 2px solid #0f172a;
+      margin: 8px 0;
+    }
+    .meta-section {
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin: 2px 0;
+    }
+    .table-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 700;
+      border-bottom: 1px solid #cbd5e1;
+      padding-bottom: 4px;
+      margin-bottom: 6px;
+    }
+    .col-name { width: 46%; text-align: left; }
+    .col-qty { width: 14%; text-align: center; }
+    .col-unit { width: 20%; text-align: right; }
+    .col-total { width: 20%; text-align: right; }
+    .item-block {
+      margin: 5px 0;
+    }
+    .item-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .item-variant {
+      font-size: 10.5px;
+      color: #64748b;
+      padding-left: 6px;
+      margin-top: 1px;
+    }
+    .subtotals {
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .vat-row {
+      color: #64748b;
+    }
+    .receipt-total {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 15px;
+      font-weight: 900;
+      padding: 2px 0;
+    }
+    .pay-row {
+      font-size: 11px;
+      font-weight: 700;
+      margin: 3px 0;
+    }
+    .footer-msg {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+    .footer-sub {
+      font-size: 10.5px;
+      font-weight: 600;
+      color: #64748b;
+      margin-top: 2px;
+    }
   </style>
 </head>
 <body>
-  ${design?.show_logo !== false ? '<div class="center" style="margin-bottom:4px;"><img src="/logo.png" style="max-height:36px;filter:grayscale(100%);" alt="Logo" onerror="this.style.display=\'none\'" /></div>' : ''}
   <div class="center receipt-header">${headerTitle}</div>
-  ${headerSub}
-  ${design?.show_address_phone !== false && doc.address ? `<div class="center receipt-sub">${doc.address}</div>` : ''}
-  ${vknAndTitleLine}
-  ${design?.show_order_no !== false ? `<div class="center receipt-sub">Belge No: ${doc.doc_no || '-'}</div>` : ''}
-  <div class="double-divider"></div>
-  ${design?.show_table_name !== false || design?.show_date_time !== false ? `
-  <div class="row receipt-sub">
-    ${design?.show_table_name !== false ? `<span><b>Masa:</b> ${doc.table_name || 'Hızlı Satış'}</span>` : '<span></span>'}
-    ${design?.show_date_time !== false ? `<span><b>Tarih:</b> ${doc.date || ''}</span>` : '<span></span>'}
-  </div>` : ''}
-  ${design?.show_waiter_name !== false || design?.show_date_time !== false ? `
-  <div class="row receipt-sub">
-    ${design?.show_waiter_name !== false ? `<span><b>Garson:</b> ${doc.waiter_name || '-'}</span>` : '<span></span>'}
-    ${design?.show_date_time !== false ? `<span><b>Saat:</b> ${doc.time || ''}</span>` : '<span></span>'}
-  </div>` : ''}
-  ${design?.show_waiter_name !== false && doc.cashier_name ? `
-  <div class="row receipt-sub">
-    <span><b>Kasiyer:</b> ${doc.cashier_name}</span>
-    <span></span>
-  </div>` : ''}
   <div class="divider"></div>
-  <table>
-    <thead>
-      <tr>
-        <th style="width:48%;">ÜRÜN</th>
-        <th style="width:12%;text-align:center;">MİKTAR</th>
-        <th style="width:20%;text-align:right;">BİRİM</th>
-        <th style="width:20%;text-align:right;">TUTAR</th>
-      </tr>
-    </thead>
-    <tbody class="receipt-body">
-      ${itemsRows}
-    </tbody>
-  </table>
-  <div class="divider"></div>
-  <div class="row receipt-sub"><span>Ara Toplam:</span><b>₺${Number(doc.subtotal || 0).toFixed(2)}</b></div>
-  ${doc.kuver > 0 ? `<div class="row receipt-sub"><span>Kuver Bedeli:</span><b>₺${Number(doc.kuver).toFixed(2)}</b></div>` : ''}
-  ${doc.service_charge > 0 ? `<div class="row receipt-sub"><span>Servis Bedeli:</span><b>₺${Number(doc.service_charge).toFixed(2)}</b></div>` : ''}
-  ${doc.discount > 0 ? `<div class="row receipt-sub"><span>İndirim:</span><b>-₺${Number(doc.discount).toFixed(2)}</b></div>` : ''}
-  ${doc.treat > 0 ? `<div class="row receipt-sub"><span>İkram:</span><b>-₺${Number(doc.treat).toFixed(2)}</b></div>` : ''}
-  ${design?.show_vat_breakdown !== false ? `<div class="row receipt-sub"><span>KDV (%10 Dahil):</span><span>₺${Number(doc.vat_summary?.vat_10?.tax || 0).toFixed(2)}</span></div>` : ''}
-  <div class="double-divider"></div>
-  <div class="row receipt-total">
-    <span>GENEL TOPLAM:</span>
-    <span>₺${Number(doc.grand_total || 0).toFixed(2)}</span>
+  <div class="meta-section">
+    <div class="row">
+      <span>Masa: ${doc.table_name || 'Masa'}</span>
+      <span>Tarih: ${formattedDate}</span>
+    </div>
+    <div class="row">
+      <span>Garson: ${doc.waiter_name || '-'}</span>
+      <span>Saat: ${formattedTime}</span>
+    </div>
+    <div class="row">
+      <span>Kasiyer: ${doc.cashier_name || 'Kasiyer'}</span>
+      <span></span>
+    </div>
   </div>
-  ${design?.show_payment_details !== false && paymentsRows ? `<div class="divider"></div>${paymentsRows}` : ''}
-  ${wifiInfo}
-  ${instagramInfo}
-  ${customNote}
-  <div class="double-divider"></div>
-  ${design?.show_qr_code !== false ? `<div class="center receipt-sub" style="word-break:break-all;">ETTN: ${doc.ettn || ''}</div>` : ''}
-  <div class="center receipt-sub" style="font-weight:700;margin-top:4px;">${footerMsg}</div>
-  ${footerSub}
+  <div class="divider"></div>
+  <div class="table-header">
+    <span class="col-name">ÜRÜN</span>
+    <span class="col-qty">ADET</span>
+    <span class="col-unit">BİRİM</span>
+    <span class="col-total">TUTAR</span>
+  </div>
+  <div>
+    ${itemsRows}
+  </div>
+  <div class="divider"></div>
+  <div class="subtotals">
+    <div class="row"><span>Ara Toplam:</span><b>₺${Number(doc.subtotal || 0).toFixed(2)}</b></div>
+    ${Number(doc.kuver || 0) > 0 ? `<div class="row"><span>Kuver Bedeli:</span><b>₺${Number(doc.kuver).toFixed(2)}</b></div>` : ''}
+    ${Number(doc.service_charge || 0) > 0 ? `<div class="row"><span>Servis Bedeli:</span><b>₺${Number(doc.service_charge).toFixed(2)}</b></div>` : ''}
+    ${Number(doc.discount || 0) > 0 ? `<div class="row"><span>İndirim:</span><b>-₺${Number(doc.discount).toFixed(2)}</b></div>` : ''}
+    ${Number(doc.treat || 0) > 0 ? `<div class="row"><span>İkram:</span><b>-₺${Number(doc.treat).toFixed(2)}</b></div>` : ''}
+    <div class="row vat-row"><span>KDV (%10 Dahil):</span><span>₺${vat10Tax.toFixed(2)}</span></div>
+  </div>
+  <div class="divider"></div>
+  <div class="receipt-total">
+    <span>GENEL TOPLAM:</span>
+    <span>₺${grandTotalNum.toFixed(2)}</span>
+  </div>
+  ${paymentsRows ? `<div class="divider"></div><div>${paymentsRows}</div>` : ''}
+  <div class="divider"></div>
+  <div class="center footer-msg">${footerMsg}</div>
+  ${footerSub ? `<div class="center footer-sub">${footerSub}</div>` : ''}
 </body>
 </html>`;
 
