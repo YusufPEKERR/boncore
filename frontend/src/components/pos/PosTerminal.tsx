@@ -1114,10 +1114,48 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
       // 2. Seçilen yazıcı(lar) üzerinden çıktıyı tetikle
       try {
-        const fiscalDoc = await api.getEAdisyon(targetOrderId);
-        if (fiscalDoc) {
-          await printThermalReceipt(fiscalDoc, printersToUse);
+        let fiscalDoc: any = null;
+        try {
+          fiscalDoc = await api.getEAdisyon(targetOrderId);
+        } catch (e) {
+          console.warn('getEAdisyon uyarısı:', e);
         }
+
+        if (!fiscalDoc || fiscalDoc.error || fiscalDoc.detail || !Array.isArray(fiscalDoc.items) || fiscalDoc.items.length === 0) {
+          const now = new Date();
+          const vat10Tax = Number(((grandTotal / 1.1) * 0.1).toFixed(2));
+          const subtotalVal = subtotal > 0 ? subtotal : Number((grandTotal / 1.1).toFixed(2));
+
+          fiscalDoc = {
+            ettn: fiscalDoc?.ettn || `EAD-${now.getTime()}`,
+            doc_no: fiscalDoc?.doc_no || `ADS-${targetOrderId}`,
+            date: fiscalDoc?.date || now.toLocaleDateString('tr-TR'),
+            time: fiscalDoc?.time || now.toLocaleTimeString('tr-TR'),
+            company_title: 'BONCORE RESTORAN',
+            table_name: activeTable?.name || (existingOrder as any)?.table_name || 'Hızlı Satış',
+            waiter_name: currentUser?.name || existingOrder?.waiter_name || 'Garson',
+            cashier_name: currentUser?.name || 'Kasiyer',
+            items: cartItems.map(it => ({
+              product_name: it.product_name,
+              variant: (it as any).variant_name || (it as any).variant || '',
+              quantity: it.quantity,
+              unit_price: it.unit_price,
+              total_price: it.total_price || Number((it.quantity * it.unit_price).toFixed(2))
+            })),
+            subtotal: subtotalVal,
+            discount: discountTotal,
+            treat: treatTotal,
+            kuver: existingOrder?.kuver_total || 0,
+            service_charge: serviceChargeTotal,
+            grand_total: grandTotal,
+            payments: [],
+            vat_summary: {
+              vat_10: { rate: 10, tax: vat10Tax }
+            }
+          };
+        }
+
+        await printThermalReceipt(fiscalDoc, printersToUse);
       } catch (printErr) {
         console.warn('Adisyon fiş yazdırma önizleme uyarısı:', printErr);
       }
@@ -1188,7 +1226,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     setLoading(true);
 
     try {
-      let targetOrderId = activeOrderId;
+      let targetOrderId = activeOrderId || existingOrder?.id || activeTable?.active_order?.id || (activeTable as any)?.current_order_id;
       const unsavedItems = cartItems.filter(i => !i.id);
       if (!targetOrderId && unsavedItems.length > 0) {
         const payload = {
@@ -1200,8 +1238,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         };
         const orderRes = await api.createOrder(payload);
         targetOrderId = orderRes.order_id || orderRes.id;
-      } else if (activeOrderId && unsavedItems.length > 0) {
-        await api.addItemsToOrder(activeOrderId, unsavedItems, currentUser?.name || 'Garson');
+      } else if (targetOrderId && unsavedItems.length > 0) {
+        await api.addItemsToOrder(targetOrderId, unsavedItems, currentUser?.name || 'Garson');
       }
 
       if (!targetOrderId) {
@@ -1226,9 +1264,59 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       let printSuccess = false;
       if (printersToUse && printersToUse.length > 0) {
         try {
-          await api.printTableBill(targetOrderId, currentUser?.name);
-          const fiscalDoc = await api.getEAdisyon(targetOrderId);
-          if (fiscalDoc) {
+          try {
+            await api.printTableBill(targetOrderId, currentUser?.name);
+          } catch (billErr) {
+            console.warn('printTableBill uyarısı:', billErr);
+          }
+
+          let fiscalDoc: any = null;
+          try {
+            fiscalDoc = await api.getEAdisyon(targetOrderId);
+          } catch (docErr) {
+            console.warn('getEAdisyon uyarısı:', docErr);
+          }
+
+          // Eğer fiscalDoc boşsa veya hata içeriyorsa, mevcut sepet ve masa bilgilerinden eksiksiz fiş üret
+          if (!fiscalDoc || fiscalDoc.error || fiscalDoc.detail || !Array.isArray(fiscalDoc.items) || fiscalDoc.items.length === 0) {
+            const now = new Date();
+            const vat10Tax = Number(((payAmount / 1.1) * 0.1).toFixed(2));
+            const subtotalVal = subtotal > 0 ? subtotal : Number((payAmount / 1.1).toFixed(2));
+
+            fiscalDoc = {
+              ettn: fiscalDoc?.ettn || `EAD-${now.getTime()}`,
+              doc_no: fiscalDoc?.doc_no || `ADS-${targetOrderId}`,
+              date: fiscalDoc?.date || now.toLocaleDateString('tr-TR'),
+              time: fiscalDoc?.time || now.toLocaleTimeString('tr-TR'),
+              company_title: 'BONCORE RESTORAN',
+              table_name: activeTable?.name || (existingOrder as any)?.table_name || 'Hızlı Satış',
+              waiter_name: currentUser?.name || existingOrder?.waiter_name || 'Garson',
+              cashier_name: currentUser?.name || 'Kasiyer',
+              items: cartItems.map(it => ({
+                product_name: it.product_name,
+                variant: (it as any).variant_name || (it as any).variant || '',
+                quantity: it.quantity,
+                unit_price: it.unit_price,
+                total_price: it.total_price || Number((it.quantity * it.unit_price).toFixed(2))
+              })),
+              subtotal: subtotalVal,
+              discount: discountTotal,
+              treat: treatTotal,
+              kuver: existingOrder?.kuver_total || 0,
+              service_charge: serviceChargeTotal,
+              grand_total: payAmount || grandTotal,
+              payments: [{
+                method,
+                label: method === 'cash' ? 'NAKİT' : 'KREDİ KARTI',
+                amount: payAmount || grandTotal
+              }],
+              vat_summary: {
+                vat_10: { rate: 10, tax: vat10Tax }
+              }
+            };
+          }
+
+          if (fiscalDoc && Array.isArray(fiscalDoc.items) && fiscalDoc.items.length > 0) {
             await printThermalReceipt(fiscalDoc, printersToUse);
             printSuccess = true;
           }

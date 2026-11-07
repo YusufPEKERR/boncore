@@ -65,8 +65,8 @@ func RegisterRoutes(app *fiber.App, svc *service.Services) {
 	// 9. Delivery, Couriers & Online Aggregators Router (/api/delivery) - Protected by RequireFeature("delivery")
 	RegisterDeliveryRoutes(apiGroup.Group("/delivery", middleware.RequireFeature("delivery", svc)), svc)
 
-	// 10. Fiscal & GIB E-Adisyon Router (/api/fiscal) - Protected by RequireFeature("fiscal")
-	RegisterFiscalRoutes(apiGroup.Group("/fiscal", middleware.RequireFeature("fiscal", svc)), svc)
+	// 10. Fiscal & GIB E-Adisyon Router (/api/fiscal) - Core restaurant receipt & adisyon generation
+	RegisterFiscalRoutes(apiGroup.Group("/fiscal"), svc)
 
 	// 11. Security & Audit Trail Router (/api/audit)
 	RegisterAuditRoutes(apiGroup.Group("/audit"), svc)

@@ -1097,7 +1097,7 @@ func RegisterFiscalRoutes(group fiber.Router, svc *service.Services) {
 			}
 		}
 
-		if err := requirePermission(c, svc, db, operatorName, []string{"order_print_bill", "order_manual_print"}, true, "Adisyon fişi yazdırma yetkiniz bulunmamaktadır."); err != nil {
+		if err := requirePermission(c, svc, db, operatorName, []string{"order_print_bill", "order_manual_print", "order_fast_pay", "order_take_payment"}, true, "Adisyon fişi yazdırma yetkiniz bulunmamaktadır."); err != nil {
 			return err
 		}
 

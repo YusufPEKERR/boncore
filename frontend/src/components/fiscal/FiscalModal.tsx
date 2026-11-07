@@ -14,7 +14,15 @@ interface FiscalModalProps {
 }
 
 export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) => {
-  if (!doc) return;
+  if (!doc || doc.error || doc.detail) {
+    console.warn('printThermalReceipt çağrıldı ancak doküman geçersiz veya hata içeriyor:', doc);
+    return;
+  }
+  // Dokümanda ürün listesi yoksa veya boşsa ve genel toplam 0 ise yazdırmayı engelle
+  if ((!doc.items || doc.items.length === 0) && (!doc.grand_total || Number(doc.grand_total) === 0)) {
+    console.warn('printThermalReceipt iptal edildi: Dokümanda ürün kalemi veya toplam tutar bulunamadı.', doc);
+    return;
+  }
 
   // 1. Kasa bilgisayarinda secili termal yazicilar varsa dogrudan ajan uzerinden yazdir
   const selectedPrinters = (targetPrinters && targetPrinters.length > 0)
