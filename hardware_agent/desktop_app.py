@@ -25,9 +25,9 @@ import requests
 import tkinter as tk
 from tkinter import ttk, messagebox
 import pystray
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageTk
 
-AGENT_VERSION = "2.2.0"
+AGENT_VERSION = "2.3.0"
 APP_TITLE = "BonCore Donanım Köprüsü"
 IPC_PORT = 49231
 
@@ -632,7 +632,260 @@ def start_ipc_listener(ipc_socket, callback_show):
     t.start()
 
 
-# --- ANA UYGULAMA SINIFI (MODERN WEB TEMASI) ---
+# ==============================================================
+# MODERN OVAL VE BEYAZ TEMA BİLEŞENLERİ (PIL DESTEKLİ CANVAS)
+# ==============================================================
+class RoundedCard(tk.Canvas):
+    def __init__(self, parent, bg_color="#ffffff", border_color="#e2e8f0", radius=16, border_width=1, **kwargs):
+        super().__init__(parent, bg=parent.cget("bg"), highlightthickness=0, bd=0, **kwargs)
+        self.bg_color = bg_color
+        self.border_color = border_color
+        self.radius = radius
+        self.border_width = border_width
+        self.pad = 16
+        self.inner_frame = tk.Frame(self, bg=bg_color)
+        self._win_id = self.create_window((self.pad, self.pad), window=self.inner_frame, anchor="nw")
+        self._bg_img = None
+        self.bind("<Configure>", self._on_resize)
+        self.inner_frame.bind("<Configure>", self._on_inner_resize)
+
+    def _on_inner_resize(self, e):
+        req_h = self.inner_frame.winfo_reqheight() + self.pad * 2
+        if req_h != self.winfo_height():
+            self.config(height=req_h)
+
+    def _on_resize(self, e):
+        w, h = e.width, e.height
+        if w < 10 or h < 10:
+            return
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        if self.border_color and self.border_width > 0:
+            draw.rounded_rectangle([(0, 0), (w - 1, h - 1)], radius=self.radius, fill=self.border_color)
+            bw = self.border_width
+            draw.rounded_rectangle([(bw, bw), (w - 1 - bw, h - 1 - bw)], radius=max(0, self.radius - bw), fill=self.bg_color)
+        else:
+            draw.rounded_rectangle([(0, 0), (w - 1, h - 1)], radius=self.radius, fill=self.bg_color)
+        self._bg_img = ImageTk.PhotoImage(img)
+        super().delete("card_bg")
+        self.create_image(0, 0, image=self._bg_img, anchor="nw", tags="card_bg")
+        self.tag_lower("card_bg")
+        self.coords(self._win_id, self.pad, self.pad)
+        self.itemconfigure(self._win_id, width=max(10, w - self.pad * 2))
+
+
+class RoundedDisplay(tk.Canvas):
+    def __init__(self, parent, bg_color="#f0fdf4", border_color="#bbf7d0", radius=14, **kwargs):
+        super().__init__(parent, bg=parent.cget("bg"), highlightthickness=0, bd=0, **kwargs)
+        self.bg_color = bg_color
+        self.border_color = border_color
+        self.radius = radius
+        self.pad_x = 16
+        self.pad_y = 12
+        self.inner_frame = tk.Frame(self, bg=bg_color)
+        self._win_id = self.create_window((self.pad_x, self.pad_y), window=self.inner_frame, anchor="nw")
+        self._bg_img = None
+        self.bind("<Configure>", self._on_resize)
+        self.inner_frame.bind("<Configure>", self._on_inner_resize)
+
+    def _on_inner_resize(self, e):
+        req_h = self.inner_frame.winfo_reqheight() + self.pad_y * 2
+        if req_h != self.winfo_height():
+            self.config(height=req_h)
+
+    def _on_resize(self, e):
+        w, h = e.width, e.height
+        if w < 10 or h < 10:
+            return
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle([(0, 0), (w - 1, h - 1)], radius=self.radius, fill=self.border_color)
+        draw.rounded_rectangle([(1, 1), (w - 2, h - 2)], radius=max(0, self.radius - 1), fill=self.bg_color)
+        self._bg_img = ImageTk.PhotoImage(img)
+        super().delete("disp_bg")
+        self.create_image(0, 0, image=self._bg_img, anchor="nw", tags="disp_bg")
+        self.tag_lower("disp_bg")
+        self.coords(self._win_id, self.pad_x, self.pad_y)
+        self.itemconfigure(self._win_id, width=max(10, w - self.pad_x * 2))
+
+
+class RoundedEntry(tk.Canvas):
+    def __init__(self, parent, bg_color="#ffffff", border_color="#cbd5e1", focus_color="#10b981", radius=10, width=200, height=36, font=("Segoe UI", 9, "bold"), fg_color="#0f172a", **kwargs):
+        super().__init__(parent, highlightthickness=0, bd=0, bg=parent.cget("bg"), width=width, height=height, **kwargs)
+        self.w = width
+        self.h = height
+        self.radius = radius
+        self.bg_color = bg_color
+        self.border_color = border_color
+        self.focus_color = focus_color
+        self.is_focused = False
+
+        self.entry = tk.Entry(
+            self,
+            font=font,
+            fg=fg_color,
+            bg=bg_color,
+            relief="flat",
+            insertbackground=focus_color,
+            bd=0,
+            highlightthickness=0
+        )
+        self._win = self.create_window((radius + 4, height // 2), window=self.entry, anchor="w", width=max(10, width - (radius + 4) * 2))
+
+        self._render()
+        self.entry.bind("<FocusIn>", self._on_focus_in)
+        self.entry.bind("<FocusOut>", self._on_focus_out)
+        self.bind("<Configure>", self._on_resize)
+
+    def _on_resize(self, e):
+        if e.width > 20 and e.height > 10:
+            self.w = e.width
+            self.h = e.height
+            self._render()
+            self.coords(self._win, self.radius + 4, self.h // 2)
+            self.itemconfigure(self._win, width=max(10, self.w - (self.radius + 4) * 2))
+
+    def _render(self):
+        super().delete("entry_bg")
+        bc = self.focus_color if self.is_focused else self.border_color
+        bw = 2 if self.is_focused else 1
+        img = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle([(0, 0), (self.w - 1, self.h - 1)], radius=self.radius, fill=bc)
+        draw.rounded_rectangle([(bw, bw), (self.w - 1 - bw, self.h - 1 - bw)], radius=max(0, self.radius - bw), fill=self.bg_color)
+        self._bg_img = ImageTk.PhotoImage(img)
+        self.create_image(0, 0, image=self._bg_img, anchor="nw", tags="entry_bg")
+        self.tag_lower("entry_bg")
+
+    def _on_focus_in(self, e):
+        self.is_focused = True
+        self._render()
+
+    def _on_focus_out(self, e):
+        self.is_focused = False
+        self._render()
+
+    def get(self):
+        return self.entry.get()
+
+    def insert(self, idx, text):
+        self.entry.insert(idx, text)
+
+    def delete(self, first, last=None):
+        self.entry.delete(first, last)
+
+    def bind_entry(self, sequence, func):
+        self.entry.bind(sequence, func)
+
+
+class RoundedButton(tk.Canvas):
+    def __init__(self, parent, text, command=None, bg_color="#10b981", hover_color="#059669", fg_color="#ffffff", border_color=None, radius=12, font=("Segoe UI", 9, "bold"), pad_x=14, pad_y=7, **kwargs):
+        super().__init__(parent, highlightthickness=0, bd=0, bg=parent.cget("bg"), **kwargs)
+        self.text = text
+        self.command = command
+        self.bg_color = bg_color
+        self.hover_color = hover_color
+        self.fg_color = fg_color
+        self.border_color = border_color
+        self.radius = radius
+        self.font = font
+        self.pad_x = pad_x
+        self.pad_y = pad_y
+        self.is_hovered = False
+
+        self._calc_size()
+        self.config(width=self.w, height=self.h, cursor="hand2")
+        self._render()
+
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<Button-1>", self._on_click)
+
+    def _calc_size(self):
+        lbl = tk.Label(self, text=self.text, font=self.font)
+        self.w = lbl.winfo_reqwidth() + self.pad_x * 2
+        self.h = lbl.winfo_reqheight() + self.pad_y * 2
+        lbl.destroy()
+
+    def _render(self):
+        super().delete("all")
+        col = self.hover_color if self.is_hovered else self.bg_color
+        img = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        if self.border_color:
+            draw.rounded_rectangle([(0, 0), (self.w - 1, self.h - 1)], radius=self.radius, fill=self.border_color)
+            draw.rounded_rectangle([(1, 1), (self.w - 2, self.h - 2)], radius=max(0, self.radius - 1), fill=col)
+        else:
+            draw.rounded_rectangle([(0, 0), (self.w - 1, self.h - 1)], radius=self.radius, fill=col)
+        self._img = ImageTk.PhotoImage(img)
+        self.create_image(0, 0, image=self._img, anchor="nw")
+        self.create_text(self.w // 2, self.h // 2, text=self.text, fill=self.fg_color, font=self.font)
+
+    def _on_enter(self, e):
+        self.is_hovered = True
+        self._render()
+
+    def _on_leave(self, e):
+        self.is_hovered = False
+        self._render()
+
+    def _on_click(self, e):
+        if self.command:
+            self.command()
+
+
+class RoundedBadge(tk.Canvas):
+    def __init__(self, parent, text="● KONTROL EDİLİYOR", status="warning", **kwargs):
+        super().__init__(parent, highlightthickness=0, bd=0, bg=parent.cget("bg"), **kwargs)
+        self.text = text
+        self.status = status
+        self.font = ("Segoe UI", 9, "bold")
+        self._update_colors()
+        self._render()
+
+    def _update_colors(self):
+        if self.status == "success":
+            self.bg_col = "#ecfdf5"
+            self.fg_col = "#059669"
+            self.border_col = "#a7f3d0"
+        elif self.status == "danger":
+            self.bg_col = "#fef2f2"
+            self.fg_col = "#dc2626"
+            self.border_col = "#fecaca"
+        elif self.status == "info":
+            self.bg_col = "#eff6ff"
+            self.fg_col = "#2563eb"
+            self.border_col = "#bfdbfe"
+        else:
+            self.bg_col = "#fffbeb"
+            self.fg_col = "#d97706"
+            self.border_col = "#fde68a"
+
+    def set_status(self, text, status="success"):
+        self.text = text
+        self.status = status
+        self._update_colors()
+        self._render()
+
+    def _render(self):
+        lbl = tk.Label(self, text=self.text, font=self.font)
+        tw = lbl.winfo_reqwidth()
+        th = lbl.winfo_reqheight()
+        lbl.destroy()
+        w = tw + 24
+        h = th + 12
+        self.config(width=w, height=h)
+        super().delete("all")
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle([(0, 0), (w - 1, h - 1)], radius=h // 2, fill=self.border_col)
+        draw.rounded_rectangle([(1, 1), (w - 2, h - 2)], radius=max(0, (h // 2) - 1), fill=self.bg_col)
+        self._img = ImageTk.PhotoImage(img)
+        self.create_image(0, 0, image=self._img, anchor="nw")
+        self.create_text(w // 2, h // 2, text=self.text, fill=self.fg_col, font=self.font)
+
+
+# --- ANA UYGULAMA SINIFI (MODERN BEYAZ TEMA & KURUMSAL RENKLER) ---
 class BonCoreHardwareDesktopApp:
     def __init__(self, root, is_hidden=False):
         self.root = root
@@ -640,11 +893,11 @@ class BonCoreHardwareDesktopApp:
         self.cfg = load_config()
 
         self.root.title(f"{APP_TITLE} • v{AGENT_VERSION}")
-        self.root.configure(bg="#0b0f19")  # BonCore Obsidian Dark
+        self.root.configure(bg="#f8fafc")  # Modern Açık Kurumsal Slate/Zemin
 
         # Pencere konumu ve boyutu
-        self.center_window(580, 720)
-        self.root.minsize(520, 640)
+        self.center_window(600, 740)
+        self.root.minsize(540, 660)
 
         # Otomatik başlangıç ayarını kontrol et ve uygula
         if self.cfg.get("auto_start", True):
@@ -812,31 +1065,29 @@ class BonCoreHardwareDesktopApp:
         sys.exit(0)
 
     # ==============================================================
-    # MODERN WEB TASARIMLI GRAFİK ARAYÜZ (SLATE & EMERALD)
+    # MODERN BEYAZ TEMALI VE OVAL KURUMSAL GRAFİK ARAYÜZ
     # ==============================================================
     def setup_ui(self):
-        # 1. HEADER (Obsidian #0c1424, Alt Yeşil Çizgi #10b981)
-        header = tk.Frame(self.root, bg="#0c1424", height=78, padx=20, pady=12)
+        # 1. HEADER (Beyaz Zemin #ffffff, Alt İnce Çizgi #e2e8f0, Oval Logo)
+        header = tk.Frame(self.root, bg="#ffffff", height=82, padx=22, pady=14)
         header.pack(fill="x", side="top")
 
         # Sol Başlık ve Amblem
-        brand_box = tk.Frame(header, bg="#0c1424")
+        brand_box = tk.Frame(header, bg="#ffffff")
         brand_box.pack(side="left", fill="y")
 
-        # Yeşil BonCore Logo Rozeti
-        logo_badge = tk.Label(
-            brand_box,
-            text=" B ",
-            font=("Segoe UI", 13, "bold"),
-            fg="#ffffff",
-            bg="#10b981",
-            padx=8,
-            pady=4,
-            relief="flat"
-        )
-        logo_badge.pack(side="left", padx=(0, 12))
+        # Oval Kurumsal Logo Rozeti (PIL Yuvarlatılmış Zümrüt Yeşili)
+        self.logo_canvas = tk.Canvas(brand_box, width=44, height=44, bg="#ffffff", highlightthickness=0, bd=0)
+        self.logo_canvas.pack(side="left", padx=(0, 14))
 
-        title_info = tk.Frame(brand_box, bg="#0c1424")
+        logo_img = Image.new("RGBA", (44, 44), (0, 0, 0, 0))
+        logo_draw = ImageDraw.Draw(logo_img)
+        logo_draw.rounded_rectangle([(0, 0), (43, 43)], radius=14, fill="#10b981")
+        self._logo_photo = ImageTk.PhotoImage(logo_img)
+        self.logo_canvas.create_image(0, 0, image=self._logo_photo, anchor="nw")
+        self.logo_canvas.create_text(22, 22, text="B", fill="#ffffff", font=("Segoe UI", 16, "bold"))
+
+        title_info = tk.Frame(brand_box, bg="#ffffff")
         title_info.pack(side="left")
 
         t_name = self.cfg.get("terminal_name", "Kasa 1")
@@ -844,8 +1095,8 @@ class BonCoreHardwareDesktopApp:
             title_info,
             text=f"BonCore • {t_name}",
             font=("Segoe UI", 13, "bold"),
-            fg="#ffffff",
-            bg="#0c1424"
+            fg="#0f172a",
+            bg="#ffffff"
         )
         self.lbl_title.pack(anchor="w")
 
@@ -854,33 +1105,27 @@ class BonCoreHardwareDesktopApp:
             title_info,
             text=f"IP: {local_ip}  •  ID: {self.cfg.get('terminal_id', 'kasa-1')}  •  v{AGENT_VERSION}",
             font=("Segoe UI", 9),
-            fg="#94a3b8",
-            bg="#0c1424"
+            fg="#64748b",
+            bg="#ffffff"
         )
         self.lbl_sub.pack(anchor="w")
 
-        # Sağ: Canlı Durum Rozeti (Pill Badge)
-        self.badge_status = tk.Label(
+        # Sağ: Canlı Durum Rozeti (Oval Hap Rozet - RoundedBadge)
+        self.badge_status = RoundedBadge(
             header,
             text="● KONTROL EDİLİYOR",
-            font=("Segoe UI", 9, "bold"),
-            fg="#facc15",
-            bg="#451a03",
-            padx=12,
-            pady=6,
-            relief="solid",
-            bd=1
+            status="warning"
         )
         self.badge_status.pack(side="right")
 
-        # Ayırıcı Yeşil Şerit
-        accent_line = tk.Frame(self.root, bg="#10b981", height=2)
+        # Üst Ayırıcı İnce Şerit (#e2e8f0)
+        accent_line = tk.Frame(self.root, bg="#e2e8f0", height=1)
         accent_line.pack(fill="x", side="top")
 
-        # 2. SCROLLABLE CONTENT BODY (Karanlık Web Sayfası Akışı)
-        canvas = tk.Canvas(self.root, bg="#0b0f19", highlightthickness=0)
+        # 2. SCROLLABLE CONTENT BODY (Açık Gri / Slate #f8fafc)
+        canvas = tk.Canvas(self.root, bg="#f8fafc", highlightthickness=0)
         scrollbar = tk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
-        self.scroll_content = tk.Frame(canvas, bg="#0b0f19", padx=18, pady=12)
+        self.scroll_content = tk.Frame(canvas, bg="#f8fafc", padx=20, pady=14)
 
         self.scroll_content.bind(
             "<Configure>",
@@ -899,156 +1144,156 @@ class BonCoreHardwareDesktopApp:
         canvas.pack(side="top", fill="both", expand=True)
 
         # -------------------------------------------------------------
-        # KART 1: BULUT SUNUCU & RESTORAN EŞLEŞMESİ
+        # KART 1: BULUT SUNUCU & RESTORAN EŞLEŞMESİ (OVAL KART)
         # -------------------------------------------------------------
-        card_server = tk.Frame(self.scroll_content, bg="#131b2e", padx=16, pady=14, highlightbackground="#1f293d", highlightthickness=1)
+        card_server = RoundedCard(self.scroll_content, bg_color="#ffffff", border_color="#e2e8f0", radius=16)
         card_server.pack(fill="x", pady=6)
+        c1 = card_server.inner_frame
 
-        c1_head = tk.Frame(card_server, bg="#131b2e")
+        c1_head = tk.Frame(c1, bg="#ffffff")
         c1_head.pack(fill="x", pady=(0, 10))
-        tk.Label(c1_head, text="🌐  Bulut POS Sunucusu & Restoran Eşleşmesi", font=("Segoe UI", 10, "bold"), fg="#38bdf8", bg="#131b2e").pack(side="left")
+        tk.Label(c1_head, text="🌐  Bulut POS Sunucusu & Restoran Eşleşmesi", font=("Segoe UI", 10, "bold"), fg="#0284c7", bg="#ffffff").pack(side="left")
 
         # Sunucu Adresi
-        f_srv = tk.Frame(card_server, bg="#131b2e")
+        f_srv = tk.Frame(c1, bg="#ffffff")
         f_srv.pack(fill="x", pady=4)
-        tk.Label(f_srv, text="Sunucu URL:", font=("Segoe UI", 9), fg="#94a3b8", bg="#131b2e", width=14, anchor="w").pack(side="left")
-        self.ent_server_url = tk.Entry(f_srv, font=("Segoe UI", 9, "bold"), fg="#f8fafc", bg="#0b0f19", relief="flat", insertbackground="#10b981", highlightbackground="#1f293d", highlightcolor="#10b981", highlightthickness=1)
+        tk.Label(f_srv, text="Sunucu URL:", font=("Segoe UI", 9, "bold"), fg="#475569", bg="#ffffff", width=14, anchor="w").pack(side="left")
+        self.ent_server_url = RoundedEntry(f_srv, bg_color="#f8fafc", border_color="#cbd5e1", focus_color="#10b981", radius=10, width=220, height=36, font=("Segoe UI", 9, "bold"), fg_color="#0f172a")
         self.ent_server_url.insert(0, self.cfg.get("server_url", "http://77.67.29.77"))
-        self.ent_server_url.pack(side="left", fill="x", expand=True, padx=(4, 8), ipady=3)
-        btn_save_url = tk.Button(f_srv, text="Kaydet", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#059669", activebackground="#047857", relief="flat", padx=10, pady=3, cursor="hand2", command=self.save_server_url)
+        self.ent_server_url.pack(side="left", fill="x", expand=True, padx=(4, 10))
+        btn_save_url = RoundedButton(f_srv, "Kaydet", command=self.save_server_url, bg_color="#10b981", hover_color="#059669", fg_color="#ffffff", radius=10, pad_x=14, pad_y=6)
         btn_save_url.pack(side="right")
 
         # Restoran Kodu
-        f_rc = tk.Frame(card_server, bg="#131b2e")
+        f_rc = tk.Frame(c1, bg="#ffffff")
         f_rc.pack(fill="x", pady=4)
-        tk.Label(f_rc, text="Restoran Kodu:", font=("Segoe UI", 9), fg="#94a3b8", bg="#131b2e", width=14, anchor="w").pack(side="left")
-        self.ent_restaurant_code = tk.Entry(f_rc, font=("Segoe UI", 9, "bold"), fg="#34d399", bg="#0b0f19", relief="flat", insertbackground="#10b981", highlightbackground="#1f293d", highlightcolor="#10b981", highlightthickness=1)
+        tk.Label(f_rc, text="Restoran Kodu:", font=("Segoe UI", 9, "bold"), fg="#475569", bg="#ffffff", width=14, anchor="w").pack(side="left")
+        self.ent_restaurant_code = RoundedEntry(f_rc, bg_color="#f8fafc", border_color="#cbd5e1", focus_color="#10b981", radius=10, width=220, height=36, font=("Segoe UI", 9, "bold"), fg_color="#0f172a")
         self.ent_restaurant_code.insert(0, self.cfg.get("restaurant_code", "boncore-kadikoy"))
-        self.ent_restaurant_code.pack(side="left", fill="x", expand=True, padx=(4, 8), ipady=3)
-        btn_save_rc = tk.Button(f_rc, text="Eşleştir", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#059669", activebackground="#047857", relief="flat", padx=10, pady=3, cursor="hand2", command=self.save_restaurant_code)
+        self.ent_restaurant_code.pack(side="left", fill="x", expand=True, padx=(4, 10))
+        btn_save_rc = RoundedButton(f_rc, "Eşleştir", command=self.save_restaurant_code, bg_color="#10b981", hover_color="#059669", fg_color="#ffffff", radius=10, pad_x=14, pad_y=6)
         btn_save_rc.pack(side="right")
 
         # Kasa İstasyon Adı
-        f_kasa = tk.Frame(card_server, bg="#131b2e")
+        f_kasa = tk.Frame(c1, bg="#ffffff")
         f_kasa.pack(fill="x", pady=4)
-        tk.Label(f_kasa, text="Kasa / İstasyon:", font=("Segoe UI", 9), fg="#94a3b8", bg="#131b2e", width=14, anchor="w").pack(side="left")
-        self.ent_terminal_name = tk.Entry(f_kasa, font=("Segoe UI", 9, "bold"), fg="#60a5fa", bg="#0b0f19", relief="flat", insertbackground="#10b981", highlightbackground="#1f293d", highlightcolor="#10b981", highlightthickness=1)
+        tk.Label(f_kasa, text="Kasa / İstasyon:", font=("Segoe UI", 9, "bold"), fg="#475569", bg="#ffffff", width=14, anchor="w").pack(side="left")
+        self.ent_terminal_name = RoundedEntry(f_kasa, bg_color="#f8fafc", border_color="#cbd5e1", focus_color="#10b981", radius=10, width=220, height=36, font=("Segoe UI", 9, "bold"), fg_color="#0f172a")
         self.ent_terminal_name.insert(0, self.cfg.get("terminal_name", "Kasa 1"))
-        self.ent_terminal_name.pack(side="left", fill="x", expand=True, padx=(4, 8), ipady=3)
-        btn_save_kasa = tk.Button(f_kasa, text="Güncelle", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#059669", activebackground="#047857", relief="flat", padx=10, pady=3, cursor="hand2", command=self.save_terminal_name)
+        self.ent_terminal_name.pack(side="left", fill="x", expand=True, padx=(4, 10))
+        btn_save_kasa = RoundedButton(f_kasa, "Güncelle", command=self.save_terminal_name, bg_color="#10b981", hover_color="#059669", fg_color="#ffffff", radius=10, pad_x=14, pad_y=6)
         btn_save_kasa.pack(side="right")
 
         self.lbl_server_status = tk.Label(
-            card_server,
+            c1,
             text="Durum: Sunucuya bağlanılıyor...",
             font=("Segoe UI", 9),
-            fg="#facc15",
-            bg="#131b2e"
+            fg="#d97706",
+            bg="#ffffff"
         )
         self.lbl_server_status.pack(anchor="w", pady=(8, 0))
 
         # -------------------------------------------------------------
-        # KART 2: CAS TERAZİ ENTEGRASYONU (CL-3000 / CL-5000 / DİJİTAL)
+        # KART 2: CAS TERAZİ ENTEGRASYONU (OVAL KART & OVAL GÖSTERGE)
         # -------------------------------------------------------------
-        card_scale = tk.Frame(self.scroll_content, bg="#131b2e", padx=16, pady=14, highlightbackground="#1f293d", highlightthickness=1)
+        card_scale = RoundedCard(self.scroll_content, bg_color="#ffffff", border_color="#e2e8f0", radius=16)
         card_scale.pack(fill="x", pady=6)
+        c2 = card_scale.inner_frame
 
-        c2_head = tk.Frame(card_scale, bg="#131b2e")
+        c2_head = tk.Frame(c2, bg="#ffffff")
         c2_head.pack(fill="x", pady=(0, 10))
-        tk.Label(c2_head, text="⚖️  CAS CL-3000 / CL-5000 Terazi (Ethernet TCP/IP & RS-232)", font=("Segoe UI", 10, "bold"), fg="#34d399", bg="#131b2e").pack(side="left")
+        tk.Label(c2_head, text="⚖️  CAS CL-3000 / CL-5000 Terazi (Ethernet TCP/IP & RS-232)", font=("Segoe UI", 10, "bold"), fg="#059669", bg="#ffffff").pack(side="left")
 
         # IP & Port Satırı
-        f_scale = tk.Frame(card_scale, bg="#131b2e")
+        f_scale = tk.Frame(c2, bg="#ffffff")
         f_scale.pack(fill="x", pady=4)
 
-        tk.Label(f_scale, text="Terazi IP:", font=("Segoe UI", 9), fg="#94a3b8", bg="#131b2e").pack(side="left")
-        self.ent_scale_ip = tk.Entry(f_scale, font=("Segoe UI", 9, "bold"), fg="#34d399", bg="#0b0f19", relief="flat", insertbackground="#10b981", highlightbackground="#1f293d", highlightcolor="#10b981", highlightthickness=1, width=16)
+        tk.Label(f_scale, text="Terazi IP:", font=("Segoe UI", 9, "bold"), fg="#475569", bg="#ffffff").pack(side="left")
+        self.ent_scale_ip = RoundedEntry(f_scale, bg_color="#f8fafc", border_color="#cbd5e1", focus_color="#10b981", radius=10, width=150, height=36, font=("Segoe UI", 9, "bold"), fg_color="#0f172a")
         self.ent_scale_ip.insert(0, self.cfg.get("scale_default_ip", "192.168.1.150"))
-        self.ent_scale_ip.pack(side="left", padx=6, ipady=3)
+        self.ent_scale_ip.pack(side="left", padx=(6, 8))
 
-        tk.Label(f_scale, text="Port:", font=("Segoe UI", 9), fg="#94a3b8", bg="#131b2e").pack(side="left", padx=(6, 2))
-        self.ent_scale_port = tk.Entry(f_scale, font=("Segoe UI", 9, "bold"), fg="#34d399", bg="#0b0f19", relief="flat", insertbackground="#10b981", highlightbackground="#1f293d", highlightcolor="#10b981", highlightthickness=1, width=6)
+        tk.Label(f_scale, text="Port:", font=("Segoe UI", 9, "bold"), fg="#475569", bg="#ffffff").pack(side="left", padx=(4, 2))
+        self.ent_scale_port = RoundedEntry(f_scale, bg_color="#f8fafc", border_color="#cbd5e1", focus_color="#10b981", radius=10, width=70, height=36, font=("Segoe UI", 9, "bold"), fg_color="#0f172a")
         self.ent_scale_port.insert(0, str(self.cfg.get("scale_default_port", 2004)))
-        self.ent_scale_port.pack(side="left", padx=4, ipady=3)
+        self.ent_scale_port.pack(side="left", padx=(4, 10))
 
-        btn_save_scale = tk.Button(f_scale, text="Bağlan & Kaydet", font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#059669", activebackground="#047857", relief="flat", padx=10, pady=3, cursor="hand2", command=self.save_scale_params)
-        btn_save_scale.pack(side="left", padx=(6, 0))
+        btn_save_scale = RoundedButton(f_scale, "Bağlan & Kaydet", command=self.save_scale_params, bg_color="#10b981", hover_color="#059669", fg_color="#ffffff", radius=10, pad_x=14, pad_y=6)
+        btn_save_scale.pack(side="left")
 
-        # Yüksek Teknolojili Dijital Gösterge Kutusu (Emerald Display)
-        f_display = tk.Frame(card_scale, bg="#022c22", padx=16, pady=10, highlightbackground="#059669", highlightthickness=1)
-        f_display.pack(fill="x", pady=10)
+        # Oval Kurumsal Dijital Gösterge Kutusu (Mint Display)
+        disp_card = RoundedDisplay(c2, bg_color="#f0fdf4", border_color="#bbf7d0", radius=14)
+        disp_card.pack(fill="x", pady=10)
+        f_display = disp_card.inner_frame
 
-        disp_left = tk.Frame(f_display, bg="#022c22")
+        disp_left = tk.Frame(f_display, bg="#f0fdf4")
         disp_left.pack(side="left")
 
-        tk.Label(disp_left, text="CANLI AĞIRLIK", font=("Segoe UI", 8, "bold"), fg="#059669", bg="#022c22").pack(anchor="w")
+        tk.Label(disp_left, text="CANLI AĞIRLIK", font=("Segoe UI", 8, "bold"), fg="#059669", bg="#f0fdf4").pack(anchor="w")
         self.lbl_weight_val = tk.Label(
             disp_left,
             text="0.000 kg",
             font=("Consolas", 24, "bold"),
-            fg="#34d399",
-            bg="#022c22"
+            fg="#047857",
+            bg="#f0fdf4"
         )
         self.lbl_weight_val.pack(anchor="w")
 
-        disp_right = tk.Frame(f_display, bg="#022c22")
+        disp_right = tk.Frame(f_display, bg="#f0fdf4")
         disp_right.pack(side="right")
 
         self.lbl_scale_conn = tk.Label(
             disp_right,
             text="● Terazi Aranıyor...",
             font=("Segoe UI", 9, "bold"),
-            fg="#94a3b8",
-            bg="#022c22"
+            fg="#64748b",
+            bg="#f0fdf4"
         )
-        self.lbl_scale_conn.pack(anchor="e", pady=(0, 4))
+        self.lbl_scale_conn.pack(anchor="e", pady=(0, 6))
 
-        btn_read_now = tk.Button(
+        btn_read_now = RoundedButton(
             disp_right,
             text="⚡ Anlık Tartım Oku",
-            font=("Segoe UI", 8, "bold"),
-            fg="#ffffff",
-            bg="#059669",
-            activebackground="#047857",
-            relief="flat",
-            padx=10,
-            pady=3,
-            cursor="hand2",
-            command=self.manual_read_scale
+            command=self.manual_read_scale,
+            bg_color="#059669",
+            hover_color="#047857",
+            fg_color="#ffffff",
+            radius=10,
+            pad_x=12,
+            pad_y=5
         )
         btn_read_now.pack(anchor="e")
 
         # -------------------------------------------------------------
         # KART 3: WINDOWS TERMAL YAZICILARI (ESC/POS)
         # -------------------------------------------------------------
-        card_printers = tk.Frame(self.scroll_content, bg="#131b2e", padx=16, pady=14, highlightbackground="#1f293d", highlightthickness=1)
+        card_printers = RoundedCard(self.scroll_content, bg_color="#ffffff", border_color="#e2e8f0", radius=16)
         card_printers.pack(fill="x", pady=6)
+        c3 = card_printers.inner_frame
 
-        c3_head = tk.Frame(card_printers, bg="#131b2e")
+        c3_head = tk.Frame(c3, bg="#ffffff")
         c3_head.pack(fill="x", pady=(0, 8))
-        tk.Label(c3_head, text="🖨️  Windows Termal Fiş Yazıcıları (ESC/POS)", font=("Segoe UI", 10, "bold"), fg="#f8fafc", bg="#131b2e").pack(side="left")
+        tk.Label(c3_head, text="🖨️  Windows Termal Fiş Yazıcıları (ESC/POS)", font=("Segoe UI", 10, "bold"), fg="#0f172a", bg="#ffffff").pack(side="left")
 
-        btn_test_print = tk.Button(
+        btn_test_print = RoundedButton(
             c3_head,
             text="📄 Test Fişi Yazdır",
-            font=("Segoe UI", 8, "bold"),
-            fg="#ffffff",
-            bg="#0284c7",
-            activebackground="#0369a1",
-            relief="flat",
-            padx=10,
-            pady=3,
-            cursor="hand2",
-            command=self.test_print_sample
+            command=self.test_print_sample,
+            bg_color="#0284c7",
+            hover_color="#0369a1",
+            fg_color="#ffffff",
+            radius=10,
+            pad_x=14,
+            pad_y=5
         )
         btn_test_print.pack(side="right")
 
         self.lbl_printers = tk.Label(
-            card_printers,
+            c3,
             text="Sistem yazıcıları taranıyor...",
             font=("Segoe UI", 9),
-            fg="#cbd5e1",
-            bg="#131b2e",
+            fg="#475569",
+            bg="#ffffff",
             justify="left"
         )
         self.lbl_printers.pack(anchor="w", pady=(4, 0))
@@ -1056,94 +1301,91 @@ class BonCoreHardwareDesktopApp:
         # -------------------------------------------------------------
         # KART 4: SİSTEM & BAŞLANGIÇ AYARLARI
         # -------------------------------------------------------------
-        card_opts = tk.Frame(self.scroll_content, bg="#131b2e", padx=16, pady=12, highlightbackground="#1f293d", highlightthickness=1)
+        card_opts = RoundedCard(self.scroll_content, bg_color="#ffffff", border_color="#e2e8f0", radius=16)
         card_opts.pack(fill="x", pady=6)
+        c4 = card_opts.inner_frame
 
-        tk.Label(card_opts, text="⚙️  Sistem ve Başlangıç Tercihleri", font=("Segoe UI", 10, "bold"), fg="#f8fafc", bg="#131b2e").pack(anchor="w", pady=(0, 6))
+        tk.Label(c4, text="⚙️  Sistem ve Başlangıç Tercihleri", font=("Segoe UI", 10, "bold"), fg="#0f172a", bg="#ffffff").pack(anchor="w", pady=(0, 6))
 
         self.var_autostart = tk.BooleanVar(value=is_windows_autostart())
         chk_autostart = tk.Checkbutton(
-            card_opts,
+            c4,
             text="Bilgisayar açıldığında otomatik ve arka planda (gizli) başlasın",
             variable=self.var_autostart,
             command=self.toggle_autostart,
             font=("Segoe UI", 9),
-            fg="#e2e8f0",
-            bg="#131b2e",
-            selectcolor="#0b0f19",
-            activebackground="#131b2e",
-            activeforeground="#34d399"
+            fg="#334155",
+            bg="#ffffff",
+            selectcolor="#f1f5f9",
+            activebackground="#ffffff",
+            activeforeground="#059669"
         )
-        chk_autostart.pack(anchor="w", pady=2)
+        chk_autostart.pack(anchor="w", pady=3)
 
         self.var_notif = tk.BooleanVar(value=self.cfg.get("show_notifications", True))
         chk_notif = tk.Checkbutton(
-            card_opts,
+            c4,
             text="Cihaz ve ağ bağlantısı koptuğunda / bağlandığında Windows bildirimi göster",
             variable=self.var_notif,
             command=self.toggle_notif,
             font=("Segoe UI", 9),
-            fg="#e2e8f0",
-            bg="#131b2e",
-            selectcolor="#0b0f19",
-            activebackground="#131b2e",
-            activeforeground="#34d399"
+            fg="#334155",
+            bg="#ffffff",
+            selectcolor="#f1f5f9",
+            activebackground="#ffffff",
+            activeforeground="#059669"
         )
-        chk_notif.pack(anchor="w", pady=2)
+        chk_notif.pack(anchor="w", pady=3)
 
-        # 3. FOOTER ACTION BAR (Obsidian #0c1424, Üst İnce Çizgi #1f293d)
-        footer = tk.Frame(self.root, bg="#0c1424", height=54, padx=20, pady=10, highlightbackground="#1f293d", highlightthickness=1)
+        # 3. FOOTER ACTION BAR (Beyaz Zemin, Üst Çizgi #e2e8f0, Oval Butonlar)
+        footer = tk.Frame(self.root, bg="#ffffff", height=60, padx=22, pady=12, highlightbackground="#e2e8f0", highlightthickness=1)
         footer.pack(fill="x", side="bottom")
 
-        btn_min = tk.Button(
+        btn_min = RoundedButton(
             footer,
             text="Saatin Yanında Gizle (Arka Plan)",
-            font=("Segoe UI", 9, "bold"),
-            fg="#f8fafc",
-            bg="#1e293b",
-            activebackground="#334155",
-            relief="flat",
-            padx=14,
-            pady=5,
-            cursor="hand2",
-            command=self.on_close_clicked
+            command=self.on_close_clicked,
+            bg_color="#0f172a",
+            hover_color="#1e293b",
+            fg_color="#ffffff",
+            radius=12,
+            pad_x=16,
+            pad_y=7
         )
         btn_min.pack(side="left")
 
-        btn_exit = tk.Button(
+        btn_exit = RoundedButton(
             footer,
             text="Kapat ve Çık",
-            font=("Segoe UI", 9),
-            fg="#ef4444",
-            bg="#131b2e",
-            activebackground="#450a0a",
-            relief="flat",
-            padx=12,
-            pady=5,
-            cursor="hand2",
-            command=self.quit_app
+            command=self.quit_app,
+            bg_color="#fef2f2",
+            hover_color="#fee2e2",
+            fg_color="#dc2626",
+            border_color="#fecaca",
+            radius=12,
+            pad_x=14,
+            pad_y=7
         )
         btn_exit.pack(side="right")
 
-        btn_refresh = tk.Button(
+        btn_refresh = RoundedButton(
             footer,
             text="Yenile",
-            font=("Segoe UI", 9),
-            fg="#94a3b8",
-            bg="#131b2e",
-            activebackground="#334155",
-            relief="flat",
-            padx=12,
-            pady=5,
-            cursor="hand2",
-            command=self.refresh_all_devices
+            command=self.refresh_all_devices,
+            bg_color="#f1f5f9",
+            hover_color="#e2e8f0",
+            fg_color="#475569",
+            border_color="#cbd5e1",
+            radius=12,
+            pad_x=14,
+            pad_y=7
         )
-        btn_refresh.pack(side="right", padx=8)
+        btn_refresh.pack(side="right", padx=10)
 
         # Kutulardan çıkıldığında veya Enter'a basıldığında otomatik kaydet
         for ent in [self.ent_server_url, self.ent_restaurant_code, self.ent_terminal_name, self.ent_scale_ip, self.ent_scale_port]:
-            ent.bind("<FocusOut>", lambda e: self.sync_entries_to_config(user_action=True))
-            ent.bind("<Return>", lambda e: self.sync_entries_to_config(user_action=True))
+            ent.bind_entry("<FocusOut>", lambda e: self.sync_entries_to_config(user_action=True))
+            ent.bind_entry("<Return>", lambda e: self.sync_entries_to_config(user_action=True))
 
     def save_server_url(self):
         new_url = self.ent_server_url.get().strip().rstrip("/")
@@ -1317,10 +1559,10 @@ class BonCoreHardwareDesktopApp:
             # GUI güncelle
             if self.scale_connected:
                 txt_scale = f"🟢 BAĞLI ({scale_ip}:{scale_port})"
-                color_scale = "#34d399"
+                color_scale = "#059669"
             else:
                 txt_scale = f"🔴 BAĞLANTI YOK ({scale_ip})"
-                color_scale = "#f87171"
+                color_scale = "#dc2626"
             self.root.after(0, lambda s=txt_scale, c=color_scale: self.lbl_scale_conn.config(text=s, fg=c))
 
             # Tepsi simgesi güncelle
@@ -1423,12 +1665,11 @@ class BonCoreHardwareDesktopApp:
                     self.server_connected = True
                     self.root.after(0, lambda: self.lbl_server_status.config(
                         text=f"🟢 Sunucuya Bağlı ({server_url})",
-                        fg="#34d399"
+                        fg="#059669"
                     ))
-                    self.root.after(0, lambda: self.badge_status.config(
-                        text="● ÇEVRİMİÇİ • BAĞLI",
-                        bg="#064e3b",
-                        fg="#34d399"
+                    self.root.after(0, lambda: self.badge_status.set_status(
+                        "● ÇEVRİMİÇİ • BAĞLI",
+                        status="success"
                     ))
                     if self.prev_server_ok is False:
                         self.show_toast("✅ Sunucu Bağlandı", "BonCore POS bulut sunucusuna başarıyla bağlanıldı.")
@@ -1508,12 +1749,11 @@ class BonCoreHardwareDesktopApp:
                     self.server_connected = False
                     self.root.after(0, lambda: self.lbl_server_status.config(
                         text=f"🔴 Sunucu Bağlantısı Kesildi ({server_url})",
-                        fg="#f87171"
+                        fg="#dc2626"
                     ))
-                    self.root.after(0, lambda: self.badge_status.config(
-                        text="● SUNUCU BAĞLANTISI YOK",
-                        bg="#450a0a",
-                        fg="#f87171"
+                    self.root.after(0, lambda: self.badge_status.set_status(
+                        "● SUNUCU BAĞLANTISI YOK",
+                        status="danger"
                     ))
                     if self.prev_server_ok is True:
                         self.show_toast("⚠️ Sunucu Bağlantısı Kesildi!", "BonCore bulut sunucusu ile bağlantı koptu. Otomatik tekrar bağlanılıyor...")

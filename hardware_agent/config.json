@@ -6,6 +6,8 @@
   "scale_default_ip": "192.168.1.150",
   "scale_default_port": 2004,
   "auto_start": true,
+  "start_hidden": true,
   "minimize_to_tray": true,
-  "show_notifications": true
+  "show_notifications": true,
+  "user_customized": false
 }
