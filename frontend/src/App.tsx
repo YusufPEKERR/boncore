@@ -1,49 +1,63 @@
-import React, { useState, useEffect } from 'react';
-import { Grid, FileText, ChefHat, Wallet, Menu, Shield } from 'lucide-react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { Grid, FileText, ChefHat, Wallet, Menu, Shield, Loader2 } from 'lucide-react';
 import { Header } from './components/layout/Header';
 import { AdisyoSidebar } from './components/layout/AdisyoSidebar';
-import { AdisyoDashboard } from './components/dashboard/AdisyoDashboard';
-import { AdisyoSettings } from './components/settings/AdisyoSettings';
-import { AdisyoProfile } from './components/profile/AdisyoProfile';
-import { AdisyoLogin } from './components/auth/AdisyoLogin';
-import { QrallPosModal } from './components/qr/QrallPosModal';
-import { OkcIntegrationModal } from './components/fiscal/OkcIntegrationModal';
-import { PinModal } from './components/layout/PinModal';
 import { FloorView } from './components/tables/FloorView';
 import { PosTerminal } from './components/pos/PosTerminal';
-import { KdsScreen } from './components/kds/KdsScreen';
-import { KitchenGroupsDefinitions } from './components/kds/KitchenGroupsDefinitions';
-import { CashierManagement } from './components/cashier/CashierManagement';
-import { CheckoutModal } from './components/cashier/CheckoutModal';
-import { DeliveryHub } from './components/delivery/DeliveryHub';
-import { InventoryManagement } from './components/inventory/InventoryManagement';
-import { QrMenuSimulator } from './components/qr/QrMenuSimulator';
-import { FiscalModal } from './components/fiscal/FiscalModal';
-import { AuditLogViewer } from './components/audit/AuditLogViewer';
-import { BuzzerListModal } from './components/tables/TableActionModals';
-import { BroadcastAnnouncementModal, ActiveAnnouncement } from './components/notifications/BroadcastAnnouncementModal';
-import { KitchenAlertsModal, KitchenReadyAlertItem } from './components/tables/KitchenAlertsModal';
-
-// New Video 3 Screen Components
-import { ProductDefinitions } from './components/products/ProductDefinitions';
-import { TableAreaDefinitions } from './components/tables/TableAreaDefinitions';
-import { RightsManagement } from './components/permissions/RightsManagement';
-import { UsersManagement } from './components/users/UsersManagement';
-import { RestaurantStatistics } from './components/reports/RestaurantStatistics';
-import { ClosedBillsReport } from './components/reports/ClosedBillsReport';
-import { ProductSalesReport } from './components/reports/ProductSalesReport';
-import { DayEndReport } from './components/reports/DayEndReport';
-import { AppStore } from './components/appstore/AppStore';
-import { MenuIntegrationOperations } from './components/integrations/MenuIntegrationOperations';
-import { CustomersLoyaltyView } from './components/modules/CustomersLoyaltyView';
-import { ReservationsView } from './components/modules/ReservationsView';
-import { CostProfitWizardView } from './components/modules/CostProfitWizardView';
-import { HotelFolioView } from './components/modules/HotelFolioView';
-import { KioskCfdView } from './components/modules/KioskCfdView';
-import { LandingPage } from './components/landing/LandingPage';
-import { MasterAdminLayout } from './components/master_admin/MasterAdminLayout';
-import { MasterLoginView } from './components/master_admin/MasterLoginView';
+import { AdisyoLogin } from './components/auth/AdisyoLogin';
 import { TabErrorBoundary } from './components/common/TabErrorBoundary';
+
+// Lazy-Loaded Heavy Views & Modals (Code-Splitting for Sub-Second Loading)
+const AdisyoDashboard = lazy(() => import('./components/dashboard/AdisyoDashboard').then(m => ({ default: m.AdisyoDashboard })));
+const AdisyoSettings = lazy(() => import('./components/settings/AdisyoSettings').then(m => ({ default: m.AdisyoSettings })));
+const AdisyoProfile = lazy(() => import('./components/profile/AdisyoProfile').then(m => ({ default: m.AdisyoProfile })));
+const QrallPosModal = lazy(() => import('./components/qr/QrallPosModal').then(m => ({ default: m.QrallPosModal })));
+const OkcIntegrationModal = lazy(() => import('./components/fiscal/OkcIntegrationModal').then(m => ({ default: m.OkcIntegrationModal })));
+const PinModal = lazy(() => import('./components/layout/PinModal').then(m => ({ default: m.PinModal })));
+const KdsScreen = lazy(() => import('./components/kds/KdsScreen').then(m => ({ default: m.KdsScreen })));
+const KitchenGroupsDefinitions = lazy(() => import('./components/kds/KitchenGroupsDefinitions').then(m => ({ default: m.KitchenGroupsDefinitions })));
+const CashierManagement = lazy(() => import('./components/cashier/CashierManagement').then(m => ({ default: m.CashierManagement })));
+const CheckoutModal = lazy(() => import('./components/cashier/CheckoutModal').then(m => ({ default: m.CheckoutModal })));
+const DeliveryHub = lazy(() => import('./components/delivery/DeliveryHub').then(m => ({ default: m.DeliveryHub })));
+const InventoryManagement = lazy(() => import('./components/inventory/InventoryManagement').then(m => ({ default: m.InventoryManagement })));
+const QrMenuSimulator = lazy(() => import('./components/qr/QrMenuSimulator').then(m => ({ default: m.QrMenuSimulator })));
+const FiscalModal = lazy(() => import('./components/fiscal/FiscalModal').then(m => ({ default: m.FiscalModal })));
+const AuditLogViewer = lazy(() => import('./components/audit/AuditLogViewer').then(m => ({ default: m.AuditLogViewer })));
+const BuzzerListModal = lazy(() => import('./components/tables/TableActionModals').then(m => ({ default: m.BuzzerListModal })));
+const BroadcastAnnouncementModal = lazy(() => import('./components/notifications/BroadcastAnnouncementModal').then(m => ({ default: m.BroadcastAnnouncementModal })));
+import type { ActiveAnnouncement } from './components/notifications/BroadcastAnnouncementModal';
+const KitchenAlertsModal = lazy(() => import('./components/tables/KitchenAlertsModal').then(m => ({ default: m.KitchenAlertsModal })));
+import type { KitchenReadyAlertItem } from './components/tables/KitchenAlertsModal';
+
+// New Video 3 Screen Components (Lazy Loaded)
+const ProductDefinitions = lazy(() => import('./components/products/ProductDefinitions').then(m => ({ default: m.ProductDefinitions })));
+const TableAreaDefinitions = lazy(() => import('./components/tables/TableAreaDefinitions').then(m => ({ default: m.TableAreaDefinitions })));
+const RightsManagement = lazy(() => import('./components/permissions/RightsManagement').then(m => ({ default: m.RightsManagement })));
+const UsersManagement = lazy(() => import('./components/users/UsersManagement').then(m => ({ default: m.UsersManagement })));
+const RestaurantStatistics = lazy(() => import('./components/reports/RestaurantStatistics').then(m => ({ default: m.RestaurantStatistics })));
+const ClosedBillsReport = lazy(() => import('./components/reports/ClosedBillsReport').then(m => ({ default: m.ClosedBillsReport })));
+const ProductSalesReport = lazy(() => import('./components/reports/ProductSalesReport').then(m => ({ default: m.ProductSalesReport })));
+const DayEndReport = lazy(() => import('./components/reports/DayEndReport').then(m => ({ default: m.DayEndReport })));
+const AppStore = lazy(() => import('./components/appstore/AppStore').then(m => ({ default: m.AppStore })));
+const MenuIntegrationOperations = lazy(() => import('./components/integrations/MenuIntegrationOperations').then(m => ({ default: m.MenuIntegrationOperations })));
+const CustomersLoyaltyView = lazy(() => import('./components/modules/CustomersLoyaltyView').then(m => ({ default: m.CustomersLoyaltyView })));
+const ReservationsView = lazy(() => import('./components/modules/ReservationsView').then(m => ({ default: m.ReservationsView })));
+const CostProfitWizardView = lazy(() => import('./components/modules/CostProfitWizardView').then(m => ({ default: m.CostProfitWizardView })));
+const HotelFolioView = lazy(() => import('./components/modules/HotelFolioView').then(m => ({ default: m.HotelFolioView })));
+const KioskCfdView = lazy(() => import('./components/modules/KioskCfdView').then(m => ({ default: m.KioskCfdView })));
+const LandingPage = lazy(() => import('./components/landing/LandingPage').then(m => ({ default: m.LandingPage })));
+const MasterAdminLayout = lazy(() => import('./components/master_admin/MasterAdminLayout').then(m => ({ default: m.MasterAdminLayout })));
+const MasterLoginView = lazy(() => import('./components/master_admin/MasterLoginView').then(m => ({ default: m.MasterLoginView })));
+
+// Ultra-Lightweight Suspense Fallback
+const TabLoadingFallback: React.FC = () => (
+  <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 select-none">
+    <div className="flex items-center gap-3 bg-white dark:bg-slate-900 px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md">
+      <Loader2 className="w-5 h-5 text-emerald-600 animate-spin" />
+      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Yükleniyor...</span>
+    </div>
+  </div>
+);
 
 import { Area, Category, Table, StaffUser } from './types';
 import { api } from './services/api';
@@ -787,50 +801,58 @@ export const App: React.FC = () => {
   if (viewMode === 'master_admin') {
     if (!isMasterAuth) {
       return (
-        <MasterLoginView
-          onLoginSuccess={handleMasterLoginSuccess}
-          onBackToLanding={handleGoToLanding}
-        />
+        <Suspense fallback={<TabLoadingFallback />}>
+          <MasterLoginView
+            onLoginSuccess={handleMasterLoginSuccess}
+            onBackToLanding={handleGoToLanding}
+          />
+        </Suspense>
       );
     }
     return (
-      <MasterAdminLayout
-        onLogout={handleMasterLogout}
-        onGoToLanding={handleGoToLanding}
-        onGoToPos={() => {
-          sound.beep();
-          setViewMode('app');
-          window.location.hash = activeTab || 'tables';
-        }}
-      />
+      <Suspense fallback={<TabLoadingFallback />}>
+        <MasterAdminLayout
+          onLogout={handleMasterLogout}
+          onGoToLanding={handleGoToLanding}
+          onGoToPos={() => {
+            sound.beep();
+            setViewMode('app');
+            window.location.hash = activeTab || 'tables';
+          }}
+        />
+      </Suspense>
     );
   }
 
   if (viewMode === 'master_login') {
     return (
-      <MasterLoginView
-        onLoginSuccess={handleMasterLoginSuccess}
-        onBackToLanding={handleGoToLanding}
-      />
+      <Suspense fallback={<TabLoadingFallback />}>
+        <MasterLoginView
+          onLoginSuccess={handleMasterLoginSuccess}
+          onBackToLanding={handleGoToLanding}
+        />
+      </Suspense>
     );
   }
 
   // 2. Landing Page (Adisyo.com Tarzı Satış & Pazarlama Anasayfası)
   if (viewMode === 'landing') {
     return (
-      <LandingPage
-        onOpenLogin={handleOpenLogin}
-        onOpenMasterAdmin={handleOpenMasterAdmin}
-        onGoToApp={() => {
-          sound.beep();
-          setViewMode('app');
-          window.location.hash = activeTab || 'tables';
-        }}
-        currentUser={currentUser}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        onQuickDemoLogin={handleQuickDemoLogin}
-      />
+      <Suspense fallback={<TabLoadingFallback />}>
+        <LandingPage
+          onOpenLogin={handleOpenLogin}
+          onOpenMasterAdmin={handleOpenMasterAdmin}
+          onGoToApp={() => {
+            sound.beep();
+            setViewMode('app');
+            window.location.hash = activeTab || 'tables';
+          }}
+          currentUser={currentUser}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onQuickDemoLogin={handleQuickDemoLogin}
+        />
+      </Suspense>
     );
   }
 
@@ -920,7 +942,7 @@ export const App: React.FC = () => {
             </div>
           </div>
         ) : (
-        <>
+        <Suspense fallback={<TabLoadingFallback />}>
         {activeTab === 'dashboard' && (
           <AdisyoDashboard
             areas={areas}
@@ -1070,7 +1092,7 @@ export const App: React.FC = () => {
         {activeTab === 'hotel' && <HotelFolioView />}
 
         {activeTab === 'kiosk' && <KioskCfdView categories={categories} />}
-        </>
+        </Suspense>
         )}
         </TabErrorBoundary>
       </main>
@@ -1166,7 +1188,8 @@ export const App: React.FC = () => {
         ))}
       </div>
 
-      {/* Modals */}
+      {/* Modals with Lazy Suspense */}
+      <Suspense fallback={null}>
       <PinModal
         isOpen={isPinModalOpen}
         onClose={() => setIsPinModalOpen(false)}
@@ -1248,6 +1271,7 @@ export const App: React.FC = () => {
         announcement={activeAnnouncement}
         onDismiss={handleDismissAnnouncement}
       />
+      </Suspense>
     </div>
   );
 };

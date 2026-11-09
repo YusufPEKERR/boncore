@@ -15,6 +15,7 @@ import (
 	"github.com/boncore/pos-backend/internal/service"
 	"github.com/boncore/pos-backend/internal/ws"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -59,6 +60,11 @@ func main() {
 		EnableStackTrace: true,
 	}))
 	app.Use(logger.New())
+
+	// High-Performance Gzip / Brotli Compression Middleware
+	app.Use(compress.New(compress.Config{
+		Level: compress.LevelBestSpeed,
+	}))
 
 	// CORS Configuration (100% parity with backend/app/main.py)
 	app.Use(cors.New(cors.Config{

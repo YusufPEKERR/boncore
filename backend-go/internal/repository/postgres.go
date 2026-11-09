@@ -657,6 +657,14 @@ func (dm *DatabaseManager) AutoMigrateTenant(db *gorm.DB) error {
 		return err
 	}
 
+	// Performance Indexes for high-frequency queries
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_orders_table_status ON orders (table_id, status);`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders (status, created_at);`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_order_items_order_status ON order_items (order_id, status);`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_payments_order_id ON payments (order_id);`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_tables_area_id ON tables (area_id);`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_products_category_id ON products (category_id);`)
+
 	if db.Dialector.Name() == "postgres" {
 		// JSONB GIN Indexes for sub-millisecond dynamic order variation & allergen queries
 		db.Exec(`CREATE INDEX IF NOT EXISTS idx_order_items_selected_modifiers_gin ON order_items USING GIN (selected_modifiers);`)
