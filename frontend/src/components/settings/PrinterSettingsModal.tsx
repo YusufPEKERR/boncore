@@ -97,6 +97,8 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
     delivery_order: 1,
     post_payment: 1
   });
+  const [paperWidth, setPaperWidth] = useState<'80mm' | '58mm'>('80mm');
+  const [lineWidth, setLineWidth] = useState<number>(42);
   const [assignToThisDevice, setAssignToThisDevice] = useState(true);
   const [searchCategory, setSearchCategory] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -157,6 +159,8 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
       setMainChannel(config.revenue_center?.main_channel ?? true);
       setPrintOnOrderSave(Boolean(config.settings?.print_on_order_save));
       setPrintOnIntegration(Boolean(config.settings?.print_on_integration_approved));
+      setPaperWidth((config.settings?.paper_width as any) || '80mm');
+      setLineWidth(config.settings?.line_width || (config.settings?.paper_width === '58mm' ? 32 : 48));
       setCopies({
         table_order: Math.max(1, Number(config.settings?.copies?.table_order) || 1),
         takeaway_order: Math.max(1, Number(config.settings?.copies?.takeaway_order) || 1),
@@ -181,6 +185,8 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
       setKitchenGroups([]);
       setPrintOnOrderSave(false);
       setPrintOnIntegration(false);
+      setPaperWidth('80mm');
+      setLineWidth(42);
       setCopies({
         table_order: 1,
         takeaway_order: 1,
@@ -281,6 +287,8 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
       settings: {
         print_on_order_save: printOnOrderSave,
         print_on_integration_approved: printOnIntegration,
+        paper_width: paperWidth,
+        line_width: lineWidth,
         copies: {
           table_order: Math.max(1, Number(copies.table_order) || 1),
           takeaway_order: Math.max(1, Number(copies.takeaway_order) || 1),
@@ -548,6 +556,57 @@ export const PrinterSettingsModal: React.FC<PrinterSettingsModalProps> = ({
                     onChange={setPrintOnIntegration}
                   />
                 </div>
+              </div>
+
+              {/* KAĞIT & RULO GENİŞLİĞİ */}
+              <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
+                <div className="text-[11px] font-black tracking-wider text-slate-400 dark:text-slate-500 uppercase pb-2">
+                  KAĞIT & RULO GENİŞLİĞİ (TERMAL)
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setPaperWidth('80mm'); setLineWidth(48); }}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      paperWidth === '80mm'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-900 dark:bg-emerald-950/40 dark:border-emerald-600 dark:text-emerald-200 font-extrabold ring-1 ring-emerald-500'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 font-medium'
+                    }`}
+                  >
+                    <div className="text-xs font-black">80 mm (Standart)</div>
+                    <div className="text-[10px] opacity-75 mt-0.5">Mutfak & Kasa Rulosu (Tam genişlik)</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setPaperWidth('58mm'); setLineWidth(32); }}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      paperWidth === '58mm'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-900 dark:bg-emerald-950/40 dark:border-emerald-600 dark:text-emerald-200 font-extrabold ring-1 ring-emerald-500'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 font-medium'
+                    }`}
+                  >
+                    <div className="text-xs font-black">58 mm (Dar Fiş)</div>
+                    <div className="text-[10px] opacity-75 mt-0.5">Mobil & El Terminalleri (32 Karakter)</div>
+                  </button>
+                </div>
+
+                {paperWidth === '80mm' && (
+                  <div className="mt-2 flex items-center justify-between text-xs bg-slate-50 dark:bg-slate-800/60 p-2 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                    <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                      80mm Karakter Genişliği:
+                    </span>
+                    <select
+                      value={lineWidth}
+                      onChange={(e) => setLineWidth(Number(e.target.value))}
+                      className="px-2 py-1 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
+                    >
+                      <option value={48}>48 Karakter (Tam Rulo Genişliği - Kenara Sıfır - Önerilen)</option>
+                      <option value={42}>42 Karakter (Yanlarda Boşluk Bırakan 80mm)</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               {/* SİPARİŞ TİPİNE GÖRE NÜSHA SAYISI */}

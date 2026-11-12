@@ -271,7 +271,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none animate-fadeIn font-sans transition-colors duration-200 space-y-4 sm:space-y-6">
+    <div className="flex-1 min-h-full overflow-y-auto p-3 sm:p-6 pb-28 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none animate-fadeIn font-sans transition-colors duration-200 space-y-4 sm:space-y-6">
       {/* Toast Notification */}
       {toast && (
         <div className={`p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-lg transition-all animate-slideDown ${

@@ -635,7 +635,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
 
         {/* VIEW 1: GRID MODE WITH REORDERING & QUICK MOVE */}
         {viewMode === 'grid' && (
-          <div className="flex-1 overflow-y-auto p-3 sm:p-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-4 content-start">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-6 pb-28 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-4 content-start">
             {displayedTables.map((t, idx) => (
               <div
                 key={t.id}

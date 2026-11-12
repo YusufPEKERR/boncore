@@ -1213,6 +1213,9 @@ var defaultSettingsMap = map[string]interface{}{
 	"getir_webhook_active":       true,
 	"trendyol_webhook_active":    true,
 	"sound_alerts":               true,
+	"auto_z_report_enabled":      false,
+	"auto_z_report_time":         "04:00",
+	"auto_z_report_force_close":  true,
 }
 
 func loadKitchenGroupsFromSettings(db *gorm.DB) []map[string]interface{} {
@@ -1694,8 +1697,10 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		zw := zip.NewWriter(&buf)
 
 		filesToBundle := []string{
-			"BonCoreAgent.exe",
+			"BonCoreDonanimKoprusuSetup.exe",
+			"BonCoreCertificate.cer",
 			"Kurulum.bat",
+			"BonCoreAgent.exe",
 			"boncore_agent.py",
 			"desktop_app.py",
 			"run_agent.bat",
@@ -1774,6 +1779,23 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		c.Set("Access-Control-Expose-Headers", "Content-Disposition")
 		c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"boncore-hardware-agent-%s.zip\"", cleanAscii))
 		return c.Send(buf.Bytes())
+	})
+
+	group.Get("/setup", func(c *fiber.Ctx) error {
+		candidates := []string{
+			filepath.Join("hardware_agent", "BonCoreDonanimKoprusuSetup.exe"),
+			filepath.Join("..", "hardware_agent", "BonCoreDonanimKoprusuSetup.exe"),
+			filepath.Join("hardware_agent", "dist", "BonCoreDonanimKoprusuSetup.exe"),
+			`C:\Users\Administrator\Documents\BonCore\hardware_agent\BonCoreDonanimKoprusuSetup.exe`,
+		}
+		for _, p := range candidates {
+			if _, err := os.Stat(p); err == nil {
+				c.Set("Content-Type", "application/octet-stream")
+				c.Set("Content-Disposition", "attachment; filename=\"BonCoreDonanimKoprusuSetup.exe\"")
+				return c.SendFile(p)
+			}
+		}
+		return c.Status(fiber.StatusNotFound).SendString("BonCoreDonanimKoprusuSetup.exe bulunamadi")
 	})
 
 	group.Get("/raw-exe", func(c *fiber.Ctx) error {
@@ -2282,11 +2304,11 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 
 	group.Get("/agent/version", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
-			"latest_version": "2.4.0",
-			"release_date":   "2026-04-16",
+			"latest_version": "2.4.4",
+			"release_date":   time.Now().Format("2006-01-02"),
 			"mandatory":      false,
-			"download_url":   "/downloads/BonCore-Hardware-Bridge-Setup.exe",
-			"changelog":      "Otomatik terazi COM port tarama, ESC/POS fiş kuyruğu ve Caller-ID stabilite güncellemesi.",
+			"download_url":   "/api/scale/setup",
+			"changelog":      "Guncelleme motorundaki gecici dosya ve dizin yonetimi optimize edildi. Otomatik yeniden baslatma ve bildirim guclendirildi.",
 		})
 	})
 
@@ -2295,7 +2317,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		_ = c.BodyParser(&payload)
 
 		reqID := fmt.Sprintf("%v", payload["req_id"])
-		log.Printf("[BRIDGE REPORT] Received report for %s: success=%v, msg=%v, results=%v", reqID, payload["success"], payload["message"], payload["results"])
+		log.Printf("[BRIDGE REPORT] Received report for %s: success=%v, err=%v, msg=%v, weight=%v", reqID, payload["success"], payload["error"], payload["message"], payload["weight"])
 		if reqID != "" && reqID != "<nil>" {
 			bridgeMu.Lock()
 			completedBridgeResults[reqID] = payload
@@ -2417,7 +2439,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			rawText = strings.Join(payload.Lines, "\n")
 		}
 		if rawText == "" {
-			rawText = fmt.Sprintf("================================\n        BONCORE POS TEST        \n================================\nTarih: %s\nYazici Testi Basarili!\n================================\n\n\n\n", time.Now().Format("02.01.2006 15:04:05"))
+			rawText = fmt.Sprintf("==========================================\n          BONCORE POS TEST FISI           \n==========================================\nTarih: %s\nYazici Donanim Iletisimi Basarili!\n==========================================\n\n\n\n", time.Now().Format("02.01.2006 15:04:05"))
 		}
 
 		// Extract printers & strip IP prefix (e.g. "192.168.1.101::DYMO" -> "DYMO")
@@ -2613,6 +2635,114 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			"status":  "timeout",
 			"error":   "Yazıcı kuyruğu zaman aşımına uğradı. Yazıcının açık ve hazır olduğunu kontrol edip tekrar deneyin.",
 			"message": "Yazıcı kuyruğu zaman aşımına uğradı. Yazıcının açık ve hazır olduğunu kontrol edip tekrar deneyin.",
+		})
+	})
+
+	group.Get("/weight", func(c *fiber.Ctx) error {
+		db, _, err := getTenantDB(c, svc)
+		if err != nil {
+			return err
+		}
+		ip := strings.TrimSpace(c.Query("ip"))
+		portStr := strings.TrimSpace(c.Query("port"))
+		terminalID := strings.TrimSpace(c.Query("terminal_id"))
+
+		terminals := loadTerminalsList(db)
+		nowTs := float64(time.Now().Unix())
+
+		var targetTerm map[string]interface{}
+		for _, t := range terminals {
+			currID := fmt.Sprintf("%v", t["id"])
+			currTID := fmt.Sprintf("%v", t["terminal_id"])
+			currIP := fmt.Sprintf("%v", t["local_ip"])
+			if terminalID != "" && (currID == terminalID || currTID == terminalID || currIP == terminalID) {
+				targetTerm = t
+				break
+			}
+		}
+		if targetTerm == nil {
+			// Find online terminal (e.g. kasa_192_168_0_120)
+			for _, t := range terminals {
+				lastTs, _ := t["last_heartbeat_ts"].(float64)
+				if lastTs == 0 {
+					lastTs, _ = t["last_seen"].(float64)
+				}
+				if (nowTs - lastTs) < 25.0 {
+					targetTerm = t
+					break
+				}
+			}
+		}
+
+		if targetTerm != nil {
+			tID := fmt.Sprintf("%v", targetTerm["id"])
+			targetIP := ip
+			if targetIP == "" {
+				if sIP, ok := targetTerm["custom_scale_ip"].(string); ok && sIP != "" {
+					targetIP = sIP
+				} else if sIP, ok := targetTerm["scale_ip"].(string); ok && sIP != "" {
+					targetIP = sIP
+				} else {
+					targetIP = "192.168.0.15"
+				}
+			}
+			targetPort := 20304
+			if portStr != "" {
+				if pInt, err := strconv.Atoi(portStr); err == nil && pInt > 0 {
+					targetPort = pInt
+				}
+			} else if sPort, ok := targetTerm["custom_scale_port"].(float64); ok && sPort > 0 {
+				targetPort = int(sPort)
+			} else if sPort, ok := targetTerm["scale_port"].(float64); ok && sPort > 0 {
+				targetPort = int(sPort)
+			}
+
+			reqID := fmt.Sprintf("scale_%d", time.Now().UnixNano())
+			bridgeMu.Lock()
+			pendingBridgeCommands[reqID] = map[string]interface{}{
+				"terminal_id": tID,
+				"action":      "read_weight",
+				"ip":          targetIP,
+				"port":        targetPort,
+				"timeout":     2.5,
+				"created_at":  nowTs,
+			}
+			bridgeMu.Unlock()
+
+			// Wait up to 3 seconds for agent to report back
+			for i := 0; i < 30; i++ {
+				time.Sleep(100 * time.Millisecond)
+				bridgeMu.Lock()
+				if res, ok := completedBridgeResults[reqID]; ok {
+					delete(completedBridgeResults, reqID)
+					bridgeMu.Unlock()
+					return c.JSON(res)
+				}
+				bridgeMu.Unlock()
+			}
+
+			// If last_weight exists and is fresh
+			if lastW, ok := targetTerm["last_weight"].(float64); ok && lastW > 0 {
+				return c.JSON(fiber.Map{
+					"success":   true,
+					"weight":    lastW,
+					"unit":      "kg",
+					"is_stable": true,
+					"bridge":    fmt.Sprintf("%v (Önbellek: %.3f Kg)", targetTerm["name"], lastW),
+				})
+			}
+
+			return c.JSON(fiber.Map{
+				"success": false,
+				"weight":  0.0,
+				"error":   fmt.Sprintf("CAS CL-3000 teraziden tartım yanıtı alınamadı (%s:%d). Terazinin açık ve kefesinde ürün olduğundan emin olun.", targetIP, targetPort),
+			})
+		}
+
+		return c.JSON(fiber.Map{
+			"success": false,
+			"weight":  0.0,
+			"error":   "Kasa bilgisayarında BonCore Donanım Ajanı çevrimdışı. Lütfen ajanı açın.",
 		})
 	})
 
@@ -3249,6 +3379,10 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 		})
 	})
 
+	group.Get("/costs", func(c *fiber.Ctx) error {
+		return c.Redirect("/api/modules/cost-profit", fiber.StatusTemporaryRedirect)
+	})
+
 	group.Get("/hotel", func(c *fiber.Ctx) error {
 		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
@@ -3480,126 +3614,6 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 }
 
 // ============================================================================
-// 15. MOBILE APK UPDATE ROUTER (/api/app)
-// ============================================================================
-
-func RegisterAppUpdateRoutes(group fiber.Router, svc *service.Services) {
-	apkDir := filepath.Clean("../backend/static/apk")
-	_ = os.MkdirAll(apkDir, 0755)
-	apkFilePath := filepath.Join(apkDir, "boncore-pos.apk")
-	versionFilePath := filepath.Join(apkDir, "version.json")
-
-	loadVersionInfo := func() map[string]interface{} {
-		defaultInfo := map[string]interface{}{
-			"version_code": 250,
-			"version_name": "2.5.0",
-			"release_date": "2026-10-29",
-			"download_url": "/api/app/download",
-			"changelog": []string{
-				"BonCore POS Android El Terminali ve Tablet sürümü yayınlandı.",
-				"Otomatik web güncelleme entegrasyonu (Canlı menü & sipariş akışı).",
-				"Ekran açık tutma (WakeLock) ve dokunmatik titreşim (Haptik) desteği.",
-				"Kamera ile hızlı barkod / QR okuma altyapısı.",
-				"Kendi kendini güncelleyebilen OTA (Over-The-Air) APK mekanizması.",
-			},
-		}
-		if data, err := os.ReadFile(versionFilePath); err == nil {
-			var parsed map[string]interface{}
-			if err := json.Unmarshal(data, &parsed); err == nil {
-				for k, v := range parsed {
-					defaultInfo[k] = v
-				}
-			}
-		}
-		return defaultInfo
-	}
-
-	group.Get("/version", func(c *fiber.Ctx) error {
-		info := loadVersionInfo()
-		hasApk := false
-		var fileSizeMB float64 = 0
-		if st, err := os.Stat(apkFilePath); err == nil {
-			hasApk = true
-			fileSizeMB = math.Round((float64(st.Size())/(1024*1024))*100) / 100
-		}
-		info["is_apk_available"] = hasApk
-		info["file_size_mb"] = fileSizeMB
-		info["version"] = info["version_name"]
-		return c.JSON(info)
-	})
-
-	group.Get("/download", func(c *fiber.Ctx) error {
-		if _, err := os.Stat(apkFilePath); err != nil {
-			return fiber.NewError(fiber.StatusNotFound, "Henüz indirilmeye hazır bir Android APK paketi bulunmuyor.")
-		}
-		info := loadVersionInfo()
-		vName, _ := info["version_name"].(string)
-		if vName == "" {
-			vName = "2.5.0"
-		}
-		c.Set("Content-Type", "application/vnd.android.package-archive")
-		c.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="BonCore-POS-v%s.apk"`, vName))
-		c.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-		return c.SendFile(apkFilePath)
-	})
-
-	group.Post("/upload", func(c *fiber.Ctx) error {
-		fileHeader, err := c.FormFile("file")
-		if err != nil {
-			fileHeader, err = c.FormFile("apk_file")
-			if err != nil {
-				return fiber.NewError(fiber.StatusBadRequest, "Lütfen bir .apk dosyası seçiniz.")
-			}
-		}
-		if !strings.HasSuffix(strings.ToLower(fileHeader.Filename), ".apk") {
-			return fiber.NewError(fiber.StatusBadRequest, "Yalnızca .apk uzantılı Android paketleri yüklenebilir.")
-		}
-		if err := c.SaveFile(fileHeader, apkFilePath); err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, "APK dosyası sunucuya kaydedilemedi: "+err.Error())
-		}
-
-		vName := c.FormValue("version_name")
-		if vName == "" {
-			vName = "2.5.0"
-		}
-		vCodeStr := c.FormValue("version_code")
-		vCode := 250
-		if num, err := strconv.Atoi(vCodeStr); err == nil && num > 0 {
-			vCode = num
-		}
-		changelogRaw := c.FormValue("changelog")
-		var changelog []string
-		if strings.TrimSpace(changelogRaw) != "" {
-			for _, line := range strings.Split(changelogRaw, "\n") {
-				trimmed := strings.TrimSpace(line)
-				if trimmed != "" {
-					changelog = append(changelog, trimmed)
-				}
-			}
-		}
-		if len(changelog) == 0 {
-			changelog = []string{"Hata düzeltmeleri ve kararlılık iyileştirmeleri."}
-		}
-
-		info := map[string]interface{}{
-			"version_name": vName,
-			"version_code": vCode,
-			"release_date": time.Now().Format("2006-01-02"),
-			"changelog":    changelog,
-			"download_url": "/api/app/download",
-		}
-		infoBytes, _ := json.MarshalIndent(info, "", "  ")
-		_ = os.WriteFile(versionFilePath, infoBytes, 0644)
-
-		return c.JSON(fiber.Map{
-			"success":      true,
-			"message":      fmt.Sprintf("BonCore POS APK v%s başarıyla yüklendi ve OTA dağıtımına açıldı.", vName),
-			"version_info": info,
-		})
-	})
-}
-
-// ============================================================================
 // 16. MASTER SaaS SUPER-ADMIN ROUTER (/api/master)
 // ============================================================================
 
@@ -3622,6 +3636,7 @@ func serializeTenant(t models.RestaurantTenant) fiber.Map {
 		"id":            t.ID,
 		"code":          t.Code,
 		"name":          t.Name,
+		"display_name":  t.Name,
 		"owner_name":    t.OwnerName,
 		"owner_email":   t.Email,
 		"email":         t.Email,
@@ -3740,19 +3755,25 @@ func RegisterMasterRoutes(group fiber.Router, svc *service.Services) {
 		var payload struct {
 			Code           string  `json:"code"`
 			Name           string  `json:"name"`
+			DisplayName    string  `json:"display_name"`
 			OwnerName      string  `json:"owner_name"`
 			OwnerEmail     string  `json:"owner_email"`
+			Email          string  `json:"email"`
 			OwnerPhone     string  `json:"owner_phone"`
+			Phone          string  `json:"phone"`
 			City           string  `json:"city"`
 			Address        string  `json:"address"`
 			TaxOffice      string  `json:"tax_office"`
 			TaxNumber      string  `json:"tax_number"`
 			Plan           string  `json:"plan"`
 			MonthlyFee     float64 `json:"monthly_fee"`
+			MonthlyPrice   float64 `json:"monthly_price"`
 			AdminUsername  string  `json:"admin_username"`
 			AdminPassword  string  `json:"admin_password"`
 			AdminPin       string  `json:"admin_pin"`
 			SeedSampleMenu bool    `json:"seed_sample_menu"`
+			CustomNotes    string  `json:"custom_notes"`
+			Notes          string  `json:"notes"`
 		}
 		payload.City = "İstanbul"
 		payload.Plan = "PRO"
@@ -3763,6 +3784,22 @@ func RegisterMasterRoutes(group fiber.Router, svc *service.Services) {
 		payload.SeedSampleMenu = true
 		if err := c.BodyParser(&payload); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz işletme verisi.")
+		}
+
+		if payload.Name == "" && payload.DisplayName != "" {
+			payload.Name = payload.DisplayName
+		}
+		if payload.OwnerEmail == "" && payload.Email != "" {
+			payload.OwnerEmail = payload.Email
+		}
+		if payload.OwnerPhone == "" && payload.Phone != "" {
+			payload.OwnerPhone = payload.Phone
+		}
+		if payload.MonthlyFee <= 0 && payload.MonthlyPrice > 0 {
+			payload.MonthlyFee = payload.MonthlyPrice
+		}
+		if payload.CustomNotes == "" && payload.Notes != "" {
+			payload.CustomNotes = payload.Notes
 		}
 
 		code := repository.CleanTenantCode(payload.Code, "")
@@ -3781,6 +3818,7 @@ func RegisterMasterRoutes(group fiber.Router, svc *service.Services) {
 		address := payload.Address
 		taxOffice := payload.TaxOffice
 		taxNumber := payload.TaxNumber
+		notes := payload.CustomNotes
 
 		tenant := models.RestaurantTenant{
 			Code:         code,
@@ -3795,6 +3833,7 @@ func RegisterMasterRoutes(group fiber.Router, svc *service.Services) {
 			Plan:         payload.Plan,
 			MonthlyPrice: payload.MonthlyFee,
 			Status:       "active",
+			Notes:        &notes,
 		}
 		mdb.Create(&tenant)
 
@@ -3817,6 +3856,7 @@ func RegisterMasterRoutes(group fiber.Router, svc *service.Services) {
 
 		return c.JSON(fiber.Map{
 			"status": "ok",
+			"id":     tenant.ID,
 			"tenant": serializeTenant(tenant),
 			"credentials": fiber.Map{
 				"restaurant_code": code,
@@ -3838,46 +3878,76 @@ func RegisterMasterRoutes(group fiber.Router, svc *service.Services) {
 			return fiber.NewError(fiber.StatusNotFound, "İşletme bulunamadı.")
 		}
 		var payload struct {
-			Name        *string  `json:"name"`
-			OwnerName   *string  `json:"owner_name"`
-			OwnerEmail  *string  `json:"owner_email"`
-			OwnerPhone  *string  `json:"owner_phone"`
-			City        *string  `json:"city"`
-			Plan        *string  `json:"plan"`
-			MonthlyFee  *float64 `json:"monthly_fee"`
-			Status      *string  `json:"status"`
-			CustomNotes *string  `json:"custom_notes"`
+			Code         *string  `json:"code"`
+			Name         *string  `json:"name"`
+			DisplayName  *string  `json:"display_name"`
+			OwnerName    *string  `json:"owner_name"`
+			OwnerEmail   *string  `json:"owner_email"`
+			Email        *string  `json:"email"`
+			OwnerPhone   *string  `json:"owner_phone"`
+			Phone        *string  `json:"phone"`
+			City         *string  `json:"city"`
+			Address      *string  `json:"address"`
+			TaxOffice    *string  `json:"tax_office"`
+			TaxNumber    *string  `json:"tax_number"`
+			Plan         *string  `json:"plan"`
+			MonthlyFee   *float64 `json:"monthly_fee"`
+			MonthlyPrice *float64 `json:"monthly_price"`
+			Status       *string  `json:"status"`
+			CustomNotes  *string  `json:"custom_notes"`
+			Notes        *string  `json:"notes"`
 		}
 		_ = c.BodyParser(&payload)
 		if payload.Name != nil {
 			tenant.Name = *payload.Name
+		} else if payload.DisplayName != nil {
+			tenant.Name = *payload.DisplayName
 		}
 		if payload.OwnerName != nil {
 			tenant.OwnerName = payload.OwnerName
 		}
 		if payload.OwnerEmail != nil {
 			tenant.Email = payload.OwnerEmail
+		} else if payload.Email != nil {
+			tenant.Email = payload.Email
 		}
 		if payload.OwnerPhone != nil {
 			tenant.Phone = payload.OwnerPhone
+		} else if payload.Phone != nil {
+			tenant.Phone = payload.Phone
 		}
 		if payload.City != nil {
 			tenant.City = *payload.City
+		}
+		if payload.Address != nil {
+			tenant.Address = payload.Address
+		}
+		if payload.TaxOffice != nil {
+			tenant.TaxOffice = payload.TaxOffice
+		}
+		if payload.TaxNumber != nil {
+			tenant.TaxNumber = payload.TaxNumber
 		}
 		if payload.Plan != nil {
 			tenant.Plan = *payload.Plan
 		}
 		if payload.MonthlyFee != nil {
 			tenant.MonthlyPrice = *payload.MonthlyFee
+		} else if payload.MonthlyPrice != nil {
+			tenant.MonthlyPrice = *payload.MonthlyPrice
 		}
 		if payload.Status != nil {
 			tenant.Status = *payload.Status
 		}
 		if payload.CustomNotes != nil {
 			tenant.Notes = payload.CustomNotes
+		} else if payload.Notes != nil {
+			tenant.Notes = payload.Notes
 		}
 		mdb.Save(&tenant)
-		return c.JSON(serializeTenant(tenant))
+		st := serializeTenant(tenant)
+		st["tenant"] = serializeTenant(tenant)
+		return c.JSON(st)
 	})
 
 	group.Delete("/tenants/:tenant_id", func(c *fiber.Ctx) error {

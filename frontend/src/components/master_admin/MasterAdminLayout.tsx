@@ -310,8 +310,8 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
           />
         )}
 
-        {/* Right Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        {/* Right Main Content Area with Smooth Scrolling & Bottom Margin */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-32 min-h-0">
           {activeTab === 'dashboard' && (
             <MasterDashboardView
               stats={stats}

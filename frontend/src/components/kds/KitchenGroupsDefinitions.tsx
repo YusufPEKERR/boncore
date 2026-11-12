@@ -366,7 +366,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
   const totalActiveKdsItems = groups.reduce((s, g) => s + (g.active_kds_count || 0), 0);
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-slate-50 dark:bg-slate-950 p-4 md:p-6 space-y-5 text-slate-900 dark:text-slate-100 select-none font-sans">
+    <div className="flex-1 flex flex-col min-h-full h-full overflow-y-auto bg-slate-50 dark:bg-slate-950 p-4 md:p-6 pb-28 space-y-5 text-slate-900 dark:text-slate-100 select-none font-sans">
       {/* Toast Notification */}
       {toast && (
         <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-extrabold animate-slideDown ${

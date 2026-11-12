@@ -114,7 +114,7 @@ export const InventoryManagement: React.FC = () => {
   });
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 space-y-6 select-none transition-colors duration-200">
+    <div className="flex-1 min-h-full overflow-y-auto p-4 sm:p-6 pb-28 bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 space-y-6 select-none transition-colors duration-200">
       {/* Toast Notification */}
       {toast && (
         <div className={`p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-lg transition-all animate-slideDown ${

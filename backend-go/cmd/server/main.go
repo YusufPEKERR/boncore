@@ -37,6 +37,10 @@ func main() {
 
 	// Initialize Domain Services
 	services := service.NewServices(cfg, dbManager, wsHub)
+	if services.Scheduler != nil {
+		services.Scheduler.Start()
+		defer services.Scheduler.Stop()
+	}
 
 	// Initialize Fiber v2 Engine with FastAPI-compatible JSON ErrorHandler (`{"detail": "..."}`)
 	app := fiber.New(fiber.Config{

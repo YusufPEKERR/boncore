@@ -372,7 +372,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
 
           {/* Tables Grid or Static Kroki */}
           {viewMode === 'grid' ? (
-            <div className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 bg-slate-50 dark:bg-slate-950">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 pb-28 bg-slate-50 dark:bg-slate-950">
               {loading && displayedTables.length === 0 && (
                 <div className="h-64 flex flex-col items-center justify-center text-slate-400 gap-3 animate-fadeIn">
                   <RefreshCw className="w-8 h-8 animate-spin text-emerald-500" />
@@ -760,7 +760,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
           </div>
 
           {/* Vertical Stack List of Open Tables (Alt alta sıralı) */}
-          <div className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 space-y-2.5 sm:space-y-3">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 pb-28 space-y-2.5 sm:space-y-3">
             {displayedOpenTables.map((table) => {
               const isBillRequested = table.status === 'bill_requested';
               const isBillPrinted = table.status === 'bill_printed';

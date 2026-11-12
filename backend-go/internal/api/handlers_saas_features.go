@@ -182,17 +182,21 @@ func RegisterSaaSFeatureRoutes(group fiber.Router, svc *service.Services) {
 		_ = svc.Broadcaster.BroadcastToChannel(tenant.Code, "all", "FEATURES_UPDATED", featurePayload)
 		_ = svc.Broadcaster.BroadcastToChannel(tenant.Code, "pos", "FEATURES_UPDATED", featurePayload)
 
-		return c.JSON(fiber.Map{
+		respMap := fiber.Map{
 			"success": true,
 			"message": "İşletme lisans ve modül özellikleri başarıyla güncellendi.",
 			"tenant":  featurePayload,
-		})
+		}
+		for k, v := range featurePayload {
+			respMap[k] = v
+		}
+		return c.JSON(respMap)
 	})
 }
 
-// RegisterTenantModuleStatusRoute mounts GET /api/modules/status
+// RegisterTenantModuleStatusRoute mounts GET /api/modules/status, /tenant-status, /tenant-modules
 func RegisterTenantModuleStatusRoute(group fiber.Router, svc *service.Services) {
-	group.Get("/status", func(c *fiber.Ctx) error {
+	statusHandler := func(c *fiber.Ctx) error {
 		tenantCode := middleware.GetTenantCode(c)
 		mdb := svc.DBManager.MasterGorm
 		var tenant models.RestaurantTenant
@@ -241,7 +245,11 @@ func RegisterTenantModuleStatusRoute(group fiber.Router, svc *service.Services) 
 				"cost_profit":  tenant.FeatureCostProfit,
 			},
 		})
-	})
+	}
+
+	group.Get("/status", statusHandler)
+	group.Get("/tenant-status", statusHandler)
+	group.Get("/tenant-modules", statusHandler)
 }
 
 func findTenantByIDOrCode(mdb *gorm.DB, idOrCode string) (*models.RestaurantTenant, error) {

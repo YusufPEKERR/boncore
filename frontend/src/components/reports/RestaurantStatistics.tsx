@@ -457,7 +457,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
   };
 
   return (
-    <div className="flex-1 flex flex-col md:flex-row h-[calc(100dvh-3.5rem)] bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none overflow-hidden font-sans transition-colors duration-200">
+    <div className="flex-1 flex flex-col md:flex-row min-h-full h-full bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none overflow-hidden font-sans transition-colors duration-200">
       {/* Left Sidebar Submenu */}
       <div className="w-full md:w-64 bg-white dark:bg-slate-900 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 flex flex-col shadow-sm shrink-0">
         <div className="hidden md:block p-4 border-b border-slate-100 dark:border-slate-800 text-xs font-black uppercase tracking-wider text-slate-400">
@@ -588,7 +588,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
         </div>
 
         {/* Dynamic Content Views */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-28">
           {/* ============================================================ */}
           {/* TAB 1: ÖZET                                                 */}
           {/* ============================================================ */}
@@ -1476,7 +1476,7 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                   />
                 </div>
 
-                <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto text-xs font-bold">
+                <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto py-1 no-scrollbar text-xs font-bold">
                   <span className="text-slate-400 shrink-0">Sırala:</span>
                   <button
                     onClick={() => setWaiterSort('sales')}

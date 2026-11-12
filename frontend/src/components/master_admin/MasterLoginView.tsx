@@ -168,6 +168,21 @@ export const MasterLoginView: React.FC<MasterLoginViewProps> = ({
           </button>
         </form>
 
+        <div className="pt-1 text-center">
+          <button
+            type="button"
+            onClick={() => {
+              setUsername('master');
+              setPassword('masteradmin2026');
+              sound.beep();
+            }}
+            className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer inline-flex items-center gap-1"
+          >
+            <Sparkles className="w-3 h-3" />
+            <span>Varsayılan Giriş Bilgilerini Doldur (master / masteradmin2026)</span>
+          </button>
+        </div>
+
         <div className="text-center text-[11px] text-slate-500 font-medium">
           🔒 Yalnızca yetkili SaaS platform yöneticileri içindir. Tüm erişimler kayıt altına alınmaktadır.
         </div>

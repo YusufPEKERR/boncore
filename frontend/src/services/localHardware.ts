@@ -72,6 +72,8 @@ export const sanitizePrinterConfigs = (rawList: any[], validCategoryNames?: stri
       settings: {
         print_on_order_save: Boolean(item.settings?.print_on_order_save && !isAutoLegacyId),
         print_on_integration_approved: Boolean(item.settings?.print_on_integration_approved),
+        paper_width: (item.settings?.paper_width as any) || '80mm',
+        line_width: Number(item.settings?.line_width) || (item.settings?.paper_width === '58mm' ? 32 : 48),
         copies: {
           table_order: Math.max(1, Number(item.settings?.copies?.table_order) || 1),
           takeaway_order: Math.max(1, Number(item.settings?.copies?.takeaway_order) || 1),
@@ -320,6 +322,95 @@ export const localHardware = {
   },
 
   /**
+   * Belirtilen yazıcı adına veya key'ine uyan yapılandırmayı bulur.
+   * Hedef verilmezse öncelikle adisyon yazıcısını, yoksa ilk kayıtlı yazıcıyı döndürür.
+   */
+  getPrinterConfig(target?: string): PrinterConfig | undefined {
+    const configs = this.getPrinterConfigs();
+    if (!target) {
+      const adisyon = this.getAdisyonPrinterConfigs();
+      if (adisyon.length > 0) return adisyon[0];
+      return configs[0];
+    }
+    const cleanTarget = target.trim();
+    const plainName = cleanTarget.includes('::') ? cleanTarget.split('::')[1].trim() : cleanTarget;
+    return configs.find(c => {
+      if (c.target_printer === cleanTarget || c.id === cleanTarget || c.name === cleanTarget) return true;
+      const cPlain = c.target_printer && c.target_printer.includes('::') ? c.target_printer.split('::')[1].trim() : c.target_printer;
+      return cPlain === plainName || c.name === plainName;
+    });
+  },
+
+  /**
+   * Yazıcının karakter genişliğini (W) döndürür (80mm: 42 veya 48, 58mm: 32).
+   */
+  getPrinterLineWidth(target?: string): number {
+    const cfg = this.getPrinterConfig(target);
+    if (cfg?.settings?.line_width) {
+      const lw = Number(cfg.settings.line_width);
+      if (lw >= 28 && lw <= 56) return lw;
+    }
+    if (cfg?.settings?.paper_width === '58mm') return 32;
+    return 48; // Standart 80mm termal rulo (48 karakter tam oturur)
+  },
+
+  /**
+   * Yazıcının kağıt rulo genişliğini ('80mm' | '58mm') döndürür.
+   */
+  getPrinterPaperWidth(target?: string): '80mm' | '58mm' {
+    const cfg = this.getPrinterConfig(target);
+    return cfg?.settings?.paper_width === '58mm' ? '58mm' : '80mm';
+  },
+
+  /**
+   * Herhangi bir yazıcının rulo / kağıt genişliğini anında günceller ve kaydeder.
+   */
+  async setPrinterWidth(targetKey: string, paperWidth: '80mm' | '58mm', lineWidth?: number): Promise<void> {
+    const cleanTarget = targetKey.trim();
+    const plainName = cleanTarget.includes('::') ? cleanTarget.split('::')[1].trim() : cleanTarget;
+    const configs = this.getPrinterConfigs();
+    const resolvedLineWidth = lineWidth || (paperWidth === '58mm' ? 32 : 48);
+
+    let found = false;
+    const updated = configs.map(c => {
+      const cPlain = c.target_printer && c.target_printer.includes('::') ? c.target_printer.split('::')[1].trim() : c.target_printer;
+      if (c.target_printer === cleanTarget || c.id === cleanTarget || cPlain === plainName || c.name === plainName) {
+        found = true;
+        return {
+          ...c,
+          settings: {
+            ...c.settings,
+            paper_width: paperWidth,
+            line_width: resolvedLineWidth
+          }
+        };
+      }
+      return c;
+    });
+
+    if (!found) {
+      updated.push({
+        id: cleanTarget,
+        name: plainName || 'Yeni Yazıcı',
+        target_printer: cleanTarget,
+        printer_types: { adisyon: true, kitchen: false, abiyer: false, courier: false },
+        revenue_center: { main_channel: true },
+        kitchen_groups: [],
+        settings: {
+          print_on_order_save: false,
+          print_on_integration_approved: false,
+          paper_width: paperWidth,
+          line_width: resolvedLineWidth,
+          copies: { table_order: 1, takeaway_order: 1, delivery_order: 1, post_payment: 1 },
+          assign_to_this_device: true
+        }
+      });
+    }
+
+    await this.savePrinterConfigs(updated);
+  },
+
+  /**
    * Mutfak sipariş fişini, kategori eşleşmelerine göre ilgili yazıcılara otomatik yönlendirir.
    * KURAL:
    * 1. Siparişe eklenen her ürünün hangi kategoride olduğuna bakılır.
@@ -419,22 +510,55 @@ export const localHardware = {
         }
       }
 
+      // Belirtilen yazıcının yapılandırılmış genişliğini oku (80mm: 42/48 kar., 58mm: 32 kar.)
+      const W = this.getPrinterLineWidth(cfg.target_printer);
+      const paperWidth = this.getPrinterPaperWidth(cfg.target_printer);
+
+      const sepDouble = '='.repeat(W);
+      const sepSingle = '-'.repeat(W);
+
+      const padLR = (left: string, right: string) => {
+        const lStr = String(left || '');
+        const rStr = String(right || '');
+        const spaceCount = Math.max(1, W - lStr.length - rStr.length);
+        return lStr + ' '.repeat(spaceCount) + rStr;
+      };
+
+      const centerText = (txt: string) => {
+        const s = String(txt || '').trim();
+        if (s.length >= W) return s.slice(0, W);
+        const leftSpace = Math.floor((W - s.length) / 2);
+        const rightSpace = W - s.length - leftSpace;
+        return ' '.repeat(leftSpace) + s + ' '.repeat(rightSpace);
+      };
+
       const lines: string[] = [];
-      lines.push('================================');
-      lines.push(`     *** ${cfg.name.toLocaleUpperCase('tr-TR')} SİPARİŞİ ***     `);
-      lines.push('================================');
-      lines.push(`Masa:    ${params.tableName}`);
-      lines.push(`Adisyon: ${params.orderNo.startsWith('#') ? params.orderNo : '#' + params.orderNo}`);
+      lines.push(sepDouble);
+      lines.push(centerText(`*** ${cfg.name.toLocaleUpperCase('tr-TR')} SİPARİŞİ ***`));
+      lines.push(sepDouble);
+      lines.push(padLR(`Masa:    ${params.tableName}`, `Tarih: ${dateStr}`));
+      lines.push(padLR(`Adisyon: ${params.orderNo.startsWith('#') ? params.orderNo : '#' + params.orderNo}`, `Saat:  ${timeStr}`));
       lines.push(`Garson:  ${params.waiterName}`);
-      lines.push(`Tarih:   ${dateStr} ${timeStr}`);
-      lines.push('--------------------------------');
-      lines.push('ÜRÜN                        ADET');
-      lines.push('--------------------------------');
+      if (params.orderType && params.orderType !== 'dine_in') {
+        const oTypeLabel = params.orderType === 'takeaway' ? 'GEL-AL (PAKET)' : (params.orderType === 'delivery' ? 'PAKET SERVİS' : params.orderType.toUpperCase());
+        lines.push(`Kanal:   ${oTypeLabel}`);
+      }
+      lines.push(sepSingle);
+      lines.push(padLR('ÜRÜN', 'ADET'));
+      lines.push(sepSingle);
 
       matchingItems.forEach(it => {
         const qty = Number.isInteger(Number(it.quantity)) ? it.quantity : Number(it.quantity).toFixed(3);
         const vName = it.variant || it.variant_name ? ` (${it.variant || it.variant_name})` : '';
-        lines.push(`[x${qty}] ${it.product_name}${vName}`);
+        const itemLeft = `[x${qty}] ${it.product_name}${vName}`;
+        const itemRight = `${qty} AD`;
+
+        if (itemLeft.length + itemRight.length + 2 <= W) {
+          lines.push(padLR(itemLeft, itemRight));
+        } else {
+          lines.push(itemLeft);
+          lines.push(' '.repeat(Math.max(0, W - itemRight.length)) + itemRight);
+        }
 
         if (it.selected_modifiers && Array.isArray(it.selected_modifiers) && it.selected_modifiers.length > 0) {
           const modText = it.selected_modifiers.map(m => m.name || m).join(', ');
@@ -445,13 +569,13 @@ export const localHardware = {
         }
       });
 
-      lines.push('--------------------------------');
+      lines.push(sepSingle);
       if (params.orderNote) {
         lines.push(`Sipariş Notu: ${params.orderNote}`);
-        lines.push('--------------------------------');
+        lines.push(sepSingle);
       }
-      lines.push(`Yazıcı: ${cfg.name}`);
-      lines.push('================================\n\n\n\n');
+      lines.push(padLR(`Yazıcı: ${cfg.name}`, `80mm Termal`));
+      lines.push(sepDouble + '\n\n\n\n');
 
       const rawText = lines.join('\n');
 

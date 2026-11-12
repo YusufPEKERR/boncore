@@ -332,6 +332,8 @@ export interface PrinterConfig {
   settings: {
     print_on_order_save: boolean;
     print_on_integration_approved: boolean;
+    paper_width?: '80mm' | '58mm';
+    line_width?: number; // 42 (80mm standart), 48 (80mm geniş), 32 (58mm)
     copies: {
       table_order: number;
       takeaway_order: number;

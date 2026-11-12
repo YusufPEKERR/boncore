@@ -752,48 +752,52 @@ def build_receipt_text(doc: Dict[str, Any]) -> str:
     time_str = doc.get("time") or time.strftime("%H:%M")
     doc_no = doc.get("doc_no") or f"BON-{int(time.time())%100000}"
 
+    W = 42
+    sep_double = "=" * W
+    sep_single = "-" * W
+
     lines = []
-    lines.append("================================")
-    lines.append(f"{company.center(32)}")
-    lines.append("       E-ADISYON FISI           ")
-    lines.append("================================")
-    lines.append(f"Masa: {table:<12} Tarih: {date_str}")
-    lines.append(f"Belge: {doc_no:<11} Saat:  {time_str}")
-    lines.append(f"Kasiyer: {cashier:<10} Garson: {waiter}")
-    lines.append("--------------------------------")
-    lines.append("URUN             ADET      TUTAR")
-    lines.append("--------------------------------")
+    lines.append(sep_double)
+    lines.append(f"{company.center(W)}")
+    lines.append("E-ADISYON / BILGI FISI".center(W))
+    lines.append(sep_double)
+    lines.append(f"Masa: {table:<16} Tarih: {date_str}")
+    lines.append(f"Belge: {doc_no:<15} Saat:  {time_str}")
+    lines.append(f"Kasiyer: {cashier:<14} Garson: {waiter}")
+    lines.append(sep_single)
+    lines.append(f"{'URUN':<22}{'ADET':>5}{'TUTAR':>15}")
+    lines.append(sep_single)
 
     items = doc.get("items") or []
     for it in items:
         pname = it.get("product_name") or "Urun"
         if it.get("variant"):
             pname += f" ({it['variant']})"
-        pname = pname[:16]
+        pname = pname[:21]
         qty = it.get("quantity", 1)
         qty_str = f"{qty:.3f}" if isinstance(qty, float) and not qty.is_integer() else str(int(qty))
         t_price = float(it.get("total_price") or 0.0)
-        lines.append(f"{pname:<16} {qty_str:>4} {t_price:>9.2f} TL")
+        lines.append(f"{pname:<22} {qty_str:>4} {t_price:>11.2f} TL")
 
-    lines.append("--------------------------------")
+    lines.append(sep_single)
     subtotal = float(doc.get("subtotal") or 0.0)
     grand_total = float(doc.get("grand_total") or subtotal)
     discount = float(doc.get("discount") or 0.0)
 
     if discount > 0:
-        lines.append(f"Ara Toplam:           {subtotal:>9.2f} TL")
-        lines.append(f"Indirim:             -{discount:>9.2f} TL")
-    lines.append(f"GENEL TOPLAM:         {grand_total:>9.2f} TL")
+        lines.append(f"Ara Toplam:                {subtotal:>11.2f} TL")
+        lines.append(f"Indirim:                  -{discount:>11.2f} TL")
+    lines.append(f"GENEL TOPLAM:              {grand_total:>11.2f} TL")
 
     payments = doc.get("payments") or []
     for p in payments:
         plabel = p.get("label") or p.get("method") or "Odeme"
         pamount = float(p.get("amount") or 0.0)
-        lines.append(f"Odeme ({plabel}):      {pamount:>9.2f} TL")
+        lines.append(f"Odeme ({plabel[:12]}):        {pamount:>11.2f} TL")
 
-    lines.append("================================")
-    lines.append("    AFIYET OLSUN / TESEKKURLER  ")
-    lines.append("================================")
+    lines.append(sep_double)
+    lines.append("AFIYET OLSUN / TESEKKURLER".center(W))
+    lines.append(sep_double)
     lines.append("\n\n\n")
     return "\n".join(lines)
 

@@ -1,5 +1,5 @@
 // BonCore POS PWA Service Worker
-const CACHE_NAME = 'boncore-pos-v3';
+const CACHE_NAME = 'boncore-pos-v5';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -39,15 +39,21 @@ self.addEventListener('notificationclick', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Pass non-GET and API / WS directly to network
-  if (event.request.method !== 'GET' || event.request.url.includes('/api/') || event.request.url.includes('/ws')) {
+  // Pass non-GET, API, WS and live dev assets directly to network
+  if (
+    event.request.method !== 'GET' ||
+    event.request.url.includes('/api/') ||
+    event.request.url.includes('/ws') ||
+    event.request.url.includes('/src/') ||
+    event.request.url.includes('/@vite') ||
+    event.request.url.includes('/@react-refresh')
+  ) {
     return;
   }
 
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Cache successful basic responses
         if (response && response.status === 200 && response.type === 'basic') {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => {

@@ -14,6 +14,7 @@ import sys
 import os
 import json
 import socket
+import struct
 import re
 import time
 import threading
@@ -92,6 +93,52 @@ def parse_cas_cl3000_weight(raw_str: str):
         "is_stable": is_stable
     }
 
+def encode_cas_cl_packet(opcode: bytes, address: int = 0, data: bytes = b"") -> bytes:
+    buf = bytearray()
+    buf.extend(opcode)
+    buf.extend(struct.pack("<I", address))
+    buf.append(ord(","))
+    buf.extend(struct.pack("<H", len(data)))
+    buf.append(ord(":"))
+    buf.extend(data)
+    buf.append(ord(":"))
+    ck = sum(buf[2:]) % 256
+    buf.append(ck)
+    buf.append(0x0D)
+    return bytes(buf)
+
+def parse_cas_cl_response(raw_bytes: bytes):
+    if not raw_bytes or len(raw_bytes) < 12:
+        return None
+    idx = raw_bytes.find(b"WN")
+    if idx != -1 and len(raw_bytes) >= idx + 40:
+        packet = raw_bytes[idx:]
+        try:
+            scale_id = struct.unpack("<I", packet[2:6])[0]
+            data_len = struct.unpack("<H", packet[7:9])[0]
+            status_data = packet[10:10+data_len]
+            if len(status_data) >= 16:
+                load_flag = status_data[0]
+                stable_flag = status_data[1]
+                unit_code = status_data[4]
+                unit_str = "kg" if unit_code == 0 else "lb"
+                dec_pt = status_data[5]
+                divisor = float(10 ** dec_pt) if 1 <= dec_pt <= 4 else 1000.0
+                weight_int = struct.unpack("<i", status_data[12:16])[0]
+                weight_kg = round(weight_int / divisor, 3)
+                return {
+                    "found": True,
+                    "weight": max(0.0, weight_kg),
+                    "grams": int(round(weight_kg * 1000)),
+                    "unit": unit_str,
+                    "is_stable": (stable_flag == 1),
+                    "load_flag": load_flag,
+                    "scale_id": scale_id
+                }
+        except Exception:
+            pass
+    return None
+
 def read_cas_from_local_network(ip: str, port: int = 2004, timeout: float = 2.5):
     sock = None
     try:
@@ -102,25 +149,58 @@ def read_cas_from_local_network(ip: str, port: int = 2004, timeout: float = 2.5)
         sock.setblocking(False)
         data = b""
         try:
-            data = sock.recv(256)
+            data = sock.recv(512)
         except (BlockingIOError, socket.error):
             pass
         sock.setblocking(True)
         sock.settimeout(timeout)
 
         if not data or len(data.strip()) == 0:
-            for cmd in [b"W\r\n", b"\x05", b"Q\r\n", b"\x02W\x03"]:
+            commands = [
+                encode_cas_cl_packet(b"RN", 0),
+                encode_cas_cl_packet(b"RN", 1),
+                encode_cas_cl_packet(b"RN", 255),
+                encode_cas_cl_packet(b"RV", 0),
+                encode_cas_cl_packet(b"RV", 1),
+                encode_cas_cl_packet(b"WN", 0),
+                encode_cas_cl_packet(b"WN", 1),
+                b"W\r\n",
+                b"W\r",
+                b"\x05",
+                b"\x0200RC00\x03",
+                b"\x0200W00\x03",
+                b"\x02W\x03",
+                b"Q\r\n",
+                b"S\r\n"
+            ]
+            for cmd in commands:
                 try:
                     sock.sendall(cmd)
-                    chunk = sock.recv(256)
+                    time.sleep(0.06)
+                    sock.settimeout(0.25)
+                    chunk = sock.recv(512)
                     if chunk and len(chunk.strip()) > 0:
                         data += chunk
-                        if b"kg" in chunk.lower() or b"g" in chunk.lower() or b"st" in chunk.lower():
+                        if b"WN" in chunk or b"kg" in chunk.lower() or b"g" in chunk.lower():
                             break
                 except socket.timeout:
                     continue
                 except Exception:
                     pass
+
+        if data:
+            cl_res = parse_cas_cl_response(data)
+            if cl_res and cl_res.get("found"):
+                return {
+                    "success": True,
+                    "weight": cl_res["weight"],
+                    "unit": cl_res["unit"],
+                    "grams": cl_res["grams"],
+                    "is_stable": cl_res["is_stable"],
+                    "raw": f"CAS-WN: {cl_res['weight']} {cl_res['unit']}",
+                    "ip": ip,
+                    "port": port
+                }
 
         raw = data.decode("latin-1", errors="ignore").strip()
         if not raw:

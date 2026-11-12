@@ -73,7 +73,44 @@ export const ProductSalesReport: React.FC = () => {
         station: selectedStation === 'all' ? undefined : selectedStation,
         search: searchQuery.trim() || undefined
       });
-      setData(res);
+      if (res) {
+        const rawItems = res.items || res.products || [];
+        const normalizedItems: ProductSalesItem[] = rawItems.map((p: any) => ({
+          product_id: p.product_id || p.id,
+          product_name: p.product_name || p.name || `Ürün #${p.product_id}`,
+          category_id: p.category_id || 0,
+          category_name: p.category_name || p.category || 'Diğer',
+          station: p.station || 'kitchen',
+          unit: p.unit || 'Adet',
+          image_url: p.image_url || null,
+          vat_rate: p.vat_rate || 10,
+          total_quantity: Number(p.total_quantity ?? p.quantity ?? 0),
+          total_turnover: Number(p.total_turnover ?? p.revenue ?? 0),
+          avg_price: Number(p.avg_price ?? p.unit_price ?? 0),
+          orders_count: Number(p.orders_count ?? 0),
+          treat_count: Number(p.treat_count ?? 0),
+          share_percent: Number(p.share_percent ?? p.revenue_share ?? 0),
+          unit_cost: Number(p.unit_cost ?? 0),
+          total_cost: Number(p.total_cost ?? 0),
+          profit: Number(p.profit ?? 0),
+          profit_margin_percent: Number(p.profit_margin_percent ?? p.profit_margin ?? 0)
+        }));
+
+        const totalRevenue = Number(res.total_revenue ?? res.summary?.total_revenue ?? normalizedItems.reduce((acc, i) => acc + i.total_turnover, 0));
+        const totalQuantity = Number(res.total_quantity_sold ?? res.summary?.total_quantity ?? normalizedItems.reduce((acc, i) => acc + i.total_quantity, 0));
+
+        setData({
+          total_revenue: totalRevenue,
+          total_quantity_sold: totalQuantity,
+          distinct_products_count: res.distinct_products_count ?? normalizedItems.length,
+          total_orders_analyzed: res.total_orders_analyzed ?? res.summary?.total_products_sold ?? 0,
+          top_by_turnover: res.top_by_turnover || (normalizedItems[0]?.product_name ?? '-'),
+          top_by_quantity: res.top_by_quantity || '-',
+          categories_summary: res.categories_summary || [],
+          categories_filter: res.categories_filter || [],
+          items: normalizedItems
+        });
+      }
     } catch (err) {
       console.warn('Failed to load product sales report:', err);
     } finally {
@@ -131,12 +168,12 @@ export const ProductSalesReport: React.FC = () => {
       `"${i.category_name}"`,
       `"${i.station}"`,
       `"${i.unit}"`,
-      i.avg_price.toFixed(2),
-      i.total_quantity,
-      i.total_turnover.toFixed(2),
-      i.share_percent.toFixed(2),
-      i.orders_count,
-      i.treat_count
+      (i.avg_price || 0).toFixed(2),
+      i.total_quantity || 0,
+      (i.total_turnover || 0).toFixed(2),
+      (i.share_percent || 0).toFixed(2),
+      i.orders_count || 0,
+      i.treat_count || 0
     ]);
 
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(';'), ...rows.map(e => e.join(';'))].join('\n');
@@ -167,7 +204,7 @@ export const ProductSalesReport: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 p-4 md:p-6 space-y-6">
+    <div className="flex-1 flex flex-col min-h-full h-full overflow-y-auto bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 p-4 md:p-6 pb-28 space-y-6">
       {/* Toast Notice */}
       {refreshNotice && (
         <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg font-bold text-xs flex items-center gap-2 animate-bounce">
@@ -561,10 +598,10 @@ export const ProductSalesReport: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-3 px-3 text-right font-mono font-bold text-slate-700 dark:text-slate-300">
-                      ₺{item.avg_price.toFixed(2)}
+                      ₺{(item.avg_price || 0).toFixed(2)}
                     </td>
                     <td className="py-3 px-3 text-right font-mono font-extrabold text-slate-900 dark:text-white">
-                      {item.unit === 'Kg' ? `${item.total_quantity.toFixed(3)} kg` : `${item.total_quantity} ad`}
+                      {item.unit === 'Kg' ? `${(item.total_quantity || 0).toFixed(3)} kg` : `${item.total_quantity || 0} ad`}
                     </td>
                     <td className="py-3 px-3 text-right font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
                       ₺{Number(item.total_turnover || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -572,7 +609,7 @@ export const ProductSalesReport: React.FC = () => {
                     <td className="py-3 px-3">
                       <div className="space-y-1">
                         <div className="flex items-center justify-between text-[10px]">
-                          <span className="font-mono font-bold text-slate-700 dark:text-slate-300">%{item.share_percent.toFixed(1)}</span>
+                          <span className="font-mono font-bold text-slate-700 dark:text-slate-300">%{(item.share_percent || 0).toFixed(1)}</span>
                         </div>
                         <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                           <div 

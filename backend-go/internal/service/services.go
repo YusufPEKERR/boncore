@@ -20,6 +20,7 @@ type Services struct {
 	WSHub       *ws.Hub
 	Cache       *ws.CacheManager
 	Permissions *PermissionService
+	Scheduler   *AutoZReportScheduler
 }
 
 func NewServices(cfg *config.Config, dbm *repository.DatabaseManager, hub *ws.Hub) *Services {
@@ -33,7 +34,7 @@ func NewServices(cfg *config.Config, dbm *repository.DatabaseManager, hub *ws.Hu
 	} else {
 		cache = ws.NewCacheManager(nil, false)
 	}
-	return &Services{
+	svc := &Services{
 		Config:      cfg,
 		DBManager:   dbm,
 		Broadcaster: broadcaster,
@@ -41,6 +42,8 @@ func NewServices(cfg *config.Config, dbm *repository.DatabaseManager, hub *ws.Hu
 		Cache:       cache,
 		Permissions: NewPermissionService(),
 	}
+	svc.Scheduler = NewAutoZReportScheduler(svc)
+	return svc
 }
 
 // PermissionService implements 100% contract-preserving role & tab permission checks

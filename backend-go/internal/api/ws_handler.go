@@ -55,4 +55,13 @@ func RegisterWebSocketRoutes(app *fiber.App, hub *ws.Hub) {
 		go client.WritePump()
 		client.ReadPump()
 	}))
+
+	// 3. Fallback Root WebSocket Endpoint (/ws -> defaults to channel "all")
+	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
+		tenantCode, _ := c.Locals("tenant_code").(string)
+		client := ws.NewClient(hub, c, "all", nil, tenantCode)
+		hub.Register(client)
+		go client.WritePump()
+		client.ReadPump()
+	}))
 }

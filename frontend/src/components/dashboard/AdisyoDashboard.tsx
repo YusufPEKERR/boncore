@@ -133,7 +133,7 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
   const peakPoint = svgCoords.reduce((best, cur) => (cur.turnover >= best.turnover ? cur : best), svgCoords[0] || { x: 500, y: 190, turnover: 0, hour: '' });
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 space-y-6 select-none animate-fadeIn transition-colors duration-200">
+    <div className="flex-1 min-h-full overflow-y-auto p-4 sm:p-6 pb-28 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 space-y-6 select-none animate-fadeIn transition-colors duration-200">
       {/* Live Operational Day & Time Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
         <div className="flex items-center gap-3">

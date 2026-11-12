@@ -60,7 +60,7 @@ npm --prefix frontend run dev
 | **Offline-First** | PWA + IndexedDB (Dexie.js) | İnternet koptuğunda kesintisiz satış, bağlantı geldiğinde otomatik senkronizasyon. |
 | **Backend & API** | Python 3.12 (FastAPI) + WebSockets | Asenkron yüksek performans, KDS, masa planı ve kasalara **0.1 saniyede** anlık yayın. |
 | **ORM & Şema** | SQLAlchemy 2.0 (Async) + Pydantic v2 | Otomatik şema migrasyonu ve veri bütünlüğü sağlayan katı ORM katmanı. |
-| **Mobil Uygulama** | Capacitor / Android POS APK | Doğrudan yan menüden indirilebilir kurumsal Android POS APK desteği. |
+| **Mobil Web POS** | Responsive Web + PWA | Tüm tablet ve akıllı telefonlarda Chrome/Safari üzerinden tam ekran mobil POS desteği. |
 
 ---
 

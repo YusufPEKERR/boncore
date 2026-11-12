@@ -82,9 +82,6 @@ func RegisterRoutes(app *fiber.App, svc *service.Services) {
 	RegisterModulesRoutes(modulesGroup, svc)
 	RegisterTenantModuleStatusRoute(modulesGroup, svc)
 
-	// 15. Android APK & OTA Update Router (/api/app)
-	RegisterAppUpdateRoutes(apiGroup.Group("/app"), svc)
-
 	// 16. Master SaaS Administration Router (/api/master) & Cross-Tenant POS Endpoints
 	masterGroup := apiGroup.Group("/master")
 	RegisterMasterRoutes(masterGroup, svc)

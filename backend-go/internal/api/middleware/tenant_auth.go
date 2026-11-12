@@ -204,6 +204,10 @@ func GetTenantCode(c *fiber.Ctx) string {
 	if val, ok := c.Locals(ContextTenantKey).(string); ok && val != "" {
 		return val
 	}
+	if resolved := ResolveTenantCodeFromRequest(c, ""); resolved != "" {
+		c.Locals(ContextTenantKey, resolved)
+		return resolved
+	}
 	return "fatihciftligi"
 }
 

@@ -1,39 +1,32 @@
 @echo off
 chcp 65001 >nul
-title BonCore Donanim Koprusu Kurulumu
+title BonCore Donanım Köprüsü Kurulumu
 color 0A
 
 echo ================================================================
-echo         BONCORE DONANIM KOPRUSU - OTOMATIK KURULUM
+echo         BONCORE DONANIM KÖPRÜSÜ - GÜVENLİ KURULUM
 echo ================================================================
 echo.
-echo Kurulum yapiliyor, lutfen bekleyiniz...
-echo.
+echo Windows SmartScreen engeli kaldırılıyor ve sertifika onaylanıyor...
 
-set "TARGET_DIR=%LocalAppData%\BonCoreAgent"
-if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
+:: 1. Mark-of-the-Web (Zone.Identifier) engelini kaldir (SmartScreen'i sifirlar)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -Path '%~dp0' -Recurse | Unblock-File" >nul 2>&1
 
-taskkill /F /IM BonCoreAgent.exe >nul 2>&1
-ping 127.0.0.1 -n 2 >nul
-
-copy /Y "%~dp0BonCoreAgent.exe" "%TARGET_DIR%\BonCoreAgent.exe" >nul
-copy /Y "%~dp0config.json" "%TARGET_DIR%\config.json" >nul
-
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "BonCoreAgent" /t REG_SZ /d "\"%TARGET_DIR%\BonCoreAgent.exe\" --hidden" /f >nul
-
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath('Desktop'), 'BonCore Donanim Koprusu.lnk')); $s.TargetPath = '%TARGET_DIR%\BonCoreAgent.exe'; $s.WorkingDirectory = '%TARGET_DIR%'; $s.Save()" >nul 2>&1
-
-start "" "%TARGET_DIR%\BonCoreAgent.exe" --hidden
+:: 2. BonCore Guvenlik Sertifikasini guvenilen yayimcilara ekle
+if exist "%~dp0BonCoreCertificate.cer" (
+    certutil -addstore -f "TrustedPublisher" "%~dp0BonCoreCertificate.cer" >nul 2>&1
+    certutil -addstore -f "Root" "%~dp0BonCoreCertificate.cer" >nul 2>&1
+)
 
 echo.
-echo ================================================================
-echo  [OK] KURULUM BASARIYLA TAMAMLANDI!
-echo ================================================================
+echo Kurulum sihirbazi baslatiliyor...
 echo.
-echo  - Uygulama arka planda ve saatin yaninda sessizce calismaya basladi.
-echo  - Bilgisayar her acildiginda otomatik olarak gizli baslayacaktir.
-echo  - Ayar panelini acmak icin masaustundeki kisayola veya
-echo    saatin yanindaki yesil BonCore simgesine tiklayabilirsiniz.
-echo.
-ping 127.0.0.1 -n 4 >nul
+
+:: 3. Setup sihirbazini baslat
+if exist "%~dp0BonCoreDonanimKoprusuSetup.exe" (
+    start "" "%~dp0BonCoreDonanimKoprusuSetup.exe"
+) else if exist "%~dp0BonCoreAgent.exe" (
+    start "" "%~dp0BonCoreAgent.exe"
+)
+
 exit

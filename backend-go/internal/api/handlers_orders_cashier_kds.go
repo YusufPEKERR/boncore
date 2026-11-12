@@ -228,7 +228,7 @@ func serializeOrder(db *gorm.DB, order *models.Order) fiber.Map {
 // ============================================================================
 
 func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
-	group.Get("/analytics/statistics", func(c *fiber.Ctx) error {
+	statsHandler := func(c *fiber.Ctx) error {
 		db, _, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
@@ -934,7 +934,10 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 				orderTypeStats["delivery"],
 			},
 		})
-	})
+	}
+
+	group.Get("/analytics/statistics", statsHandler)
+	group.Get("/reports/restaurant-statistics", statsHandler)
 
 	group.Get("/reports/product-sales", func(c *fiber.Ctx) error {
 		db, _, err := getTenantDB(c, svc)
@@ -943,13 +946,35 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		}
 		startDate := c.Query("start_date")
 		endDate := c.Query("end_date")
+		dateRange := c.Query("date_range", "all")
+		categoryID := c.QueryInt("category_id", 0)
+		stationFilter := strings.ToLower(strings.TrimSpace(c.Query("station", "all")))
+		searchFilter := strings.ToLower(strings.TrimSpace(c.Query("search", "")))
+
+		now := time.Now()
+		loc := now.Location()
+		todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+		todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 999999999, loc)
 
 		query := db.Model(&models.Order{}).Where("status = ?", "paid")
 		if startDate != "" {
 			if dt, err := time.Parse("2006-01-02", startDate); err == nil {
 				query = query.Where("created_at >= ?", dt)
 			}
+		} else if dateRange == "today" {
+			query = query.Where("created_at >= ? AND created_at <= ?", todayStart, todayEnd)
+		} else if dateRange == "yesterday" {
+			yStart := todayStart.AddDate(0, 0, -1)
+			yEnd := todayEnd.AddDate(0, 0, -1)
+			query = query.Where("created_at >= ? AND created_at <= ?", yStart, yEnd)
+		} else if dateRange == "week" {
+			wStart := todayStart.AddDate(0, 0, -7)
+			query = query.Where("created_at >= ?", wStart)
+		} else if dateRange == "month" {
+			mStart := todayStart.AddDate(0, 0, -30)
+			query = query.Where("created_at >= ?", mStart)
 		}
+
 		if endDate != "" {
 			if dt, err := time.Parse("2006-01-02", endDate); err == nil {
 				dtEnd := time.Date(dt.Year(), dt.Month(), dt.Day(), 23, 59, 59, 999999999, dt.Location())
@@ -966,7 +991,7 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 
 		var items []models.OrderItem
 		if len(orderIDs) > 0 {
-			db.Where("order_id IN ? AND is_voided = ? AND is_treat = ?", orderIDs, false, false).Find(&items)
+			db.Where("order_id IN ? AND is_voided = ?", orderIDs, false).Find(&items)
 		}
 
 		var allProds []models.Product
@@ -979,8 +1004,13 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		var allCats []models.Category
 		db.Find(&allCats)
 		catMap := map[int]models.Category{}
+		categoriesFilter := make([]fiber.Map, 0, len(allCats))
 		for _, cat := range allCats {
 			catMap[cat.ID] = cat
+			categoriesFilter = append(categoriesFilter, fiber.Map{
+				"id":   cat.ID,
+				"name": cat.Name,
+			})
 		}
 
 		var recipes []models.Recipe
@@ -999,19 +1029,32 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		}
 
 		type pSale struct {
-			ProductID     int     `json:"product_id"`
-			Name          string  `json:"name"`
-			Category      string  `json:"category"`
-			CategoryColor string  `json:"category_color"`
-			UnitPrice     float64 `json:"unit_price"`
-			UnitCost      float64 `json:"unit_cost"`
-			Quantity      float64 `json:"quantity"`
-			Revenue       float64 `json:"revenue"`
-			TotalCost     float64 `json:"total_cost"`
-			Profit        float64 `json:"profit"`
-			OrdersCount   int     `json:"orders_count"`
-			ProfitMargin  float64 `json:"profit_margin"`
-			RevenueShare  float64 `json:"revenue_share"`
+			ProductID           int     `json:"product_id"`
+			ProductName         string  `json:"product_name"`
+			Name                string  `json:"name"`
+			CategoryID          int     `json:"category_id"`
+			CategoryName        string  `json:"category_name"`
+			Category            string  `json:"category"`
+			CategoryColor       string  `json:"category_color"`
+			Station             string  `json:"station"`
+			Unit                string  `json:"unit"`
+			ImageURL            *string `json:"image_url,omitempty"`
+			VatRate             int     `json:"vat_rate"`
+			UnitPrice           float64 `json:"unit_price"`
+			AvgPrice            float64 `json:"avg_price"`
+			UnitCost            float64 `json:"unit_cost"`
+			Quantity            float64 `json:"quantity"`
+			TotalQuantity       float64 `json:"total_quantity"`
+			Revenue             float64 `json:"revenue"`
+			TotalTurnover       float64 `json:"total_turnover"`
+			TotalCost           float64 `json:"total_cost"`
+			Profit              float64 `json:"profit"`
+			OrdersCount         int     `json:"orders_count"`
+			TreatCount          int     `json:"treat_count"`
+			ProfitMargin        float64 `json:"profit_margin"`
+			ProfitMarginPercent float64 `json:"profit_margin_percent"`
+			RevenueShare        float64 `json:"revenue_share"`
+			SharePercent        float64 `json:"share_percent"`
 		}
 		salesMap := map[int]*pSale{}
 		totalQty := 0.0
@@ -1036,47 +1079,145 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 			if catColor == "" {
 				catColor = "#6366f1"
 			}
+
+			// Category filter
+			if categoryID > 0 && prod.CategoryID != categoryID {
+				continue
+			}
+
+			// Station filter
+			stName := strings.ToLower(it.Station)
+			if stName == "" {
+				stName = strings.ToLower(prod.Station)
+			}
+			if stName == "" {
+				stName = "kitchen"
+			}
+			if stationFilter != "" && stationFilter != "all" && stName != stationFilter {
+				continue
+			}
+
+			// Search query filter
+			if searchFilter != "" {
+				if !strings.Contains(strings.ToLower(pName), searchFilter) && !strings.Contains(strings.ToLower(catName), searchFilter) {
+					continue
+				}
+			}
+
 			uCost := unitCosts[it.ProductID]
 			if uCost == 0 && ok {
 				uCost = round2(prod.BasePrice * 0.35)
 			}
 
+			pUnit := "Porsiyon"
+
 			if _, exists := salesMap[it.ProductID]; !exists {
 				salesMap[it.ProductID] = &pSale{
 					ProductID:     it.ProductID,
+					ProductName:   pName,
 					Name:          pName,
+					CategoryID:    prod.CategoryID,
+					CategoryName:  catName,
 					Category:      catName,
 					CategoryColor: catColor,
+					Station:       stName,
+					Unit:          pUnit,
+					ImageURL:      prod.ImageURL,
+					VatRate:       int(prod.VatRate),
 					UnitPrice:     it.UnitPrice,
+					AvgPrice:      it.UnitPrice,
 					UnitCost:      round2(uCost),
 				}
 			}
 			st := salesMap[it.ProductID]
 			itemCost := round2(uCost * it.Quantity)
-			st.Quantity = round2(st.Quantity + it.Quantity)
-			st.Revenue = round2(st.Revenue + it.TotalPrice)
-			st.TotalCost = round2(st.TotalCost + itemCost)
-			st.Profit = round2(st.Revenue - st.TotalCost)
-			st.OrdersCount++
 
-			totalQty += it.Quantity
-			totalRev += it.TotalPrice
-			totalCost += itemCost
+			if it.IsTreat {
+				st.TreatCount += int(it.Quantity)
+			} else {
+				st.Quantity = round2(st.Quantity + it.Quantity)
+				st.TotalQuantity = st.Quantity
+				st.Revenue = round2(st.Revenue + it.TotalPrice)
+				st.TotalTurnover = st.Revenue
+				st.TotalCost = round2(st.TotalCost + itemCost)
+				st.Profit = round2(st.Revenue - st.TotalCost)
+				st.OrdersCount++
+
+				totalQty += it.Quantity
+				totalRev += it.TotalPrice
+				totalCost += itemCost
+			}
 		}
 
 		productsList := make([]pSale, 0, len(salesMap))
+		catAgg := map[string]*fiber.Map{}
+		topByTurnover := "-"
+		topByQuantity := "-"
+		var maxTurnover, maxQuantity float64
+
 		for _, p := range salesMap {
 			if p.Revenue > 0 {
 				p.ProfitMargin = round2((p.Profit / p.Revenue) * 100)
+				p.ProfitMarginPercent = p.ProfitMargin
 			}
 			if totalRev > 0 {
 				p.RevenueShare = round2((p.Revenue / totalRev) * 100)
+				p.SharePercent = p.RevenueShare
 			}
+			if p.TotalQuantity > 0 {
+				p.AvgPrice = round2(p.TotalTurnover / p.TotalQuantity)
+			}
+
+			if p.Revenue > maxTurnover {
+				maxTurnover = p.Revenue
+				topByTurnover = p.ProductName
+			}
+			if p.TotalQuantity > maxQuantity {
+				maxQuantity = p.TotalQuantity
+				topByQuantity = p.ProductName
+			}
+
+			// Aggregate category
+			cName := p.CategoryName
+			if _, exists := catAgg[cName]; !exists {
+				catAgg[cName] = &fiber.Map{
+					"category": cName,
+					"turnover": 0.0,
+					"quantity": 0.0,
+					"share":    0.0,
+				}
+			}
+			cEnt := *catAgg[cName]
+			cEnt["turnover"] = round2(cEnt["turnover"].(float64) + p.Revenue)
+			cEnt["quantity"] = round2(cEnt["quantity"].(float64) + p.TotalQuantity)
+
 			productsList = append(productsList, *p)
 		}
 		sort.Slice(productsList, func(i, j int) bool { return productsList[i].Revenue > productsList[j].Revenue })
 
+		catSummaryList := make([]fiber.Map, 0, len(catAgg))
+		for _, v := range catAgg {
+			cEnt := *v
+			if totalRev > 0 {
+				cEnt["share"] = round2((cEnt["turnover"].(float64) / totalRev) * 100)
+			}
+			catSummaryList = append(catSummaryList, cEnt)
+		}
+		sort.Slice(catSummaryList, func(i, j int) bool {
+			return catSummaryList[i]["turnover"].(float64) > catSummaryList[j]["turnover"].(float64)
+		})
+
 		return c.JSON(fiber.Map{
+			"total_revenue":           round2(totalRev),
+			"total_quantity_sold":     round2(totalQty),
+			"distinct_products_count": len(productsList),
+			"total_orders_analyzed":   len(orderIDs),
+			"top_by_turnover":         topByTurnover,
+			"top_by_quantity":         topByQuantity,
+			"categories_summary":      catSummaryList,
+			"categories_filter":       categoriesFilter,
+			"items":                   productsList,
+			"products":                productsList,
 			"summary": fiber.Map{
 				"total_products_sold": len(productsList),
 				"total_quantity":      round2(totalQty),
@@ -1084,11 +1225,10 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 				"total_cost":          round2(totalCost),
 				"total_profit":        round2(totalRev - totalCost),
 			},
-			"products": productsList,
 		})
 	})
 
-	group.Get("/reports/closed-bills", func(c *fiber.Ctx) error {
+	closedBillsHandler := func(c *fiber.Ctx) error {
 		db, _, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
@@ -1237,7 +1377,9 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 			"average_ticket":     avgTicket,
 			"orders":             closedList,
 		})
-	})
+	}
+	group.Get("/reports/closed-bills", closedBillsHandler)
+	group.Get("/closed-bills", closedBillsHandler)
 
 	group.Post("/create", func(c *fiber.Ctx) error {
 		db, tenantCode, err := getTenantDB(c, svc)
@@ -2739,112 +2881,11 @@ func RegisterKDSRoutes(group fiber.Router, svc *service.Services) {
 // ============================================================================
 
 func getOrCreateActiveRegister(db *gorm.DB) models.CashRegister {
-	var reg models.CashRegister
-	if err := db.Where("status = ?", "open").Order("id desc").First(&reg).Error; err != nil {
-		reg = models.CashRegister{
-			OpeningFloat: 1500.0,
-			OpenedBy:     "Sistem Otomatik",
-			Status:       "open",
-		}
-		db.Create(&reg)
-	}
-	return reg
+	return service.GetOrCreateActiveRegister(db)
 }
 
 func calculateReportSummary(db *gorm.DB, reg models.CashRegister) fiber.Map {
-	var orders []models.Order
-	db.Where("created_at >= ?", reg.OpenedAt).Find(&orders)
-
-	var paidOrders, openOrders, cancelledOrders []models.Order
-	for _, o := range orders {
-		switch o.Status {
-		case "paid":
-			paidOrders = append(paidOrders, o)
-		case "open":
-			openOrders = append(openOrders, o)
-		case "cancelled":
-			cancelledOrders = append(cancelledOrders, o)
-		}
-	}
-
-	var payments []models.Payment
-	db.Where("created_at >= ?", reg.OpenedAt).Find(&payments)
-
-	methodTotals := map[string]float64{
-		"cash":         0.0,
-		"credit_card":  0.0,
-		"multinet":     0.0,
-		"sodexo":       0.0,
-		"open_account": 0.0,
-	}
-	totalTips := 0.0
-	for _, p := range payments {
-		methodTotals[p.PaymentMethod] = round2(methodTotals[p.PaymentMethod] + p.Amount)
-		totalTips = round2(totalTips + p.TipAmount)
-	}
-
-	var expenses []models.CashExpense
-	db.Where("created_at >= ?", reg.OpenedAt).Find(&expenses)
-	totalExpenses := 0.0
-	expensesList := make([]fiber.Map, 0, len(expenses))
-	for _, e := range expenses {
-		totalExpenses += e.Amount
-		var cStr interface{}
-		if !e.CreatedAt.IsZero() {
-			cStr = e.CreatedAt.Format(time.RFC3339)
-		}
-		expensesList = append(expensesList, fiber.Map{
-			"id":          e.ID,
-			"category":    e.Category,
-			"amount":      e.Amount,
-			"description": e.Description,
-			"created_at":  cStr,
-		})
-	}
-
-	var voidLogs []models.AuditLog
-	db.Where("timestamp >= ? AND action_type IN ?", reg.OpenedAt, []string{"VOID_ITEM", "APPLY_DISCOUNT", "TREAT_ITEMS"}).Find(&voidLogs)
-
-	grossSales := 0.0
-	totalDiscounts := 0.0
-	totalKuver := 0
-	for _, o := range paidOrders {
-		grossSales += o.Subtotal
-		totalDiscounts += o.DiscountAmount
-		totalKuver += o.KuverCount
-	}
-	netSales := 0.0
-	for _, v := range methodTotals {
-		netSales += v
-	}
-	cashExpected := round2(reg.OpeningFloat + methodTotals["cash"] - totalExpenses)
-
-	var openedAtStr interface{}
-	if !reg.OpenedAt.IsZero() {
-		openedAtStr = reg.OpenedAt.Format(time.RFC3339)
-	}
-
-	return fiber.Map{
-		"id":                     reg.ID,
-		"register_id":            reg.ID,
-		"opened_at":              openedAtStr,
-		"opened_by":              reg.OpenedBy,
-		"opening_float":          reg.OpeningFloat,
-		"paid_orders_count":      len(paidOrders),
-		"open_orders_count":      len(openOrders),
-		"cancelled_orders_count": len(cancelledOrders),
-		"total_kuver":            totalKuver,
-		"gross_sales":            round2(grossSales),
-		"total_revenue":          round2(grossSales),
-		"total_discounts":        round2(totalDiscounts),
-		"net_sales":              round2(netSales),
-		"total_tips":             totalTips,
-		"payment_breakdown":      methodTotals,
-		"total_expenses":         round2(totalExpenses),
-		"cash_in_drawer":         cashExpected,
-		"void_and_discount_logs": len(voidLogs),
-		"expenses_list":          expensesList,
-	}
+	return service.CalculateReportSummary(db, reg)
 }
 
 func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
@@ -3158,6 +3199,7 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		startDate := c.Query("start_date")
 		endDate := c.Query("end_date")
 		query := db.Model(&models.CashExpense{})
+
 		if startDate != "" {
 			if dt, err := time.Parse("2006-01-02", startDate); err == nil {
 				query = query.Where("created_at >= ?", dt)
@@ -3169,6 +3211,14 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 				query = query.Where("created_at <= ?", dtEnd)
 			}
 		}
+		// Tarih parametresi verilmemişse ve active_shift istenmişse sadece aktif kasanın masraflarını getir
+		if startDate == "" && endDate == "" {
+			reg := getOrCreateActiveRegister(db)
+			if !reg.OpenedAt.IsZero() {
+				query = query.Where("created_at >= ?", reg.OpenedAt)
+			}
+		}
+
 		var expenses []models.CashExpense
 		query.Order("created_at desc").Find(&expenses)
 		res := make([]fiber.Map, 0, len(expenses))
@@ -3177,27 +3227,58 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 			if !e.CreatedAt.IsZero() {
 				cStr = e.CreatedAt.Format(time.RFC3339)
 			}
+			expType := e.ExpenseType
+			if expType == "" {
+				expType = "out"
+			}
 			res = append(res, fiber.Map{
-				"id":          e.ID,
-				"category":    e.Category,
-				"amount":      e.Amount,
-				"description": e.Description,
-				"created_by":  e.CreatedBy,
-				"created_at":  cStr,
+				"id":           e.ID,
+				"category":     e.Category,
+				"amount":       e.Amount,
+				"type":         expType,
+				"expense_type": expType,
+				"description":  e.Description,
+				"created_by":   e.CreatedBy,
+				"created_at":   cStr,
 			})
 		}
 		return c.JSON(res)
 	})
 
-	group.Get("/x-report", func(c *fiber.Ctx) error {
+	group.Delete("/expenses/:id", func(c *fiber.Ctx) error {
 		db, _, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
+		id := c.Params("id")
+		var expense models.CashExpense
+		if err := db.First(&expense, id).Error; err != nil {
+			return fiber.NewError(fiber.StatusNotFound, "Masraf kaydı bulunamadı.")
+		}
+		db.Delete(&expense)
+		reg := getOrCreateActiveRegister(db)
+		return c.JSON(fiber.Map{
+			"status":  "ok",
+			"message": "Masraf kaydı başarıyla silindi.",
+			"summary": calculateReportSummary(db, reg),
+		})
+	})
+
+	group.Get("/x-report", func(c *fiber.Ctx) error {
+		db, tenantCode, err := getTenantDB(c, svc)
+		if err != nil {
+			return err
+		}
+		cashierName := c.Query("cashier_name", "Kasiyer")
 		reg := getOrCreateActiveRegister(db)
 		summary := calculateReportSummary(db, reg)
-		summary["report_type"] = "X-RAPORU (ARA KASA ÖZETİ)"
-		summary["generated_at"] = time.Now().UTC().Format(time.RFC3339)
+		summary["report_type"] = "X-RAPORU (GÜN İÇİ ARA DENETİM)"
+		summary["title"] = "X-RAPORU (ARA DENETİM)"
+		summary["tenant_code"] = tenantCode
+		summary["cashier_name"] = cashierName
+		summary["date"] = time.Now().Format("02.01.2006 15:04:05")
+		summary["generated_at"] = time.Now().Format("02.01.2006 15:04:05")
+		summary["generated_at_iso"] = time.Now().UTC().Format(time.RFC3339)
 		return c.JSON(summary)
 	})
 
@@ -3212,52 +3293,68 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 			payload.ClosedBy = "Müdür"
 		}
 
-		reg := getOrCreateActiveRegister(db)
-		summary := calculateReportSummary(db, reg)
-
-		var openOrdersCount int64
-		db.Model(&models.Order{}).Where("status = ?", "open").Count(&openOrdersCount)
-		if openOrdersCount > 0 {
-			return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("Açıkta %d adet adisyon var! Z-Raporu almadan önce tüm masaları kapatmalısınız.", openOrdersCount))
+		summary, err := service.ExecuteZReport(db, tenantCode, payload.ClosedBy, payload.ForceClose, svc.WSHub)
+		if err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
 		}
-
-		now := time.Now().UTC()
-		reg.Status = "closed"
-		reg.ClosedAt = &now
-		reg.ClosedBy = &payload.ClosedBy
-		pBreakdown := summary["payment_breakdown"].(map[string]float64)
-		reg.TotalCash = pBreakdown["cash"]
-		reg.TotalCard = pBreakdown["credit_card"]
-		reg.TotalMultinet = pBreakdown["multinet"]
-		reg.TotalSodexo = pBreakdown["sodexo"]
-		reg.TotalDiscounts = summary["total_discounts"].(float64)
-		reg.TotalExpenses = summary["total_expenses"].(float64)
-		reg.TotalRevenue = summary["net_sales"].(float64)
-		zNo := fmt.Sprintf("Z-%s-%04d", now.Format("20060102"), reg.ID)
-		reg.ZReportNo = &zNo
-		db.Save(&reg)
-
-		newReg := models.CashRegister{
-			OpeningFloat: 1500.0,
-			OpenedBy:     payload.ClosedBy,
-			Status:       "open",
-		}
-		db.Create(&newReg)
-
-		db.Create(&models.AuditLog{
-			ActionType:   "Z_REPORT_CLOSED",
-			OperatorName: payload.ClosedBy,
-			OperatorRole: "manager",
-			TargetRef:    &zNo,
-			Details:      models.JSONMap(summary),
-		})
-
-		summary["report_type"] = "Z-RAPORU (GÜN SONU KESİN KAPANIŞ)"
-		summary["closed_at"] = now.Format(time.RFC3339)
-		summary["closed_by"] = payload.ClosedBy
-
-		svc.WSHub.BroadcastToChannel(tenantCode, "pos", "Z_REPORT_COMPLETED", summary)
 		return c.JSON(summary)
+	})
+
+	group.Get("/auto-z-report", func(c *fiber.Ctx) error {
+		db, _, err := getTenantDB(c, svc)
+		if err != nil {
+			return err
+		}
+		settings := service.GetAutoZReportSettings(db)
+		return c.JSON(settings)
+	})
+
+	group.Post("/auto-z-report", func(c *fiber.Ctx) error {
+		db, tenantCode, err := getTenantDB(c, svc)
+		if err != nil {
+			return err
+		}
+		var payload service.AutoZReportSettings
+		if err := c.BodyParser(&payload); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz ayar verisi.")
+		}
+		if payload.Time == "" {
+			payload.Time = "04:00"
+		}
+		current := service.GetAutoZReportSettings(db)
+		current.Enabled = payload.Enabled
+		current.Time = payload.Time
+		current.ForceClose = payload.ForceClose
+		service.SaveAutoZReportSettings(db, current)
+
+		svc.WSHub.BroadcastToChannel(tenantCode, "pos", "AUTO_Z_REPORT_SETTINGS_UPDATED", current)
+		return c.JSON(current)
+	})
+
+	group.Post("/auto-z-report/test", func(c *fiber.Ctx) error {
+		db, tenantCode, err := getTenantDB(c, svc)
+		if err != nil {
+			return err
+		}
+		current := service.GetAutoZReportSettings(db)
+		summary, err := service.ExecuteZReport(db, tenantCode, "Otomatik Sistem (Test)", true, svc.WSHub)
+		loc := time.FixedZone("TRT", 3*3600)
+		now := time.Now().In(loc)
+		if err != nil {
+			current.LastRunStatus = fmt.Sprintf("Hata: %s - %s", err.Error(), now.Format("15:04:05"))
+			service.SaveAutoZReportSettings(db, current)
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+		zNo, _ := summary["z_report_no"].(string)
+		current.LastRunDate = now.Format("2006-01-02")
+		current.LastRunStatus = fmt.Sprintf("Başarılı (%s) - %s (Test)", zNo, now.Format("15:04:05"))
+		service.SaveAutoZReportSettings(db, current)
+		return c.JSON(fiber.Map{
+			"status":   "ok",
+			"message":  fmt.Sprintf("Otomatik Z-Raporu test çalıştırması başarılı: %s", zNo),
+			"settings": current,
+			"summary":  summary,
+		})
 	})
 
 	group.Get("/reports/day-end", func(c *fiber.Ctx) error {
@@ -3265,13 +3362,38 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		if err != nil {
 			return err
 		}
-		targetDate := c.Query("target_date")
-		now := time.Now().UTC()
+		targetDate := strings.TrimSpace(c.Query("target_date"))
+		if targetDate == "" {
+			targetDate = strings.TrimSpace(c.Query("date_str"))
+		}
+		if targetDate == "" {
+			targetDate = strings.TrimSpace(c.Query("date"))
+		}
+
+		regIDStr := strings.TrimSpace(c.Query("register_id"))
+		var targetReg *models.CashRegister
 		var dayStart, dayEnd time.Time
-		if targetDate != "" {
-			if dt, err := time.Parse("2006-01-02", targetDate); err == nil {
-				dayStart = time.Date(dt.Year(), dt.Month(), dt.Day(), 0, 0, 0, 0, time.UTC)
-				dayEnd = time.Date(dt.Year(), dt.Month(), dt.Day(), 23, 59, 59, 999999999, time.UTC)
+
+		if regIDStr != "" {
+			var sr models.CashRegister
+			if err := db.First(&sr, regIDStr).Error; err == nil {
+				targetReg = &sr
+				dayStart = sr.OpenedAt
+				if sr.ClosedAt != nil && !sr.ClosedAt.IsZero() {
+					dayEnd = *sr.ClosedAt
+				} else {
+					dayEnd = time.Now().UTC()
+				}
+			}
+		}
+
+		now := time.Now().UTC()
+		if dayStart.IsZero() {
+			if targetDate != "" {
+				if dt, err := time.Parse("2006-01-02", targetDate); err == nil {
+					dayStart = time.Date(dt.Year(), dt.Month(), dt.Day(), 0, 0, 0, 0, time.UTC)
+					dayEnd = time.Date(dt.Year(), dt.Month(), dt.Day(), 23, 59, 59, 999999999, time.UTC)
+				}
 			}
 		}
 		if dayStart.IsZero() {
@@ -3418,6 +3540,9 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		totalExpenses := cashOut
 
 		reg := getOrCreateActiveRegister(db)
+		if targetReg != nil {
+			reg = *targetReg
+		}
 		cashSales := payAgg["cash"].Amount
 		expectedDrawerCash := round2(reg.OpeningFloat + cashSales + cashIn - cashOut)
 
@@ -3602,7 +3727,7 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 			return err
 		}
 		var registers []models.CashRegister
-		db.Order("id desc").Limit(30).Find(&registers)
+		db.Order("id desc").Limit(100).Find(&registers)
 		res := make([]fiber.Map, 0, len(registers))
 		for _, r := range registers {
 			var oStr, cStr interface{}
@@ -3613,8 +3738,17 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 				cStr = r.ClosedAt.Format(time.RFC3339)
 			}
 			mealCard := round2(r.TotalMultinet + r.TotalSodexo + r.TotalTicket)
+			turnover := round2(r.TotalCash + r.TotalCard + mealCard)
+			zNo := ""
+			if r.ZReportNo != nil && *r.ZReportNo != "" {
+				zNo = *r.ZReportNo
+			} else {
+				zNo = fmt.Sprintf("Z-%s-%04d", r.OpenedAt.Format("20060102"), r.ID)
+			}
 			res = append(res, fiber.Map{
 				"id":                   r.ID,
+				"register_id":          r.ID,
+				"z_report_no":          zNo,
 				"opened_at":            oStr,
 				"closed_at":            cStr,
 				"opened_by":            r.OpenedBy,
@@ -3628,7 +3762,8 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 				"total_discounts":      r.TotalDiscounts,
 				"total_expenses":       r.TotalExpenses,
 				"closing_cash_counted": round2(r.OpeningFloat + r.TotalCash - r.TotalExpenses),
-				"total_turnover":       round2(r.TotalCash + r.TotalCard + mealCard),
+				"total_turnover":       turnover,
+				"total_revenue":        turnover,
 			})
 		}
 		return c.JSON(res)

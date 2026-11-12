@@ -23,6 +23,7 @@ func RegisterSaaSAnnouncementRoutes(masterGroup fiber.Router, rootApi fiber.Rout
 		var payload struct {
 			Title           string     `json:"title"`
 			Content         string     `json:"content"`
+			Message         string     `json:"message"`
 			BannerType      string     `json:"banner_type"`
 			TargetType      string     `json:"target_type"`
 			TargetTenantIDs string     `json:"target_tenant_ids"`
@@ -35,6 +36,9 @@ func RegisterSaaSAnnouncementRoutes(masterGroup fiber.Router, rootApi fiber.Rout
 		}
 		if err := c.BodyParser(&payload); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz duyuru verisi: "+err.Error())
+		}
+		if strings.TrimSpace(payload.Content) == "" && strings.TrimSpace(payload.Message) != "" {
+			payload.Content = strings.TrimSpace(payload.Message)
 		}
 		if strings.TrimSpace(payload.Title) == "" || strings.TrimSpace(payload.Content) == "" {
 			return fiber.NewError(fiber.StatusBadRequest, "Başlık ve içerik alanları zorunludur.")
@@ -233,8 +237,8 @@ func RegisterSaaSAnnouncementRoutes(masterGroup fiber.Router, rootApi fiber.Rout
 		})
 	})
 
-	// PATCH /api/master/announcements/:id/toggle - Toggle announcement active/inactive status
-	masterGroup.Patch("/announcements/:id/toggle", func(c *fiber.Ctx) error {
+	// PATCH & POST /api/master/announcements/:id/toggle - Toggle announcement active/inactive status
+	toggleHandler := func(c *fiber.Ctx) error {
 		if err := requireMasterAdmin(c, svc); err != nil {
 			return err
 		}
@@ -288,7 +292,9 @@ func RegisterSaaSAnnouncementRoutes(masterGroup fiber.Router, rootApi fiber.Rout
 			"message":      statusMsg,
 			"announcement": item,
 		})
-	})
+	}
+	masterGroup.Patch("/announcements/:id/toggle", toggleHandler)
+	masterGroup.Post("/announcements/:id/toggle", toggleHandler)
 
 	// PUT /api/master/announcements/:id/status - Explicitly set is_active
 	masterGroup.Put("/announcements/:id/status", func(c *fiber.Ctx) error {

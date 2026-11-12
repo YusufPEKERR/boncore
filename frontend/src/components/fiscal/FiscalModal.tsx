@@ -57,42 +57,69 @@ const buildThermalRawText = (
   formattedTime: string,
   vat10Tax: number,
   footerMsg: string,
-  footerSub: string
+  footerSub: string,
+  customWidth?: number
 ): string => {
-  const W = 40;
+  let W = customWidth || 42;
+  if (W < 28 || W > 56) W = 42;
   const line = '-'.repeat(W);
   const padLR = (left: string, right: string) => {
     const space = Math.max(1, W - left.length - right.length);
     return left + ' '.repeat(space) + right;
   };
   const centerText = (txt: string) => {
-    if (txt.length >= W) return txt;
+    if (txt.length >= W) return txt.slice(0, W);
     const leftPad = Math.floor((W - txt.length) / 2);
     return ' '.repeat(leftPad) + txt;
   };
 
   const lines: string[] = [];
+  lines.push('='.repeat(W));
   lines.push(centerText(headerTitle));
-  lines.push(line);
+  lines.push('='.repeat(W));
   lines.push(padLR(`Masa: ${doc.table_name || 'Masa'}`, `Tarih: ${formattedDate}`));
   lines.push(padLR(`Garson: ${doc.waiter_name || '-'}`, `Saat: ${formattedTime}`));
   lines.push(`Kasiyer: ${doc.cashier_name || 'Kasiyer'}`);
   lines.push(line);
-  lines.push('ÜRÜN               ADET    BİRİM   TUTAR');
-  lines.push(line);
 
-  (doc.items || []).forEach((it: any) => {
-    const name = String(it.product_name || '').slice(0, 18).padEnd(18, ' ');
-    const qtyNum = Number(it.quantity || 0);
-    const qtyStr = (Number.isInteger(qtyNum) ? String(qtyNum) : qtyNum.toFixed(2)).padStart(5, ' ');
-    const unitStr = Number(it.unit_price || 0).toFixed(2).padStart(8, ' ');
-    const totalStr = Number(it.total_price || 0).toFixed(2).padStart(8, ' ');
-    lines.push(`${name}${qtyStr} ${unitStr}${totalStr}`);
-    const variant = it.variant || it.variant_name;
-    if (variant) {
-      lines.push(` (${variant})`);
-    }
-  });
+  if (W <= 34) {
+    // 58mm Termal Kağıt (32 Karakter)
+    lines.push(padLR('ÜRÜN', 'ADET    TUTAR'));
+    lines.push(line);
+    (doc.items || []).forEach((it: any) => {
+      const qtyNum = Number(it.quantity || 0);
+      const qtyStr = (Number.isInteger(qtyNum) ? String(qtyNum) : qtyNum.toFixed(2));
+      const totalStr = `₺${Number(it.total_price || 0).toFixed(2)}`;
+      const rightCol = `${qtyStr} AD ${totalStr}`;
+      const name = String(it.product_name || '');
+      if (name.length + rightCol.length + 2 <= W) {
+        lines.push(padLR(name, rightCol));
+      } else {
+        lines.push(name);
+        lines.push(' '.repeat(Math.max(0, W - rightCol.length)) + rightCol);
+      }
+      const variant = it.variant || it.variant_name;
+      if (variant) {
+        lines.push(` (${variant})`);
+      }
+    });
+  } else {
+    // 80mm Termal Kağıt (42 / 48 Karakter)
+    lines.push(padLR('ÜRÜN', 'ADET   BİRİM    TUTAR'));
+    lines.push(line);
+    (doc.items || []).forEach((it: any) => {
+      const name = String(it.product_name || '').slice(0, 20).padEnd(20, ' ');
+      const qtyNum = Number(it.quantity || 0);
+      const qtyStr = (Number.isInteger(qtyNum) ? String(qtyNum) : qtyNum.toFixed(2)).padStart(5, ' ');
+      const unitStr = Number(it.unit_price || 0).toFixed(2).padStart(8, ' ');
+      const totalStr = Number(it.total_price || 0).toFixed(2).padStart(9, ' ');
+      lines.push(`${name}${qtyStr} ${unitStr}${totalStr}`);
+      const variant = it.variant || it.variant_name;
+      if (variant) {
+        lines.push(` (${variant})`);
+      }
+    });
+  }
 
   lines.push(line);
   lines.push(padLR('Ara Toplam:', `₺${Number(doc.subtotal || 0).toFixed(2)}`));
@@ -178,7 +205,7 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
     footerSub
   );
 
-  // 1. Kasa bilgisayarinda secili FİZİKSEL termal yazicilar varsa dogrudan ajan uzerinden yazdir
+  // 1. Kasa bilgisayarında kayıtlı FİZİKSEL termal yazıcılar varsa her yazıcının kendi genişliğine göre formatlayıp yazdır
   const selectedPrinters = (targetPrinters && targetPrinters.length > 0)
     ? targetPrinters
     : localHardware.getSelectedPrinters();
@@ -186,21 +213,39 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
   const physicalPrinters = (selectedPrinters || []).filter(p => !isVirtualPrinterTarget(p));
 
   if (physicalPrinters.length > 0) {
-    try {
-      const res = await localHardware.printReceipt({
-        printers: physicalPrinters,
-        document: doc,
-        rawText
-      });
-      if (res && res.success) {
-        return;
+    let anySuccess = false;
+    for (const prKey of physicalPrinters) {
+      // Her yazıcının kayıtlı genişliğine bak
+      const printerLineWidth = localHardware.getPrinterLineWidth(prKey);
+      const rawTextForPrinter = buildThermalRawText(
+        doc,
+        headerTitle,
+        formattedDate,
+        formattedTime,
+        vat10Tax,
+        footerMsg,
+        footerSub,
+        printerLineWidth
+      );
+      try {
+        const res = await localHardware.printReceipt({
+          printers: [prKey],
+          document: doc,
+          rawText: rawTextForPrinter
+        });
+        if (res && res.success) {
+          anySuccess = true;
+        }
+      } catch (e) {
+        console.warn(`Fiziksel termal yazdırma hatası (${prKey}):`, e);
       }
-    } catch (e) {
-      console.warn('Fiziksel termal yazdirma hatasi, tarayici onizlemesine geciliyor:', e);
+    }
+    if (anySuccess) {
+      return;
     }
   }
 
-  // 2. Ajan veya fiziksel yazici yoksa tarayici uzerinden görsel şablonla yazdir
+  // 2. Ajan veya fiziksel yazıcı yoksa tarayıcı üzerinden görsel şablonla yazdır
   try {
     let iframe = document.getElementById('boncore-thermal-print-frame') as HTMLIFrameElement | null;
     if (!iframe) {
@@ -215,8 +260,10 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
       document.body.appendChild(iframe);
     }
 
-    const paperWidth = design?.paper_width === '58mm' ? '58mm' : '80mm';
-    const bodyWidth = design?.paper_width === '58mm' ? '52mm' : '74mm';
+    const defaultPrKey = physicalPrinters[0] || (selectedPrinters && selectedPrinters[0]);
+    const configuredPaperWidth = localHardware.getPrinterPaperWidth(defaultPrKey);
+    const paperWidth = design?.paper_width || configuredPaperWidth || '80mm';
+    const bodyWidth = paperWidth === '58mm' ? '50mm' : '74mm';
 
     const itemsRows = (doc.items || [])
       .map((it: any) => {

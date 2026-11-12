@@ -335,8 +335,14 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
       const data = await res.json();
 
       // Also initialize feature toggles
-      if (data && data.id) {
-        await fetch(`/api/master/tenants/${data.id}/features`, {
+      const tenantId = data?.id || data?.tenant?.id;
+      const tenantCode = data?.code || data?.tenant?.code || data?.credentials?.restaurant_code || newForm.code;
+      const adminUser = data?.admin_username || data?.credentials?.admin_username || newForm.admin_username || 'admin';
+      const adminPass = data?.admin_password || data?.credentials?.admin_password || newForm.admin_password || '123456';
+      const adminPin = data?.pin_code || data?.credentials?.admin_pin || '1234';
+
+      if (tenantId) {
+        await fetch(`/api/master/tenants/${tenantId}/features`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -346,7 +352,7 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
         }).catch(() => null);
       }
 
-      alert(`Restoran oluşturuldu!\nRestoran Giriş Kodu: ${data.code}\nYönetici Kullanıcı Adı: ${data.admin_username}\nŞifre: ${data.admin_password}\nPIN: ${data.pin_code}`);
+      alert(`✅ Restoran başarıyla oluşturuldu!\n\n🏢 Restoran Kodu: @${tenantCode}\n👤 Yönetici Kullanıcı: ${adminUser}\n🔑 Şifre: ${adminPass}\n🔢 Hızlı PIN: ${adminPin}`);
       setIsAddModalOpen(false);
       setCodeManuallyEdited(false);
       onRefresh();
@@ -423,10 +429,14 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
     sound.warning();
     if (window.confirm(`"${name}" restoran kaydını ve tüm aboneliğini silmek istediğinize emin misiniz?`)) {
       try {
-        await fetch(`/api/master/tenants/${id}`, { method: 'DELETE' });
+        const res = await fetch(`/api/master/tenants/${id}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Restoran silinemedi.');
+        }
         onRefresh();
-      } catch (e) {
-        alert('Silinemedi.');
+      } catch (e: any) {
+        alert(e.message || 'Silinemedi.');
       }
     }
   };
@@ -442,7 +452,7 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
             <span>Kayıtlı Restoranlar & Modül Lisanslama ({tenants.length})</span>
           </h2>
           <p className="text-xs text-slate-400 font-medium mt-0.5">
-            Sisteme üye restoranların abonelik planlarını, 7 modül anahtarını ve kullanıcılarını buradan yönetin.
+            Sisteme üye restoranların abonelik planlarını, 11 modül anahtarını ve kullanıcılarını buradan yönetin.
           </p>
         </div>
 

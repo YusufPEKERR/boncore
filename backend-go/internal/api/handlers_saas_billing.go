@@ -232,12 +232,14 @@ func RegisterSaaSBillingRoutes(group fiber.Router, svc *service.Services) {
 			return err
 		}
 		var payload struct {
-			TenantCode   string   `json:"tenant_code"`
-			TenantID     *int     `json:"tenant_id"`
-			Amount       float64  `json:"amount"`
-			Period       string   `json:"period"`
-			Plan         string   `json:"plan"`
-			DueDateDays  int      `json:"due_date_days"`
+			TenantCode    string   `json:"tenant_code"`
+			TenantID      *int     `json:"tenant_id"`
+			Amount        float64  `json:"amount"`
+			Period        string   `json:"period"`
+			Plan          string   `json:"plan"`
+			DueDateDays   int      `json:"due_date_days"`
+			PaymentMethod string   `json:"payment_method"`
+			Status        string   `json:"status"`
 		}
 		if err := c.BodyParser(&payload); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz fatura verisi: "+err.Error())
@@ -286,6 +288,20 @@ func RegisterSaaSBillingRoutes(group fiber.Router, svc *service.Services) {
 		_, _ = rand.Read(randBytes)
 		invNo := fmt.Sprintf("INV-%s-%s", time.Now().Format("20060102"), strings.ToUpper(hex.EncodeToString(randBytes)))
 
+		payMethod := strings.TrimSpace(payload.PaymentMethod)
+		if payMethod == "" {
+			payMethod = "credit_card"
+		}
+		status := strings.TrimSpace(payload.Status)
+		if status == "" {
+			status = "pending"
+		}
+		var paidAt *time.Time
+		if status == "paid" {
+			now := time.Now()
+			paidAt = &now
+		}
+
 		invoice := models.TenantInvoice{
 			TenantID:        tenant.ID,
 			TenantCode:      tenant.Code,
@@ -296,10 +312,11 @@ func RegisterSaaSBillingRoutes(group fiber.Router, svc *service.Services) {
 			Subtotal:        subtotal,
 			TaxAmount:       taxAmount,
 			Plan:            plan,
-			PaymentMethod:   "credit_card",
+			PaymentMethod:   payMethod,
 			GatewayProvider: "manual",
-			Status:          "pending",
+			Status:          status,
 			DueDate:         &dueDate,
+			PaidAt:          paidAt,
 		}
 
 		if err := mdb.Create(&invoice).Error; err != nil {

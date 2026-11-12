@@ -10,7 +10,7 @@ from app.seed_data import seed_initial_data, bootstrap_staff_credentials
 from app.security import get_optional_user
 
 # Import routers
-from app.routers import auth, tables, products, orders, kds, cashier, inventory, delivery, qr, fiscal, audit, ws, settings as app_settings, scale, adisyo_modules, app_update, master_admin
+from app.routers import auth, tables, products, orders, kds, cashier, inventory, delivery, qr, fiscal, audit, ws, settings as app_settings, scale, adisyo_modules, master_admin
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("boncore.main")
@@ -149,8 +149,6 @@ app.include_router(audit.router, prefix=settings.API_V1_STR, dependencies=protec
 app.include_router(app_settings.router, prefix=settings.API_V1_STR, dependencies=protected)
 app.include_router(scale.router, prefix=settings.API_V1_STR, dependencies=protected)
 app.include_router(adisyo_modules.router, prefix=settings.API_V1_STR, dependencies=protected)
-app.include_router(app_update.router, prefix="/api")
-app.include_router(app_update.router, prefix=settings.API_V1_STR)
 app.include_router(master_admin.router, prefix="/api")
 app.include_router(master_admin.router, prefix=settings.API_V1_STR)
 app.include_router(ws.router)

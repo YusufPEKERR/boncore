@@ -140,7 +140,8 @@ func TestR1_FeatureFlagsAndPlans(t *testing.T) {
 	req.Header.Set("X-Restaurant-Code", testTenantCode)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("Expected 403 Forbidden for disabled feature, got: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Expected 403 Forbidden for disabled feature, got: %d, body: %s", resp.StatusCode, string(body))
 	}
 }
 

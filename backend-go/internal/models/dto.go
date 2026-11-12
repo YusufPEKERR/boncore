@@ -397,6 +397,7 @@ type CashExpenseRequest struct {
 type CloseRegisterRequest struct {
 	ClosedBy   string  `json:"closed_by"`
 	ManagerPin *string `json:"manager_pin"`
+	ForceClose bool    `json:"force_close"`
 }
 
 // ============================================================================

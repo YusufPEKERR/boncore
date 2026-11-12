@@ -568,22 +568,6 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             </div>
           )}
 
-          {/* Mobil Android APK İndir */}
-          <a
-            href="/api/app/download"
-            download="boncore-pos.apk"
-            onClick={() => sound.beep()}
-            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 group cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
-              <span className="font-semibold">Android POS APK</span>
-            </div>
-            <span className="bg-emerald-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm">
-              İNDİR
-            </span>
-          </a>
-
           {/* Uygulama Mağazası (Frame 190) */}
           {canTab('app_store') && (
             <button

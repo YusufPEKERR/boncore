@@ -238,7 +238,7 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
       </div>
 
       {/* Order Cards Grid */}
-      <div className="flex-1 overflow-y-auto md:overflow-x-auto md:overflow-y-hidden p-3 sm:p-6 flex flex-col md:flex-row gap-4 sm:gap-5 bg-slate-100 dark:bg-slate-950">
+      <div className="flex-1 overflow-y-auto md:overflow-x-auto p-3 sm:p-6 pb-28 flex flex-col md:flex-row gap-4 sm:gap-5 bg-slate-100 dark:bg-slate-950">
         {processedOrders.map((o) => {
           const isAllReady = o.items.every((it: any) => it.status === 'ready' || it.status === 'served');
           return (

@@ -1779,7 +1779,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         </div>
 
         {/* Cart Items List */}
-        <div className="flex-1 overflow-y-auto p-3 divide-y divide-slate-100 dark:divide-slate-800/80">
+        <div className="flex-1 overflow-y-auto p-3 pb-16 divide-y divide-slate-100 dark:divide-slate-800/80">
           {cartItems.map((item, idx) => {
             const isSaved = !!item.id;
             const isWeight = isCartItemWeight(item);
@@ -2313,7 +2313,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         </div>
 
         {/* Clean White Product Cards Grid with Inline Stepper Overlay */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 sm:gap-3.5 content-start">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 pb-28 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 sm:gap-3.5 content-start">
           {displayedProducts.map((p) => {
             const qty = getProductQuantityInCart(p.id);
             const isPassive = p.is_available === false;

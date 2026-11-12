@@ -21,9 +21,9 @@ const CheckoutModal = lazy(() => import('./components/cashier/CheckoutModal').th
 const DeliveryHub = lazy(() => import('./components/delivery/DeliveryHub').then(m => ({ default: m.DeliveryHub })));
 const InventoryManagement = lazy(() => import('./components/inventory/InventoryManagement').then(m => ({ default: m.InventoryManagement })));
 const QrMenuSimulator = lazy(() => import('./components/qr/QrMenuSimulator').then(m => ({ default: m.QrMenuSimulator })));
-const FiscalModal = lazy(() => import('./components/fiscal/FiscalModal').then(m => ({ default: m.FiscalModal })));
+import { FiscalModal } from './components/fiscal/FiscalModal';
 const AuditLogViewer = lazy(() => import('./components/audit/AuditLogViewer').then(m => ({ default: m.AuditLogViewer })));
-const BuzzerListModal = lazy(() => import('./components/tables/TableActionModals').then(m => ({ default: m.BuzzerListModal })));
+import { BuzzerListModal } from './components/tables/TableActionModals';
 const BroadcastAnnouncementModal = lazy(() => import('./components/notifications/BroadcastAnnouncementModal').then(m => ({ default: m.BroadcastAnnouncementModal })));
 import type { ActiveAnnouncement } from './components/notifications/BroadcastAnnouncementModal';
 const KitchenAlertsModal = lazy(() => import('./components/tables/KitchenAlertsModal').then(m => ({ default: m.KitchenAlertsModal })));
@@ -910,7 +910,7 @@ export const App: React.FC = () => {
       />
 
       {/* Main View Area */}
-      <main className="flex-1 flex flex-col overflow-hidden relative min-h-0 w-full">
+      <main className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden relative min-h-0 w-full overscroll-contain">
         <TabErrorBoundary activeTab={activeTab} onResetTab={() => setActiveTab('tables')}>
         {!canTab(activeTab) ? (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-slate-50 dark:bg-slate-950 select-none">

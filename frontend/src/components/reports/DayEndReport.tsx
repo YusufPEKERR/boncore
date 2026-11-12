@@ -8,6 +8,7 @@ import {
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
 import { useWebSocket } from '../../services/websocket';
+import { printThermalSlipById } from '../../utils/printReceipt';
 
 interface PaymentMethodSummary {
   name: string;
@@ -98,12 +99,14 @@ export const DayEndReport: React.FC = () => {
   const [isThermalReceiptOpen, setIsThermalReceiptOpen] = useState<boolean>(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
   const [zHistory, setZHistory] = useState<any[]>([]);
+  const [selectedRegisterId, setSelectedRegisterId] = useState<number | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const loadReport = async (dateStr: string = selectedDate) => {
+  const loadReport = async (dateStr: string = selectedDate, regId?: number | null) => {
     setLoading(true);
     try {
-      const res = await api.getDayEndReport(dateStr);
+      const activeRegId = regId !== undefined ? regId : selectedRegisterId;
+      const res = await api.getDayEndReport(activeRegId ? undefined : dateStr, activeRegId || undefined);
       setReport(res);
     } catch (err) {
       console.warn('Failed to load day end report:', err);
@@ -122,12 +125,14 @@ export const DayEndReport: React.FC = () => {
   };
 
   useEffect(() => {
-    loadReport(selectedDate);
-  }, [selectedDate]);
+    loadHistory();
+    loadReport(selectedDate, selectedRegisterId);
+  }, [selectedDate, selectedRegisterId]);
 
   useWebSocket('all', (type) => {
-    if (type === 'ORDER_PAID' || type === 'Z_REPORT_GENERATED' || type === 'ORDER_CREATED') {
-      loadReport(selectedDate);
+    if (type === 'ORDER_PAID' || type === 'Z_REPORT_GENERATED' || type === 'ORDER_CREATED' || type === 'Z_REPORT_COMPLETED') {
+      loadHistory();
+      loadReport(selectedDate, selectedRegisterId);
     }
   });
 
@@ -148,6 +153,24 @@ export const DayEndReport: React.FC = () => {
       await loadReport(selectedDate);
       setTimeout(() => setToastMessage(null), 4000);
     } catch (err: any) {
+      if (err.message && err.message.includes('Açıkta')) {
+        const force = confirm(`${err.message}\n\nAçık kalan adisyonları yönetici onayıyla kapatıp Z-Raporunu almak istiyor musunuz?`);
+        if (force) {
+          try {
+            const res = await api.closeDayEndRegister(managerName || 'Yönetici', true);
+            sound.cashDrawer();
+            setIsCloseRegisterModalOpen(false);
+            setToastMessage(`Açık adisyonlar kapatıldı ve Z-Raporu başarıyla alındı! Z No: ${res.z_report_no || 'Z-RAPORU'}`);
+            await loadReport(selectedDate);
+            setTimeout(() => setToastMessage(null), 4000);
+            return;
+          } catch (forceErr: any) {
+            sound.warning();
+            alert(forceErr.message || 'Kasa kapatılamadı.');
+            return;
+          }
+        }
+      }
       sound.warning();
       alert(err.message || 'Kasa kapatılamadı.');
     } finally {
@@ -163,23 +186,23 @@ export const DayEndReport: React.FC = () => {
       ['Tarih', report.formatted_date],
       ['Z Rapor No', report.z_report_no],
       ['Kasa Durumu', report.is_closed ? 'KAPALI (Z Alindi)' : 'ACIK (Gun Devam Ediyor)'],
-      ['Brüt Satış', report.financial_summary.gross_sales.toFixed(2)],
-      ['Net Ciro', report.financial_summary.net_turnover.toFixed(2)],
-      ['İndirimler', report.financial_summary.total_discounts.toFixed(2)],
-      ['İkramlar', report.financial_summary.total_treats.toFixed(2)],
-      ['İptaller (Void)', report.financial_summary.void_total_amount.toFixed(2)],
-      ['Kasadaki Net Nakit', report.cash_flow.expected_drawer_cash.toFixed(2)],
-      ['Toplam Sipariş', report.financial_summary.total_orders],
-      ['Toplam Kuver', report.financial_summary.total_kuver],
+      ['Brüt Satış', Number(report.financial_summary?.gross_sales ?? report.gross_sales ?? 0).toFixed(2)],
+      ['Net Ciro', Number(report.financial_summary?.net_turnover ?? report.net_sales ?? 0).toFixed(2)],
+      ['İndirimler', Number(report.financial_summary?.total_discounts ?? report.total_discounts ?? 0).toFixed(2)],
+      ['İkramlar', Number(report.financial_summary?.total_treats ?? 0).toFixed(2)],
+      ['İptaller (Void)', Number(report.financial_summary?.void_total_amount ?? 0).toFixed(2)],
+      ['Kasadaki Net Nakit', Number(report.cash_flow?.expected_drawer_cash ?? report.cash_in_drawer ?? 0).toFixed(2)],
+      ['Toplam Sipariş', report.financial_summary?.total_orders ?? report.paid_orders_count ?? 0],
+      ['Toplam Kuver', report.financial_summary?.total_kuver ?? report.total_kuver ?? 0],
       ['', ''],
       ['Ödeme Yöntemi', 'Tutar (TL)', 'Adet', 'Yüzde (%)'],
-      ...report.payment_methods.map(p => [p.name, p.amount.toFixed(2), p.count, `%${p.percent}`]),
+      ...(report.payment_methods || []).map(p => [p.name, Number(p.amount || 0).toFixed(2), p.count || 0, `%${Number(p.percent || 0).toFixed(1)}`]),
       ['', ''],
       ['KDV Oranı', 'Matrah (TL)', 'Hesaplanan KDV (TL)', 'Toplam (TL)'],
-      ['%1 KDV', report.vat_breakdown.vat_1.base.toFixed(2), report.vat_breakdown.vat_1.tax.toFixed(2), report.vat_breakdown.vat_1.total.toFixed(2)],
-      ['%10 KDV', report.vat_breakdown.vat_10.base.toFixed(2), report.vat_breakdown.vat_10.tax.toFixed(2), report.vat_breakdown.vat_10.total.toFixed(2)],
-      ['%20 KDV', report.vat_breakdown.vat_20.base.toFixed(2), report.vat_breakdown.vat_20.tax.toFixed(2), report.vat_breakdown.vat_20.total.toFixed(2)],
-      ['Genel KDV Toplamı', report.vat_breakdown.total_base.toFixed(2), report.vat_breakdown.total_tax.toFixed(2), (report.vat_breakdown.total_base + report.vat_breakdown.total_tax).toFixed(2)]
+      ['%1 KDV', Number(report.vat_breakdown?.vat_1?.base ?? 0).toFixed(2), Number(report.vat_breakdown?.vat_1?.tax ?? 0).toFixed(2), Number(report.vat_breakdown?.vat_1?.total ?? 0).toFixed(2)],
+      ['%10 KDV', Number(report.vat_breakdown?.vat_10?.base ?? 0).toFixed(2), Number(report.vat_breakdown?.vat_10?.tax ?? 0).toFixed(2), Number(report.vat_breakdown?.vat_10?.total ?? 0).toFixed(2)],
+      ['%20 KDV', Number(report.vat_breakdown?.vat_20?.base ?? 0).toFixed(2), Number(report.vat_breakdown?.vat_20?.tax ?? 0).toFixed(2), Number(report.vat_breakdown?.vat_20?.total ?? 0).toFixed(2)],
+      ['Genel KDV Toplamı', Number(report.vat_breakdown?.total_base ?? 0).toFixed(2), Number(report.vat_breakdown?.total_tax ?? 0).toFixed(2), (Number(report.vat_breakdown?.total_base ?? 0) + Number(report.vat_breakdown?.total_tax ?? 0)).toFixed(2)]
     ];
 
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + rows.map(r => r.join(';')).join('\n');
@@ -193,7 +216,7 @@ export const DayEndReport: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 p-4 md:p-6 space-y-6">
+    <div className="flex-1 flex flex-col min-h-full h-full overflow-y-auto bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 p-4 md:p-6 pb-28 space-y-6">
       {/* Toast Notice */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg font-bold text-xs flex items-center gap-2 animate-bounce">
@@ -294,6 +317,89 @@ export const DayEndReport: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Önceki Gün Sonu Raporları Hızlı Seçim Barı */}
+      <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+        <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
+          <div className="flex items-center gap-2">
+            <Archive className="w-4 h-4 text-purple-600" />
+            <span className="text-slate-800 dark:text-slate-200 font-extrabold">Önceki Gün Sonu Raporları ({zHistory.length})</span>
+          </div>
+          <button
+            onClick={() => { sound.beep(); setIsHistoryModalOpen(true); }}
+            className="text-purple-600 dark:text-purple-400 hover:underline cursor-pointer text-[11px]"
+          >
+            Tüm Arşivi Göster ➔
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+          <button
+            type="button"
+            onClick={() => {
+              sound.beep();
+              setSelectedRegisterId(null);
+            }}
+            className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
+              selectedRegisterId === null
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            <span>📅 Canlı / Aktif Gün</span>
+          </button>
+
+          {zHistory.slice(0, 8).map((zh) => {
+            const isSelected = selectedRegisterId === zh.id;
+            const openDate = zh.opened_at ? new Date(zh.opened_at).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' }) : '';
+            return (
+              <button
+                key={zh.id}
+                type="button"
+                onClick={() => {
+                  sound.beep();
+                  setSelectedRegisterId(zh.id);
+                  if (zh.opened_at) setSelectedDate(zh.opened_at.slice(0, 10));
+                }}
+                className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
+                  isSelected
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <span>{zh.z_report_no || `Z #${zh.id}`}</span>
+                <span className="opacity-70 text-[10px]">({openDate})</span>
+                <span className="font-mono text-[11px] font-black">
+                  ₺{Number(zh.total_revenue || zh.total_turnover || 0).toLocaleString('tr-TR', { maximumFractionDigits: 0 })}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Arşiv İnceleniyor Uyarısı */}
+      {selectedRegisterId !== null && (
+        <div className="p-4 rounded-2xl bg-purple-500/10 border-2 border-purple-500/30 flex items-center justify-between text-xs font-bold text-purple-900 dark:text-purple-200 animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <Archive className="w-5 h-5 text-purple-600" />
+            <div>
+              <span className="font-black text-sm">Geçmiş Z-Raporu İnceleniyor: </span>
+              <span className="font-mono">{report?.z_report_no || `Kasa Kaydı #${selectedRegisterId}`}</span>
+              <span className="ml-2 text-[11px] text-slate-500 dark:text-slate-400">
+                ({report?.opened_at ? new Date(report.opened_at).toLocaleDateString('tr-TR') : ''})
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => { sound.beep(); setSelectedRegisterId(null); }}
+            className="px-3.5 py-1.5 rounded-xl bg-purple-600 text-white font-black text-xs hover:bg-purple-700 transition cursor-pointer"
+          >
+            Canlı Güncel Güne Dön
+          </button>
+        </div>
+      )}
 
       {/* Status Banner */}
       <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs ${
@@ -410,7 +516,7 @@ export const DayEndReport: React.FC = () => {
       </div>
 
       {/* Tabs Bar */}
-      <div className="flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto text-xs font-bold">
+      <div className="bg-white dark:bg-slate-900 p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0 my-2 relative z-10">
         {[
           { id: 'payments', label: '1. Ödeme Yöntemleri Dağılımı' },
           { id: 'cash', label: '2. Kasa & Nakit Akışı' },
@@ -424,10 +530,10 @@ export const DayEndReport: React.FC = () => {
               sound.beep();
               setActiveTab(t.id as any);
             }}
-            className={`px-3 py-2 rounded-xl transition whitespace-nowrap ${
+            className={`px-4 py-2.5 rounded-xl transition-all whitespace-nowrap cursor-pointer select-none shrink-0 text-xs ${
               activeTab === t.id
-                ? 'bg-brand-600 text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                ? 'bg-[#338d35] text-white shadow-md shadow-emerald-600/20 font-black ring-2 ring-[#338d35]/30'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white font-bold'
             }`}
           >
             {t.label}
@@ -545,28 +651,62 @@ export const DayEndReport: React.FC = () => {
           </div>
 
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-            <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-purple-600" />
-              Kasa Masraf ve Hareketleri ({(report?.cash_flow?.expenses_list || report?.expenses_list || []).length})
-            </h3>
+            <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-purple-600" />
+                <span>Kasa Masraf ve Hareketleri ({(report?.cash_flow?.expenses_list || report?.expenses_list || []).length})</span>
+              </h3>
+              <div className="flex items-center gap-3 text-[11px] font-mono font-black">
+                <span className="text-rose-600 dark:text-rose-400">
+                  Çıkış: -₺{Number(report?.cash_flow?.cash_out ?? report?.total_expenses ?? 0).toFixed(2)}
+                </span>
+                <span className="text-emerald-600 dark:text-emerald-400">
+                  Giriş: +₺{Number(report?.cash_flow?.cash_in ?? report?.cash_in ?? 0).toFixed(2)}
+                </span>
+              </div>
+            </div>
 
             <div className="overflow-y-auto max-h-72 space-y-2">
               {(report?.cash_flow?.expenses_list || report?.expenses_list || []).length === 0 ? (
                 <div className="text-center py-10 text-xs text-slate-400">
-                  Bugün kasadan herhangi bir masraf veya para çıkışı yapılmadı.
+                  Bu dönemde kasadan herhangi bir masraf veya para hareketi kaydedilmedi.
                 </div>
               ) : (
-                (report?.cash_flow?.expenses_list || report?.expenses_list || []).map((exp: any, idx: number) => (
-                  <div key={idx} className="p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                    <div>
-                      <div className="font-bold text-slate-800 dark:text-slate-200">{exp.category}</div>
-                      <div className="text-[10px] text-slate-400">{exp.description}</div>
+                (report?.cash_flow?.expenses_list || report?.expenses_list || []).map((exp: any, idx: number) => {
+                  const isCashIn = (exp.type === 'in' || exp.expense_type === 'in');
+                  const timeStr = exp.created_at ? new Date(exp.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '';
+                  return (
+                    <div key={idx} className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex items-center justify-between text-xs hover:border-slate-300 dark:hover:border-slate-700 transition">
+                      <div className="flex items-start gap-2.5">
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs ${
+                          isCashIn 
+                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' 
+                            : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                        }`}>
+                          {isCashIn ? '↓' : '↑'}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{exp.category}</span>
+                            <span className={`text-[9px] px-1.5 py-0.2 rounded font-extrabold ${
+                              isCashIn
+                                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                                : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
+                            }`}>
+                              {isCashIn ? 'Kasa Girişi / Avans' : 'Gider / Masraf'}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            {exp.description} {timeStr && `• ${timeStr}`} {exp.created_by && `• ${exp.created_by}`}
+                          </div>
+                        </div>
+                      </div>
+                      <span className={`font-mono font-black text-sm ${isCashIn ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                        {isCashIn ? '+' : '-'}₺{Number(exp.amount || 0).toFixed(2)}
+                      </span>
                     </div>
-                    <span className={`font-mono font-extrabold ${exp.type === 'in' ? 'text-emerald-600' : 'text-brand-600'}`}>
-                      {exp.type === 'in' ? '+' : '-'}₺{Number(exp.amount || 0).toFixed(2)}
-                    </span>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -794,91 +934,97 @@ export const DayEndReport: React.FC = () => {
 
       {/* Simulated 80mm Thermal Receipt Modal */}
       {isThermalReceiptOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 no-print">
           <div className="bg-white text-slate-900 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto font-mono text-[11px] border border-slate-300">
-            <div className="flex items-center justify-between pb-2 border-b border-dashed border-slate-300">
-              <span className="font-extrabold text-xs">TERMAL Z FISI ONIZLEME</span>
-              <button onClick={() => setIsThermalReceiptOpen(false)} className="text-slate-400 hover:text-slate-800">
+            <div className="flex items-center justify-between pb-2 border-b border-dashed border-slate-300 no-print">
+              <span className="font-extrabold text-xs">TERMAL Z FİŞİ ÖNİZLEME</span>
+              <button onClick={() => setIsThermalReceiptOpen(false)} className="text-slate-400 hover:text-slate-800 p-1 cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="text-center space-y-1">
-              <div className="font-black text-sm">BONCORE RESTAURANT & LOUNGE</div>
-              <div>MERKEZ SUBE - POS KASA 01</div>
-              <div>VERGI DAIRESI: KADIKOY / VNO: 1234567890</div>
-              <div className="py-1">------------------------------------------</div>
-              <div className="font-black text-xs">MALI GUN SONU Z RAPORU</div>
-              <div>RAPOR NO: {report?.z_report_no}</div>
-              <div>TARIH: {report?.formatted_date} {report?.closed_at || report?.report_generated_at}</div>
-              <div>KASIYER: {report?.closed_by || report?.opened_by}</div>
-              <div className="py-1">------------------------------------------</div>
-            </div>
+            <div id="thermal-z-slip-modal" className="printable-thermal-receipt space-y-1">
+              <div className="text-center space-y-1">
+                <div className="font-black text-sm">BONCORE POS • FATİH ÇİFTLİĞİ</div>
+                <div>MERKEZ ŞUBE - POS KASA 01</div>
+                <div>VERGİ DAİRESİ: KADIKÖY / VNO: 1234567890</div>
+                <div className="py-1">------------------------------------------</div>
+                <div className="font-black text-xs">MALİ GÜN SONU Z RAPORU</div>
+                <div>RAPOR NO: {report?.z_report_no}</div>
+                <div>TARİH: {report?.formatted_date} {report?.closed_at || report?.report_generated_at}</div>
+                <div>KASİYER: {report?.closed_by || report?.opened_by}</div>
+                <div className="py-1">------------------------------------------</div>
+              </div>
 
-            <div className="space-y-1">
-              <div className="flex justify-between">
-                <span>BRUT SATIS:</span>
-                <span className="font-bold">₺{Number(report?.financial_summary?.gross_sales ?? report?.gross_sales ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>INDIRIMLER:</span>
-                <span>-₺{Number(report?.financial_summary?.total_discounts ?? report?.total_discounts ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>IKRAMLAR:</span>
-                <span>-₺{Number(report?.financial_summary?.total_treats ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-black text-xs py-1 border-y border-dashed border-slate-300">
-                <span>NET HASILAT:</span>
-                <span>₺{Number(report?.financial_summary?.net_turnover ?? report?.net_sales ?? 0).toFixed(2)}</span>
-              </div>
-            </div>
-
-            <div className="space-y-1 pt-1">
-              <div className="font-bold">ODEME DETAYLARI:</div>
-              {(report?.payment_methods || []).map((p: any, idx: number) => (
-                <div key={idx} className="flex justify-between">
-                  <span>{p.name}:</span>
-                  <span>₺{Number(p.amount || 0).toFixed(2)}</span>
+              <div className="space-y-1">
+                <div className="flex justify-between">
+                  <span>BRÜT SATIŞ:</span>
+                  <span className="font-bold">₺{Number(report?.financial_summary?.gross_sales ?? report?.gross_sales ?? 0).toFixed(2)}</span>
                 </div>
-              ))}
+                <div className="flex justify-between">
+                  <span>İNDİRİMLER:</span>
+                  <span>-₺{Number(report?.financial_summary?.total_discounts ?? report?.total_discounts ?? 0).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>İKRAMLAR:</span>
+                  <span>-₺{Number(report?.financial_summary?.total_treats ?? 0).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between font-black text-xs py-1 border-y border-dashed border-slate-300">
+                  <span>NET HASILAT:</span>
+                  <span>₺{Number(report?.financial_summary?.net_turnover ?? report?.net_sales ?? 0).toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="space-y-1 pt-1">
+                <div className="font-bold">ÖDEME DETAYLARI:</div>
+                {(report?.payment_methods || []).map((p: any, idx: number) => (
+                  <div key={idx} className="flex justify-between">
+                    <span>{p.name}:</span>
+                    <span>₺{Number(p.amount || 0).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-1 pt-1">
+                <div className="font-bold">KDV DÖKÜMÜ:</div>
+                <div className="flex justify-between">
+                  <span>%1 KDV (Matrah ₺{Number(report?.vat_breakdown?.vat_1?.base ?? 0).toFixed(2)}):</span>
+                  <span>₺{Number(report?.vat_breakdown?.vat_1?.tax ?? 0).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>%10 KDV (Matrah ₺{Number(report?.vat_breakdown?.vat_10?.base ?? 0).toFixed(2)}):</span>
+                  <span>₺{Number(report?.vat_breakdown?.vat_10?.tax ?? 0).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>%20 KDV (Matrah ₺{Number(report?.vat_breakdown?.vat_20?.base ?? 0).toFixed(2)}):</span>
+                  <span>₺{Number(report?.vat_breakdown?.vat_20?.tax ?? 0).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between font-bold pt-0.5">
+                  <span>TOPLAM KDV:</span>
+                  <span>₺{Number(report?.vat_breakdown?.total_tax ?? 0).toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="text-center pt-2 space-y-1 text-[10px]">
+                <div>------------------------------------------</div>
+                <div>KASADAKİ DEVİR NAKİT: ₺{Number(report?.cash_flow?.expected_drawer_cash ?? report?.cash_in_drawer ?? 0).toFixed(2)}</div>
+                <div>TOPLAM ADİSYON: {report?.financial_summary?.total_orders ?? report?.paid_orders_count ?? 0} ADET</div>
+                <div>MALİ DEĞERİ BULUNMAKTADIR</div>
+                <div>AFİYET OLSUN - TEŞEKKÜR EDERİZ</div>
+              </div>
             </div>
 
-            <div className="space-y-1 pt-1">
-              <div className="font-bold">KDV DOKUMU:</div>
-              <div className="flex justify-between">
-                <span>%1 KDV (Matrah ₺{Number(report?.vat_breakdown?.vat_1?.base ?? 0).toFixed(2)}):</span>
-                <span>₺{Number(report?.vat_breakdown?.vat_1?.tax ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>%10 KDV (Matrah ₺{Number(report?.vat_breakdown?.vat_10?.base ?? 0).toFixed(2)}):</span>
-                <span>₺{Number(report?.vat_breakdown?.vat_10?.tax ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>%20 KDV (Matrah ₺{Number(report?.vat_breakdown?.vat_20?.base ?? 0).toFixed(2)}):</span>
-                <span>₺{Number(report?.vat_breakdown?.vat_20?.tax ?? 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-bold pt-0.5">
-                <span>TOPLAM KDV:</span>
-                <span>₺{Number(report?.vat_breakdown?.total_tax ?? 0).toFixed(2)}</span>
-              </div>
-            </div>
-
-            <div className="text-center pt-2 space-y-1 text-[10px]">
-              <div>------------------------------------------</div>
-              <div>KASADAKI DEVIR NAKIT: ₺{Number(report?.cash_flow?.expected_drawer_cash ?? report?.cash_in_drawer ?? 0).toFixed(2)}</div>
-              <div>TOPLAM ADISYON: {report?.financial_summary?.total_orders ?? report?.paid_orders_count ?? 0} ADET</div>
-              <div>MALI DEGERI BULUNMAKTADIR</div>
-              <div>AFİYET OLSUN - TESEKKUR EDERIZ</div>
-            </div>
-
-            <div className="flex items-center gap-2 pt-2 border-t border-slate-200">
+            <div className="flex items-center gap-2 pt-2 border-t border-slate-200 no-print">
               <button
-                onClick={() => window.print()}
-                className="w-full py-2 bg-slate-900 text-white font-bold rounded-xl flex items-center justify-center gap-2 text-xs"
+                type="button"
+                onClick={() => {
+                  sound.beep();
+                  printThermalSlipById('thermal-z-slip-modal', `Z-Raporu-${report?.z_report_no || 'Fis'}`);
+                }}
+                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl flex items-center justify-center gap-2 text-xs transition cursor-pointer"
               >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Termal Yazıcıya Gönder</span>
+                <Printer className="w-3.5 h-3.5 text-brand-500" />
+                <span>Yalnızca Termal Fişi Yazdır</span>
               </button>
             </div>
           </div>
@@ -908,17 +1054,26 @@ export const DayEndReport: React.FC = () => {
                 zHistory.map((zh) => (
                   <div
                     key={zh.id}
-                    className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                    className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:border-purple-500/50 transition"
                   >
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">{zh.z_report_no}</span>
-                        <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-[10px] font-bold">
-                          {zh.status === 'closed' ? 'KAPATILDI' : 'AÇIK'}
+                        <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">
+                          {zh.z_report_no || `Kasa #${zh.id}`}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          zh.status === 'closed'
+                            ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                            : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                        }`}>
+                          {zh.status === 'closed' ? 'KAPATILDI (Z ALINDI)' : 'AÇIK KASA'}
                         </span>
                       </div>
                       <div className="text-[11px] text-slate-400 mt-1">
-                        Açılış: {zh.opened_at ? zh.opened_at.slice(0, 10) : '-'} | Kapatan: {zh.closed_by || zh.opened_by}
+                        Açılış: {zh.opened_at ? zh.opened_at.slice(0, 10) : '-'} | Kapatan: {zh.closed_by || zh.opened_by || 'Yönetici'}
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                        Nakit: ₺{Number(zh.cash_sales || 0).toFixed(2)} • Kart: ₺{Number(zh.card_sales || 0).toFixed(2)} • Masraf: ₺{Number(zh.total_expenses || 0).toFixed(2)}
                       </div>
                     </div>
 
@@ -926,20 +1081,21 @@ export const DayEndReport: React.FC = () => {
                       <div className="text-right">
                         <div className="text-[10px] text-slate-400 uppercase font-bold">Toplam Ciro</div>
                         <div className="font-mono font-black text-sm text-emerald-600 dark:text-emerald-400">
-                          ₺{(zh.total_revenue || 0).toFixed(2)}
+                          ₺{Number(zh.total_revenue || zh.total_turnover || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                       </div>
 
                       <button
                         onClick={() => {
+                          setSelectedRegisterId(zh.id);
                           if (zh.opened_at) {
                             setSelectedDate(zh.opened_at.slice(0, 10));
-                            setIsHistoryModalOpen(false);
                           }
+                          setIsHistoryModalOpen(false);
                         }}
-                        className="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 font-bold text-[11px] flex items-center gap-1"
+                        className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-xs transition cursor-pointer"
                       >
-                        <span>Görüntüle</span>
+                        <span>İncele</span>
                         <ArrowRight className="w-3 h-3" />
                       </button>
                     </div>

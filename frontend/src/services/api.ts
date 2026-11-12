@@ -670,18 +670,62 @@ export const api = {
     return res.json();
   },
 
+  async deleteExpense(id: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/cashier/expenses/${id}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Masraf kaydı silinemedi.');
+    return res.json();
+  },
+
   async getXReport(cashierName: string = 'Kasiyer'): Promise<any> {
     const res = await fetch(`${API_BASE}/cashier/x-report?cashier_name=${encodeURIComponent(cashierName)}`);
     return res.json();
   },
 
-  async closeZReport(closedBy: string = 'Müdür', managerPin?: string): Promise<any> {
+  async closeZReport(closedBy: string = 'Müdür', managerPin?: string, forceClose: boolean = false): Promise<any> {
     const res = await fetch(`${API_BASE}/cashier/z-report`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ closed_by: closedBy, manager_pin: managerPin })
+      body: JSON.stringify({ closed_by: closedBy, manager_pin: managerPin, force_close: forceClose })
     });
     if (!res.ok) throw new Error((await res.json()).detail || 'Z raporu alınamadı.');
+    return res.json();
+  },
+
+  async getAutoZReportSettings(): Promise<{
+    enabled: boolean;
+    time: string;
+    force_close: boolean;
+    last_run_date: string;
+    last_run_status: string;
+  }> {
+    const res = await fetch(`${API_BASE}/cashier/auto-z-report`);
+    if (!res.ok) throw new Error((await res.json()).detail || 'Otomatik Z-Raporu ayarları alınamadı.');
+    return res.json();
+  },
+
+  async updateAutoZReportSettings(payload: {
+    enabled: boolean;
+    time: string;
+    force_close?: boolean;
+  }): Promise<any> {
+    const res = await fetch(`${API_BASE}/cashier/auto-z-report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Otomatik Z-Raporu ayarları kaydedilemedi.');
+    return res.json();
+  },
+
+  async testAutoZReport(): Promise<any> {
+    const res = await fetch(`${API_BASE}/cashier/auto-z-report/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Otomatik Z-Raporu test çalıştırması başarısız.');
     return res.json();
   },
 
@@ -1077,7 +1121,11 @@ export const api = {
   // Day-End (Z) Report API
   async getDayEndReport(dateStr?: string, registerId?: number): Promise<any> {
     const q = new URLSearchParams();
-    if (dateStr) q.append('date_str', dateStr);
+    if (dateStr) {
+      q.append('date_str', dateStr);
+      q.append('target_date', dateStr);
+      q.append('date', dateStr);
+    }
     if (registerId) q.append('register_id', String(registerId));
     const res = await fetch(`${API_BASE}/cashier/reports/day-end?${q.toString()}`);
     return res.json();
@@ -1088,12 +1136,13 @@ export const api = {
     return res.json();
   },
 
-  async closeDayEndRegister(closedBy: string = 'Yönetici'): Promise<any> {
+  async closeDayEndRegister(closedBy: string = 'Yönetici', forceClose: boolean = false): Promise<any> {
     const res = await fetch(`${API_BASE}/cashier/z-report`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ closed_by: closedBy })
+      body: JSON.stringify({ closed_by: closedBy, force_close: forceClose })
     });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Z Raporu alınamadı.');
     return res.json();
   },
 

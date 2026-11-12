@@ -771,3 +771,56 @@ func (dm *DatabaseManager) GetSqliteBaseDir() string {
 	return dm.sqliteBaseDir
 }
 
+// GetAllTenantCodes discovers all active and known tenant database codes from config, Master DB, and filesystem.
+func (dm *DatabaseManager) GetAllTenantCodes() []string {
+	seen := make(map[string]bool)
+	var result []string
+
+	addCode := func(code string) {
+		clean := CleanTenantCode(code, "")
+		if clean != "" && !seen[clean] {
+			seen[clean] = true
+			result = append(result, clean)
+		}
+	}
+
+	// 1. Default tenant code
+	if dm.cfg != nil && dm.cfg.DefaultTenantCode != "" {
+		addCode(dm.cfg.DefaultTenantCode)
+	}
+
+	// 2. Tenants from Master DB if available
+	if dm.MasterGorm != nil {
+		var tenants []models.RestaurantTenant
+		if err := dm.MasterGorm.Find(&tenants).Error; err == nil {
+			for _, t := range tenants {
+				addCode(t.Code)
+			}
+		}
+	}
+
+	// 3. Scan filesystem in data/tenants/
+	tenantsDir := filepath.Join(dm.sqliteBaseDir, "data", "tenants")
+	if entries, err := os.ReadDir(tenantsDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".db") {
+				code := strings.TrimSuffix(e.Name(), ".db")
+				addCode(code)
+			}
+		}
+	}
+
+	// Also check directly in dm.sqliteBaseDir for single-tenant / legacy files
+	if entries, err := os.ReadDir(dm.sqliteBaseDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".db") && e.Name() != "master.db" {
+				code := strings.TrimSuffix(e.Name(), ".db")
+				addCode(code)
+			}
+		}
+	}
+
+	return result
+}
+
+

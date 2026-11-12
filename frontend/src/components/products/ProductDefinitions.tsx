@@ -723,7 +723,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
           </div>
 
           {/* Main Scrollable Body: 2 Balanced Sections */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-28 space-y-6">
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
               
               {/* ================= SECTION 1: ÜRÜN BİLGİLERİ (5 cols) ================= */}
@@ -1347,7 +1347,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
             </div>
 
             {/* Products Cards Grid */}
-            <div className="flex-1 overflow-y-auto p-3 sm:p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 content-start">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6 pb-28 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 content-start">
               {displayedProducts.map((p) => {
                 const isActiveOrderable = p.is_available ?? true;
                 const showInPos = p.show_in_pos ?? true;

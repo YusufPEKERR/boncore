@@ -4,7 +4,7 @@ import {
   Receipt, Plus, Trash2, Edit3, ShieldAlert, Sparkles, Building2, 
   Coins, HelpCircle, Utensils, Tag, CreditCard, Check, X, AlertCircle, 
   Scale, RefreshCw, Wifi, WifiOff, Activity, Laptop, Download, Monitor, Star, CheckSquare, Printer,
-  Smartphone, Upload, Zap
+  Smartphone, Upload, Zap, Clock
 } from 'lucide-react';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
@@ -46,23 +46,9 @@ interface AdisyoSettingsProps {
 export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdated }) => {
   const [activeSubTab, setActiveSubTab] = useState<string>(() => {
     const saved = localStorage.getItem('boncore_settings_subtab');
-    const valid = ['parameters', 'discounts', 'payments', 'currency', 'address', 'scale', 'mobile_apk'];
+    const valid = ['parameters', 'discounts', 'payments', 'currency', 'address', 'receipt_design', 'scale'];
     return saved && valid.includes(saved) ? saved : 'parameters';
   });
-
-  const [appInfo, setAppInfo] = useState<{
-    version_name: string;
-    version_code: number;
-    release_date: string;
-    is_apk_available: boolean;
-    file_size_mb: number;
-    changelog: string[];
-  } | null>(null);
-  const [apkUploading, setApkUploading] = useState<boolean>(false);
-  const [apkMessage, setApkMessage] = useState<{ text: string; success: boolean } | null>(null);
-  const [newApkVersion, setNewApkVersion] = useState<string>('1.0.1');
-  const [newApkCode, setNewApkCode] = useState<number>(2);
-  const [newApkChangelog, setNewApkChangelog] = useState<string>('');
 
   useEffect(() => {
     localStorage.setItem('boncore_settings_subtab', activeSubTab);
@@ -113,6 +99,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [scaleTestResult, setScaleTestResult] = useState<{ success: boolean; message?: string; error?: string; latency_ms?: number } | null>(null);
   const [scaleWeightReading, setScaleWeightReading] = useState<boolean>(false);
   const [scaleLiveWeight, setScaleLiveWeight] = useState<{ weight: number; is_stable?: boolean; raw?: string; simulated?: boolean; message?: string } | null>(null);
+  const [scaleSavedNotification, setScaleSavedNotification] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedPrinters, setSelectedPrinters] = useState<string[]>(() => localHardware.getSelectedPrinters());
   const [printerConfigs, setPrinterConfigs] = useState<PrinterConfig[]>(() => localHardware.getPrinterConfigs());
@@ -370,18 +357,29 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     sound.beep();
     setPrinterTestStatus({ loading: true, message: `${displayName} yazıcısına test fişi gönderiliyor, cihazdan onay bekleniyor...`, success: true });
     try {
+      const W = localHardware.getPrinterLineWidth(qualifiedKey);
+      const paperWidth = localHardware.getPrinterPaperWidth(qualifiedKey);
+      const sep = '='.repeat(W);
+      const subSep = '-'.repeat(W);
+      const center = (t: string) => {
+        if (t.length >= W) return t.slice(0, W);
+        const l = Math.floor((W - t.length) / 2);
+        return ' '.repeat(l) + t;
+      };
+
       const res = await localHardware.printReceipt({
         printers: [qualifiedKey],
         rawText:
-          '================================\n' +
-          '        BONCORE POS TEST        \n' +
-          '================================\n' +
-          'Tarih: ' + new Date().toLocaleDateString('tr-TR') + ' ' + new Date().toLocaleTimeString('tr-TR') + '\n' +
-          'Kasa IP: ' + localIp + '\n' +
-          'Yazici:  ' + displayName + '\n' +
-          '--------------------------------\n' +
-          'Yazici Testi Basarili!\n' +
-          '================================\n\n\n\n'
+          sep + '\n' +
+          center('BONCORE POS TEST FISI') + '\n' +
+          sep + '\n' +
+          'Tarih    : ' + new Date().toLocaleDateString('tr-TR') + ' ' + new Date().toLocaleTimeString('tr-TR') + '\n' +
+          'Kasa IP  : ' + localIp + '\n' +
+          'Yazici   : ' + displayName + '\n' +
+          'Kagit    : ' + paperWidth + ' (' + W + ' Karakter)\n' +
+          subSep + '\n' +
+          center('Donanim Iletisimi Basarili!') + '\n' +
+          sep + '\n\n\n\n'
       });
       if (res.success) {
         setPrinterTestStatus({ loading: false, success: true, message: res.message || `${displayName} yazıcısından test fişi başarıyla çıktı!` });
@@ -402,15 +400,38 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     sound.beep();
     setPrinterTestStatus({ loading: true, message: 'Seçili yazıcılara test fişi gönderiliyor, cihazlardan onay bekleniyor...' });
     try {
-      const res = await localHardware.printReceipt({
-        printers: selectedPrinters,
-        rawText: '================================\n        BONCORE POS TEST        \n================================\nTarih: ' + new Date().toLocaleDateString('tr-TR') + ' ' + new Date().toLocaleTimeString('tr-TR') + '\nYazici Testi Basarili!\n\nSecili Yazicilar:\n' + selectedPrinters.map(p => ' - ' + p.replace('::', ' @ ')).join('\n') + '\n================================\n\n\n\n'
-      });
-      if (res.success) {
-        setPrinterTestStatus({ loading: false, success: true, message: res.message || 'Seçili yazıcılara test fişi başarıyla gönderildi!' });
+      let anySuccess = false;
+      for (const pr of selectedPrinters) {
+        const W = localHardware.getPrinterLineWidth(pr);
+        const paperWidth = localHardware.getPrinterPaperWidth(pr);
+        const sep = '='.repeat(W);
+        const subSep = '-'.repeat(W);
+        const center = (t: string) => {
+          if (t.length >= W) return t.slice(0, W);
+          const l = Math.floor((W - t.length) / 2);
+          return ' '.repeat(l) + t;
+        };
+
+        const res = await localHardware.printReceipt({
+          printers: [pr],
+          rawText:
+            sep + '\n' +
+            center('BONCORE POS TEST FISI') + '\n' +
+            sep + '\n' +
+            'Tarih    : ' + new Date().toLocaleDateString('tr-TR') + ' ' + new Date().toLocaleTimeString('tr-TR') + '\n' +
+            'Hedef    : ' + pr.replace('::', ' @ ') + '\n' +
+            'Kagit    : ' + paperWidth + ' (' + W + ' Karakter)\n' +
+            subSep + '\n' +
+            center('Yazici Testi Basarili!') + '\n' +
+            sep + '\n\n\n\n'
+        });
+        if (res.success) anySuccess = true;
+      }
+      if (anySuccess) {
+        setPrinterTestStatus({ loading: false, success: true, message: 'Seçili yazıcılara test fişleri kendi kağıt genişliklerinde başarıyla gönderildi!' });
         setTimeout(() => setPrinterTestStatus(null), 9000);
       } else {
-        setPrinterTestStatus({ loading: false, success: false, message: res.error || res.message || 'Yazdırma isteği tamamlanamadı.' });
+        setPrinterTestStatus({ loading: false, success: false, message: 'Yazdırma isteği tamamlanamadı.' });
       }
     } catch (e: any) {
       setPrinterTestStatus({ loading: false, success: false, message: e.message || 'Hata oluştu' });
@@ -457,6 +478,13 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [alcoholVatRate, setAlcoholVatRate] = useState<number>(20);
   const [beverageVatRate, setBeverageVatRate] = useState<number>(10);
   const [pricesIncludeVat, setPricesIncludeVat] = useState<boolean>(true);
+
+  // --- 3.5 Otomatik Z-Raporu Ayarları ---
+  const [autoZReportEnabled, setAutoZReportEnabled] = useState<boolean>(false);
+  const [autoZReportTime, setAutoZReportTime] = useState<string>('04:00');
+  const [autoZReportForceClose, setAutoZReportForceClose] = useState<boolean>(true);
+  const [autoZReportLastRunDate, setAutoZReportLastRunDate] = useState<string>('');
+  const [autoZReportLastRunStatus, setAutoZReportLastRunStatus] = useState<string>('');
 
   // --- 4. İndirimler Listesi ---
   const [discounts, setDiscounts] = useState<DiscountDefinition[]>(defaultDiscounts);
@@ -516,6 +544,12 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
         if (data.alcohol_vat_rate !== undefined) setAlcoholVatRate(Number(data.alcohol_vat_rate));
         if (data.beverage_vat_rate !== undefined) setBeverageVatRate(Number(data.beverage_vat_rate));
         if (data.prices_include_vat !== undefined) setPricesIncludeVat(Boolean(data.prices_include_vat));
+
+        if (data.auto_z_report_enabled !== undefined) setAutoZReportEnabled(Boolean(data.auto_z_report_enabled));
+        if (data.auto_z_report_time !== undefined) setAutoZReportTime(String(data.auto_z_report_time));
+        if (data.auto_z_report_force_close !== undefined) setAutoZReportForceClose(Boolean(data.auto_z_report_force_close));
+        if (data.auto_z_report_last_run_date !== undefined) setAutoZReportLastRunDate(String(data.auto_z_report_last_run_date));
+        if (data.auto_z_report_last_run_status !== undefined) setAutoZReportLastRunStatus(String(data.auto_z_report_last_run_status));
 
         if (data.discounts && Array.isArray(data.discounts)) setDiscounts(data.discounts);
         
@@ -688,6 +722,9 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
       alcohol_vat_rate: alcoholVatRate,
       beverage_vat_rate: beverageVatRate,
       prices_include_vat: pricesIncludeVat,
+      auto_z_report_enabled: autoZReportEnabled,
+      auto_z_report_time: autoZReportTime,
+      auto_z_report_force_close: autoZReportForceClose,
       discounts: discounts,
       payment_methods: paymentMethods,
       usd_rate: usdRate,
@@ -776,21 +813,11 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     { id: 'currency', label: 'Döviz Ayarları' },
     { id: 'address', label: 'Adres & Şirket Bilgileri' },
     { id: 'receipt_design', label: '🧾 Fiş & Adisyon Tasarımı' },
-    { id: 'scale', label: '⚖️ CAS Terazi (Ethernet)' },
-    { id: 'mobile_apk', label: '📱 Mobil Terminal & APK' }
+    { id: 'scale', label: '⚖️ CAS Terazi (Ethernet)' }
   ];
 
-  useEffect(() => {
-    if (activeSubTab === 'mobile_apk') {
-      fetch('/api/app/version')
-        .then(res => res.json())
-        .then(data => setAppInfo(data))
-        .catch(err => console.warn('App version error:', err));
-    }
-  }, [activeSubTab]);
-
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 select-none animate-fadeIn font-sans transition-colors duration-200">
+    <div className="flex-1 min-h-full overflow-y-auto p-4 sm:p-6 pb-28 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 select-none animate-fadeIn font-sans transition-colors duration-200">
       <div className="max-w-5xl mx-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
         {/* Header */}
         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
@@ -1027,6 +1054,87 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       <option value="inclusive">Fiyatlara KDV Dahildir</option>
                       <option value="exclusive">Fiyatlara KDV Hariçtir (+KDV)</option>
                     </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Otomatik Gün Sonu Z-Raporu Kartı */}
+              <div className="p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-emerald-500" />
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Otomatik Gün Sonu Z-Raporu</h3>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Belirlenen saatte gece mutabakatını otomatik tamamlar ve kasayı kapatır</p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={autoZReportEnabled} 
+                      onChange={(e) => {
+                        sound.beep();
+                        setAutoZReportEnabled(e.target.checked);
+                      }} 
+                      className="sr-only peer" 
+                    />
+                    <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-semibold">
+                  <div>
+                    <label className="text-slate-500 block mb-1">Otomatik Kapanış Saati (24s):</label>
+                    <input
+                      type="time"
+                      value={autoZReportTime}
+                      onChange={(e) => setAutoZReportTime(e.target.value)}
+                      disabled={!autoZReportEnabled}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-slate-900 dark:text-white font-bold disabled:opacity-50"
+                    />
+                    <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                      {['03:00', '04:00', '04:30', '05:00', '06:00'].map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          disabled={!autoZReportEnabled}
+                          onClick={() => { sound.beep(); setAutoZReportTime(t); }}
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition cursor-pointer disabled:opacity-40 ${
+                            autoZReportTime === t
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col justify-start">
+                    <label className="text-slate-500 block mb-1">Açık Adisyon Koruması:</label>
+                    <label className="flex items-center gap-2 cursor-pointer p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={autoZReportForceClose}
+                        onChange={(e) => setAutoZReportForceClose(e.target.checked)}
+                        disabled={!autoZReportEnabled}
+                        className="w-4 h-4 rounded text-brand-600 accent-brand-600"
+                      />
+                      <span className="text-[11px] text-slate-700 dark:text-slate-300 font-bold">
+                        Açık kalan paket & masaları otomatik kapat
+                      </span>
+                    </label>
+                    <span className="text-[10px] text-slate-400 mt-1">
+                      Gece unutulan siparişlerin Z-Raporunu engellemesini önler
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col justify-start">
+                    <label className="text-slate-500 block mb-1">Son Otomatik Rapor Durumu:</label>
+                    <div className="p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300 font-mono">
+                      {autoZReportLastRunStatus || 'Henüz otomatik rapor çalışmadı.'}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1402,100 +1510,305 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
           {/* 6. CAS CL-3000 Terazi Ayarları & Canlı Test Paneli */}
           {activeSubTab === 'scale' && (
             <div className="space-y-6 text-xs font-semibold">
-              {/* BonCore Yerel Donanım Ajanı Durumu & İndirme Kartı */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border-2 border-slate-200 dark:border-slate-700 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+              {/* Üst Şerit: Donanım Köprüsü Durumu & Hızlı Kurulum */}
+              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
                 <div className="flex items-center gap-3">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black shadow-md shrink-0 ${
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center shadow-sm shrink-0 ${
                     agentInfo.isOnline
-                      ? 'bg-emerald-600 text-white shadow-emerald-600/30'
-                      : 'bg-slate-700 text-slate-300'
+                      ? 'bg-emerald-600 text-white shadow-emerald-600/20'
+                      : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
                   }`}>
-                    <Laptop className="w-6 h-6" />
+                    <Laptop className="w-5 h-5" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-black text-slate-900 dark:text-white">BonCore Yerel Donanım Ajanı</span>
+                      <span className="text-sm font-extrabold text-slate-900 dark:text-white">Donanım Köprüsü</span>
                       {agentInfo.isOnline ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-500/30">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-                          🟢 AKTİF VE BAĞLI (v{agentInfo.version})
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-500/20">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          Bağlı (v{agentInfo.version || '2.4.4'})
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-500/30">
-                          ⚪ AJAN KAPALI (Uzak PC)
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-500/20">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                          Köprü Bekleniyor
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-normal">
                       {agentInfo.isOnline
-                        ? `Kasa Bilgisayarı IP: ${agentInfo.localIp} • Dükkanınızdaki CAS terazisi ve termal yazıcılar bağlı ve hazır.`
-                        : "Tek tıkla kur ve unut: İndirilen paketteki 'Kurulum.bat' dosyasını çalıştırın. Masaüstünüze kurulur, Windows açılışına eklenir ve saatin yanında (Tray) sessizce çalışır."}
+                        ? `Kasa Bilgisayarı IP: ${agentInfo.localIp || '127.0.0.1'} • CAS terazi ve yerel donanımlar aktif.`
+                        : 'Teraziden otomatik tartım almak için bilgisayarınızda Donanım Köprüsü kurulu ve çalışır olmalıdır.'}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 w-full md:w-auto flex-wrap sm:flex-nowrap">
-                  <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300">
-                    <span className="text-slate-400">İşletme:</span>
-                    <span className="font-mono text-emerald-600 dark:text-emerald-400 font-extrabold">
-                      {localStorage.getItem('boncore_restaurant_code') || 'boncore-kadikoy'}
-                    </span>
-                  </div>
-
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                   <button
                     type="button"
                     onClick={async () => {
                       sound.beep();
                       const status = await localHardware.checkAgentStatus();
                       setAgentInfo(status);
+                      fetchTerminalsData();
                     }}
-                    className="px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-bold text-xs cursor-pointer transition"
+                    title="Bağlantı Durumunu Yenile"
+                    className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer"
                   >
-                    Yenile
+                    <RefreshCw className="w-4 h-4" />
                   </button>
 
-                  <div className="flex flex-col items-end gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadAgentZip()}
-                      disabled={downloadingAgent}
-                      className="px-4 py-2 rounded-xl bg-[#338d35] hover:bg-[#28702a] active:scale-95 text-white font-black text-xs shadow-md shadow-brand-600/30 transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-60"
-                    >
-                      {downloadingAgent ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>{downloadStatusText || 'İndiriliyor...'}</span>
-                        </>
-                      ) : (
-                        <>
-                          <Download className="w-4 h-4" />
-                          <span>Kurulum Paketini İndir (.ZIP)</span>
-                        </>
-                      )}
-                    </button>
-                    <a
-                      href="/api/scale/raw-exe"
-                      download="BonCoreAgent.exe"
-                      className="text-[10px] font-bold text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 underline transition cursor-pointer"
-                      title="Alternatif olarak sadece EXE dosyasını doğrudan indirin"
-                    >
-                      Alternatif: Tek Dosya BonCoreAgent.exe İndir
-                    </a>
-                  </div>
+                  <a
+                    href="/api/scale/setup"
+                    download="BonCoreDonanimKoprusuSetup.exe"
+                    className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs shadow-sm transition flex items-center gap-2 cursor-pointer whitespace-nowrap"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Kurulum İndir (Setup.exe)</span>
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadAgentZip()}
+                    disabled={downloadingAgent}
+                    className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition cursor-pointer whitespace-nowrap"
+                    title="Engelsiz ZIP Paketi"
+                  >
+                    {downloadingAgent ? (downloadStatusText || 'İndiriliyor...') : 'ZIP Paketi'}
+                  </button>
                 </div>
               </div>
 
+              {/* ANA TERAZİ BÖLÜMÜ: Terazi Parametreleri & Canlı Kantar Göstergesi */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                
+                {/* Sol Sütun: Terazi Ağ Ayarları (7 Birim) */}
+                <div className="lg:col-span-7">
+                  <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                          <Scale className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">CAS Terazi Yapılandırması</h4>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">Ethernet TCP/IP ağ haberleşme ayarları</p>
+                        </div>
+                      </div>
+
+                      {/* Açık/Kapalı Switch */}
+                      <button
+                        type="button"
+                        onClick={() => setScaleConfig({ ...scaleConfig, enabled: !scaleConfig.enabled })}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition ${
+                          scaleConfig.enabled
+                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-500/30'
+                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        {scaleConfig.enabled ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <X className="w-3.5 h-3.5" />}
+                        <span>{scaleConfig.enabled ? 'Etkin' : 'Devre Dışı'}</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-semibold">
+                      <div>
+                        <label className="text-slate-500 block mb-1.5 text-[11px]">Terazi Modeli</label>
+                        <input
+                          type="text"
+                          value={scaleConfig.model}
+                          onChange={(e) => setScaleConfig({ ...scaleConfig, model: e.target.value })}
+                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 font-bold text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
+                          placeholder="CAS CL-3000"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-slate-500 block mb-1.5 text-[11px]">Zaman Aşımı (Saniye)</label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={scaleConfig.timeout}
+                          onChange={(e) => setScaleConfig({ ...scaleConfig, timeout: parseFloat(e.target.value) || 2.5 })}
+                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 font-mono text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-slate-500 block mb-1.5 text-[11px]">Terazi IP Adresi</label>
+                        <input
+                          type="text"
+                          value={scaleConfig.ip_address}
+                          onChange={(e) => setScaleConfig({ ...scaleConfig, ip_address: e.target.value })}
+                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 font-mono font-bold text-emerald-600 dark:text-emerald-400 focus:outline-none focus:border-emerald-500 transition"
+                          placeholder="192.168.1.150"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-slate-500 block mb-1.5 text-[11px]">Port Numarası</label>
+                        <input
+                          type="number"
+                          value={scaleConfig.port}
+                          onChange={(e) => setScaleConfig({ ...scaleConfig, port: parseInt(e.target.value) || 2004 })}
+                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
+                          placeholder="2004"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                      {scaleSavedNotification ? (
+                        <span className="text-xs font-bold text-emerald-600 flex items-center gap-1.5 animate-fadeIn">
+                          <CheckCircle2 className="w-4 h-4" />
+                          Terazi ayarları kaydedildi.
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 font-normal">
+                          Ayarları terazi ile eşitlemek için kaydedin.
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            sound.beep();
+                            await api.updateScaleConfig(scaleConfig);
+                            setScaleSavedNotification(true);
+                            setTimeout(() => setScaleSavedNotification(false), 3000);
+                          } catch (err) {
+                            console.error('Scale save err:', err);
+                          }
+                        }}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Ayarları Kaydet</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sağ Sütun: Canlı Tartım Göstergesi (5 Birim) */}
+                <div className="lg:col-span-5 space-y-4">
+                  <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-emerald-600" />
+                        <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">Canlı Tartım Ekranı</h4>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                        scaleLiveWeight?.is_stable !== false
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                          : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                      }`}>
+                        {scaleLiveWeight?.is_stable !== false ? '● DENGELİ (ST)' : '◌ DENGESİZ (US)'}
+                      </span>
+                    </div>
+
+                    {/* Dijital Kantar Göstergesi */}
+                    <div className="p-6 rounded-2xl bg-slate-950 dark:bg-black border border-emerald-500/30 text-center font-mono space-y-1 shadow-inner relative overflow-hidden">
+                      <div className="text-[10px] text-emerald-500/70 font-bold uppercase tracking-widest">
+                        CAS CL-3000 EKRAN
+                      </div>
+                      <div className="text-5xl font-black text-emerald-400 tracking-wider py-2 drop-shadow-[0_0_14px_rgba(52,211,153,0.35)]">
+                        {scaleLiveWeight ? Number(scaleLiveWeight.weight || 0).toFixed(3) : '0.000'} <span className="text-xl text-emerald-500/80 font-bold">Kg</span>
+                      </div>
+                      <div className="text-[11px] text-emerald-400/60 font-medium truncate">
+                        {scaleLiveWeight?.raw || 'Kefeye ürün koyup "Tartımı Oku"ya basın.'}
+                      </div>
+                    </div>
+
+                    {/* Test Sonucu Bildirimi */}
+                    {scaleTestResult && (
+                      <div className={`p-3 rounded-xl border text-xs font-semibold flex items-start gap-2 animate-fadeIn ${
+                        scaleTestResult.success
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                          : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+                      }`}>
+                        {scaleTestResult.success ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        )}
+                        <div className="flex-1">
+                          <div>{scaleTestResult.message || scaleTestResult.error}</div>
+                          {scaleTestResult.latency_ms !== undefined && (
+                            <div className="text-[10px] opacity-75 mt-0.5">Yanıt Süresi: {scaleTestResult.latency_ms} ms</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Aksiyon Butonları */}
+                    <div className="space-y-2.5 pt-1">
+                      <button
+                        type="button"
+                        disabled={scaleWeightReading}
+                        onClick={async () => {
+                          try {
+                            sound.beep();
+                            setScaleWeightReading(true);
+                            const res = await localHardware.getWeight(scaleConfig.ip_address, scaleConfig.port);
+                            if (res.success && res.weight !== undefined) {
+                              setScaleLiveWeight(res);
+                              sound.beep();
+                            } else {
+                              sound.warning();
+                              setScaleTestResult({ success: false, error: res.error || 'Ağırlık okunamadı.' });
+                            }
+                          } catch (err: any) {
+                            sound.warning();
+                            setScaleTestResult({ success: false, error: err.message || 'Hata oluştu' });
+                          } finally {
+                            setScaleWeightReading(false);
+                          }
+                        }}
+                        className="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
+                      >
+                        {scaleWeightReading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Scale className="w-4 h-4" />}
+                        <span>{scaleWeightReading ? 'Tartım Alınıyor...' : 'Tartımı Oku'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={scaleTesting}
+                        onClick={async () => {
+                          try {
+                            sound.beep();
+                            setScaleTesting(true);
+                            setScaleTestResult(null);
+                            const res = await localHardware.testConnection(scaleConfig.ip_address, scaleConfig.port);
+                            setScaleTestResult(res);
+                          } catch (err: any) {
+                            setScaleTestResult({ success: false, error: err.message || 'Ağ bağlantısı kurulamadı' });
+                          } finally {
+                            setScaleTesting(false);
+                          }
+                        }}
+                        className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
+                      >
+                        {scaleTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5 text-slate-500" />}
+                        <span>{scaleTesting ? 'Test Ediliyor...' : 'Ağ Bağlantısını Test Et'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
               {/* ÇOKLU KASA VE TERAZİ İSTASYONLARI YÖNETİMİ */}
-              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black shadow-md shadow-purple-600/30 shrink-0">
-                      <Monitor className="w-5 h-5" />
+                    <div className="w-10 h-10 rounded-xl bg-slate-800 dark:bg-slate-800 text-white flex items-center justify-center font-black shadow-sm shrink-0">
+                      <Monitor className="w-5 h-5 text-emerald-400" />
                     </div>
                     <div>
                       <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
                         <span>Tanımlı Kasalar ve Teraziler (Çoklu Kasa Yönetimi)</span>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                           {terminalsList.length} Kasa Kayıtlı
                         </span>
                       </h4>
@@ -1511,7 +1824,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                   {terminalsList.map((term) => (
                     <div
                       key={term.id}
-                      className={`p-4 rounded-xl border-2 transition relative flex flex-col justify-between gap-3 ${
+                      className={`p-4 rounded-xl border transition relative flex flex-col justify-between gap-3 ${
                         term.is_online
                           ? 'border-emerald-500/40 bg-emerald-500/5 dark:bg-emerald-950/20'
                           : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40'
@@ -1676,7 +1989,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                               setEditingScaleIp(term.scale_ip || '192.168.1.150');
                               setEditingScalePort(term.scale_port || 2004);
                             }}
-                            className="px-2 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-300 font-bold cursor-pointer"
+                            className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold cursor-pointer"
                             title="Kasa Adı, Terazi IP ve Portu Düzenle"
                           >
                             Ayarla
@@ -1706,7 +2019,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                                   fetchTerminalsData();
                                 }
                               }}
-                              className="p-1.5 rounded-lg text-brand-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+                              className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
                               title="Kasayı Sil"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1719,10 +2032,10 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                 </div>
 
                 {/* Yeni Kasa Kurulum Paketi İndirme Alanı */}
-                <div className="p-4 rounded-xl bg-purple-500/5 dark:bg-purple-950/20 border border-purple-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div className="space-y-1">
-                    <span className="text-xs font-black text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
-                      <Plus className="w-4 h-4 text-purple-600" />
+                    <span className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <Plus className="w-4 h-4 text-emerald-600" />
                       Yeni Bir Kasa / Bilgisayar Ekle
                     </span>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -1742,7 +2055,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       type="button"
                       onClick={() => handleDownloadAgentZip(newTerminalName)}
                       disabled={downloadingAgent}
-                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-black text-xs shadow-md shadow-purple-600/30 transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer disabled:opacity-60"
+                      className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white active:scale-95 text-white font-black text-xs shadow-sm transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer disabled:opacity-60"
                     >
                       {downloadingAgent ? (
                         <>
@@ -1761,17 +2074,17 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
               </div>
 
               {/* TERMAL YAZICI VE OTOMATİK ÇIKTI YÖNETİMİ (IP ADRESİNE VE İSME GÖRE GRUPLANMIŞ) */}
-              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black shadow-md shadow-blue-600/30 shrink-0">
-                      <Printer className="w-5 h-5" />
+                    <div className="w-10 h-10 rounded-xl bg-slate-800 dark:bg-slate-800 text-white flex items-center justify-center font-black shadow-sm shrink-0">
+                      <Printer className="w-5 h-5 text-emerald-400" />
                     </div>
                     <div>
                       <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
                         <span>Fiziksel Termal Yazıcılar (IP Adresine & İsme Göre Gruplanmış)</span>
                         {selectedPrinters.length > 0 && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                             {selectedPrinters.length} Yazıcı Seçili
                           </span>
                         )}
@@ -2018,6 +2331,69 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                                         )}
                                       </div>
 
+                                      {/* Kağıt / Rulo Genişliği Seçici (80mm / 80mm Geniş / 58mm) */}
+                                      <div
+                                        className="flex items-center gap-1.5 mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 shrink-0">
+                                          Rulo:
+                                        </span>
+                                        <div className="inline-flex rounded-lg p-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                          <button
+                                            type="button"
+                                            onClick={async (e) => {
+                                              e.stopPropagation();
+                                              sound.beep();
+                                              await localHardware.setPrinterWidth(qualifiedKey, '80mm', 48);
+                                              setPrinterConfigs(localHardware.getPrinterConfigs());
+                                            }}
+                                            className={`px-2 py-0.5 rounded-md text-[10px] font-black transition cursor-pointer ${
+                                              (printerCfg?.settings?.paper_width || '80mm') === '80mm' && (printerCfg?.settings?.line_width || 48) === 48
+                                                ? 'bg-blue-600 text-white shadow-xs'
+                                                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                                            }`}
+                                            title="80 mm Geniş Termal Rulo (48 Karakter - Kenara Sıfır Tam Oturan - Önerilen)"
+                                          >
+                                            80mm Geniş
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={async (e) => {
+                                              e.stopPropagation();
+                                              sound.beep();
+                                              await localHardware.setPrinterWidth(qualifiedKey, '80mm', 42);
+                                              setPrinterConfigs(localHardware.getPrinterConfigs());
+                                            }}
+                                            className={`px-2 py-0.5 rounded-md text-[10px] font-black transition cursor-pointer ${
+                                              (printerCfg?.settings?.paper_width || '80mm') === '80mm' && printerCfg?.settings?.line_width === 42
+                                                ? 'bg-blue-600 text-white shadow-xs'
+                                                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                                            }`}
+                                            title="80 mm Standart Termal Rulo (42 Karakter - Dar Kenar)"
+                                          >
+                                            80mm (42)
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={async (e) => {
+                                              e.stopPropagation();
+                                              sound.beep();
+                                              await localHardware.setPrinterWidth(qualifiedKey, '58mm', 32);
+                                              setPrinterConfigs(localHardware.getPrinterConfigs());
+                                            }}
+                                            className={`px-2 py-0.5 rounded-md text-[10px] font-black transition cursor-pointer ${
+                                              printerCfg?.settings?.paper_width === '58mm'
+                                                ? 'bg-amber-600 text-white shadow-xs'
+                                                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                                            }`}
+                                            title="58 mm Mini Termal Fiş (32 Karakter)"
+                                          >
+                                            58mm (Dar)
+                                          </button>
+                                        </div>
+                                      </div>
+
                                       <div className="flex items-center gap-1.5 mt-1 text-[10px] font-semibold">
                                         <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
                                           {ipAddr}
@@ -2094,435 +2470,6 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                     </button>
                   </div>
                 </div>
-              </div>
-
-              {/* Bilgilendirme Kartı */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/30 flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/30 shrink-0">
-                  <Scale className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-black text-emerald-900 dark:text-emerald-200">
-                    CAS CL-3000 / CL-5000 Ethernet Barkodlu / Tezgah Terazisi
-                  </h4>
-                  <p className="text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
-                    Terazinizi yerel ağa (Ethernet switch/modem) bağlayarak doğrudan IP üzerinden haberleştirebilirsiniz. 
-                    POS sipariş ekranında gramajlı ürün seçildiğinde <strong>"⚖️ Teraziden Ağırlığı Al"</strong> butonu bu IP ve port üzerinden teraziden kararlı ağırlığı anlık olarak okur.
-                  </p>
-                </div>
-              </div>
-
-              {/* Terazi Parametreleri */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4">
-                  <h5 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-emerald-600" />
-                    <span>Ağ & Donanım Yapılandırması</span>
-                  </h5>
-
-                  <div>
-                    <label className="text-slate-500 block mb-1">Terazi Modeli:</label>
-                    <input
-                      type="text"
-                      value={scaleConfig.model}
-                      onChange={(e) => setScaleConfig({ ...scaleConfig, model: e.target.value })}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-bold text-slate-900 dark:text-white"
-                      placeholder="CAS CL-3000"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-slate-500 block mb-1">Terazi IP Adresi:</label>
-                      <input
-                        type="text"
-                        value={scaleConfig.ip_address}
-                        onChange={(e) => setScaleConfig({ ...scaleConfig, ip_address: e.target.value })}
-                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono font-bold text-emerald-600 dark:text-emerald-400"
-                        placeholder="192.168.1.150"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-500 block mb-1">Port (Varsayılan: 2004):</label>
-                      <input
-                        type="number"
-                        value={scaleConfig.port}
-                        onChange={(e) => setScaleConfig({ ...scaleConfig, port: parseInt(e.target.value) || 2004 })}
-                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono font-bold text-slate-900 dark:text-white"
-                        placeholder="2004"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-slate-500 block mb-1">Zaman Aşımı (Saniye):</label>
-                      <input
-                        type="number"
-                        step="0.5"
-                        value={scaleConfig.timeout}
-                        onChange={(e) => setScaleConfig({ ...scaleConfig, timeout: parseFloat(e.target.value) || 2.5 })}
-                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-slate-900 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-500 block mb-1">Entegrasyon Durumu:</label>
-                      <button
-                        type="button"
-                        onClick={() => setScaleConfig({ ...scaleConfig, enabled: !scaleConfig.enabled })}
-                        className={`w-full py-2.5 px-3 rounded-xl font-bold flex items-center justify-center gap-2 cursor-pointer transition ${
-                          scaleConfig.enabled
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-500/30'
-                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                        }`}
-                      >
-                        {scaleConfig.enabled ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <X className="w-4 h-4" />}
-                        <span>{scaleConfig.enabled ? 'Aktif (Açık)' : 'Devre Dışı'}</span>
-                      </button>
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* Canlı Test & Dijital Gösterge Ekranı */}
-                <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4 flex flex-col justify-between">
-                  <div>
-                    <h5 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2 mb-3">
-                      <Wifi className="w-4 h-4 text-emerald-600" />
-                      <span>Terazi Bağlantı & Tartım Testi</span>
-                    </h5>
-
-                    {/* Dijital Kantar Göstergesi */}
-                    <div className="p-4 rounded-2xl bg-slate-950 border-2 border-emerald-500/60 shadow-inner text-center font-mono space-y-1 relative overflow-hidden">
-                      <div className="flex items-center justify-between text-[10px] text-emerald-400/80 font-bold uppercase tracking-wider">
-                        <span>CAS CL-3000 EKRAN</span>
-                        <span>{scaleLiveWeight?.is_stable !== false ? '• DENGELİ (ST)' : '• DENGESİZ (US)'}</span>
-                      </div>
-                      <div className="text-4xl sm:text-5xl font-black text-emerald-400 tracking-wider py-1 drop-shadow-[0_0_12px_rgba(16,185,129,0.5)]">
-                        {scaleLiveWeight ? Number(scaleLiveWeight.weight || 0).toFixed(3) : '0.000'} <span className="text-xl text-emerald-500/90 font-bold">Kg</span>
-                      </div>
-                      <div className="text-[11px] text-emerald-400/70 font-semibold truncate">
-                        {scaleLiveWeight?.raw || 'Teraziden tartım okumak için butona basın.'}
-                      </div>
-                    </div>
-
-                    {/* Test Sonuç Mesajı */}
-                    {scaleTestResult && (
-                      <div className={`mt-3 p-3 rounded-xl border text-xs font-bold flex items-start gap-2 ${
-                        scaleTestResult.success
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                          : 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                      }`}>
-                        {scaleTestResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />}
-                        <div>
-                          <div>{scaleTestResult.message || scaleTestResult.error}</div>
-                          {scaleTestResult.latency_ms !== undefined && (
-                            <div className="text-[10px] opacity-75 mt-0.5">Ping Gecikmesi: {scaleTestResult.latency_ms} ms</div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Aksiyon Butonları */}
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-                    <button
-                      type="button"
-                      disabled={scaleTesting}
-                      onClick={async () => {
-                        try {
-                          sound.beep();
-                          setScaleTesting(true);
-                          setScaleTestResult(null);
-                          const res = await localHardware.testConnection(scaleConfig.ip_address, scaleConfig.port);
-                          setScaleTestResult(res);
-                        } catch (err: any) {
-                          setScaleTestResult({ success: false, error: err.message || 'Ağ bağlantısı kurulamadı' });
-                        } finally {
-                          setScaleTesting(false);
-                        }
-                      }}
-                      className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-extrabold flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
-                    >
-                      {scaleTesting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4 text-emerald-600" />}
-                      <span>{scaleTesting ? 'Bağlanıyor...' : 'Ağı Test Et'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={scaleWeightReading}
-                      onClick={async () => {
-                        try {
-                          sound.beep();
-                          setScaleWeightReading(true);
-                          const res = await localHardware.getWeight(scaleConfig.ip_address, scaleConfig.port);
-                          if (res.success && res.weight !== undefined) {
-                            setScaleLiveWeight(res);
-                            sound.beep();
-                          } else {
-                            sound.warning();
-                            setScaleTestResult({ success: false, error: res.error || 'Ağırlık okunamadı.' });
-                          }
-                        } catch (err: any) {
-                          sound.warning();
-                          setScaleTestResult({ success: false, error: err.message || 'Hata oluştu' });
-                        } finally {
-                          setScaleWeightReading(false);
-                        }
-                      }}
-                      className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold shadow-md shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
-                    >
-                      {scaleWeightReading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Scale className="w-4 h-4" />}
-                      <span>{scaleWeightReading ? 'Okunuyor...' : 'Ağırlığı Oku'}</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 7: Mobil Terminal & Android APK */}
-          {activeSubTab === 'mobile_apk' && (
-            <div className="space-y-6 text-xs">
-              {/* Bildirim Mesajı */}
-              {apkMessage && (
-                <div className={`p-4 rounded-2xl border flex items-center justify-between animate-fadeIn ${
-                  apkMessage.success
-                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
-                    : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
-                }`}>
-                  <div className="flex items-center gap-2.5 font-bold">
-                    {apkMessage.success ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <AlertCircle className="w-5 h-5 text-brand-600" />}
-                    <span>{apkMessage.text}</span>
-                  </div>
-                  <button onClick={() => setApkMessage(null)} className="p-1 hover:opacity-70">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-
-              {/* 1. ÜST KART: APK İndirme & Sürüm Bilgisi */}
-              <div className="p-6 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl shadow-lg border border-slate-700/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-                <div className="flex items-start gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 flex-shrink-0">
-                    <Smartphone className="w-7 h-7" />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base font-black tracking-wide">BonCore POS Android El Terminali</h3>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-black uppercase">
-                        v{appInfo?.version_name || '1.0.0'}
-                      </span>
-                    </div>
-                    <p className="text-slate-300 text-xs">
-                      Garson el terminalleri ve tabletler için optimize edilmiş, WakeLock ve titreşim destekli APK.
-                    </p>
-                    <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px] text-slate-400 font-semibold">
-                      <span>Yayın Tarihi: <strong className="text-white">{appInfo?.release_date || '2026-10-29'}</strong></span>
-                      <span>•</span>
-                      <span>Durum: <strong className={appInfo?.is_apk_available ? 'text-emerald-400' : 'text-amber-400'}>{appInfo?.is_apk_available ? 'İndirmeye Hazır' : 'Paket Bekleniyor'}</strong></span>
-                      {appInfo?.file_size_mb ? (
-                        <>
-                          <span>•</span>
-                          <span>Boyut: <strong className="text-white">{appInfo.file_size_mb} MB</strong></span>
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-                  <a
-                    href="/api/app/download"
-                    download={`BonCore-POS-v${appInfo?.version_name || '1.0.0'}.apk`}
-                    onClick={() => sound.beep()}
-                    className="px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs shadow-md shadow-emerald-500/30 transition flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>APK Paketini İndir</span>
-                  </a>
-                  <button
-                    onClick={() => {
-                      sound.beep();
-                      const url = `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}`;
-                      navigator.clipboard.writeText(url);
-                      setApkMessage({ text: `Terminal bağlantı adresi kopyalandı: ${url}`, success: true });
-                      setTimeout(() => setApkMessage(null), 4000);
-                    }}
-                    className="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-extrabold text-xs transition flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Wifi className="w-4 h-4 text-emerald-400" />
-                    <span>IP / Web Linkini Kopyala</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* 2. ORTA KARTLAR: Hızlı Bağlantı & Mobil Avantajları */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {/* Mobil Özellikler Kartı */}
-                <div className="p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-3.5">
-                  <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2.5">
-                    <Zap className="w-4 h-4 text-amber-500" />
-                    <h4 className="text-sm font-black text-slate-900 dark:text-white">Android Terminal Teknolojileri</h4>
-                  </div>
-                  <ul className="space-y-2.5 font-medium text-slate-700 dark:text-slate-300">
-                    <li className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <strong className="text-slate-900 dark:text-white">Otomatik OTA Güncelleme:</strong> Uygulama her açıldığında sunucuyla haberleşir, yeni versiyon varsa garsonu uyararak tek dokunuşla günceller.
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <strong className="text-slate-900 dark:text-white">Kesintisiz Ekran (WakeLock):</strong> Sipariş alma ve masa adisyonu esnasında telefonun ekranı asla kararmaz veya kapanmaz.
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <strong className="text-slate-900 dark:text-white">Haptik Titreşim (Touch Feedback):</strong> Dokunmatik ekranda her ürün eklendiğinde ve tuşa basıldığında fiziksel titreşim verir.
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <strong className="text-slate-900 dark:text-white">Ağ Kesintisi & IP Ayarı:</strong> Wi-Fi koptuğunda çevrimdışı uyarı ekranı devreye girer, garson terminalden kolayca sunucu IP adresini değiştirebilir.
-                      </div>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* Sürüm Günlüğü & Notlar */}
-                <div className="p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-3.5">
-                  <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2.5">
-                    <Activity className="w-4 h-4 text-indigo-500" />
-                    <h4 className="text-sm font-black text-slate-900 dark:text-white">Sürüm Değişiklik Günlüğü (Changelog)</h4>
-                  </div>
-                  <div className="space-y-2">
-                    {(appInfo?.changelog || [
-                      'BonCore POS Android El Terminali ve Tablet sürümü yayınlandı.',
-                      'Otomatik web güncelleme entegrasyonu (Canlı menü & sipariş akışı).',
-                      'Ekran açık tutma (WakeLock) ve dokunmatik titreşim (Haptik) desteği.',
-                      'Kendi kendini güncelleyebilen OTA (Over-The-Air) APK mekanizması.'
-                    ]).map((logItem, idx) => (
-                      <div key={idx} className="flex items-start gap-2 text-slate-600 dark:text-slate-400">
-                        <span className="text-emerald-600 font-black">•</span>
-                        <span>{logItem}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="pt-3 border-t border-slate-200 dark:border-slate-700">
-                    <p className="text-[11px] text-slate-500">
-                      💡 <strong>PWA Kurulumu:</strong> Android telefonunuzda Chrome ile sisteme bağlandıktan sonra sağ üstteki üç noktaya basıp <span className="font-bold text-slate-800 dark:text-slate-200">"Uygulamayı Yükle"</span> veya <span className="font-bold text-slate-800 dark:text-slate-200">"Ana Ekrana Ekle"</span> diyerek de APK yüklemeden tam ekran kullanabilirsiniz.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* 3. ALT KART: Yönetici Yeni APK Dağıtımı (OTA Upload) */}
-              <div className="p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-4">
-                <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2.5">
-                  <Upload className="w-4 h-4 text-emerald-600" />
-                  <h4 className="text-sm font-black text-slate-900 dark:text-white">Yeni APK Yükleme & OTA Güncelleme Yayınlama</h4>
-                </div>
-
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    const form = e.target as HTMLFormElement;
-                    const fileInput = form.elements.namedItem('apk_file') as HTMLInputElement;
-                    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-                      alert('Lütfen yüklenecek .apk dosyasını seçiniz.');
-                      return;
-                    }
-                    sound.beep();
-                    setApkUploading(true);
-                    try {
-                      const formData = new FormData();
-                      formData.append('file', fileInput.files[0]);
-                      formData.append('version_name', newApkVersion);
-                      formData.append('version_code', String(newApkCode));
-                      formData.append('changelog', newApkChangelog);
-
-                      const res = await fetch('/api/app/upload', {
-                        method: 'POST',
-                        body: formData
-                      });
-                      const data = await res.json();
-                      if (res.ok) {
-                        setApkMessage({ text: data.message || 'Yeni APK başarıyla yayınlandı!', success: true });
-                        const vRes = await fetch('/api/app/version');
-                        const vData = await vRes.json();
-                        setAppInfo(vData);
-                        form.reset();
-                      } else {
-                        setApkMessage({ text: data.detail || 'APK yüklenirken hata oluştu.', success: false });
-                      }
-                    } catch (err: any) {
-                      setApkMessage({ text: err.message || 'Bağlantı hatası.', success: false });
-                    } finally {
-                      setApkUploading(false);
-                    }
-                  }}
-                  className="space-y-4"
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-semibold">
-                    <div>
-                      <label className="text-slate-500 block mb-1">APK Dosyası (.apk):</label>
-                      <input
-                        type="file"
-                        name="apk_file"
-                        accept=".apk"
-                        required
-                        className="w-full text-xs p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700 cursor-pointer"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-500 block mb-1">Sürüm Adı (Örn: 1.0.1):</label>
-                      <input
-                        type="text"
-                        value={newApkVersion}
-                        onChange={(e) => setNewApkVersion(e.target.value)}
-                        required
-                        className="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-500 block mb-1">Sürüm Kodu (Integer - Örn: 2):</label>
-                      <input
-                        type="number"
-                        value={newApkCode}
-                        onChange={(e) => setNewApkCode(Number(e.target.value))}
-                        required
-                        className="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-slate-500 block mb-1">Sürüm Notları (Her satıra bir yenilik):</label>
-                    <textarea
-                      value={newApkChangelog}
-                      onChange={(e) => setNewApkChangelog(e.target.value)}
-                      rows={2}
-                      placeholder="Yeni arayüz iyileştirmeleri&#10;Performans ve kararlılık geliştirmeleri..."
-                      className="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs"
-                    />
-                  </div>
-
-                  <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={apkUploading}
-                      className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                    >
-                      {apkUploading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                      <span>{apkUploading ? 'Yükleniyor ve Dağıtılıyor...' : 'Yeni Sürümü Sisteme Yükle & OTA Dağıt'}</span>
-                    </button>
-                  </div>
-                </form>
               </div>
             </div>
           )}
