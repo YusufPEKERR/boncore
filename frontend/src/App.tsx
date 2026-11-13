@@ -423,6 +423,9 @@ export const App: React.FC = () => {
         setKitchenAlerts(prev => prev.filter(a => a.table_id !== data.table_id));
       }
       loadAreas();
+      if (type === 'ORDER_CREATED' || type === 'ORDER_UPDATED') {
+        loadCategories();
+      }
       loadCategories();
     } else if (type === 'ANNOUNCEMENT_BROADCAST') {
       if (data) {
@@ -978,7 +981,10 @@ export const App: React.FC = () => {
             currentUser={currentUser}
             onOpenCheckout={handleOpenCheckout}
             onOpenFiscalModal={(id) => setActiveFiscalOrderId(id)}
-            onRefreshData={loadAreas}
+            onRefreshData={() => {
+              loadAreas();
+              loadCategories();
+            }}
             onStartMoveTable={handleStartMoveTable}
           />
         )}

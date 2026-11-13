@@ -233,6 +233,7 @@ type ProductMenuDTO struct {
 	Allergens          []string           `json:"allergens"`
 	IsVegan            bool               `json:"is_vegan"`
 	IsSpicy            bool               `json:"is_spicy"`
+	AllowNegativeStock bool               `json:"allow_negative_stock"`
 	IsAvailable        bool               `json:"is_available"`
 	ShowInPos          bool               `json:"show_in_pos"`
 	Variants           []ProductVariant   `json:"variants"`

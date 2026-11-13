@@ -21,6 +21,34 @@ func Round3(v float64) float64 {
 	return math.Round(v*1000) / 1000
 }
 
+// NormalizeStockName Türkçe karakter güvenli (Unicode) ad normalizasyonu.
+// SQLite LOWER() yalnızca ASCII küçülttüğü için eşleştirme Go tarafında yapılır.
+func NormalizeStockName(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
+}
+
+// FindIngredientIDByName ürün adıyla eşleşen stok kartının ID'sini Unicode güvenli şekilde bulur.
+func FindIngredientIDByName(tx *gorm.DB, name string) (int, bool) {
+	target := NormalizeStockName(name)
+	if target == "" {
+		return 0, false
+	}
+	type row struct {
+		ID   int
+		Name string
+	}
+	var rows []row
+	if err := tx.Model(&models.Ingredient{}).Select("id, name").Find(&rows).Error; err != nil {
+		return 0, false
+	}
+	for _, r := range rows {
+		if NormalizeStockName(r.Name) == target {
+			return r.ID, true
+		}
+	}
+	return 0, false
+}
+
 // CalculateBOMStock computes the bottleneck producible stock count for a product with BOM recipes,
 // identical to `calculate_bom_stock` in `backend/app/routers/products.py`.
 func CalculateBOMStock(prodName string, recipes []models.Recipe) (float64, []map[string]interface{}, []map[string]interface{}) {
@@ -121,7 +149,7 @@ func ValidateBOMStockForItems(tx *gorm.DB, items []models.OrderItemInput) error 
 	for _, pid := range prodIDs {
 		totalQty := qtyByProd[pid]
 		prod, ok := prodsMap[pid]
-		if !ok || len(prod.Recipes) == 0 {
+		if !ok || len(prod.Recipes) == 0 || prod.AllowNegStock {
 			continue
 		}
 
@@ -183,9 +211,15 @@ func DeductOrderIngredients(tx *gorm.DB, productID int, quantity float64, orderN
 	if len(recipes) == 0 {
 		if hasProd && strings.TrimSpace(prod.Name) != "" {
 			var directIng models.Ingredient
-			if err := repository.WithRowLock(tx).Where("LOWER(name) = ?", strings.ToLower(strings.TrimSpace(prod.Name))).First(&directIng).Error; err == nil {
+			ingID, found := FindIngredientIDByName(tx, prod.Name)
+			if found && repository.WithRowLock(tx).First(&directIng, ingID).Error == nil {
 				deductAmt := quantity
-				newStock := Round3(math.Max(0.0, directIng.CurrentStock-deductAmt))
+				var newStock float64
+				if prod.AllowNegStock {
+					newStock = Round3(directIng.CurrentStock - deductAmt)
+				} else {
+					newStock = Round3(math.Max(0.0, directIng.CurrentStock-deductAmt))
+				}
 				tx.Model(&directIng).Update("current_stock", newStock)
 
 				whID := warehouseID
@@ -202,6 +236,29 @@ func DeductOrderIngredients(tx *gorm.DB, productID int, quantity float64, orderN
 					Notes:             &note,
 					CreatedBy:         "Sistem (Otomatik Stok)",
 				})
+			} else if prod.AllowNegStock {
+				newIng := models.Ingredient{
+					Name:         strings.TrimSpace(prod.Name),
+					Unit:         "Kg",
+					CurrentStock: Round3(-quantity),
+					WarehouseID:  warehouseID,
+				}
+				if err := tx.Create(&newIng).Error; err == nil {
+					whID := warehouseID
+					note := fmt.Sprintf("Sipariş Eksi Stok Düşümü: %gx", quantity)
+					ref := orderNo
+					tx.Create(&models.StockMovement{
+						MovementType:      "sale_deduction",
+						IngredientID:      newIng.ID,
+						SourceWarehouseID: &whID,
+						Amount:            quantity,
+						Unit:              newIng.Unit,
+						CostPrice:         0,
+						ReferenceNo:       &ref,
+						Notes:             &note,
+						CreatedBy:         "Sistem (Otomatik Stok)",
+					})
+				}
 			}
 		}
 		return nil
@@ -223,7 +280,12 @@ func DeductOrderIngredients(tx *gorm.DB, productID int, quantity float64, orderN
 		fireMultiplier := 1.0 + (recipe.WastePercentage / 100.0)
 		totalDeduct := Round3(baseAmount * fireMultiplier)
 
-		newStock := Round3(math.Max(0.0, ingredient.CurrentStock-totalDeduct))
+		var newStock float64
+		if hasProd && prod.AllowNegStock {
+			newStock = Round3(ingredient.CurrentStock - totalDeduct)
+		} else {
+			newStock = Round3(math.Max(0.0, ingredient.CurrentStock-totalDeduct))
+		}
 		tx.Model(&ingredient).Update("current_stock", newStock)
 
 		if recipe.Amount > 0 {
@@ -252,7 +314,106 @@ func DeductOrderIngredients(tx *gorm.DB, productID int, quantity float64, orderN
 
 	if minRatio != nil && hasProd && strings.TrimSpace(prod.Name) != "" {
 		var prodIng models.Ingredient
-		if err := repository.WithRowLock(tx).Where("LOWER(name) = ?", strings.ToLower(strings.TrimSpace(prod.Name))).First(&prodIng).Error; err == nil {
+		if ingID, found := FindIngredientIDByName(tx, prod.Name); found && repository.WithRowLock(tx).First(&prodIng, ingID).Error == nil {
+			tx.Model(&prodIng).Update("current_stock", float64(*minRatio))
+		}
+	}
+
+	return nil
+}
+
+// RestoreOrderIngredients restores BOM recipe or direct product stock within an active ACID transaction
+// when an order or item is voided / cancelled.
+func RestoreOrderIngredients(tx *gorm.DB, productID int, quantity float64, orderNo string, warehouseID int) error {
+	if quantity <= 0 {
+		return nil
+	}
+	if warehouseID <= 0 {
+		warehouseID = 2
+	}
+
+	var recipes []models.Recipe
+	if err := tx.Where("product_id = ?", productID).Order("ingredient_id ASC").Find(&recipes).Error; err != nil {
+		return err
+	}
+
+	var prod models.Product
+	hasProd := tx.First(&prod, productID).Error == nil
+
+	if len(recipes) == 0 {
+		if hasProd && strings.TrimSpace(prod.Name) != "" {
+			var directIng models.Ingredient
+			ingID, found := FindIngredientIDByName(tx, prod.Name)
+			if found && repository.WithRowLock(tx).First(&directIng, ingID).Error == nil {
+				restoreAmt := quantity
+				newStock := Round3(directIng.CurrentStock + restoreAmt)
+				tx.Model(&directIng).Update("current_stock", newStock)
+
+				whID := warehouseID
+				note := fmt.Sprintf("Sipariş/Ürün İptali Stok İadesi: %gx", quantity)
+				ref := orderNo
+				tx.Create(&models.StockMovement{
+					MovementType:      "order_cancel_restoration",
+					IngredientID:      directIng.ID,
+					SourceWarehouseID: &whID,
+					Amount:            restoreAmt,
+					Unit:              directIng.Unit,
+					CostPrice:         directIng.CostPerUnit,
+					ReferenceNo:       &ref,
+					Notes:             &note,
+					CreatedBy:         "Sistem (İptal/İade)",
+				})
+			}
+		}
+		return nil
+	}
+
+	// Lock recipe ingredients in deterministic ascending ID order (`ORDER BY id ASC FOR UPDATE`)
+	sort.Slice(recipes, func(i, j int) bool {
+		return recipes[i].IngredientID < recipes[j].IngredientID
+	})
+
+	var minRatio *int
+	for _, recipe := range recipes {
+		var ingredient models.Ingredient
+		if err := repository.WithRowLock(tx).First(&ingredient, recipe.IngredientID).Error; err != nil {
+			continue
+		}
+
+		baseAmount := recipe.Amount * quantity
+		fireMultiplier := 1.0 + (recipe.WastePercentage / 100.0)
+		totalRestore := Round3(baseAmount * fireMultiplier)
+
+		newStock := Round3(ingredient.CurrentStock + totalRestore)
+		tx.Model(&ingredient).Update("current_stock", newStock)
+
+		if recipe.Amount > 0 {
+			r := int(math.Floor(newStock / recipe.Amount))
+			if minRatio == nil || r < *minRatio {
+				val := r
+				minRatio = &val
+			}
+		}
+
+		whID := warehouseID
+		note := fmt.Sprintf("Sipariş/Ürün İptali Reçete İadesi: %gx", quantity)
+		ref := orderNo
+		tx.Create(&models.StockMovement{
+			MovementType:      "order_cancel_restoration",
+			IngredientID:      ingredient.ID,
+			SourceWarehouseID: &whID,
+			Amount:            totalRestore,
+			Unit:              ingredient.Unit,
+			CostPrice:         ingredient.CostPerUnit,
+			ReferenceNo:       &ref,
+			Notes:             &note,
+			CreatedBy:         "Sistem (İptal/İade)",
+		})
+	}
+
+	if minRatio != nil && hasProd && strings.TrimSpace(prod.Name) != "" {
+		var prodIng models.Ingredient
+		if ingID, found := FindIngredientIDByName(tx, prod.Name); found && repository.WithRowLock(tx).First(&prodIng, ingID).Error == nil {
 			tx.Model(&prodIng).Update("current_stock", float64(*minRatio))
 		}
 	}

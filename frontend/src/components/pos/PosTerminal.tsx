@@ -88,12 +88,12 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [weightModalProduct, setWeightModalProduct] = useState<Product | null>(null);
   const [weightKgInput, setWeightKgInput] = useState<string>('');
   const [weightGramInput, setWeightGramInput] = useState<string>('');
-  const [weightActiveField, setWeightActiveField] = useState<'kg' | 'gram'>('kg');
+  const [weightActiveField, setWeightActiveField] = useState<'kg' | 'gram'>('gram');
   // CAS CL-3000 Terazi State
   const [scaleReading, setScaleReading] = useState<boolean>(false);
   const [scaleStatus, setScaleStatus] = useState<{ is_stable?: boolean; simulated?: boolean; message?: string } | null>(null);
   // Çoklu Kasa & Terazi İstasyonu State'i
-  const [scaleTerminals, setScaleTerminals] = useState<Array<{ id: string; name: string; is_online: boolean; is_default: boolean }>>([]);
+  const [scaleTerminals, setScaleTerminals] = useState<Array<{ id: string; name: string; is_online: boolean; is_default: boolean; scale_enabled?: boolean }>>([]);
   const [selectedTerminalId, setSelectedTerminalId] = useState<string>(() => localStorage.getItem('boncore_pos_terminal_id') || '');
 
   // Live Timer for table elapsed time
@@ -180,7 +180,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [cancelOrderReasonCode, setCancelOrderReasonCode] = useState<string>('MUSTERI_VAZGECTI');
   const [cancelOrderReasonText, setCancelOrderReasonText] = useState<string>('Müşteri vazgeçti');
 
-  // Reçete (BOM) Stoğu Biten Ürün Uyarı Modalı
+  // Reçete (BOM) / Stok Uyarı Modalı
   const [bomStockWarningModal, setBomStockWarningModal] = useState<{
     productName: string;
     missingIngredients: Array<{
@@ -189,6 +189,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       required_amount: number;
       unit: string;
     }>;
+    onContinue?: () => void;
   } | null>(null);
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -447,15 +448,50 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     return Number(total.toFixed(3));
   };
 
-  // Check if any recipe (BOM) ingredient is out of stock before adding to order
-  const checkBomStockBeforeAdd = (product: Product, requestedQty: number = 1, mode: 'add' | 'set' = 'add'): boolean => {
-    if (!product.has_recipe || !product.recipe_items || product.recipe_items.length === 0) {
+  // Check if any recipe (BOM) ingredient or direct product stock is out of stock before adding to order
+  const checkBomStockBeforeAdd = (
+    product: Product,
+    requestedQty: number = 1,
+    mode: 'add' | 'set' = 'add',
+    onContinueCallback?: () => void
+  ): boolean => {
+    // Eksi (-) stok izni açık olan ürünlerde stok kontrolü engelleme yapmaz
+    if (product.allow_negative_stock) {
       return true;
     }
+
     const unsavedInCart = cartItems
       .filter(i => !i.id && !i.is_voided && i.product_id === product.id)
       .reduce((sum, i) => sum + Number(i.quantity), 0);
     const totalTargetQty = mode === 'set' ? requestedQty : Number((unsavedInCart + requestedQty).toFixed(3));
+
+    if (!product.has_recipe || !product.recipe_items || product.recipe_items.length === 0) {
+      // Gramajlı / doğrudan stok takipli ürün kontrolü
+      if (isWeightProduct(product)) {
+        const avail = Number(product.stock_quantity ?? 0);
+        if (avail <= 0 || avail + 1e-9 < totalTargetQty) {
+          sound.warning();
+          setBomStockWarningModal({
+            productName: product.name,
+            missingIngredients: [
+              {
+                ingredient_name: product.name,
+                current_stock: Number(avail.toFixed(3)),
+                required_amount: totalTargetQty,
+                unit: product.unit || 'Kg'
+              }
+            ],
+            onContinue: onContinueCallback
+          });
+          showToast(
+            `⚠️ "${product.name}" için yeterli stok yok! (Mevcut: ${Number(avail.toFixed(3))} ${product.unit || 'Kg'}, İstenen: ${totalTargetQty} ${product.unit || 'Kg'})`,
+            'error'
+          );
+          return false;
+        }
+      }
+      return true;
+    }
 
     const missing = product.recipe_items
       .filter(r => {
@@ -474,11 +510,12 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       sound.warning();
       setBomStockWarningModal({
         productName: product.name,
-        missingIngredients: missing
+        missingIngredients: missing,
+        onContinue: onContinueCallback
       });
       const names = missing.map(m => `${m.ingredient_name} (Stok: ${m.current_stock} ${m.unit})`).join(', ');
       showToast(
-        `⚠️ "${product.name}" reçetesindeki [${names}] stoğu bitti! Lütfen stoğu güncelleyin veya reçeteden kaldırın.`,
+        `⚠️ "${product.name}" reçetesindeki [${names}] stoğu bitti!`,
         'error'
       );
       return false;
@@ -491,7 +528,14 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     try {
       setScaleReading(true);
       setScaleStatus(null);
-      const res = await localHardware.getWeight(undefined, undefined, selectedTerminalId || undefined);
+      const activeScales = scaleTerminals.filter(t => t.scale_enabled);
+      const targetScaleId =
+        activeScales.find(t => t.id === selectedTerminalId)?.id ||
+        activeScales.find(t => t.is_default)?.id ||
+        activeScales[0]?.id ||
+        selectedTerminalId ||
+        undefined;
+      const res = await localHardware.getWeight(undefined, undefined, targetScaleId);
       if (res.success && res.weight !== undefined && res.weight > 0) {
         sound.beep();
         const cleanKg = Number(Number(res.weight).toFixed(3));
@@ -529,6 +573,9 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const openWeightModal = (product: Product) => {
     setScaleStatus(null);
     setScaleReading(false);
+    localHardware.getTerminals().then(res => {
+      if (res?.terminals) setScaleTerminals(res.terminals);
+    }).catch(() => {});
     const existingUnsaved = cartItems.find(i => !i.id && i.product_id === product.id);
     if (existingUnsaved && existingUnsaved.quantity > 0) {
       const kgVal = Number(Number(existingUnsaved.quantity).toFixed(3));
@@ -538,7 +585,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       setWeightKgInput('');
       setWeightGramInput('');
     }
-    setWeightActiveField('kg');
+    setWeightActiveField('gram');
     setWeightModalProduct(product);
   };
 
@@ -607,7 +654,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     }
   };
 
-  const handleConfirmWeightModal = (mode: 'set' | 'add' = 'set') => {
+  const handleConfirmWeightModal = (mode: 'set' | 'add' = 'set', bypassStockCheck: boolean = false) => {
     if (!weightModalProduct) return;
     const parsedKg = parseFloat(weightKgInput.replace(',', '.'));
     if (isNaN(parsedKg) || parsedKg <= 0) {
@@ -616,7 +663,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return;
     }
     const cleanKg = Number(parsedKg.toFixed(3));
-    if (!checkBomStockBeforeAdd(weightModalProduct, cleanKg, mode)) {
+    if (!bypassStockCheck && !checkBomStockBeforeAdd(weightModalProduct, cleanKg, mode, () => handleConfirmWeightModal(mode, true))) {
       return;
     }
     sound.beep();
@@ -2341,8 +2388,14 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                       Pasif
                     </span>
                   ) : canViewStock && p.stock_quantity !== undefined && p.stock_quantity !== null ? (
-                    <span className={p.stock_quantity <= 0 ? 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded truncate text-brand-600 bg-emerald-50 dark:bg-emerald-950/50' : 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded truncate text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50'}>
-                      {Number(Number(p.stock_quantity).toFixed(2))} {p.unit || 'Adet'}
+                    <span className={
+                      p.allow_negative_stock && p.stock_quantity < 0
+                        ? 'text-[9px] font-mono font-black px-1.5 py-0.5 rounded truncate text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800'
+                        : p.stock_quantity <= 0
+                          ? 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded truncate text-brand-600 bg-emerald-50 dark:bg-emerald-950/50'
+                          : 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded truncate text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50'
+                    }>
+                      {Number(Number(p.stock_quantity).toFixed(3))} {p.unit || 'Adet'}
                     </span>
                   ) : p.variants && p.variants.length > 0 ? (
                     <span className="text-[9px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-950/50 px-1.5 py-0.5 rounded">
@@ -2445,8 +2498,12 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-0.5">
                     Birim Fiyat: <span className="font-mono font-bold text-slate-800 dark:text-slate-200">₺{weightModalProduct.base_price.toFixed(2)} / Kg</span>
                     {weightModalProduct.stock_quantity !== undefined && (
-                      <span className="ml-2 text-emerald-600 dark:text-emerald-400">
-                        • Stok: {Number(Number(weightModalProduct.stock_quantity).toFixed(2))} Kg
+                      <span className={`ml-2 ${
+                        weightModalProduct.allow_negative_stock && weightModalProduct.stock_quantity < 0
+                          ? 'text-rose-600 dark:text-rose-400 font-black'
+                          : 'text-emerald-600 dark:text-emerald-400'
+                      }`}>
+                        • Stok: {Number(Number(weightModalProduct.stock_quantity).toFixed(3))} {weightModalProduct.unit || 'Kg'}
                       </span>
                     )}
                   </p>
@@ -2461,166 +2518,98 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               </button>
             </div>
 
-            {/* CAS CL-3000 Ethernet Terazi Bağlantı Paneli */}
-            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/30 border-2 border-emerald-500/40 rounded-2xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm">
-              <div className="flex items-center gap-2.5 w-full sm:w-auto">
-                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/30 shrink-0">
-                  <Scale className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-xs font-black text-emerald-950 dark:text-emerald-100">CAS CL-3000 (Ethernet)</span>
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
-                      CANLI AĞ
-                    </span>
-                    {scaleTerminals.length > 1 && (
-                      <select
-                        value={selectedTerminalId}
-                        onChange={(e) => {
-                          setSelectedTerminalId(e.target.value);
-                          localStorage.setItem('boncore_pos_terminal_id', e.target.value);
-                        }}
-                        className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-emerald-500/50 rounded-md text-[11px] font-bold text-emerald-800 dark:text-emerald-200 outline-none"
-                      >
-                        {scaleTerminals.map(t => (
-                          <option key={t.id} value={t.id}>
-                            {t.is_online ? '🟢' : '⚪'} {t.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold truncate mt-0.5">
-                    {scaleStatus?.message || "Eti terazinin kefesine koyup butona basın"}
-                  </p>
-                </div>
-              </div>
+            {/* CAS CL-3000 Ethernet Terazi Bağlantı Paneli (Yalnızca aktif/seçili terazi varsa gösterilir) */}
+            {(() => {
+              const activeScales = scaleTerminals.filter(t => t.scale_enabled);
+              if (activeScales.length === 0) return null;
+              const currentScaleId =
+                activeScales.find(t => t.id === selectedTerminalId)?.id ||
+                activeScales.find(t => t.is_default)?.id ||
+                activeScales[0].id;
 
-              <button
-                type="button"
-                onClick={handleReadFromScale}
-                disabled={scaleReading}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs shadow-md shadow-emerald-600/25 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 whitespace-nowrap"
-              >
-                {scaleReading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Tartılıyor...</span>
-                  </>
-                ) : (
-                  <>
-                    <Scale className="w-4 h-4" />
-                    <span>⚖️ Teraziden Ağırlığı Al</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Dual Synchronized Inputs: Kg (Küsuratlı) & Gram (gr) */}
-            <div className="grid grid-cols-2 gap-3">
-              <div
-                onClick={() => setWeightActiveField('kg')}
-                className={`p-3 rounded-2xl border-2 transition cursor-pointer ${
-                  weightActiveField === 'kg'
-                    ? 'border-brand-600 bg-emerald-50/40 dark:bg-emerald-950/20'
-                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800'
-                }`}
-              >
-                <label className="text-[11px] font-extrabold text-slate-500 dark:text-slate-400 uppercase block mb-1">
-                  Kaç Kg? (Küsuratlı)
-                </label>
-                <div className="flex items-baseline gap-1">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    autoFocus
-                    value={weightKgInput}
-                    onFocus={() => setWeightActiveField('kg')}
-                    onChange={(e) => handleWeightKgChange(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleConfirmWeightModal('set');
-                      }
-                    }}
-                    placeholder="0.250"
-                    className="w-full bg-transparent font-mono text-xl font-black text-slate-900 dark:text-white focus:outline-none"
-                  />
-                  <span className="text-xs font-extrabold text-slate-500">Kg</span>
-                </div>
-              </div>
-
-              <div
-                onClick={() => setWeightActiveField('gram')}
-                className={`p-3 rounded-2xl border-2 transition cursor-pointer ${
-                  weightActiveField === 'gram'
-                    ? 'border-brand-600 bg-emerald-50/40 dark:bg-emerald-950/20'
-                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800'
-                }`}
-              >
-                <label className="text-[11px] font-extrabold text-slate-500 dark:text-slate-400 uppercase block mb-1">
-                  Gramaj (Gram)
-                </label>
-                <div className="flex items-baseline gap-1">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={weightGramInput}
-                    onFocus={() => setWeightActiveField('gram')}
-                    onChange={(e) => handleWeightGramChange(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleConfirmWeightModal('set');
-                      }
-                    }}
-                    placeholder="250"
-                    className="w-full bg-transparent font-mono text-xl font-black text-slate-900 dark:text-white focus:outline-none"
-                  />
-                  <span className="text-xs font-extrabold text-slate-500">gr</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Gram / Kg Preset Buttons */}
-            <div>
-              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1.5">
-                Hızlı Gramaj & Kg Seçimi:
-              </label>
-              <div className="grid grid-cols-4 gap-1.5">
-                {[
-                  { label: '100 gr', sub: '0.1 Kg', kg: 0.1 },
-                  { label: '150 gr', sub: '0.15 Kg', kg: 0.15 },
-                  { label: '200 gr', sub: '0.2 Kg', kg: 0.2 },
-                  { label: '250 gr', sub: '0.25 Kg', kg: 0.25 },
-                  { label: '300 gr', sub: '0.3 Kg', kg: 0.3 },
-                  { label: '400 gr', sub: '0.4 Kg', kg: 0.4 },
-                  { label: '500 gr', sub: '0.5 Kg', kg: 0.5 },
-                  { label: '750 gr', sub: '0.75 Kg', kg: 0.75 },
-                  { label: '1 Kg', sub: '1000 gr', kg: 1.0 },
-                  { label: '1.25 Kg', sub: '1250 gr', kg: 1.25 },
-                  { label: '1.5 Kg', sub: '1500 gr', kg: 1.5 },
-                  { label: '2 Kg', sub: '2000 gr', kg: 2.0 },
-                ].map((preset) => {
-                  const isSelected = Math.abs(parsedModalKg - preset.kg) < 0.001;
-                  return (
-                    <button
-                      key={preset.label}
-                      type="button"
-                      onClick={() => handleSelectPresetKg(preset.kg)}
-                      className={`py-2 px-1.5 rounded-xl border text-center transition cursor-pointer ${
-                        isSelected
-                          ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
-                          : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
-                      }`}
-                    >
-                      <div className="font-extrabold text-xs leading-tight">{preset.label}</div>
-                      <div className={`text-[9px] font-mono ${isSelected ? 'text-emerald-100' : 'text-slate-400'}`}>
-                        {preset.sub}
+              return (
+                <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/30 border-2 border-emerald-500/40 rounded-2xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+                  <div className="flex items-center gap-2.5 flex-1 min-w-0 w-full sm:w-auto">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-600/30 shrink-0">
+                      <Scale className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-black text-emerald-950 dark:text-emerald-100 whitespace-nowrap">CAS CL-3000</span>
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 whitespace-nowrap">
+                          CANLI AĞ
+                        </span>
+                        {activeScales.length > 1 && (
+                          <select
+                            value={currentScaleId}
+                            onChange={(e) => {
+                              setSelectedTerminalId(e.target.value);
+                              localStorage.setItem('boncore_pos_terminal_id', e.target.value);
+                            }}
+                            className="px-2 py-0.5 bg-white dark:bg-slate-800 border border-emerald-500/50 rounded-md text-[11px] font-bold text-emerald-800 dark:text-emerald-200 outline-none max-w-full"
+                          >
+                            {activeScales.map(t => (
+                              <option key={t.id} value={t.id}>
+                                {t.is_online ? '🟢' : '⚪'} {t.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
-                    </button>
-                  );
-                })}
+                      <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold truncate mt-0.5">
+                        {scaleStatus?.message || "Eti terazinin kefesine koyup butona basın"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleReadFromScale}
+                    disabled={scaleReading}
+                    className="w-full sm:w-auto shrink-0 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs shadow-md shadow-emerald-600/25 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 whitespace-nowrap"
+                  >
+                    {scaleReading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Tartılıyor...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Scale className="w-4 h-4" />
+                        <span>⚖️ Teraziden Ağırlığı Al</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              );
+            })()}
+
+            {/* Gramaj (Gram) Girişi */}
+            <div
+              onClick={() => setWeightActiveField('gram')}
+              className="p-3.5 rounded-2xl border-2 border-brand-600 bg-emerald-50/40 dark:bg-emerald-950/20 transition cursor-pointer"
+            >
+              <label className="text-[11px] font-extrabold text-slate-500 dark:text-slate-400 uppercase block mb-1">
+                Gramaj (Gram)
+              </label>
+              <div className="flex items-baseline gap-1.5">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoFocus
+                  value={weightGramInput}
+                  onFocus={() => setWeightActiveField('gram')}
+                  onChange={(e) => handleWeightGramChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleConfirmWeightModal('set');
+                    }
+                  }}
+                  placeholder="250"
+                  className="w-full bg-transparent font-mono text-2xl font-black text-slate-900 dark:text-white focus:outline-none"
+                />
+                <span className="text-sm font-extrabold text-slate-500">gr</span>
               </div>
             </div>
 
@@ -3215,16 +3204,37 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             </div>
 
             <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs font-semibold text-amber-900 dark:text-amber-200 leading-relaxed">
-              Bu ürünün reçetesinde (BOM) bulunan yukarıdaki malzemenin stoğu tükenmiştir. Sipariş girebilmek için lütfen <strong>Stok / Envanter</strong> ekranından bu malzemenin stoğunu güncelleyin veya <strong>Tanımlamalar &gt; Ürün Reçetesi (BOM)</strong> ekranından malzemeyi reçeteden kaldırın.
+              {bomStockWarningModal.onContinue
+                ? 'Bu ürün için mevcut stok yetersizdir veya tükenmiştir. İsterseniz stok uyarısına rağmen satışa devam edebilir ya da işlemi iptal edebilirsiniz.'
+                : 'Bu ürünün reçetesinde (BOM) bulunan yukarıdaki malzemenin stoğu tükenmiştir. Sipariş girebilmek için lütfen Stok / Envanter ekranından bu malzemenin stoğunu güncelleyin veya Tanımlamalar > Ürün Reçetesi (BOM) ekranından malzemeyi reçeteden kaldırın.'}
             </div>
 
-            <button
-              type="button"
-              onClick={() => setBomStockWarningModal(null)}
-              className="w-full py-3 rounded-2xl bg-[#338d35] hover:bg-[#28702a] text-white font-black text-xs shadow-lg transition cursor-pointer"
-            >
-              Anlaşıldı
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setBomStockWarningModal(null)}
+                className={`py-3 rounded-2xl font-black text-xs transition cursor-pointer ${
+                  bomStockWarningModal.onContinue
+                    ? 'flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
+                    : 'w-full bg-[#338d35] hover:bg-[#28702a] text-white shadow-lg'
+                }`}
+              >
+                {bomStockWarningModal.onContinue ? 'İptal / Kapat' : 'Anlaşıldı'}
+              </button>
+              {bomStockWarningModal.onContinue && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cb = bomStockWarningModal.onContinue;
+                    setBomStockWarningModal(null);
+                    cb?.();
+                  }}
+                  className="flex-1 py-3 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-lg transition cursor-pointer"
+                >
+                  Yine de Devam Et
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

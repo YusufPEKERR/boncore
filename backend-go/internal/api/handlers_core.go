@@ -1670,6 +1670,9 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 				if hasRecipe {
 					stockQty = calcBOMStock
 					unitLabel = "Adet"
+					if p.AllowNegStock && len(p.Recipes) == 1 && p.Recipes[0].Ingredient != nil && p.Recipes[0].Amount > 0 && p.Recipes[0].Ingredient.CurrentStock < 0 {
+						stockQty = service.Round3(p.Recipes[0].Ingredient.CurrentStock / p.Recipes[0].Amount)
+					}
 				} else if directIng != nil {
 					stockQty = service.Round3(directIng.CurrentStock)
 				}
@@ -1732,9 +1735,10 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 					"image_url":           p.ImageURL,
 					"calories":            p.Calories,
 					"allergens":           allergens,
-					"is_vegan":            p.IsVegan,
-					"is_spicy":            p.IsSpicy,
-					"is_available":        p.IsAvailable,
+					"is_vegan":             p.IsVegan,
+					"is_spicy":             p.IsSpicy,
+					"allow_negative_stock": p.AllowNegStock,
+					"is_available":         p.IsAvailable,
 					"show_in_pos":         p.ShowInPos,
 					"variants":            variants,
 					"modifier_groups":     mgs,
@@ -1919,8 +1923,9 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 			Station       string  `json:"station"`
 			IsAvailable   *bool   `json:"is_available"`
 			ShowInPos     *bool   `json:"show_in_pos"`
-			Unit          string  `json:"unit"`
-			StockQuantity float64 `json:"stock_quantity"`
+			Unit               string  `json:"unit"`
+			StockQuantity      float64 `json:"stock_quantity"`
+			AllowNegativeStock *bool   `json:"allow_negative_stock"`
 		}
 		_ = c.BodyParser(&payload)
 		station := payload.Station
@@ -1935,18 +1940,44 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 		if payload.ShowInPos != nil {
 			showPos = *payload.ShowInPos
 		}
+		allowNeg := false
+		if payload.AllowNegativeStock != nil {
+			allowNeg = *payload.AllowNegativeStock
+		}
 		prod := models.Product{
-			CategoryID:  payload.CategoryID,
-			Name:        strings.TrimSpace(payload.Name),
-			Description: payload.Description,
-			BasePrice:   payload.BasePrice,
-			PluCode:     payload.PluCode,
-			Barcode:     payload.Barcode,
-			Station:     station,
-			IsAvailable: avail,
-			ShowInPos:   showPos,
+			CategoryID:    payload.CategoryID,
+			Name:          strings.TrimSpace(payload.Name),
+			Description:   payload.Description,
+			BasePrice:     payload.BasePrice,
+			PluCode:       payload.PluCode,
+			Barcode:       payload.Barcode,
+			Station:       station,
+			IsAvailable:   avail,
+			ShowInPos:     showPos,
+			AllowNegStock: allowNeg,
 		}
 		db.Create(&prod)
+		if strings.TrimSpace(prod.Name) != "" {
+			var directIng models.Ingredient
+			unitStr := strings.TrimSpace(payload.Unit)
+			if unitStr == "" {
+				unitStr = "Adet"
+			}
+			if ingID, found := service.FindIngredientIDByName(db, prod.Name); found && db.First(&directIng, ingID).Error == nil {
+				directIng.CurrentStock = service.Round3(payload.StockQuantity)
+				if payload.Unit != "" {
+					directIng.Unit = unitStr
+				}
+				db.Save(&directIng)
+			} else if payload.StockQuantity != 0 || payload.Unit != "" {
+				db.Create(&models.Ingredient{
+					Name:         strings.TrimSpace(prod.Name),
+					Unit:         unitStr,
+					CurrentStock: service.Round3(payload.StockQuantity),
+					WarehouseID:  2,
+				})
+			}
+		}
 		_ = svc.Broadcaster.BroadcastAll(tenantCode, "MENU_UPDATED", fiber.Map{"product_id": prod.ID})
 		return c.JSON(fiber.Map{"status": "success", "product_id": prod.ID})
 	})
@@ -1981,7 +2012,32 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 		if v, ok := payload["show_in_pos"].(bool); ok {
 			prod.ShowInPos = v
 		}
+		if v, ok := payload["allow_negative_stock"].(bool); ok {
+			prod.AllowNegStock = v
+		}
 		db.Save(&prod)
+		if stockVal, hasStock := payload["stock_quantity"].(float64); hasStock && strings.TrimSpace(prod.Name) != "" {
+			unitStr, hasUnit := payload["unit"].(string)
+			unitStr = strings.TrimSpace(unitStr)
+			var directIng models.Ingredient
+			if ingID, found := service.FindIngredientIDByName(db, prod.Name); found && db.First(&directIng, ingID).Error == nil {
+				directIng.CurrentStock = service.Round3(stockVal)
+				if hasUnit && unitStr != "" {
+					directIng.Unit = unitStr
+				}
+				db.Save(&directIng)
+			} else {
+				if unitStr == "" {
+					unitStr = "Adet"
+				}
+				db.Create(&models.Ingredient{
+					Name:         strings.TrimSpace(prod.Name),
+					Unit:         unitStr,
+					CurrentStock: service.Round3(stockVal),
+					WarehouseID:  2,
+				})
+			}
+		}
 		_ = svc.Broadcaster.BroadcastAll(tenantCode, "MENU_UPDATED", fiber.Map{"product_id": prod.ID})
 		return c.JSON(fiber.Map{"status": "success", "message": "Ürün ve stok kartı güncellendi."})
 	})

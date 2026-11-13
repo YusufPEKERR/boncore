@@ -1914,6 +1914,12 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 				item["is_default"] = isDef
 			}
 
+			if scaleEn, ok := item["scale_enabled"].(bool); !ok {
+				item["scale_enabled"] = false
+			} else {
+				item["scale_enabled"] = scaleEn
+			}
+
 			enriched = append(enriched, item)
 		}
 		return c.JSON(fiber.Map{"terminals": enriched})
@@ -1926,10 +1932,11 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		}
 		tid := c.Params("terminal_id")
 		var payload struct {
-			Name      *string `json:"name"`
-			ScaleIP   *string `json:"scale_ip"`
-			ScalePort *int    `json:"scale_port"`
-			IsDefault *bool   `json:"is_default"`
+			Name         *string `json:"name"`
+			ScaleIP      *string `json:"scale_ip"`
+			ScalePort    *int    `json:"scale_port"`
+			IsDefault    *bool   `json:"is_default"`
+			ScaleEnabled *bool   `json:"scale_enabled"`
 		}
 		_ = c.BodyParser(&payload)
 
@@ -1953,6 +1960,9 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 				}
 				if payload.IsDefault != nil {
 					terminals[i]["is_default"] = *payload.IsDefault
+				}
+				if payload.ScaleEnabled != nil {
+					terminals[i]["scale_enabled"] = *payload.ScaleEnabled
 				}
 				updated = true
 				break

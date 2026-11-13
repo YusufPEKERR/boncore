@@ -41,6 +41,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
   const [prodVatRate, setProdVatRate] = useState<number>(10);
   const [prodIsAvailable, setProdIsAvailable] = useState<boolean>(true);
   const [prodShowInPos, setProdShowInPos] = useState<boolean>(true);
+  const [prodAllowNegStock, setProdAllowNegStock] = useState<boolean>(false);
   const [prodDescription, setProdDescription] = useState<string>('');
 
   // Recipe (BOM) Editor Fields
@@ -126,6 +127,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     setProdVatRate(p.vat_rate ?? 10);
     setProdIsAvailable(p.is_available ?? true);
     setProdShowInPos(p.show_in_pos ?? true);
+    setProdAllowNegStock(p.allow_negative_stock ?? false);
     setProdDescription(p.description || '');
 
     // Reset Add Ingredient Form
@@ -167,6 +169,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     setProdVatRate(10);
     setProdIsAvailable(true);
     setProdShowInPos(true);
+    setProdAllowNegStock(false);
     setProdDescription('');
     setRecipeItems([]);
     setSelectedIngId('');
@@ -304,6 +307,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
           barcode: prodBarcode.trim() || undefined,
           is_available: prodIsAvailable,
           show_in_pos: prodShowInPos,
+          allow_negative_stock: prodAllowNegStock,
           description: prodDescription.trim() || undefined
         });
         targetProductId = createRes.product_id;
@@ -320,6 +324,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
           barcode: prodBarcode.trim() || undefined,
           is_available: prodIsAvailable,
           show_in_pos: prodShowInPos,
+          allow_negative_stock: prodAllowNegStock,
           description: prodDescription.trim() || undefined
         });
       }
@@ -794,6 +799,42 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                     className="w-5 h-5 rounded text-emerald-600 accent-emerald-600 cursor-pointer shrink-0"
                   />
                 </div>
+
+                {/* Eksi (-) Stok Satışına İzin Verilsin mi? (Yalnızca Kg / Gramajlı Ürünlerde) */}
+                {['KG', 'GR', 'GRAM', 'KİLO', 'KILO'].includes(prodUnit.trim().toUpperCase()) && (
+                  <div
+                    onClick={() => {
+                      sound.beep();
+                      setProdAllowNegStock(prev => !prev);
+                    }}
+                    className={`p-3 rounded-2xl border flex items-center justify-between gap-3 cursor-pointer transition ${
+                      prodAllowNegStock
+                        ? 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-300 dark:border-rose-800'
+                        : 'bg-slate-100 dark:bg-slate-800/70 border-slate-300 dark:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <AlertTriangle className={`w-4 h-4 shrink-0 ${prodAllowNegStock ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}`} />
+                      <div>
+                        <div className={`text-xs font-black ${prodAllowNegStock ? 'text-rose-800 dark:text-rose-300' : 'text-slate-600 dark:text-slate-400'}`}>
+                          - Stok Girilebilsin (Eksi Stok İzni)
+                        </div>
+                        <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                          {prodAllowNegStock
+                            ? 'Açık: Stok bittiğinde kırmızı -Kg olarak satışa devam edilebilir.'
+                            : 'Kapalı: Stok yetersizse POS ekranında uyarı verilir.'}
+                        </div>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={prodAllowNegStock}
+                      onChange={(e) => setProdAllowNegStock(e.target.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-5 h-5 rounded text-rose-600 accent-rose-600 cursor-pointer shrink-0"
+                    />
+                  </div>
+                )}
 
                 <div className="space-y-3.5 text-xs font-semibold">
                   <div>
@@ -1461,11 +1502,15 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                     </span>
                     <span
                       className={`text-[11px] font-bold font-mono ${
-                        (p.stock_quantity ?? 0) <= 0 ? 'text-brand-600' : 'text-emerald-600 dark:text-emerald-400'
+                        p.allow_negative_stock && (p.stock_quantity ?? 0) < 0
+                          ? 'text-rose-600 dark:text-rose-400 font-black'
+                          : (p.stock_quantity ?? 0) <= 0
+                            ? 'text-brand-600'
+                            : 'text-emerald-600 dark:text-emerald-400'
                       }`}
                     >
                       {p.stock_quantity !== null && p.stock_quantity !== undefined
-                        ? `Stok: ${Number(Number(p.stock_quantity).toFixed(2))} ${p.unit || 'Adet'}`
+                        ? `Stok: ${Number(Number(p.stock_quantity).toFixed(3))} ${p.unit || 'Adet'}`
                         : 'Stok: 0'}
                     </span>
                   </div>

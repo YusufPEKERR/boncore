@@ -1230,13 +1230,14 @@ export const api = {
       last_weight: number;
       printers: string[];
       is_default: boolean;
+      scale_enabled?: boolean;
     }>;
   }> {
     const res = await fetch(`${API_BASE}/scale/terminals`);
     return res.json();
   },
 
-  async updateTerminal(terminalId: string, payload: { name?: string; scale_ip?: string; scale_port?: number; is_default?: boolean }): Promise<any> {
+  async updateTerminal(terminalId: string, payload: { name?: string; scale_ip?: string; scale_port?: number; is_default?: boolean; scale_enabled?: boolean }): Promise<any> {
     const res = await fetch(`${API_BASE}/scale/terminals/${encodeURIComponent(terminalId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

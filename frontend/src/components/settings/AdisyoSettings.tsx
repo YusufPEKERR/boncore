@@ -89,7 +89,9 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     last_weight: number;
     printers: string[];
     is_default: boolean;
+    scale_enabled?: boolean;
   }>>([]);
+  const [selectedLiveTerminalId, setSelectedLiveTerminalId] = useState<string>('');
   const [newTerminalName, setNewTerminalName] = useState<string>('Kasa 2 - Paket Servis');
   const [editingTerminalId, setEditingTerminalId] = useState<string | null>(null);
   const [editingTerminalName, setEditingTerminalName] = useState<string>('');
@@ -99,7 +101,6 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [scaleTestResult, setScaleTestResult] = useState<{ success: boolean; message?: string; error?: string; latency_ms?: number } | null>(null);
   const [scaleWeightReading, setScaleWeightReading] = useState<boolean>(false);
   const [scaleLiveWeight, setScaleLiveWeight] = useState<{ weight: number; is_stable?: boolean; raw?: string; simulated?: boolean; message?: string } | null>(null);
-  const [scaleSavedNotification, setScaleSavedNotification] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedPrinters, setSelectedPrinters] = useState<string[]>(() => localHardware.getSelectedPrinters());
   const [printerConfigs, setPrinterConfigs] = useState<PrinterConfig[]>(() => localHardware.getPrinterConfigs());
@@ -1579,224 +1580,191 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                 </div>
               </div>
 
-              {/* ANA TERAZİ BÖLÜMÜ: Terazi Parametreleri & Canlı Kantar Göstergesi */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                
-                {/* Sol Sütun: Terazi Ağ Ayarları (7 Birim) */}
-                <div className="lg:col-span-7">
-                  <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              {/* CANLI TARTIM EKRANI (Seçili Terazilere Bağlı) */}
+              {(() => {
+                const activeScaleTerminals = terminalsList.filter(t => t.scale_enabled);
+                const hasActiveScale = activeScaleTerminals.length > 0;
+                const currentLiveTerminal =
+                  activeScaleTerminals.find(t => t.id === selectedLiveTerminalId) ||
+                  activeScaleTerminals.find(t => t.is_default) ||
+                  activeScaleTerminals[0];
+
+                return (
+                  <div className={`p-5 rounded-2xl bg-white dark:bg-slate-900 border shadow-sm space-y-4 transition-colors ${
+                    hasActiveScale
+                      ? 'border-slate-200 dark:border-slate-800'
+                      : 'border-rose-300 dark:border-rose-800/80'
+                  }`}>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-                          <Scale className="w-4 h-4" />
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                          hasActiveScale
+                            ? 'bg-emerald-500/10 text-emerald-600'
+                            : 'bg-rose-500/10 text-rose-600'
+                        }`}>
+                          <Activity className="w-4 h-4" />
                         </div>
                         <div>
-                          <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">CAS Terazi Yapılandırması</h4>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">Ethernet TCP/IP ağ haberleşme ayarları</p>
+                          <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">Canlı Tartım Ekranı</h4>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            {hasActiveScale
+                              ? `${currentLiveTerminal.name} (${currentLiveTerminal.scale_ip}:${currentLiveTerminal.scale_port})`
+                              : 'Çoklu Kasa Yönetimi üzerinden en az bir terazi seçin'}
+                          </p>
                         </div>
                       </div>
 
-                      {/* Açık/Kapalı Switch */}
-                      <button
-                        type="button"
-                        onClick={() => setScaleConfig({ ...scaleConfig, enabled: !scaleConfig.enabled })}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition ${
-                          scaleConfig.enabled
-                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-500/30'
-                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
-                        }`}
-                      >
-                        {scaleConfig.enabled ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <X className="w-3.5 h-3.5" />}
-                        <span>{scaleConfig.enabled ? 'Etkin' : 'Devre Dışı'}</span>
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-semibold">
-                      <div>
-                        <label className="text-slate-500 block mb-1.5 text-[11px]">Terazi Modeli</label>
-                        <input
-                          type="text"
-                          value={scaleConfig.model}
-                          onChange={(e) => setScaleConfig({ ...scaleConfig, model: e.target.value })}
-                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 font-bold text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
-                          placeholder="CAS CL-3000"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-slate-500 block mb-1.5 text-[11px]">Zaman Aşımı (Saniye)</label>
-                        <input
-                          type="number"
-                          step="0.5"
-                          value={scaleConfig.timeout}
-                          onChange={(e) => setScaleConfig({ ...scaleConfig, timeout: parseFloat(e.target.value) || 2.5 })}
-                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 font-mono text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-slate-500 block mb-1.5 text-[11px]">Terazi IP Adresi</label>
-                        <input
-                          type="text"
-                          value={scaleConfig.ip_address}
-                          onChange={(e) => setScaleConfig({ ...scaleConfig, ip_address: e.target.value })}
-                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 font-mono font-bold text-emerald-600 dark:text-emerald-400 focus:outline-none focus:border-emerald-500 transition"
-                          placeholder="192.168.1.150"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-slate-500 block mb-1.5 text-[11px]">Port Numarası</label>
-                        <input
-                          type="number"
-                          value={scaleConfig.port}
-                          onChange={(e) => setScaleConfig({ ...scaleConfig, port: parseInt(e.target.value) || 2004 })}
-                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
-                          placeholder="2004"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
-                      {scaleSavedNotification ? (
-                        <span className="text-xs font-bold text-emerald-600 flex items-center gap-1.5 animate-fadeIn">
-                          <CheckCircle2 className="w-4 h-4" />
-                          Terazi ayarları kaydedildi.
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-slate-400 font-normal">
-                          Ayarları terazi ile eşitlemek için kaydedin.
-                        </span>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            sound.beep();
-                            await api.updateScaleConfig(scaleConfig);
-                            setScaleSavedNotification(true);
-                            setTimeout(() => setScaleSavedNotification(false), 3000);
-                          } catch (err) {
-                            console.error('Scale save err:', err);
-                          }
-                        }}
-                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Save className="w-3.5 h-3.5" />
-                        <span>Ayarları Kaydet</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Sağ Sütun: Canlı Tartım Göstergesi (5 Birim) */}
-                <div className="lg:col-span-5 space-y-4">
-                  <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-                      <div className="flex items-center gap-2">
-                        <Activity className="w-4 h-4 text-emerald-600" />
-                        <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">Canlı Tartım Ekranı</h4>
-                      </div>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                        scaleLiveWeight?.is_stable !== false
-                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
-                          : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
-                      }`}>
-                        {scaleLiveWeight?.is_stable !== false ? '● DENGELİ (ST)' : '◌ DENGESİZ (US)'}
-                      </span>
-                    </div>
-
-                    {/* Dijital Kantar Göstergesi */}
-                    <div className="p-6 rounded-2xl bg-slate-950 dark:bg-black border border-emerald-500/30 text-center font-mono space-y-1 shadow-inner relative overflow-hidden">
-                      <div className="text-[10px] text-emerald-500/70 font-bold uppercase tracking-widest">
-                        CAS CL-3000 EKRAN
-                      </div>
-                      <div className="text-5xl font-black text-emerald-400 tracking-wider py-2 drop-shadow-[0_0_14px_rgba(52,211,153,0.35)]">
-                        {scaleLiveWeight ? Number(scaleLiveWeight.weight || 0).toFixed(3) : '0.000'} <span className="text-xl text-emerald-500/80 font-bold">Kg</span>
-                      </div>
-                      <div className="text-[11px] text-emerald-400/60 font-medium truncate">
-                        {scaleLiveWeight?.raw || 'Kefeye ürün koyup "Tartımı Oku"ya basın.'}
-                      </div>
-                    </div>
-
-                    {/* Test Sonucu Bildirimi */}
-                    {scaleTestResult && (
-                      <div className={`p-3 rounded-xl border text-xs font-semibold flex items-start gap-2 animate-fadeIn ${
-                        scaleTestResult.success
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                          : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
-                      }`}>
-                        {scaleTestResult.success ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                        ) : (
-                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {activeScaleTerminals.length > 1 && (
+                          <select
+                            value={currentLiveTerminal?.id || ''}
+                            onChange={(e) => setSelectedLiveTerminalId(e.target.value)}
+                            className="px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer"
+                          >
+                            {activeScaleTerminals.map(t => (
+                              <option key={t.id} value={t.id}>
+                                {t.is_online ? '🟢' : '⚪'} {t.name} ({t.scale_ip})
+                              </option>
+                            ))}
+                          </select>
                         )}
-                        <div className="flex-1">
-                          <div>{scaleTestResult.message || scaleTestResult.error}</div>
-                          {scaleTestResult.latency_ms !== undefined && (
-                            <div className="text-[10px] opacity-75 mt-0.5">Yanıt Süresi: {scaleTestResult.latency_ms} ms</div>
-                          )}
+
+                        {hasActiveScale ? (
+                          <span className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold ${
+                            scaleLiveWeight?.is_stable !== false
+                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                              : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                          }`}>
+                            {scaleLiveWeight?.is_stable !== false ? '● DENGELİ (ST)' : '◌ DENGESİZ (US)'}
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                            ● SEÇİLİ TERAZİ YOK
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+                      {/* Dijital Kantar Göstergesi */}
+                      <div className={`lg:col-span-7 p-6 rounded-2xl border text-center font-mono space-y-1 shadow-inner relative overflow-hidden transition-colors ${
+                        hasActiveScale
+                          ? 'bg-slate-950 dark:bg-black border-emerald-500/30'
+                          : 'bg-rose-950 dark:bg-rose-950/95 border-rose-500/60'
+                      }`}>
+                        <div className={`text-[10px] font-bold uppercase tracking-widest ${
+                          hasActiveScale ? 'text-emerald-500/70' : 'text-rose-300/80'
+                        }`}>
+                          {hasActiveScale ? 'CAS CL-3000 EKRAN' : 'TERAZİ DEVRE DIŞI'}
+                        </div>
+                        <div className={`text-5xl font-black tracking-wider py-2 ${
+                          hasActiveScale
+                            ? 'text-emerald-400 drop-shadow-[0_0_14px_rgba(52,211,153,0.35)]'
+                            : 'text-rose-400 drop-shadow-[0_0_14px_rgba(244,63,94,0.35)]'
+                        }`}>
+                          {hasActiveScale && scaleLiveWeight ? Number(scaleLiveWeight.weight || 0).toFixed(3) : '0.000'}{' '}
+                          <span className={`text-xl font-bold ${hasActiveScale ? 'text-emerald-500/80' : 'text-rose-400/70'}`}>Kg</span>
+                        </div>
+                        <div className={`text-[11px] font-medium truncate ${
+                          hasActiveScale ? 'text-emerald-400/60' : 'text-rose-300/80'
+                        }`}>
+                          {hasActiveScale
+                            ? (scaleLiveWeight?.raw || 'Kefeye ürün koyup "Tartımı Oku"ya basın.')
+                            : 'Ölçüm alabilmek için aşağıdan en az bir terazi seçin.'}
                         </div>
                       </div>
-                    )}
 
-                    {/* Aksiyon Butonları */}
-                    <div className="space-y-2.5 pt-1">
-                      <button
-                        type="button"
-                        disabled={scaleWeightReading}
-                        onClick={async () => {
-                          try {
-                            sound.beep();
-                            setScaleWeightReading(true);
-                            const res = await localHardware.getWeight(scaleConfig.ip_address, scaleConfig.port);
-                            if (res.success && res.weight !== undefined) {
-                              setScaleLiveWeight(res);
+                      {/* Aksiyon Butonları ve Test Sonucu */}
+                      <div className="lg:col-span-5 space-y-2.5">
+                        {scaleTestResult && (
+                          <div className={`p-3 rounded-xl border text-xs font-semibold flex items-start gap-2 animate-fadeIn ${
+                            scaleTestResult.success
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                              : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+                          }`}>
+                            {scaleTestResult.success ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                            ) : (
+                              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="break-words">{scaleTestResult.message || scaleTestResult.error}</div>
+                              {scaleTestResult.latency_ms !== undefined && (
+                                <div className="text-[10px] opacity-75 mt-0.5">Yanıt Süresi: {scaleTestResult.latency_ms} ms</div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          disabled={!hasActiveScale || scaleWeightReading}
+                          onClick={async () => {
+                            if (!currentLiveTerminal) return;
+                            try {
                               sound.beep();
-                            } else {
+                              setScaleWeightReading(true);
+                              setScaleTestResult(null);
+                              const res = await localHardware.getWeight(
+                                currentLiveTerminal.scale_ip,
+                                currentLiveTerminal.scale_port,
+                                currentLiveTerminal.id
+                              );
+                              if (res.success && res.weight !== undefined) {
+                                setScaleLiveWeight(res);
+                                sound.beep();
+                              } else {
+                                sound.warning();
+                                setScaleTestResult({ success: false, error: res.error || 'Ağırlık okunamadı.' });
+                              }
+                            } catch (err: any) {
                               sound.warning();
-                              setScaleTestResult({ success: false, error: res.error || 'Ağırlık okunamadı.' });
+                              setScaleTestResult({ success: false, error: err.message || 'Hata oluştu' });
+                            } finally {
+                              setScaleWeightReading(false);
                             }
-                          } catch (err: any) {
-                            sound.warning();
-                            setScaleTestResult({ success: false, error: err.message || 'Hata oluştu' });
-                          } finally {
-                            setScaleWeightReading(false);
-                          }
-                        }}
-                        className="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
-                      >
-                        {scaleWeightReading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Scale className="w-4 h-4" />}
-                        <span>{scaleWeightReading ? 'Tartım Alınıyor...' : 'Tartımı Oku'}</span>
-                      </button>
+                          }}
+                          className={`w-full py-3.5 px-4 rounded-xl font-extrabold text-xs shadow-sm flex items-center justify-center gap-2 transition ${
+                            hasActiveScale
+                              ? 'bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white shadow-emerald-600/20 cursor-pointer disabled:opacity-50'
+                              : 'bg-rose-100 text-rose-400 dark:bg-rose-950/40 dark:text-rose-500 cursor-not-allowed'
+                          }`}
+                        >
+                          {scaleWeightReading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Scale className="w-4 h-4" />}
+                          <span>{scaleWeightReading ? 'Tartım Alınıyor...' : 'Tartımı Oku'}</span>
+                        </button>
 
-                      <button
-                        type="button"
-                        disabled={scaleTesting}
-                        onClick={async () => {
-                          try {
-                            sound.beep();
-                            setScaleTesting(true);
-                            setScaleTestResult(null);
-                            const res = await localHardware.testConnection(scaleConfig.ip_address, scaleConfig.port);
-                            setScaleTestResult(res);
-                          } catch (err: any) {
-                            setScaleTestResult({ success: false, error: err.message || 'Ağ bağlantısı kurulamadı' });
-                          } finally {
-                            setScaleTesting(false);
-                          }
-                        }}
-                        className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
-                      >
-                        {scaleTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5 text-slate-500" />}
-                        <span>{scaleTesting ? 'Test Ediliyor...' : 'Ağ Bağlantısını Test Et'}</span>
-                      </button>
+                        <button
+                          type="button"
+                          disabled={!hasActiveScale || scaleTesting}
+                          onClick={async () => {
+                            if (!currentLiveTerminal) return;
+                            try {
+                              sound.beep();
+                              setScaleTesting(true);
+                              setScaleTestResult(null);
+                              const res = await localHardware.testConnection(
+                                currentLiveTerminal.scale_ip,
+                                currentLiveTerminal.scale_port,
+                                currentLiveTerminal.id
+                              );
+                              setScaleTestResult(res);
+                            } catch (err: any) {
+                              setScaleTestResult({ success: false, error: err.message || 'Ağ bağlantısı kurulamadı' });
+                            } finally {
+                              setScaleTesting(false);
+                            }
+                          }}
+                          className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {scaleTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5 text-slate-500" />}
+                          <span>{scaleTesting ? 'Test Ediliyor...' : 'Ağ Bağlantısını Test Et'}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-
-              </div>
+                );
+              })()}
 
               {/* ÇOKLU KASA VE TERAZİ İSTASYONLARI YÖNETİMİ */}
               <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
@@ -1806,14 +1774,21 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       <Monitor className="w-5 h-5 text-emerald-400" />
                     </div>
                     <div>
-                      <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                      <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
                         <span>Tanımlı Kasalar ve Teraziler (Çoklu Kasa Yönetimi)</span>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                           {terminalsList.length} Kasa Kayıtlı
                         </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          terminalsList.some(t => t.scale_enabled)
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                            : 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'
+                        }`}>
+                          {terminalsList.filter(t => t.scale_enabled).length} Terazi Aktif
+                        </span>
                       </h4>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Müşteriniz her kasaya özel isim verebilir (örn. "Kasa 1 - Giriş", "Kasa 2 - Manav"). POS ekranında hangi kasanın terazisinden tartım alınacağını seçebilirsiniz.
+                        Ölçüm alınacak terazileri aşağıdan seçebilirsiniz. Hiçbir terazi seçilmezse canlı tartım ekranı kırmızı uyarı verir ve sipariş ekranından terazi bölümü gizlenir.
                       </p>
                     </div>
                   </div>
@@ -1963,22 +1938,46 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       </div>
 
                       {/* Aksiyon Butonları */}
-                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px]">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            sound.beep();
-                            setScaleWeightReading(true);
-                            const res = await localHardware.getWeight(term.scale_ip, term.scale_port, term.id);
-                            setScaleLiveWeight(res);
-                            setScaleWeightReading(false);
-                          }}
-                          disabled={!term.is_online}
-                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold flex items-center gap-1 transition cursor-pointer"
-                        >
-                          <Scale className="w-3.5 h-3.5" />
-                          <span>Bu Kasadan Tartım Al</span>
-                        </button>
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px] flex-wrap">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              sound.beep();
+                              await localHardware.updateTerminal(term.id, { scale_enabled: !term.scale_enabled });
+                              fetchTerminalsData();
+                            }}
+                            className={`px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition cursor-pointer border ${
+                              term.scale_enabled
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-500/40 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300'
+                                : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                            }`}
+                            title="Bu kasanın terazisinden ölçüm alınıp alınmayacağını seçin"
+                          >
+                            {term.scale_enabled ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            ) : (
+                              <X className="w-3.5 h-3.5 text-slate-400" />
+                            )}
+                            <span>{term.scale_enabled ? 'Terazi Seçili' : 'Terazi Seç'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              sound.beep();
+                              setScaleWeightReading(true);
+                              const res = await localHardware.getWeight(term.scale_ip, term.scale_port, term.id);
+                              setScaleLiveWeight(res);
+                              setScaleWeightReading(false);
+                            }}
+                            disabled={!term.is_online || !term.scale_enabled}
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold flex items-center gap-1 transition cursor-pointer disabled:cursor-not-allowed"
+                          >
+                            <Scale className="w-3.5 h-3.5" />
+                            <span>Tartım Al</span>
+                          </button>
+                        </div>
 
                         <div className="flex items-center gap-1">
                           <button

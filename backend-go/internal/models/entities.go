@@ -196,8 +196,9 @@ type Product struct {
 	ImageURL    *string     `gorm:"size:255" json:"image_url"`
 	Calories    *int        `json:"calories"`
 	Allergens   StringSlice `gorm:"type:jsonb;default:'[]'" json:"allergens"`
-	IsVegan     bool        `gorm:"default:false" json:"is_vegan"`
-	IsSpicy     bool        `gorm:"default:false" json:"is_spicy"`
+	IsVegan        bool        `gorm:"default:false" json:"is_vegan"`
+	IsSpicy        bool        `gorm:"default:false" json:"is_spicy"`
+	AllowNegStock  bool        `gorm:"default:false" json:"allow_negative_stock"`
 
 	Category       *Category        `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
 	Variants       []ProductVariant `gorm:"foreignKey:ProductID;constraint:OnDelete:CASCADE" json:"variants"`

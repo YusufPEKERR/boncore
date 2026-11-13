@@ -1723,6 +1723,7 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		if createdOrUpdatedOrder.TableID != nil {
 			_ = svc.Broadcaster.BroadcastAll(tenantCode, "AREAS_UPDATED", fiber.Map{"table_id": createdOrUpdatedOrder.TableID})
 		}
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "MENU_UPDATED", fiber.Map{"order_id": createdOrUpdatedOrder.ID})
 		serialized["status"] = "success"
 		serialized["id"] = createdOrUpdatedOrder.ID
 		serialized["order_id"] = createdOrUpdatedOrder.ID
@@ -1797,6 +1798,9 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 				return err
 			}
 
+			// Restore stock for voided item
+			_ = service.RestoreOrderIngredients(tx, item.ProductID, item.Quantity, order.OrderNo, 2)
+
 			recalculateOrderTotals(tx, &order)
 			if err := tx.Save(&order).Error; err != nil {
 				return err
@@ -1833,6 +1837,7 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 			"item_id":  item.ID,
 			"reason":   item.VoidReason,
 		})
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "MENU_UPDATED", fiber.Map{"order_id": order.ID})
 		serialized["status"] = "success"
 		serialized["order_status"] = order.Status
 		return c.JSON(serialized)
@@ -2134,6 +2139,7 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		if order.TableID != nil {
 			svc.WSHub.BroadcastToTable(tenantCode, *order.TableID, "TABLE_ORDER_UPDATED", serialized)
 		}
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "MENU_UPDATED", fiber.Map{"order_id": order.ID})
 		serialized["status"] = "success"
 		serialized["order_status"] = order.Status
 		return c.JSON(serialized)
@@ -2177,6 +2183,9 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 					items[i].VoidedBy = &op
 					items[i].Status = "voided"
 					tx.Save(&items[i])
+
+					// Restore stock for cancelled order items
+					_ = service.RestoreOrderIngredients(tx, items[i].ProductID, items[i].Quantity, order.OrderNo, 2)
 				}
 			}
 			order.Status = "cancelled"
@@ -2249,6 +2258,7 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 				"status":   "empty",
 			})
 		}
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "MENU_UPDATED", fiber.Map{"order_id": order.ID})
 		serialized["status"] = "success"
 		serialized["order_status"] = order.Status
 		return c.JSON(serialized)

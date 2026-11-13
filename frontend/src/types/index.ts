@@ -98,6 +98,7 @@ export interface Product {
   allergens?: string[];
   is_vegan?: boolean;
   is_spicy?: boolean;
+  allow_negative_stock?: boolean;
   variants?: ProductVariant[];
   modifier_groups?: ModifierGroup[];
   unit?: string;
