@@ -6,9 +6,10 @@ interface LandingFooterProps {
   onOpenLogin: () => void;
   onOpenDemo: () => void;
   onOpenMasterAdmin?: () => void;
+  onOpenKvkk?: () => void;
 }
 
-export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpenDemo, onOpenMasterAdmin }) => {
+export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpenDemo, onOpenMasterAdmin, onOpenKvkk }) => {
   const scrollTo = (id: string) => {
     sound.beep();
     const el = document.getElementById(id);
@@ -17,6 +18,7 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
 
   return (
     <footer className="bg-slate-950 text-slate-400 border-t border-slate-900 pt-16 pb-12 select-none">
+      <h2 className="sr-only">Alt Menü ve İletişim</h2>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 pb-12 border-b border-slate-900">
@@ -56,9 +58,9 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
 
           {/* Col 2: Ürün & Özellikler */}
           <div className="space-y-3">
-            <h4 className="text-xs font-black uppercase tracking-wider text-white">
+            <h3 className="text-xs font-black uppercase tracking-wider text-white">
               Ürün & Özellikler
-            </h4>
+            </h3>
             <ul className="space-y-2 text-xs font-medium">
               <li>
                 <button onClick={() => scrollTo('ozellikler')} className="hover:text-white transition cursor-pointer">
@@ -95,9 +97,9 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
 
           {/* Col 3: Çözümler */}
           <div className="space-y-3">
-            <h4 className="text-xs font-black uppercase tracking-wider text-white">
+            <h3 className="text-xs font-black uppercase tracking-wider text-white">
               Çözümler
-            </h4>
+            </h3>
             <ul className="space-y-2 text-xs font-medium">
               <li>
                 <button onClick={() => scrollTo('cozumler')} className="hover:text-white transition cursor-pointer">
@@ -134,9 +136,9 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
 
           {/* Col 4: Hızlı Erişim & Giriş */}
           <div className="space-y-3">
-            <h4 className="text-xs font-black uppercase tracking-wider text-white">
+            <h3 className="text-xs font-black uppercase tracking-wider text-white">
               Hızlı Erişim
-            </h4>
+            </h3>
             <ul className="space-y-2 text-xs font-medium">
               <li>
                 <button 
@@ -180,9 +182,16 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
                 </button>
               </li>
               <li>
-                <a href="/kvkk" onClick={(e) => { e.preventDefault(); alert('KVKK Metni: BonCore kişisel verilerin korunmasına tam uyumludur.'); }} className="hover:text-white transition">
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.beep();
+                    if (onOpenKvkk) onOpenKvkk();
+                  }}
+                  className="hover:text-white transition cursor-pointer"
+                >
                   KVKK & Aydınlatma Metni
-                </a>
+                </button>
               </li>
             </ul>
           </div>

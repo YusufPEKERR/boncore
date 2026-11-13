@@ -116,15 +116,17 @@ export const MasterLoginView: React.FC<MasterLoginViewProps> = ({
         {/* Form */}
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+            <label htmlFor="master-username" className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
               Master Admin Kullanıcı Adı
             </label>
             <div className="relative">
               <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
+                id="master-username"
+                name="username"
                 type="text"
                 required
-                autoComplete="off"
+                autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Master kullanıcı adınızı girin"
@@ -134,15 +136,17 @@ export const MasterLoginView: React.FC<MasterLoginViewProps> = ({
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+            <label htmlFor="master-password" className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
               Master Güvenlik Parolası
             </label>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
+                id="master-password"
+                name="password"
                 type="password"
                 required
-                autoComplete="new-password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Master güvenlik parolanızı girin"
@@ -167,21 +171,6 @@ export const MasterLoginView: React.FC<MasterLoginViewProps> = ({
             )}
           </button>
         </form>
-
-        <div className="pt-1 text-center">
-          <button
-            type="button"
-            onClick={() => {
-              setUsername('master');
-              setPassword('masteradmin2026');
-              sound.beep();
-            }}
-            className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer inline-flex items-center gap-1"
-          >
-            <Sparkles className="w-3 h-3" />
-            <span>Varsayılan Giriş Bilgilerini Doldur (master / masteradmin2026)</span>
-          </button>
-        </div>
 
         <div className="text-center text-[11px] text-slate-500 font-medium">
           🔒 Yalnızca yetkili SaaS platform yöneticileri içindir. Tüm erişimler kayıt altına alınmaktadır.

@@ -138,12 +138,14 @@ export const PinModal: React.FC<PinModalProps> = ({
                 Personel Değiştir / Hızlı Geçiş
               </div>
               <div className="text-[10px] text-slate-500 font-semibold uppercase">
-                BonCore POS v2.0
+                BonCore POS v2.4
               </div>
             </div>
           </div>
 
           <button
+            type="button"
+            aria-label="Kapat"
             onClick={onClose}
             className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200/50 cursor-pointer"
           >

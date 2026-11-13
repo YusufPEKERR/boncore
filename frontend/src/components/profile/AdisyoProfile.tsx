@@ -314,12 +314,12 @@ export const AdisyoProfile: React.FC<AdisyoProfileProps> = ({ currentUser, onUse
             <div className="space-y-6 max-w-xl text-xs">
               <h3 className="text-sm font-black text-slate-900 dark:text-white">Üyelik ve Lisans Bilgileri</h3>
               <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
-                BonCore POS v2.0 lisansınız yerel (Local-first) ve bulut senkronize modda sınırsız ve kesintisiz çalışacak şekilde yapılandırılmıştır.
+                BonCore POS v2.4 lisansınız yerel (Local-first) ve bulut senkronize modda sınırsız ve kesintisiz çalışacak şekilde yapılandırılmıştır.
               </p>
               <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2">
                 <div className="flex justify-between font-bold">
                   <span className="text-slate-500">Mevcut Plan:</span>
-                  <span className="text-emerald-600">BonCore POS Enterprise v2.0</span>
+                  <span className="text-emerald-600">BonCore POS Enterprise v2.4</span>
                 </div>
                 <div className="flex justify-between font-bold">
                   <span className="text-slate-500">Lisans Durumu:</span>

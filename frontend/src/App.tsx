@@ -152,6 +152,11 @@ export const App: React.FC = () => {
 
   const [viewMode, setViewMode] = useState<ViewMode>(getInitialViewMode);
   const [currentUser, setCurrentUser] = useState<StaffUser | null>(() => {
+    const token = localStorage.getItem('boncore_token');
+    const authFlag = localStorage.getItem('boncore_auth');
+    if (!token || authFlag !== 'true') {
+      return null;
+    }
     const cached = localStorage.getItem('boncore_user');
     if (cached) {
       try { return JSON.parse(cached); } catch {}
@@ -170,6 +175,11 @@ export const App: React.FC = () => {
     const token = localStorage.getItem('boncore_token');
     if (!token) {
       setIsAuthenticated(false);
+      setCurrentUser(null);
+      try {
+        localStorage.removeItem('boncore_user');
+        localStorage.removeItem('boncore_auth');
+      } catch {}
       return;
     }
     api.getMe()
@@ -423,9 +433,6 @@ export const App: React.FC = () => {
         setKitchenAlerts(prev => prev.filter(a => a.table_id !== data.table_id));
       }
       loadAreas();
-      if (type === 'ORDER_CREATED' || type === 'ORDER_UPDATED') {
-        loadCategories();
-      }
       loadCategories();
     } else if (type === 'ANNOUNCEMENT_BROADCAST') {
       if (data) {
@@ -483,7 +490,7 @@ export const App: React.FC = () => {
         setActiveAnnouncement(prev => (prev && prev.id === data.id ? null : prev));
       }
     }
-  });
+  }, isAuthenticated && viewMode === 'app');
 
   const loadActiveAnnouncements = async () => {
     try {
@@ -518,11 +525,12 @@ export const App: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     loadInitialData();
     loadStaffUsers();
     loadActiveAnnouncements();
     fetchLiveTenantFeatures();
-  }, []);
+  }, [isAuthenticated]);
 
   const loadInitialData = async () => {
     setLoadingAreas(true);
@@ -847,13 +855,19 @@ export const App: React.FC = () => {
           onOpenMasterAdmin={handleOpenMasterAdmin}
           onGoToApp={() => {
             sound.beep();
-            setViewMode('app');
-            window.location.hash = activeTab || 'tables';
+            if (isAuthenticated) {
+              setViewMode('app');
+              window.location.hash = activeTab || 'tables';
+            } else {
+              setViewMode('login');
+              window.location.hash = 'login';
+            }
           }}
-          currentUser={currentUser}
+          currentUser={isAuthenticated ? currentUser : null}
           theme={theme}
           onToggleTheme={toggleTheme}
           onQuickDemoLogin={handleQuickDemoLogin}
+          initialKvkkOpen={typeof window !== 'undefined' && (window.location.pathname === '/kvkk' || window.location.hash === '#kvkk')}
         />
       </Suspense>
     );

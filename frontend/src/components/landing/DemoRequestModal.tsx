@@ -20,16 +20,18 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({
   const [city, setCity] = useState<string>('İstanbul');
   const [submitted, setSubmitted] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
+  const [formError, setFormError] = useState<string>('');
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName || !phone || !companyName) {
+    if (!fullName.trim() || !phone.trim() || !companyName.trim()) {
       sound.warning();
-      alert('Lütfen ad soyad, telefon ve işletme adını doldurunuz.');
+      setFormError('Lütfen ad soyad, telefon ve işletme adını doldurunuz.');
       return;
     }
+    setFormError('');
 
     sound.cashDrawer();
     setLoading(true);
@@ -75,6 +77,8 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({
         
         {/* Close Button */}
         <button
+          type="button"
+          aria-label="Kapat"
           onClick={() => { sound.beep(); onClose(); }}
           className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
         >
@@ -145,17 +149,24 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({
             </div>
 
             <div className="space-y-3">
+              {formError && (
+                <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs font-bold">
+                  {formError}
+                </div>
+              )}
               <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                <label htmlFor="demo-fullname" className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                   Adınız ve Soyadınız *
                 </label>
                 <div className="relative">
                   <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
+                    id="demo-fullname"
+                    name="fullName"
                     type="text"
                     required
                     value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
+                    onChange={(e) => { setFullName(e.target.value); setFormError(''); }}
                     placeholder="Örn: Ahmet Yılmaz"
                     className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs focus:outline-none focus:border-emerald-500"
                   />
@@ -163,16 +174,18 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                <label htmlFor="demo-phone" className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                   Telefon Numaranız *
                 </label>
                 <div className="relative">
                   <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
+                    id="demo-phone"
+                    name="phone"
                     type="tel"
                     required
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => { setPhone(e.target.value); setFormError(''); }}
                     placeholder="0532 000 00 00"
                     className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs focus:outline-none focus:border-emerald-500"
                   />
@@ -180,16 +193,18 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                <label htmlFor="demo-company" className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                   İşletmenizin Adı *
                 </label>
                 <div className="relative">
                   <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
+                    id="demo-company"
+                    name="companyName"
                     type="text"
                     required
                     value={companyName}
-                    onChange={(e) => setCompanyName(e.target.value)}
+                    onChange={(e) => { setCompanyName(e.target.value); setFormError(''); }}
                     placeholder="Örn: Moda Lezzet Restoranı"
                     className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs focus:outline-none focus:border-emerald-500"
                   />
@@ -198,10 +213,12 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  <label htmlFor="demo-business-type" className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                     İşletme Türü
                   </label>
                   <select
+                    id="demo-business-type"
+                    name="businessType"
                     value={businessType}
                     onChange={(e) => setBusinessType(e.target.value)}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs focus:outline-none focus:border-emerald-500"
@@ -217,12 +234,14 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  <label htmlFor="demo-city" className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                     Şehir
                   </label>
                   <div className="relative">
                     <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
+                      id="demo-city"
+                      name="city"
                       type="text"
                       value={city}
                       onChange={(e) => setCity(e.target.value)}

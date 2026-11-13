@@ -95,9 +95,9 @@ export const LandingHardware: React.FC = () => {
         {/* Integration Badges Cloud */}
         <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-md">
           <div className="text-center max-w-2xl mx-auto mb-6">
-            <h4 className="text-lg font-black text-slate-900 dark:text-white">
+            <h3 className="text-lg font-black text-slate-900 dark:text-white">
               Sektörün Lider Platformları ile Tam Entegre
-            </h4>
+            </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">
               Siparişler, ödemeler ve resmi belgeler tek bir ekranda toplanır, manuel iş yükü sıfırlanır.
             </p>

@@ -646,13 +646,30 @@ export function canAccessAppTab(
   return false;
 }
 
+let _inflightSettingsReq: Promise<any> | null = null;
+let _lastSettingsFetchMs = 0;
+
 export function useRolePermissions(currentUser?: StaffUser | null) {
   const [permissions, setPermissions] = useState<PermissionItem[]>(loadLocalPermissions);
   const [features, setFeatures] = useState<TenantFeatures>(loadLocalFeatures);
 
   const refreshPermissions = useCallback(async () => {
+    const token = localStorage.getItem('boncore_token');
+    if (!token || localStorage.getItem('boncore_auth') !== 'true') {
+      return;
+    }
     try {
-      const settings = await api.getSettings();
+      const now = Date.now();
+      if (!_inflightSettingsReq && now - _lastSettingsFetchMs < 2000) {
+        return;
+      }
+      if (!_inflightSettingsReq) {
+        _lastSettingsFetchMs = now;
+        _inflightSettingsReq = api.getSettings().finally(() => {
+          _inflightSettingsReq = null;
+        });
+      }
+      const settings = await _inflightSettingsReq;
       if (settings?.role_permissions && Array.isArray(settings.role_permissions)) {
         const merged = mergeWithInitialPermissions(settings.role_permissions);
         setPermissions(merged);

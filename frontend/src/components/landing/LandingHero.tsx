@@ -118,6 +118,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
               return (
                 <button
                   key={tab.id}
+                  aria-label={tab.label}
                   onClick={() => { sound.beep(); setActiveShowcaseTab(tab.id as any); }}
                   className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition cursor-pointer select-none ${
                     isActive

@@ -3,7 +3,7 @@ import { sound } from './sound';
 
 export type WSEventCallback = (type: string, data: any) => void;
 
-export function useWebSocket(channel: string = 'pos', onEvent?: WSEventCallback) {
+export function useWebSocket(channel: string = 'pos', onEvent?: WSEventCallback, enabled: boolean = true) {
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
@@ -14,6 +14,10 @@ export function useWebSocket(channel: string = 'pos', onEvent?: WSEventCallback)
   }, [onEvent]);
 
   useEffect(() => {
+    if (!enabled) {
+      setIsConnected(false);
+      return;
+    }
     let unmounted = false;
 
     function connect() {
@@ -27,7 +31,10 @@ export function useWebSocket(channel: string = 'pos', onEvent?: WSEventCallback)
         wsRef.current = ws;
 
         ws.onopen = () => {
-          if (unmounted) return;
+          if (unmounted) {
+            ws.close();
+            return;
+          }
           setIsConnected(true);
         };
 
@@ -84,11 +91,11 @@ export function useWebSocket(channel: string = 'pos', onEvent?: WSEventCallback)
     return () => {
       unmounted = true;
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      if (wsRef.current) {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.close();
       }
     };
-  }, [channel]);
+  }, [channel, enabled]);
 
   return { isConnected };
 }
