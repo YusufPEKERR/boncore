@@ -111,12 +111,13 @@ export const localHardware = {
    */
   async checkAgentStatus(): Promise<{ isOnline: boolean; version?: string; localIp?: string }> {
     try {
-      const cloudStatus = await api.getAgentStatus();
-      if (cloudStatus && cloudStatus.isOnline) {
+      const cloudStatus: any = await api.getAgentStatus();
+      const online = Boolean(cloudStatus?.isOnline ?? cloudStatus?.online);
+      if (cloudStatus && online) {
         return {
           isOnline: true,
-          version: cloudStatus.version,
-          localIp: cloudStatus.localIp
+          version: cloudStatus.version || cloudStatus.agent_version,
+          localIp: cloudStatus.localIp || cloudStatus.local_ip
         };
       }
     } catch {

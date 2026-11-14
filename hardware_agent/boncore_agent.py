@@ -20,6 +20,10 @@ import time
 import threading
 import urllib.request
 import urllib.error
+import urllib.parse
+import ctypes
+from ctypes import wintypes
+import ipaddress
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -49,15 +53,188 @@ def load_config():
             except Exception:
                 pass
 
-def get_local_ip():
+_VIRTUAL_ADAPTER_KEYWORDS = (
+    "vethernet", "hyper-v", "wsl", "virtualbox", "vbox", "vmware",
+    "zerotier", "tailscale", "wireguard", "wintun", "tap-", "tap ", "tun ",
+    "openvpn", "cloudflare", "warp", "proton", "nordlynx", "anyconnect",
+    "forti", "hamachi", "radmin", "docker", "npcap", "bluetooth", "loopback",
+    "pseudo-interface", "teredo", "6to4", "isatap", "miniport", "kernel debug"
+)
+
+def _udp_route_probe(host, port=80):
+    sock = None
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(0.5)
+        sock.connect((host, int(port)))
+        return sock.getsockname()[0]
     except Exception:
-        return "127.0.0.1"
+        return None
+    finally:
+        if sock:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+def _is_valid_host_ip(ip_str):
+    try:
+        addr = ipaddress.IPv4Address(ip_str)
+        return not (addr.is_loopback or addr.is_link_local or addr.is_unspecified or addr.is_multicast)
+    except Exception:
+        return False
+
+def _enum_windows_ipv4_adapters():
+    adapters = []
+    if sys.platform != "win32":
+        return adapters
+    try:
+        class SOCKADDR_IN(ctypes.Structure):
+            _fields_ = [
+                ("sin_family", ctypes.c_ushort),
+                ("sin_port", ctypes.c_ushort),
+                ("sin_addr", ctypes.c_byte * 4),
+                ("sin_zero", ctypes.c_char * 8),
+            ]
+
+        class SOCKET_ADDRESS(ctypes.Structure):
+            _fields_ = [("lpSockaddr", ctypes.c_void_p), ("iSockaddrLength", ctypes.c_int)]
+
+        class IP_ADAPTER_UNICAST_ADDRESS(ctypes.Structure):
+            pass
+
+        IP_ADAPTER_UNICAST_ADDRESS._fields_ = [
+            ("Length", wintypes.ULONG), ("Flags", wintypes.DWORD),
+            ("Next", ctypes.POINTER(IP_ADAPTER_UNICAST_ADDRESS)),
+            ("Address", SOCKET_ADDRESS), ("PrefixOrigin", ctypes.c_int),
+            ("SuffixOrigin", ctypes.c_int), ("DadState", ctypes.c_int),
+            ("ValidLifetime", wintypes.ULONG), ("PreferredLifetime", wintypes.ULONG),
+            ("LeaseLifetime", wintypes.ULONG), ("OnLinkPrefixLength", ctypes.c_ubyte),
+        ]
+
+        class IP_ADAPTER_GATEWAY_ADDRESS(ctypes.Structure):
+            pass
+
+        IP_ADAPTER_GATEWAY_ADDRESS._fields_ = [
+            ("Length", wintypes.ULONG), ("Reserved", wintypes.DWORD),
+            ("Next", ctypes.POINTER(IP_ADAPTER_GATEWAY_ADDRESS)),
+            ("Address", SOCKET_ADDRESS),
+        ]
+
+        class IP_ADAPTER_ADDRESSES(ctypes.Structure):
+            pass
+
+        IP_ADAPTER_ADDRESSES._fields_ = [
+            ("Length", wintypes.ULONG), ("IfIndex", wintypes.DWORD),
+            ("Next", ctypes.POINTER(IP_ADAPTER_ADDRESSES)),
+            ("AdapterName", ctypes.c_char_p),
+            ("FirstUnicastAddress", ctypes.POINTER(IP_ADAPTER_UNICAST_ADDRESS)),
+            ("FirstAnycastAddress", ctypes.c_void_p), ("FirstMulticastAddress", ctypes.c_void_p),
+            ("FirstDnsServerAddress", ctypes.c_void_p), ("DnsSuffix", ctypes.c_wchar_p),
+            ("Description", ctypes.c_wchar_p), ("FriendlyName", ctypes.c_wchar_p),
+            ("PhysicalAddress", ctypes.c_ubyte * 8), ("PhysicalAddressLength", wintypes.DWORD),
+            ("Flags", wintypes.DWORD), ("Mtu", wintypes.DWORD), ("IfType", wintypes.DWORD),
+            ("OperStatus", ctypes.c_int), ("Ipv6IfIndex", wintypes.DWORD),
+            ("ZoneIndices", wintypes.DWORD * 16), ("FirstPrefix", ctypes.c_void_p),
+            ("TransmitLinkSpeed", ctypes.c_uint64), ("ReceiveLinkSpeed", ctypes.c_uint64),
+            ("FirstWinsServerAddress", ctypes.c_void_p),
+            ("FirstGatewayAddress", ctypes.POINTER(IP_ADAPTER_GATEWAY_ADDRESS)),
+        ]
+
+        iphlpapi = ctypes.WinDLL("iphlpapi")
+        buf_len = wintypes.ULONG(32768)
+        buf = ctypes.create_string_buffer(buf_len.value)
+        ret = iphlpapi.GetAdaptersAddresses(
+            socket.AF_INET, 0x0080, None,
+            ctypes.cast(buf, ctypes.POINTER(IP_ADAPTER_ADDRESSES)), ctypes.byref(buf_len)
+        )
+        if ret == 111:
+            buf = ctypes.create_string_buffer(buf_len.value)
+            ret = iphlpapi.GetAdaptersAddresses(
+                socket.AF_INET, 0x0080, None,
+                ctypes.cast(buf, ctypes.POINTER(IP_ADAPTER_ADDRESSES)), ctypes.byref(buf_len)
+            )
+        if ret != 0:
+            return adapters
+
+        addr = ctypes.cast(buf, ctypes.POINTER(IP_ADAPTER_ADDRESSES))
+        while addr:
+            cur = addr.contents
+            if cur.OperStatus == 1:
+                friendly = cur.FriendlyName or ""
+                desc = cur.Description or ""
+                has_gw = bool(cur.FirstGatewayAddress)
+                if_type = int(cur.IfType)
+                u = cur.FirstUnicastAddress
+                while u:
+                    sa = u.contents.Address
+                    if sa.lpSockaddr and sa.iSockaddrLength >= 16:
+                        sin = ctypes.cast(sa.lpSockaddr, ctypes.POINTER(SOCKADDR_IN)).contents
+                        if sin.sin_family == socket.AF_INET:
+                            adapters.append({
+                                "ip": socket.inet_ntoa(bytes(sin.sin_addr)),
+                                "if_type": if_type,
+                                "has_gw": has_gw,
+                                "name": f"{friendly} {desc}".lower(),
+                            })
+                    u = u.contents.Next
+            addr = cur.Next
+    except Exception:
+        pass
+    return adapters
+
+def get_local_ip(preferred_peer_ip=None, preferred_peer_port=2004):
+    peer_ip = (preferred_peer_ip or CONFIG.get("scale_default_ip") or "").strip()
+    peer_port = int(preferred_peer_port or CONFIG.get("scale_default_port", 2004))
+    peer_probe_ip = _udp_route_probe(peer_ip, peer_port) if _is_valid_host_ip(peer_ip) else None
+    inet_probe_ip = _udp_route_probe("8.8.8.8", 80) or _udp_route_probe("1.1.1.1", 80)
+    cgnat_net = ipaddress.IPv4Network("100.64.0.0/10")
+    peer_octets = peer_ip.split(".") if _is_valid_host_ip(peer_ip) else []
+
+    best_ip = None
+    best_score = -10**9
+    for item in _enum_windows_ipv4_adapters():
+        ip_str = item["ip"]
+        if not _is_valid_host_ip(ip_str):
+            continue
+        addr = ipaddress.IPv4Address(ip_str)
+        score = 0
+        if_type = item["if_type"]
+        lname = item["name"]
+        is_virtual = (if_type in (24, 131)) or any(k in lname for k in _VIRTUAL_ADAPTER_KEYWORDS)
+        score += 60 if (if_type in (6, 71) and not is_virtual) else (20 if not is_virtual else -90)
+        if item["has_gw"]:
+            score += 30
+        if addr in cgnat_net:
+            score -= 60
+        octets = ip_str.split(".")
+        if len(peer_octets) == 4 and len(octets) == 4:
+            if octets[:3] == peer_octets[:3]:
+                score += 110
+            elif octets[:2] == peer_octets[:2]:
+                score += 60
+        if addr.is_private:
+            if ip_str.startswith("192.168."):
+                score += -35 if (ip_str.startswith("192.168.56.") or ip_str.startswith("192.168.137.")) else 30
+            elif ip_str.startswith("10."):
+                score += 12 if not is_virtual else -20
+            else:
+                score += 8 if not is_virtual else -30
+        if peer_probe_ip == ip_str:
+            score += 25
+        if inet_probe_ip == ip_str and not is_virtual:
+            score += 15
+        if score > best_score:
+            best_score = score
+            best_ip = ip_str
+
+    if best_ip:
+        return best_ip
+    if peer_probe_ip and _is_valid_host_ip(peer_probe_ip):
+        return peer_probe_ip
+    if inet_probe_ip and _is_valid_host_ip(inet_probe_ip):
+        return inet_probe_ip
+    return "127.0.0.1"
 
 def parse_cas_cl3000_weight(raw_str: str):
     is_stable = True
@@ -285,18 +462,23 @@ def cloud_relay_worker():
 
     restaurant_code = CONFIG.get("restaurant_code", "").strip()
 
-    last_hb = 0
+    last_hb = 0.0
+    last_ip_refresh = 0.0
     connected_once = False
 
     while True:
         try:
             now = time.time()
+            if local_ip == "127.0.0.1" or (now - last_ip_refresh) >= 15.0:
+                local_ip = get_local_ip()
+                last_ip_refresh = now
+
             headers = {"Content-Type": "application/json"}
             if restaurant_code:
                 headers["X-Restaurant-Code"] = restaurant_code
 
-            # 1. Heartbeat (Her 2 saniyede bir)
-            if now - last_hb > 2.0:
+            # 1. Heartbeat (Her 3 saniyede bir)
+            if now - last_hb > 3.0:
                 hb_data = {
                     "local_ip": local_ip,
                     "version": AGENT_VERSION,
@@ -312,7 +494,7 @@ def cloud_relay_worker():
                     headers=headers
                 )
                 try:
-                    with urllib.request.urlopen(req, timeout=3.0) as resp:
+                    with urllib.request.urlopen(req, timeout=5.0) as resp:
                         if not connected_once:
                             print(f"[{datetime.now().strftime('%H:%M:%S')}] >>> BULUT SUNUCUSUNA BAGLANDI! <<<")
                             print(f"[{datetime.now().strftime('%H:%M:%S')}] Sitede yesil isik yandi: AKTIF VE BAGLI")
@@ -330,7 +512,7 @@ def cloud_relay_worker():
             if restaurant_code:
                 poll_url += f"?restaurant_code={urllib.parse.quote(restaurant_code)}"
             poll_req = urllib.request.Request(poll_url, headers=headers)
-            with urllib.request.urlopen(poll_req, timeout=4.0) as resp:
+            with urllib.request.urlopen(poll_req, timeout=5.0) as resp:
                 poll_data = json.loads(resp.read().decode("utf-8"))
                 if poll_data.get("has_command"):
                     req_id = poll_data["req_id"]

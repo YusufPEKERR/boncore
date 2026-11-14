@@ -252,6 +252,31 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
     return match ? match.label : role;
   };
 
+  /**
+   * Formats `last_login_at` safely whether backend returns TR `DD.MM.YYYY HH:mm`
+   * or an ISO timestamp, preventing `"Invalid Date"` in the staff table.
+   */
+  const formatLastLogin = (u: ExtendedStaffUser): string => {
+    const raw = u.last_login_at;
+    if (!raw) return u.last_login || 'Henüz giriş yok';
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim();
+      if (/^\d{2}\.\d{2}\.\d{4}(\s+\d{2}:\d{2})?/.test(trimmed)) {
+        return trimmed;
+      }
+      const parsed = new Date(trimmed);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      }
+      return trimmed;
+    }
+    const parsed = new Date(raw);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    }
+    return u.last_login || 'Henüz giriş yok';
+  };
+
   const getRoleBadge = (role: string) => {
     switch (role) {
       case 'manager':
@@ -350,9 +375,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
           <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
             {filteredUsers.map((u) => {
               const isPinVisible = showPins[u.id];
-              const lastLoginDisplay = u.last_login_at
-                ? new Date(u.last_login_at).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-                : (u.last_login || 'Henüz giriş yok');
+              const lastLoginDisplay = formatLastLogin(u);
               return (
                 <div key={u.id} className="grid grid-cols-12 p-4 items-center text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
                   {/* User Info */}
@@ -443,9 +466,9 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
           />
 
           {/* Modal Container */}
-          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-10 overflow-visible text-slate-900 dark:text-slate-100 transition-all">
+          <div className="relative w-full max-w-lg max-h-[90dvh] flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-10 overflow-hidden text-slate-900 dark:text-slate-100 transition-all">
             {/* Header */}
-            <div className="p-6 pb-4 flex items-start justify-between">
+            <div className="shrink-0 p-5 pb-3 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between">
               <div>
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
                   {editingUser ? 'Kullanıcı Güncelle' : 'Kullanıcı Ekle'}
@@ -466,7 +489,8 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
             </div>
 
             {/* Form Body */}
-            <form onSubmit={handleSaveUser} className="p-6 pt-2 space-y-4 text-xs">
+            <form onSubmit={handleSaveUser} className="flex-1 min-h-0 flex flex-col text-xs">
+              <div className="flex-1 min-h-0 overflow-y-auto p-5 pt-4 space-y-3.5">
               {/* Field 1: Görev Seçiniz* */}
               <div className="relative">
                 <label className="text-[11px] font-bold text-brand-600 block mb-1">
@@ -616,8 +640,9 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                 </div>
               </div>
 
+              </div>
               {/* Bottom Actions */}
-              <div className="flex items-center justify-end gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <div className="shrink-0 flex items-center justify-end gap-4 px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
                 {editingUser && !isManagerRole(editingUser.role) && (
                   <button
                     type="button"

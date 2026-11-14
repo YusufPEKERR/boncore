@@ -1528,8 +1528,18 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 // 13. SCALE & BARCODE HARDWARE BRIDGE ROUTER (/api/scale)
 // ============================================================================
 
+const agentOnlineTimeoutSec = 30.0
+
+type terminalLiveInfo struct {
+	LastSeenTs float64
+	LocalIP    string
+	LastDBSync float64
+}
+
 var (
 	scaleMu          sync.RWMutex
+	terminalsStateMu sync.Mutex
+	terminalLiveSeen = make(map[string]terminalLiveInfo)
 	scaleConfigState = map[string]interface{}{
 		"brand":             "DIGI",
 		"connection_type":   "TCP/IP",
@@ -1642,6 +1652,49 @@ func loadTerminalsList(db *gorm.DB) []map[string]interface{} {
 
 func saveTerminalsList(db *gorm.DB, terminals []map[string]interface{}) {
 	saveJSONSettingVal(db, "registered_pos_terminals", map[string]interface{}{"terminals": terminals})
+}
+
+func terminalLiveKey(tenantCode, tid string) string {
+	tc := strings.TrimSpace(tenantCode)
+	if tc == "" {
+		tc = "default"
+	}
+	return tc + "::" + strings.TrimSpace(tid)
+}
+
+func touchTerminalLiveSeen(tenantCode, tid, localIP string, nowTs float64, syncedToDB bool) {
+	if strings.TrimSpace(tid) == "" {
+		return
+	}
+	key := terminalLiveKey(tenantCode, tid)
+	info := terminalLiveSeen[key]
+	if nowTs > info.LastSeenTs {
+		info.LastSeenTs = nowTs
+	}
+	if localIP != "" && localIP != "127.0.0.1" && localIP != "<nil>" {
+		info.LocalIP = localIP
+	}
+	if syncedToDB {
+		info.LastDBSync = nowTs
+	}
+	terminalLiveSeen[key] = info
+}
+
+func resolveTerminalLastSeen(tenantCode string, t map[string]interface{}) float64 {
+	lastTs, _ := t["last_heartbeat_ts"].(float64)
+	if lastTs == 0 {
+		lastTs, _ = t["last_seen"].(float64)
+	}
+	tid := fmt.Sprintf("%v", t["id"])
+	if tid == "" || tid == "<nil>" {
+		tid = fmt.Sprintf("%v", t["terminal_id"])
+	}
+	if tid != "" && tid != "<nil>" {
+		if info, ok := terminalLiveSeen[terminalLiveKey(tenantCode, tid)]; ok && info.LastSeenTs > lastTs {
+			lastTs = info.LastSeenTs
+		}
+	}
+	return lastTs
 }
 
 func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
@@ -1815,11 +1868,12 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Get("/terminals", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
 		nowTs := float64(time.Now().Unix())
+		terminalsStateMu.Lock()
 		terminals := loadTerminalsList(db)
 		enriched := make([]map[string]interface{}, 0, len(terminals))
 		for _, t := range terminals {
@@ -1853,6 +1907,11 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			if lip == "" || lip == "<nil>" {
 				lip = "127.0.0.1"
 			}
+			if lip == "127.0.0.1" {
+				if liveInfo, ok := terminalLiveSeen[terminalLiveKey(tenantCode, tid)]; ok && liveInfo.LocalIP != "" {
+					lip = liveInfo.LocalIP
+				}
+			}
 			item["local_ip"] = lip
 
 			// Normalize Version
@@ -1865,13 +1924,15 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			}
 			item["version"] = ver
 
-			// Online calculation
-			lastTs, _ := item["last_heartbeat_ts"].(float64)
-			if lastTs == 0 {
-				lastTs, _ = item["last_seen"].(float64)
-			}
+			// Online calculation (merges DB + in-memory live heartbeat/poll timestamps)
+			lastTs := resolveTerminalLastSeen(tenantCode, item)
+			item["last_heartbeat_ts"] = lastTs
+			item["last_seen"] = lastTs
 			age := nowTs - lastTs
-			isOnline := lastTs > 0 && age < 25.0
+			if age < 0 {
+				age = 0
+			}
+			isOnline := lastTs > 0 && age < agentOnlineTimeoutSec
 			item["is_online"] = isOnline
 			if lastTs > 0 {
 				item["last_seen_seconds_ago"] = math.Round(age*10) / 10
@@ -1922,6 +1983,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 
 			enriched = append(enriched, item)
 		}
+		terminalsStateMu.Unlock()
 		return c.JSON(fiber.Map{"terminals": enriched})
 	})
 
@@ -1940,6 +2002,8 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		}
 		_ = c.BodyParser(&payload)
 
+		terminalsStateMu.Lock()
+		defer terminalsStateMu.Unlock()
 		terminals := loadTerminalsList(db)
 		updated := false
 		for i := range terminals {
@@ -1959,6 +2023,11 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 					terminals[i]["custom_scale_port"] = *payload.ScalePort
 				}
 				if payload.IsDefault != nil {
+					if *payload.IsDefault {
+						for j := range terminals {
+							terminals[j]["is_default"] = false
+						}
+					}
 					terminals[i]["is_default"] = *payload.IsDefault
 				}
 				if payload.ScaleEnabled != nil {
@@ -1976,11 +2045,13 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Delete("/terminals/:terminal_id", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
 		tid := c.Params("terminal_id")
+		terminalsStateMu.Lock()
+		defer terminalsStateMu.Unlock()
 		terminals := loadTerminalsList(db)
 		filtered := make([]map[string]interface{}, 0)
 		for _, t := range terminals {
@@ -1990,6 +2061,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 				filtered = append(filtered, t)
 			}
 		}
+		delete(terminalLiveSeen, terminalLiveKey(tenantCode, tid))
 		saveTerminalsList(db, filtered)
 		return c.JSON(fiber.Map{"status": "ok", "terminals": filtered})
 	})
@@ -2003,6 +2075,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			TerminalID     string      `json:"terminal_id"`
 			TerminalName   string      `json:"terminal_name"`
 			Hostname       string      `json:"hostname"`
+			MachineID      string      `json:"machine_id"`
 			LocalIP        string      `json:"local_ip"`
 			Version        string      `json:"version"`
 			AgentVersion   string      `json:"agent_version"`
@@ -2041,6 +2114,8 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		if localIP == "" {
 			localIP = "127.0.0.1"
 		}
+		machineID := strings.TrimSpace(payload.MachineID)
+		hostname := strings.TrimSpace(payload.Hostname)
 
 		version := payload.Version
 		if version == "" {
@@ -2078,6 +2153,8 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		agentRuntimeState["last_heartbeat_ts"] = nowTs
 		agentRuntimeState["agent_version"] = version
 		agentRuntimeState["hostname"] = tname
+		agentRuntimeState["local_ip"] = localIP
+		agentRuntimeState["terminal_id"] = tid
 		agentRuntimeState["active_com_ports"] = payload.ActiveComPorts
 		agentRuntimeState["live_stable"] = payload.LiveStable
 		agentRuntimeState["last_error"] = payload.LastError
@@ -2091,45 +2168,91 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		}
 		jobs, _ := agentRuntimeState["pending_print_jobs"].([]fiber.Map)
 		agentRuntimeState["pending_print_jobs"] = []fiber.Map{}
-		cfgCopy := map[string]interface{}{}
-		for k, v := range scaleConfigState {
-			cfgCopy[k] = v
-		}
 		scaleMu.Unlock()
 
+		terminalsStateMu.Lock()
 		terminals := loadTerminalsList(db)
 		foundIdx := -1
 		for i := range terminals {
 			currID := fmt.Sprintf("%v", terminals[i]["id"])
 			currTID := fmt.Sprintf("%v", terminals[i]["terminal_id"])
 			currIP := fmt.Sprintf("%v", terminals[i]["local_ip"])
-			if currID == tid || currTID == tid || (localIP != "127.0.0.1" && currIP == localIP) {
+			currMID := fmt.Sprintf("%v", terminals[i]["machine_id"])
+			if currID == tid || currTID == tid || (machineID != "" && currMID == machineID) || (localIP != "127.0.0.1" && currIP == localIP) {
 				foundIdx = i
 				break
 			}
 		}
 
+		shouldPersistDB := false
+		respName := tname
+		respScaleIP := scaleIP
+		respScalePort := scalePort
+
 		if foundIdx >= 0 {
-			terminals[foundIdx]["id"] = tid
-			terminals[foundIdx]["terminal_id"] = tid
+			existing := terminals[foundIdx]
+			existingIP := fmt.Sprintf("%v", existing["local_ip"])
+			effectiveIP := localIP
+			// Gecici ag kesintisinde gelen 127.0.0.1 ile gecerli LAN IP'yi ezme
+			if effectiveIP == "127.0.0.1" && existingIP != "" && existingIP != "<nil>" && existingIP != "127.0.0.1" {
+				effectiveIP = existingIP
+			}
+			prevDBTs, _ := existing["last_heartbeat_ts"].(float64)
+			prevScaleConn, _ := existing["scale_connected"].(bool)
+			prevVersion := fmt.Sprintf("%v", existing["version"])
+
+			if existingIP != effectiveIP || prevVersion != version || prevScaleConn != payload.ScaleConnected || (nowTs-prevDBTs) >= 15.0 {
+				shouldPersistDB = true
+			}
+
+			existing["id"] = tid
+			existing["terminal_id"] = tid
+			if machineID != "" {
+				existing["machine_id"] = machineID
+			}
+			if hostname != "" {
+				existing["hostname"] = hostname
+			}
 			if payload.UserConfigured && tname != "" {
-				terminals[foundIdx]["name"] = tname
-				terminals[foundIdx]["custom_name"] = tname
-			} else if currName, _ := terminals[foundIdx]["name"].(string); currName == "" || currName == "Kasa 1" || currName == "Kasa" {
-				terminals[foundIdx]["name"] = tname
+				if fmt.Sprintf("%v", existing["name"]) != tname {
+					shouldPersistDB = true
+				}
+				existing["name"] = tname
+				existing["custom_name"] = tname
+			} else if currName, _ := existing["name"].(string); currName == "" || currName == "Kasa 1" || currName == "Kasa" {
+				existing["name"] = tname
+			} else {
+				respName = currName
 			}
-			terminals[foundIdx]["local_ip"] = localIP
-			terminals[foundIdx]["version"] = version
-			terminals[foundIdx]["agent_version"] = version
-			terminals[foundIdx]["scale_connected"] = payload.ScaleConnected
-			terminals[foundIdx]["scale_ip"] = scaleIP
-			terminals[foundIdx]["scale_port"] = scalePort
-			terminals[foundIdx]["last_weight"] = payload.LastWeight
+
+			if cSip, ok := existing["custom_scale_ip"].(string); ok && cSip != "" {
+				respScaleIP = cSip
+			}
+			if cSport, ok := existing["custom_scale_port"].(float64); ok && cSport > 0 {
+				respScalePort = int(cSport)
+			}
+
+			existing["local_ip"] = effectiveIP
+			existing["version"] = version
+			existing["agent_version"] = version
+			existing["scale_connected"] = payload.ScaleConnected
+			if _, hasCustomIP := existing["custom_scale_ip"]; !hasCustomIP || payload.UserConfigured {
+				existing["scale_ip"] = scaleIP
+			}
+			if _, hasCustomPort := existing["custom_scale_port"]; !hasCustomPort || payload.UserConfigured {
+				existing["scale_port"] = scalePort
+			}
+			existing["last_weight"] = payload.LastWeight
 			if len(sortedPr) > 0 {
-				terminals[foundIdx]["printers"] = sortedPr
+				existing["printers"] = sortedPr
 			}
-			terminals[foundIdx]["last_heartbeat_ts"] = nowTs
-			terminals[foundIdx]["last_seen"] = nowTs
+			existing["last_heartbeat_ts"] = nowTs
+			existing["last_seen"] = nowTs
+
+			if shouldPersistDB {
+				saveTerminalsList(db, terminals)
+			}
+			touchTerminalLiveSeen(tenantCode, tid, effectiveIP, nowTs, shouldPersistDB)
 		} else {
 			isDef := len(terminals) == 0
 			terminals = append(terminals, map[string]interface{}{
@@ -2137,6 +2260,8 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 				"terminal_id":       tid,
 				"name":              tname,
 				"custom_name":       tname,
+				"machine_id":        machineID,
+				"hostname":          hostname,
 				"local_ip":          localIP,
 				"version":           version,
 				"agent_version":     version,
@@ -2149,8 +2274,10 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 				"last_seen":         nowTs,
 				"is_default":        isDef,
 			})
+			saveTerminalsList(db, terminals)
+			touchTerminalLiveSeen(tenantCode, tid, localIP, nowTs, true)
 		}
-		saveTerminalsList(db, terminals)
+		terminalsStateMu.Unlock()
 
 		if payload.LiveWeightGram != nil {
 			svc.WSHub.BroadcastToChannel(tenantCode, "pos", "SCALE_LIVE_WEIGHT", fiber.Map{
@@ -2164,47 +2291,159 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		return c.JSON(fiber.Map{
 			"status":             "ok",
 			"terminal_id":        tid,
-			"terminal_name":      tname,
-			"scale_ip":           scaleIP,
-			"scale_port":         scalePort,
+			"terminal_name":      respName,
+			"scale_ip":           respScaleIP,
+			"scale_port":         respScalePort,
 			"pending_print_jobs": jobs,
 			"server_time":        nowTs,
 		})
 	})
 
 	group.Get("/agent/status", func(c *fiber.Ctx) error {
+		nowTs := float64(time.Now().Unix())
+		requestedTID := strings.TrimSpace(c.Query("terminal_id"))
+
 		scaleMu.RLock()
-		lastTs, _ := agentRuntimeState["last_heartbeat_ts"].(float64)
-		age := float64(time.Now().Unix()) - lastTs
-		isOnline := lastTs > 0 && age < 15.0
+		rtLastTs, _ := agentRuntimeState["last_heartbeat_ts"].(float64)
+		rtVersion := agentRuntimeState["agent_version"]
+		rtHostname := agentRuntimeState["hostname"]
+		rtLocalIP := agentRuntimeState["local_ip"]
+		rtTerminalID := agentRuntimeState["terminal_id"]
+		rtActiveCom := agentRuntimeState["active_com_ports"]
+		rtLiveKg := agentRuntimeState["live_weight_kg"]
+		rtLiveGram := agentRuntimeState["live_weight_gram"]
+		rtLiveStable := agentRuntimeState["live_stable"]
+		rtLastError := agentRuntimeState["last_error"]
+		rtOsInfo := agentRuntimeState["os_info"]
+		scaleMu.RUnlock()
+
+		var bestTerm map[string]interface{}
+		var bestLastTs float64
+		activeCount := 0
+
+		if db, tenantCode, err := getTenantDB(c, svc); err == nil && db != nil {
+			terminalsStateMu.Lock()
+			terminals := loadTerminalsList(db)
+			for _, t := range terminals {
+				lastTs := resolveTerminalLastSeen(tenantCode, t)
+				age := nowTs - lastTs
+				if lastTs > 0 && age < agentOnlineTimeoutSec {
+					activeCount++
+				}
+				currID := fmt.Sprintf("%v", t["id"])
+				currTID := fmt.Sprintf("%v", t["terminal_id"])
+				if requestedTID != "" && (currID == requestedTID || currTID == requestedTID) {
+					bestTerm = t
+					bestLastTs = lastTs
+					break
+				}
+				if bestTerm == nil || lastTs > bestLastTs {
+					bestTerm = t
+					bestLastTs = lastTs
+				}
+			}
+			terminalsStateMu.Unlock()
+		}
+
+		lastTs := bestLastTs
+		if rtLastTs > lastTs {
+			lastTs = rtLastTs
+		}
+		age := nowTs - lastTs
+		if age < 0 {
+			age = 0
+		}
+		isOnline := lastTs > 0 && age < agentOnlineTimeoutSec
+
+		localIP := ""
+		version := ""
+		termID := ""
+		termName := ""
+		if bestTerm != nil {
+			if s := fmt.Sprintf("%v", bestTerm["local_ip"]); s != "" && s != "<nil>" {
+				localIP = s
+			}
+			if s := fmt.Sprintf("%v", bestTerm["version"]); s != "" && s != "<nil>" {
+				version = s
+			} else if s := fmt.Sprintf("%v", bestTerm["agent_version"]); s != "" && s != "<nil>" {
+				version = s
+			}
+			if s := fmt.Sprintf("%v", bestTerm["id"]); s != "" && s != "<nil>" {
+				termID = s
+			}
+			if s := fmt.Sprintf("%v", bestTerm["name"]); s != "" && s != "<nil>" {
+				termName = s
+			}
+		}
+		if (localIP == "" || localIP == "127.0.0.1") && rtLocalIP != nil {
+			if s := fmt.Sprintf("%v", rtLocalIP); s != "" && s != "<nil>" {
+				localIP = s
+			}
+		}
+		if version == "" && rtVersion != nil {
+			version = fmt.Sprintf("%v", rtVersion)
+		}
+		if termID == "" && rtTerminalID != nil {
+			termID = fmt.Sprintf("%v", rtTerminalID)
+		}
+		if termName == "" && rtHostname != nil {
+			termName = fmt.Sprintf("%v", rtHostname)
+		}
+
 		resp := fiber.Map{
-			"online":            isOnline,
-			"last_seen_seconds": nil,
-			"agent_version":     agentRuntimeState["agent_version"],
-			"hostname":          agentRuntimeState["hostname"],
-			"os_info":           agentRuntimeState["os_info"],
-			"active_com_ports":  agentRuntimeState["active_com_ports"],
-			"live_weight_kg":    agentRuntimeState["live_weight_kg"],
-			"live_weight_gram":  agentRuntimeState["live_weight_gram"],
-			"live_stable":       agentRuntimeState["live_stable"],
-			"last_error":        agentRuntimeState["last_error"],
+			"online":               isOnline,
+			"isOnline":             isOnline,
+			"localIp":              localIP,
+			"local_ip":             localIP,
+			"version":              version,
+			"terminalId":           termID,
+			"terminalName":         termName,
+			"activeTerminalsCount": activeCount,
+			"last_seen_seconds":    nil,
+			"agent_version":        version,
+			"hostname":             termName,
+			"os_info":              rtOsInfo,
+			"active_com_ports":     rtActiveCom,
+			"live_weight_kg":       rtLiveKg,
+			"live_weight_gram":     rtLiveGram,
+			"live_stable":          rtLiveStable,
+			"last_error":           rtLastError,
 		}
 		if lastTs > 0 {
 			resp["last_seen_seconds"] = int(age)
 		}
-		scaleMu.RUnlock()
 		return c.JSON(resp)
 	})
 
 	group.Get("/agent/poll", func(c *fiber.Ctx) error {
 		terminalID := strings.TrimSpace(c.Query("terminal_id"))
 		clientIP := c.IP()
+		tenantCode := middleware.GetTenantCode(c)
 		nowTs := float64(time.Now().Unix())
 
-		db, _, _ := getTenantDB(c, svc)
+		if terminalID != "" {
+			terminalsStateMu.Lock()
+			touchTerminalLiveSeen(tenantCode, terminalID, "", nowTs, false)
+			terminalsStateMu.Unlock()
+			scaleMu.Lock()
+			if rtTs, _ := agentRuntimeState["last_heartbeat_ts"].(float64); nowTs > rtTs {
+				agentRuntimeState["last_heartbeat_ts"] = nowTs
+				agentRuntimeState["online"] = true
+			}
+			scaleMu.Unlock()
+		}
+
+		bridgeMu.Lock()
+		pendingCount := len(pendingBridgeCommands)
+		bridgeMu.Unlock()
+
 		var terminals []map[string]interface{}
-		if db != nil {
-			terminals = loadTerminalsList(db)
+		if pendingCount > 0 {
+			if db, _, _ := getTenantDB(c, svc); db != nil {
+				terminalsStateMu.Lock()
+				terminals = loadTerminalsList(db)
+				terminalsStateMu.Unlock()
+			}
 		}
 
 		bridgeMu.Lock()
@@ -2240,7 +2479,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 				if strings.Contains(terminalID, cleanTarget) || strings.Contains(cleanTarget, terminalID) {
 					isMatch = true
 				}
-				if clientIP != "" && (clientIP == cmdTarget || strings.Contains(cmdTarget, clientIP)) {
+				if clientIP != "" && clientIP != "127.0.0.1" && (clientIP == cmdTarget || strings.Contains(cmdTarget, clientIP)) {
 					isMatch = true
 				}
 			}
@@ -2253,7 +2492,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 					tIP := fmt.Sprintf("%v", t["local_ip"])
 					cleanIP := strings.ReplaceAll(tIP, ".", "_")
 
-					if tID == terminalID || tTID == terminalID || strings.Contains(terminalID, cleanIP) {
+					if tID == terminalID || tTID == terminalID || (cleanIP != "" && cleanIP != "127_0_0_1" && strings.Contains(terminalID, cleanIP)) {
 						var prs []string
 						if rawPrs, ok := t["printers"].([]interface{}); ok {
 							for _, rp := range rawPrs {
@@ -2300,6 +2539,9 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 				"has_command": true,
 				"req_id":      oldestReqID,
 				"action":      oldestCmd["action"],
+				"ip":          oldestCmd["ip"],
+				"port":        oldestCmd["port"],
+				"timeout":     oldestCmd["timeout"],
 				"printers":    oldestCmd["printers"],
 				"raw_text":    oldestCmd["raw_text"],
 			})
@@ -2314,11 +2556,11 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 
 	group.Get("/agent/version", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
-			"latest_version": "2.4.4",
+			"latest_version": "2.4.5",
 			"release_date":   time.Now().Format("2006-01-02"),
 			"mandatory":      false,
 			"download_url":   "/api/scale/setup",
-			"changelog":      "Guncelleme motorundaki gecici dosya ve dizin yonetimi optimize edildi. Otomatik yeniden baslatma ve bildirim guclendirildi.",
+			"changelog":      "Yerel LAN IP algilama (VPN/sanal adaptor filtreleme), bloklamasiz heartbeat/poll baglantisi ve otomatik yeniden baglanma iyilestirildi.",
 		})
 	})
 
@@ -2388,7 +2630,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	group.Post("/test", func(c *fiber.Ctx) error {
 		scaleMu.Lock()
 		lastTs, _ := agentRuntimeState["last_heartbeat_ts"].(float64)
-		agentOnline := lastTs > 0 && (float64(time.Now().Unix())-lastTs) < 15.0
+		agentOnline := lastTs > 0 && (float64(time.Now().Unix())-lastTs) < agentOnlineTimeoutSec
 		brand := scaleConfigState["brand"]
 		connType := scaleConfigState["connection_type"]
 		ipAddr := scaleConfigState["ip_address"]
@@ -2426,7 +2668,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Post("/print", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
@@ -2476,6 +2718,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			}
 		}
 
+		terminalsStateMu.Lock()
 		terminals := loadTerminalsList(db)
 		nowTs := float64(time.Now().Unix())
 
@@ -2485,7 +2728,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			currTID := fmt.Sprintf("%v", t["terminal_id"])
 			currIP := fmt.Sprintf("%v", t["local_ip"])
 
-			if targetTID != "" && (currID == targetTID || currTID == targetTID || currIP == targetTID) {
+			if targetTID != "" && (currID == targetTID || currTID == targetTID || (currIP != "127.0.0.1" && currIP == targetTID)) {
 				targetTID = currID
 				break
 			}
@@ -2520,11 +2763,8 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		// If targetTID is still empty, pick the active online terminal
 		if targetTID == "" {
 			for _, t := range terminals {
-				lastTs, _ := t["last_heartbeat_ts"].(float64)
-				if lastTs == 0 {
-					lastTs, _ = t["last_seen"].(float64)
-				}
-				if (nowTs - lastTs) < 30.0 {
+				lastTs := resolveTerminalLastSeen(tenantCode, t)
+				if lastTs > 0 && (nowTs-lastTs) < agentOnlineTimeoutSec {
 					targetTID = fmt.Sprintf("%v", t["id"])
 					break
 				}
@@ -2556,6 +2796,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 				}
 			}
 		}
+		terminalsStateMu.Unlock()
 
 		reqID := fmt.Sprintf("print_%d", time.Now().UnixNano())
 		bridgeMu.Lock()
@@ -2619,16 +2860,16 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		// Agent did not report back within 6 seconds:
 		// Check if any agent is currently online
 		hasOnlineAgent := false
+		checkTs := float64(time.Now().Unix())
+		terminalsStateMu.Lock()
 		for _, t := range terminals {
-			lastTs, _ := t["last_heartbeat_ts"].(float64)
-			if lastTs == 0 {
-				lastTs, _ = t["last_seen"].(float64)
-			}
-			if (nowTs - lastTs) < 25.0 {
+			lastTs := resolveTerminalLastSeen(tenantCode, t)
+			if lastTs > 0 && (checkTs-lastTs) < agentOnlineTimeoutSec {
 				hasOnlineAgent = true
 				break
 			}
 		}
+		terminalsStateMu.Unlock()
 
 		if !hasOnlineAgent {
 			return c.JSON(fiber.Map{
@@ -2649,7 +2890,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Get("/weight", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
@@ -2657,6 +2898,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		portStr := strings.TrimSpace(c.Query("port"))
 		terminalID := strings.TrimSpace(c.Query("terminal_id"))
 
+		terminalsStateMu.Lock()
 		terminals := loadTerminalsList(db)
 		nowTs := float64(time.Now().Unix())
 
@@ -2665,7 +2907,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			currID := fmt.Sprintf("%v", t["id"])
 			currTID := fmt.Sprintf("%v", t["terminal_id"])
 			currIP := fmt.Sprintf("%v", t["local_ip"])
-			if terminalID != "" && (currID == terminalID || currTID == terminalID || currIP == terminalID) {
+			if terminalID != "" && (currID == terminalID || currTID == terminalID || (currIP != "127.0.0.1" && currIP == terminalID)) {
 				targetTerm = t
 				break
 			}
@@ -2673,16 +2915,14 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		if targetTerm == nil {
 			// Find online terminal (e.g. kasa_192_168_0_120)
 			for _, t := range terminals {
-				lastTs, _ := t["last_heartbeat_ts"].(float64)
-				if lastTs == 0 {
-					lastTs, _ = t["last_seen"].(float64)
-				}
-				if (nowTs - lastTs) < 25.0 {
+				lastTs := resolveTerminalLastSeen(tenantCode, t)
+				if lastTs > 0 && (nowTs-lastTs) < agentOnlineTimeoutSec {
 					targetTerm = t
 					break
 				}
 			}
 		}
+		terminalsStateMu.Unlock()
 
 		if targetTerm != nil {
 			tID := fmt.Sprintf("%v", targetTerm["id"])
@@ -2767,7 +3007,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		brand := scaleConfigState["brand"]
 		connType := scaleConfigState["connection_type"]
 		lastTs, _ := agentRuntimeState["last_heartbeat_ts"].(float64)
-		agentOnline := lastTs > 0 && (float64(time.Now().Unix())-lastTs) < 15.0
+		agentOnline := lastTs > 0 && (float64(time.Now().Unix())-lastTs) < agentOnlineTimeoutSec
 		liveGram, _ := agentRuntimeState["live_weight_gram"].(int)
 		liveStable, _ := agentRuntimeState["live_stable"].(bool)
 		scaleMu.RUnlock()
@@ -3376,14 +3616,36 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 		if totalRevenueAll > 0 {
 			foodCostPct = round2((totalRecipeCostAll / totalRevenueAll) * 100)
 		}
+		var cashExpenses []models.CashExpense
+		db.Where("expense_type != ? OR expense_type IS NULL", "in").Find(&cashExpenses)
+		totalExpenses := 0.0
+		for _, e := range cashExpenses {
+			totalExpenses += e.Amount
+		}
+		totalExpenses = round2(totalExpenses)
+		grossProfit := round2(totalRevenueAll - totalRecipeCostAll)
+		grossMarginPct := 0.0
+		if totalRevenueAll > 0 {
+			grossMarginPct = round2((grossProfit / totalRevenueAll) * 100)
+		}
+		netProfit := round2(grossProfit - totalExpenses)
+		netMarginPct := 0.0
+		if totalRevenueAll > 0 {
+			netMarginPct = round2((netProfit / totalRevenueAll) * 100)
+		}
 
 		return c.JSON(fiber.Map{
 			"summary": fiber.Map{
-				"total_revenue":     round2(totalRevenueAll),
-				"total_bom_cost":    round2(totalRecipeCostAll),
-				"gross_profit":      round2(totalRevenueAll - totalRecipeCostAll),
-				"food_cost_percent": foodCostPct,
-				"paid_orders_count": len(paidOrders),
+				"total_revenue":        round2(totalRevenueAll),
+				"total_bom_cost":       round2(totalRecipeCostAll),
+				"total_cogs":           round2(totalRecipeCostAll),
+				"gross_profit":         grossProfit,
+				"gross_margin_percent": grossMarginPct,
+				"food_cost_percent":    foodCostPct,
+				"total_expenses":       totalExpenses,
+				"net_profit":           netProfit,
+				"net_margin_percent":   netMarginPct,
+				"paid_orders_count":    len(paidOrders),
 			},
 			"products": analysis,
 		})

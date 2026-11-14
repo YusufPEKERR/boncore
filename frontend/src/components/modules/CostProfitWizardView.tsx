@@ -192,7 +192,7 @@ export const CostProfitWizardView: React.FC = () => {
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="text-[11px] font-bold text-slate-400 uppercase">Reçete / Satış Maliyeti (COGS)</div>
           <div className="text-xl font-black text-amber-600 dark:text-amber-400 mt-1">
-            ₺{Number(summary?.total_cogs || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+            ₺{Number(summary?.total_cogs ?? summary?.total_bom_cost ?? 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
           </div>
           <div className="text-[10px] text-slate-400 mt-0.5">Hammadde Tüketim Tutarı</div>
         </div>
@@ -203,7 +203,7 @@ export const CostProfitWizardView: React.FC = () => {
             ₺{Number(summary?.gross_profit || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
           </div>
           <div className="text-[10px] text-emerald-600 font-bold mt-0.5">
-            Brüt Marj: %{summary?.gross_margin_percent || 0}
+            Brüt Marj: %{Number(summary?.gross_margin_percent ?? (Number(summary?.total_revenue || 0) > 0 ? ((Number(summary?.gross_profit || 0) / Number(summary?.total_revenue || 1)) * 100).toFixed(1) : 0))}
           </div>
         </div>
 
@@ -218,10 +218,10 @@ export const CostProfitWizardView: React.FC = () => {
         <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-md">
           <div className="text-[11px] font-bold text-emerald-100 uppercase">Net İşletme Kârı</div>
           <div className="text-xl font-black mt-1">
-            ₺{Number(summary?.net_profit || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+            ₺{Number(summary?.net_profit ?? (Number(summary?.gross_profit || 0) - Number(summary?.total_expenses || 0))).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
           </div>
           <div className="text-[10px] text-emerald-100 font-bold mt-0.5">
-            Net Kârlılık Oranı: %{summary?.net_margin_percent || 0}
+            Net Kârlılık Oranı: %{Number(summary?.net_margin_percent ?? (Number(summary?.total_revenue || 0) > 0 ? (((Number(summary?.gross_profit || 0) - Number(summary?.total_expenses || 0)) / Number(summary?.total_revenue || 1)) * 100).toFixed(1) : 0))}
           </div>
         </div>
       </div>

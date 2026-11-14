@@ -75,6 +75,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     
   });
   const [agentInfo, setAgentInfo] = useState<{ isOnline: boolean; version?: string; localIp?: string }>({ isOnline: false });
+  const agentOfflineStreakRef = React.useRef<number>(0);
   // Çoklu Kasa & Terminal Yönetimi
   const [terminalsList, setTerminalsList] = useState<Array<{
     id: string;
@@ -451,12 +452,19 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
 
   useEffect(() => {
     if (activeSubTab === 'scale') {
-      localHardware.checkAgentStatus().then(setAgentInfo);
-      fetchTerminalsData();
-      const interval = setInterval(() => {
-        localHardware.checkAgentStatus().then(setAgentInfo);
+      const refreshBridge = async () => {
+        const status = await localHardware.checkAgentStatus();
+        if (status.isOnline) {
+          agentOfflineStreakRef.current = 0;
+          setAgentInfo(status);
+        } else {
+          agentOfflineStreakRef.current += 1;
+          setAgentInfo(prev => (prev.isOnline && agentOfflineStreakRef.current < 2 ? prev : status));
+        }
         fetchTerminalsData();
-      }, 3000);
+      };
+      refreshBridge();
+      const interval = setInterval(refreshBridge, 3000);
       return () => clearInterval(interval);
     }
   }, [activeSubTab]);
@@ -1906,7 +1914,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                             </span>
                           ) : (
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400">
-                              ÇEVRİMDAŞI
+                              ÇEVRİMDIŞI
                             </span>
                           )}
                         </div>
@@ -2223,7 +2231,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                                 </span>
                               ) : (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400">
-                                  ÇEVRİMDAŞI ({ipAddr})
+                                  ÇEVRİMDIŞI ({ipAddr})
                                 </span>
                               )}
                             </div>

@@ -23,7 +23,14 @@ from datetime import datetime
 import urllib.request
 import urllib.error
 import urllib.parse
+import ctypes
+from ctypes import wintypes
+import ipaddress
+import hashlib
+import uuid
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # GUI & Tray
 import tkinter as tk
@@ -31,7 +38,7 @@ from tkinter import ttk, messagebox
 import pystray
 from PIL import Image, ImageDraw, ImageTk
 
-AGENT_VERSION = "2.4.4"
+AGENT_VERSION = "2.4.5"
 APP_TITLE = "BonCore Donanım Köprüsü"
 IPC_PORT = 49231
 
@@ -109,22 +116,264 @@ DEFAULT_CONFIG = {
     "user_customized": False
 }
 
-def get_local_ip():
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "127.0.0.1"
+_VIRTUAL_ADAPTER_KEYWORDS = (
+    "vethernet", "hyper-v", "wsl", "virtualbox", "vbox", "vmware",
+    "zerotier", "tailscale", "wireguard", "wintun", "tap-", "tap ", "tun ",
+    "openvpn", "cloudflare", "warp", "proton", "nordlynx", "anyconnect",
+    "forti", "hamachi", "radmin", "docker", "npcap", "bluetooth", "loopback",
+    "pseudo-interface", "teredo", "6to4", "isatap", "miniport", "kernel debug"
+)
 
-def _get_deterministic_terminal_id():
-    ip = get_local_ip()
+def _enum_windows_ipv4_adapters():
+    """Windows GetAdaptersAddresses ile aktif IPv4 ag arayuzlerini dondurur."""
+    adapters = []
+    if sys.platform != "win32":
+        return adapters
+    try:
+        class SOCKADDR_IN(ctypes.Structure):
+            _fields_ = [
+                ("sin_family", ctypes.c_ushort),
+                ("sin_port", ctypes.c_ushort),
+                ("sin_addr", ctypes.c_byte * 4),
+                ("sin_zero", ctypes.c_char * 8),
+            ]
+
+        class SOCKET_ADDRESS(ctypes.Structure):
+            _fields_ = [("lpSockaddr", ctypes.c_void_p), ("iSockaddrLength", ctypes.c_int)]
+
+        class IP_ADAPTER_UNICAST_ADDRESS(ctypes.Structure):
+            pass
+
+        IP_ADAPTER_UNICAST_ADDRESS._fields_ = [
+            ("Length", wintypes.ULONG),
+            ("Flags", wintypes.DWORD),
+            ("Next", ctypes.POINTER(IP_ADAPTER_UNICAST_ADDRESS)),
+            ("Address", SOCKET_ADDRESS),
+            ("PrefixOrigin", ctypes.c_int),
+            ("SuffixOrigin", ctypes.c_int),
+            ("DadState", ctypes.c_int),
+            ("ValidLifetime", wintypes.ULONG),
+            ("PreferredLifetime", wintypes.ULONG),
+            ("LeaseLifetime", wintypes.ULONG),
+            ("OnLinkPrefixLength", ctypes.c_ubyte),
+        ]
+
+        class IP_ADAPTER_GATEWAY_ADDRESS(ctypes.Structure):
+            pass
+
+        IP_ADAPTER_GATEWAY_ADDRESS._fields_ = [
+            ("Length", wintypes.ULONG),
+            ("Reserved", wintypes.DWORD),
+            ("Next", ctypes.POINTER(IP_ADAPTER_GATEWAY_ADDRESS)),
+            ("Address", SOCKET_ADDRESS),
+        ]
+
+        class IP_ADAPTER_ADDRESSES(ctypes.Structure):
+            pass
+
+        IP_ADAPTER_ADDRESSES._fields_ = [
+            ("Length", wintypes.ULONG),
+            ("IfIndex", wintypes.DWORD),
+            ("Next", ctypes.POINTER(IP_ADAPTER_ADDRESSES)),
+            ("AdapterName", ctypes.c_char_p),
+            ("FirstUnicastAddress", ctypes.POINTER(IP_ADAPTER_UNICAST_ADDRESS)),
+            ("FirstAnycastAddress", ctypes.c_void_p),
+            ("FirstMulticastAddress", ctypes.c_void_p),
+            ("FirstDnsServerAddress", ctypes.c_void_p),
+            ("DnsSuffix", ctypes.c_wchar_p),
+            ("Description", ctypes.c_wchar_p),
+            ("FriendlyName", ctypes.c_wchar_p),
+            ("PhysicalAddress", ctypes.c_ubyte * 8),
+            ("PhysicalAddressLength", wintypes.DWORD),
+            ("Flags", wintypes.DWORD),
+            ("Mtu", wintypes.DWORD),
+            ("IfType", wintypes.DWORD),
+            ("OperStatus", ctypes.c_int),
+            ("Ipv6IfIndex", wintypes.DWORD),
+            ("ZoneIndices", wintypes.DWORD * 16),
+            ("FirstPrefix", ctypes.c_void_p),
+            ("TransmitLinkSpeed", ctypes.c_uint64),
+            ("ReceiveLinkSpeed", ctypes.c_uint64),
+            ("FirstWinsServerAddress", ctypes.c_void_p),
+            ("FirstGatewayAddress", ctypes.POINTER(IP_ADAPTER_GATEWAY_ADDRESS)),
+        ]
+
+        iphlpapi = ctypes.WinDLL("iphlpapi")
+        GAA_FLAG_INCLUDE_GATEWAYS = 0x0080
+        buf_len = wintypes.ULONG(32768)
+        buf = ctypes.create_string_buffer(buf_len.value)
+        ret = iphlpapi.GetAdaptersAddresses(
+            socket.AF_INET,
+            GAA_FLAG_INCLUDE_GATEWAYS,
+            None,
+            ctypes.cast(buf, ctypes.POINTER(IP_ADAPTER_ADDRESSES)),
+            ctypes.byref(buf_len),
+        )
+        if ret == 111:
+            buf = ctypes.create_string_buffer(buf_len.value)
+            ret = iphlpapi.GetAdaptersAddresses(
+                socket.AF_INET,
+                GAA_FLAG_INCLUDE_GATEWAYS,
+                None,
+                ctypes.cast(buf, ctypes.POINTER(IP_ADAPTER_ADDRESSES)),
+                ctypes.byref(buf_len),
+            )
+        if ret != 0:
+            return adapters
+
+        addr = ctypes.cast(buf, ctypes.POINTER(IP_ADAPTER_ADDRESSES))
+        while addr:
+            cur = addr.contents
+            if cur.OperStatus == 1:
+                friendly = cur.FriendlyName or ""
+                desc = cur.Description or ""
+                has_gw = bool(cur.FirstGatewayAddress)
+                if_type = int(cur.IfType)
+                u = cur.FirstUnicastAddress
+                while u:
+                    sa = u.contents.Address
+                    if sa.lpSockaddr and sa.iSockaddrLength >= 16:
+                        sin = ctypes.cast(sa.lpSockaddr, ctypes.POINTER(SOCKADDR_IN)).contents
+                        if sin.sin_family == socket.AF_INET:
+                            ip_str = socket.inet_ntoa(bytes(sin.sin_addr))
+                            adapters.append({
+                                "ip": ip_str,
+                                "if_type": if_type,
+                                "has_gw": has_gw,
+                                "name": f"{friendly} {desc}".lower(),
+                                "prefix_len": int(u.contents.OnLinkPrefixLength or 24),
+                            })
+                    u = u.contents.Next
+            addr = cur.Next
+    except Exception:
+        pass
+    return adapters
+
+def _udp_route_probe(host: str, port: int = 80):
+    sock = None
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(0.5)
+        sock.connect((host, int(port)))
+        return sock.getsockname()[0]
+    except Exception:
+        return None
+    finally:
+        if sock:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+def _is_valid_host_ip(ip_str: str) -> bool:
+    try:
+        addr = ipaddress.IPv4Address(ip_str)
+        return not (addr.is_loopback or addr.is_link_local or addr.is_unspecified or addr.is_multicast)
+    except Exception:
+        return False
+
+def get_local_ip(preferred_peer_ip: str = None, preferred_peer_port: int = 2004):
+    """
+    Kasa bilgisayarinin gercek yerel LAN IPv4 adresini tespit eder.
+    VPN/sanal adaptorleri (WireGuard, Tailscale, Hyper-V, VirtualBox, CGNAT vb.)
+    eler; terazi alt agindaki fiziksel Ethernet/Wi-Fi arayuzunu onceliklendirir.
+    """
+    peer_ip = (preferred_peer_ip or "").strip()
+    peer_probe_ip = _udp_route_probe(peer_ip, preferred_peer_port) if _is_valid_host_ip(peer_ip) else None
+    inet_probe_ip = _udp_route_probe("8.8.8.8", 80) or _udp_route_probe("1.1.1.1", 80)
+
+    cgnat_net = ipaddress.IPv4Network("100.64.0.0/10")
+    peer_octets = peer_ip.split(".") if _is_valid_host_ip(peer_ip) else []
+
+    adapters = _enum_windows_ipv4_adapters()
+    best_ip = None
+    best_score = -10**9
+
+    for item in adapters:
+        ip_str = item["ip"]
+        if not _is_valid_host_ip(ip_str):
+            continue
+        addr = ipaddress.IPv4Address(ip_str)
+        score = 0
+        if_type = item["if_type"]
+        lname = item["name"]
+        is_virtual = (if_type in (24, 131)) or any(k in lname for k in _VIRTUAL_ADAPTER_KEYWORDS)
+
+        if if_type in (6, 71) and not is_virtual:
+            score += 60
+        elif not is_virtual:
+            score += 20
+        else:
+            score -= 90
+
+        if item["has_gw"]:
+            score += 30
+        if addr in cgnat_net:
+            score -= 60
+
+        octets = ip_str.split(".")
+        if len(peer_octets) == 4 and len(octets) == 4:
+            if octets[:3] == peer_octets[:3]:
+                score += 110
+            elif octets[:2] == peer_octets[:2]:
+                score += 60
+
+        if addr.is_private:
+            if ip_str.startswith("192.168."):
+                if ip_str.startswith("192.168.56.") or ip_str.startswith("192.168.137."):
+                    score -= 35
+                else:
+                    score += 30
+            elif ip_str.startswith("10."):
+                score += 12 if not is_virtual else -20
+            else:
+                score += 8 if not is_virtual else -30
+
+        if peer_probe_ip == ip_str:
+            score += 25
+        if inet_probe_ip == ip_str and not is_virtual:
+            score += 15
+
+        if score > best_score:
+            best_score = score
+            best_ip = ip_str
+
+    if best_ip:
+        return best_ip
+
+    if peer_probe_ip and _is_valid_host_ip(peer_probe_ip):
+        return peer_probe_ip
+
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            cand = info[4][0]
+            if _is_valid_host_ip(cand) and ipaddress.IPv4Address(cand) not in cgnat_net and cand.startswith("192.168."):
+                return cand
+    except Exception:
+        pass
+
+    if inet_probe_ip and _is_valid_host_ip(inet_probe_ip):
+        return inet_probe_ip
+
+    return "127.0.0.1"
+
+def get_machine_id():
+    """Bu Windows kasa bilgisayarina ozgu kalici donanim kimligi uretir."""
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography", 0, winreg.KEY_READ)
+        guid, _ = winreg.QueryValueEx(key, "MachineGuid")
+        winreg.CloseKey(key)
+        if guid:
+            return hashlib.sha1(str(guid).encode("utf-8")).hexdigest()[:12]
+    except Exception:
+        pass
+    return f"{uuid.getnode():012x}"
+
+def _get_deterministic_terminal_id(scale_ip: str = None):
+    ip = get_local_ip(scale_ip)
     if ip and ip != "127.0.0.1":
         return "kasa_" + ip.replace(".", "_")
-    import uuid
-    return f"kasa_{uuid.getnode() % 1000000:06d}"
+    return f"kasa_{get_machine_id()[:8]}"
 
 def _load_reg_settings() -> dict:
     data = {}
@@ -199,34 +448,95 @@ def load_config():
     if local_rc:
         cfg["restaurant_code"] = local_rc
 
-    # 4. Sabit (Deterministik) Terminal ID ata
-    det_id = _get_deterministic_terminal_id()
-    if not cfg.get("terminal_id") or cfg["terminal_id"].startswith("kasa_"):
-        cfg["terminal_id"] = det_id
+    # 4. Sabit (Deterministik) Terminal ID ata (mevcut geçerli ID'yi IP değişince ezme!)
+    scale_ip = cfg.get("scale_default_ip", "192.168.1.150")
+    existing_tid = str(cfg.get("terminal_id") or "").strip()
+    if not existing_tid or existing_tid == "kasa_127_0_0_1":
+        cfg["terminal_id"] = _get_deterministic_terminal_id(scale_ip)
 
     save_config(cfg)
     return cfg
 
+_CONFIG_LOCK = threading.Lock()
+
 def save_config(cfg):
-    try:
-        os.makedirs(APPDATA_DIR, exist_ok=True)
-        with open(APPDATA_CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
-    try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
-    _save_reg_settings(cfg)
+    with _CONFIG_LOCK:
+        try:
+            os.makedirs(APPDATA_DIR, exist_ok=True)
+            with open(APPDATA_CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+        try:
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+        _save_reg_settings(cfg)
 
 # --- WINDOWS BAŞLANGIÇ KAYDI (AUTOSTART - GİZLİ BAŞLATMA) ---
 REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
-REG_NAME = "BonCoreHardwareAgent"
+STARTUP_APPROVED_PATH = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
+REG_NAME = "BonCoreAgent"
+LEGACY_REG_NAMES = ["BonCoreHardwareAgent"]
+
+
+def _delete_reg_value_safe(root, subkey, name):
+    try:
+        key = winreg.OpenKey(root, subkey, 0, winreg.KEY_ALL_ACCESS)
+        try:
+            winreg.DeleteValue(key, name)
+        except FileNotFoundError:
+            pass
+        finally:
+            winreg.CloseKey(key)
+    except Exception:
+        pass
+
+
+def _is_boncore_run_command(val) -> bool:
+    if not isinstance(val, str):
+        return False
+    low = val.lower()
+    return ("boncoreagent" in low) or ("hardware_agent" in low and "desktop_app.py" in low)
+
+
+def cleanup_duplicate_autostart():
+    """Remove legacy/duplicate BonCore startup registry values so Windows lists at most one entry."""
+    for legacy_name in LEGACY_REG_NAMES:
+        _delete_reg_value_safe(winreg.HKEY_CURRENT_USER, REG_PATH, legacy_name)
+        _delete_reg_value_safe(winreg.HKEY_CURRENT_USER, STARTUP_APPROVED_PATH, legacy_name)
+        _delete_reg_value_safe(winreg.HKEY_LOCAL_MACHINE, REG_PATH, legacy_name)
+        _delete_reg_value_safe(winreg.HKEY_LOCAL_MACHINE, STARTUP_APPROVED_PATH, legacy_name)
+
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_PATH, 0, winreg.KEY_ALL_ACCESS)
+        try:
+            duplicates = []
+            idx = 0
+            while True:
+                try:
+                    name, val, _ = winreg.EnumValue(key, idx)
+                    idx += 1
+                    if name != REG_NAME and _is_boncore_run_command(val):
+                        duplicates.append(name)
+                except OSError:
+                    break
+            for dup in duplicates:
+                try:
+                    winreg.DeleteValue(key, dup)
+                except FileNotFoundError:
+                    pass
+                _delete_reg_value_safe(winreg.HKEY_CURRENT_USER, STARTUP_APPROVED_PATH, dup)
+        finally:
+            winreg.CloseKey(key)
+    except Exception:
+        pass
+
 
 def set_windows_autostart(enable=True):
     try:
+        cleanup_duplicate_autostart()
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_PATH, 0, winreg.KEY_ALL_ACCESS)
         if enable:
             if getattr(sys, 'frozen', False):
@@ -234,34 +544,44 @@ def set_windows_autostart(enable=True):
             else:
                 app_path = f'"{sys.executable}" "{os.path.abspath(__file__)}" --hidden'
             winreg.SetValueEx(key, REG_NAME, 0, winreg.REG_SZ, app_path)
-            try:
-                winreg.SetValueEx(key, "BonCoreAgent", 0, winreg.REG_SZ, app_path)
-            except Exception:
-                pass
+            winreg.CloseKey(key)
         else:
-            for name in [REG_NAME, "BonCoreAgent"]:
-                try:
-                    winreg.DeleteValue(key, name)
-                except FileNotFoundError:
-                    pass
-        winreg.CloseKey(key)
+            winreg.CloseKey(key)
+            for name in [REG_NAME] + LEGACY_REG_NAMES:
+                _delete_reg_value_safe(winreg.HKEY_CURRENT_USER, REG_PATH, name)
+                _delete_reg_value_safe(winreg.HKEY_CURRENT_USER, STARTUP_APPROVED_PATH, name)
+                _delete_reg_value_safe(winreg.HKEY_LOCAL_MACHINE, REG_PATH, name)
+                _delete_reg_value_safe(winreg.HKEY_LOCAL_MACHINE, STARTUP_APPROVED_PATH, name)
+            for startup_dir in [
+                os.path.join(os.environ.get("APPDATA", ""), r"Microsoft\Windows\Start Menu\Programs\Startup"),
+                os.path.join(os.environ.get("PROGRAMDATA", ""), r"Microsoft\Windows\Start Menu\Programs\Startup"),
+            ]:
+                for lnk in ("BonCoreAgent.lnk", "BonCore Donanım Köprüsü.lnk", "BonCore Hardware Agent.lnk"):
+                    try:
+                        p = os.path.join(startup_dir, lnk)
+                        if os.path.exists(p):
+                            os.remove(p)
+                    except Exception:
+                        pass
         return True
     except Exception as e:
         print("Autostart reg error:", e)
         return False
 
+
 def is_windows_autostart():
     try:
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_PATH, 0, winreg.KEY_READ)
-        for name in [REG_NAME, "BonCoreAgent"]:
-            try:
-                val, _ = winreg.QueryValueEx(key, name)
-                if val:
-                    winreg.CloseKey(key)
-                    return True
-            except FileNotFoundError:
-                pass
-        winreg.CloseKey(key)
+        try:
+            for name in [REG_NAME] + LEGACY_REG_NAMES:
+                try:
+                    val, _ = winreg.QueryValueEx(key, name)
+                    if val:
+                        return True
+                except FileNotFoundError:
+                    pass
+        finally:
+            winreg.CloseKey(key)
         return False
     except Exception:
         return False
@@ -1005,21 +1325,38 @@ class BonCoreHardwareDesktopApp:
         self.center_window(600, 740)
         self.root.minsize(540, 660)
 
-        # Otomatik başlangıç ayarını kontrol et ve uygula
-        if self.cfg.get("auto_start", True):
-            set_windows_autostart(True)
+        # Eski/yinelenen başlangıç kayıtlarını temizle ve yalnızca kurulu .exe modunda tek kayıt uygula
+        cleanup_duplicate_autostart()
+        if getattr(sys, 'frozen', False):
+            if self.cfg.get("auto_start", True):
+                set_windows_autostart(True)
+            else:
+                set_windows_autostart(False)
+        elif not self.cfg.get("auto_start", True):
+            set_windows_autostart(False)
 
         # Durum değişkenleri
         self.server_connected = False
         self.scale_connected = False
         self.last_weight = 0.000
         self.printers_list = []
+        self.machine_id = get_machine_id()
+        try:
+            self.hostname = socket.gethostname()
+        except Exception:
+            self.hostname = ""
+        self.current_local_ip = get_local_ip(
+            self.cfg.get("scale_default_ip", "192.168.1.150"),
+            int(self.cfg.get("scale_default_port", 2004))
+        )
 
-        # Dayanıklı Bağlantı & Debounce Sayaçları
-        self.session = requests.Session()
-        self.session.headers.update({"User-Agent": f"BonCoreAgent/{AGENT_VERSION}"})
+        # Dayanıklı Bağlantı, Thread Güvenliği & Debounce Sayaçları
+        self._state_lock = threading.Lock()
+        self._recent_req_ids = []
+        self._resolved_server_url = None
         self.server_fail_count = 0
         self.server_success_count = 0
+        self._last_fail_tick = 0.0
         self.scale_fail_count = 0
         self.scale_success_count = 0
 
@@ -1031,7 +1368,7 @@ class BonCoreHardwareDesktopApp:
         self.update_available = False
         self.latest_version_info = None
         self.last_update_check_ts = 0
-        self.current_site_status = "connecting"
+        self.current_site_status = None
 
         # Tray Icon Hazırla
         self.tray_icon = None
@@ -1062,10 +1399,92 @@ class BonCoreHardwareDesktopApp:
         # Kapatma olayını yakala (Simgeye küçült)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close_clicked)
 
-        # Arka plan iş parçacıklarını başlat
+        # Arka plan iş parçacıklarını başlat (Heartbeat ve Poll ayrı ve bloklamasız çalışır)
         threading.Thread(target=self.device_monitor_loop, daemon=True).start()
-        threading.Thread(target=self.cloud_relay_loop, daemon=True).start()
+        threading.Thread(target=self.heartbeat_loop, daemon=True).start()
+        threading.Thread(target=self.poll_loop, daemon=True).start()
         threading.Thread(target=self.auto_update_checker_loop, daemon=True).start()
+
+    def _create_http_session(self):
+        sess = requests.Session()
+        sess.headers.update({
+            "User-Agent": f"BonCoreAgent/{AGENT_VERSION}",
+            "Connection": "keep-alive"
+        })
+        retry_cfg = Retry(
+            total=2,
+            connect=2,
+            read=1,
+            backoff_factor=0.25,
+            status_forcelist=[502, 503, 504],
+            allowed_methods=frozenset(["GET", "POST"])
+        )
+        adapter = HTTPAdapter(pool_connections=4, pool_maxsize=4, max_retries=retry_cfg)
+        sess.mount("http://", adapter)
+        sess.mount("https://", adapter)
+        return sess
+
+    def _get_effective_server_url(self):
+        cfg_url = self.cfg.get("server_url", "http://77.67.29.77").rstrip("/")
+        if self._resolved_server_url and self._resolved_server_url.replace("https://", "http://") == cfg_url:
+            return self._resolved_server_url
+        return cfg_url
+
+    def _refresh_local_ip(self):
+        new_ip = get_local_ip(
+            self.cfg.get("scale_default_ip", "192.168.1.150"),
+            int(self.cfg.get("scale_default_port", 2004))
+        )
+        if new_ip and new_ip != self.current_local_ip:
+            self.current_local_ip = new_ip
+            if str(self.cfg.get("terminal_id", "")) == "kasa_127_0_0_1" and new_ip != "127.0.0.1":
+                self.cfg["terminal_id"] = "kasa_" + new_ip.replace(".", "_")
+                save_config(self.cfg)
+            if hasattr(self, "lbl_sub") and self.lbl_sub:
+                t_id = self.cfg.get("terminal_id", "kasa-1")
+                self.root.after(0, lambda ip=new_ip, tid=t_id: self.lbl_sub.config(
+                    text=f"IP: {ip}  •  ID: {tid}  •  v{AGENT_VERSION}"
+                ))
+        return self.current_local_ip
+
+    def _request_with_reconnect(self, sess_box, method, path, **kwargs):
+        """
+        Keep-alive baglanti dusmesi (RemoteDisconnected/ProtocolError) veya
+        HTTP->HTTPS yonlendirmesi durumunda oturumu yenileyip istegi guvenle yineler.
+        """
+        base = self._get_effective_server_url()
+        url = f"{base}{path}"
+        kwargs.setdefault("timeout", (4.0, 7.0))
+        last_err = None
+        for attempt in range(2):
+            sess = sess_box[0]
+            try:
+                resp = sess.request(method, url, allow_redirects=False, **kwargs)
+                if resp.status_code in (301, 302, 307, 308) and resp.headers.get("Location"):
+                    loc = resp.headers["Location"]
+                    parsed = urllib.parse.urlparse(loc)
+                    if parsed.scheme and parsed.netloc:
+                        new_base = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+                        self._resolved_server_url = new_base
+                        url = f"{new_base}{path}"
+                    else:
+                        url = urllib.parse.urljoin(base, loc)
+                    continue
+                resp.raise_for_status()
+                return resp
+            except (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError, requests.exceptions.Timeout) as ex:
+                last_err = ex
+                try:
+                    sess.close()
+                except Exception:
+                    pass
+                sess_box[0] = self._create_http_session()
+                if attempt == 0:
+                    time.sleep(0.25)
+                    continue
+                raise
+        if last_err:
+            raise last_err
 
     def center_window(self, width=580, height=720):
         try:
@@ -1111,13 +1530,15 @@ class BonCoreHardwareDesktopApp:
         self.tray_icon = pystray.Icon("BonCoreAgent", create_tray_image("connecting"), f"{APP_TITLE} • Bağlanmaya Çalışıyor...", menu)
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
 
-    def set_site_status(self, status):
+    def set_site_status(self, status, force=False):
         """
         Sistem tepsisi simgesi (BonCore.Nokta) ve arayüzdeki durum rozetini senkronize günceller:
           - 'connected': Yeşil (Siteye bağlı)
           - 'connecting': Sarı (Bağlanmaya çalışıyor)
           - 'disconnected': Kırmızı (Bağlantı kesildi / ulaşılamıyor)
         """
+        if not force and self.current_site_status == status:
+            return
         self.current_site_status = status
         server_url = self.cfg.get("server_url", "http://77.67.29.77").rstrip("/")
 
@@ -1204,9 +1625,11 @@ class BonCoreHardwareDesktopApp:
             if changed:
                 self.cfg["user_customized"] = True
                 save_config(self.cfg)
-                self.server_connected = False
-                self.server_fail_count = 0
-                self.set_site_status("connecting")
+                self._resolved_server_url = None
+                with self._state_lock:
+                    self.server_connected = False
+                    self.server_fail_count = 0
+                self.set_site_status("connecting", force=True)
                 threading.Thread(target=self._push_immediate_heartbeat, daemon=True).start()
             elif user_action:
                 self.cfg["user_customized"] = True
@@ -1214,28 +1637,47 @@ class BonCoreHardwareDesktopApp:
         except Exception:
             pass
 
+    def _build_heartbeat_payload(self, user_configured=None):
+        rc = self.cfg.get("restaurant_code", "").strip()
+        local_ip = self.current_local_ip or get_local_ip(
+            self.cfg.get("scale_default_ip", "192.168.1.150"),
+            int(self.cfg.get("scale_default_port", 2004))
+        )
+        t_name = self.cfg.get("terminal_name", "Kasa 1")
+        return {
+            "terminal_id": self.cfg.get("terminal_id", "kasa-1"),
+            "terminal_name": t_name,
+            "hostname": self.hostname or t_name,
+            "machine_id": self.machine_id,
+            "local_ip": local_ip,
+            "version": AGENT_VERSION,
+            "agent_name": t_name,
+            "scale_connected": self.scale_connected,
+            "scale_ip": self.cfg.get("scale_default_ip", "192.168.1.150"),
+            "scale_port": int(self.cfg.get("scale_default_port", 2004)),
+            "last_weight": self.last_weight,
+            "printers": self.printers_list,
+            "user_configured": bool(self.cfg.get("user_customized", False)) if user_configured is None else bool(user_configured),
+            "restaurant_code": rc
+        }
+
     def _push_immediate_heartbeat(self):
+        sess = None
         try:
-            server_url = self.cfg.get("server_url", "http://77.67.29.77").rstrip("/")
+            self._refresh_local_ip()
             rc = self.cfg.get("restaurant_code", "").strip()
-            hb_payload = {
-                "terminal_id": self.cfg.get("terminal_id", "kasa-1"),
-                "terminal_name": self.cfg.get("terminal_name", "Kasa 1"),
-                "local_ip": get_local_ip(),
-                "version": AGENT_VERSION,
-                "agent_name": self.cfg.get("terminal_name", "Kasa 1"),
-                "scale_connected": self.scale_connected,
-                "scale_ip": self.cfg.get("scale_default_ip", "192.168.1.150"),
-                "scale_port": int(self.cfg.get("scale_default_port", 2004)),
-                "last_weight": self.last_weight,
-                "printers": self.printers_list,
-                "user_configured": True,
-                "restaurant_code": rc
-            }
+            hb_payload = self._build_heartbeat_payload(user_configured=True)
             headers = {"X-Restaurant-Code": rc} if rc else {}
-            self.session.post(f"{server_url}/api/scale/agent/heartbeat", json=hb_payload, headers=headers, timeout=4.0)
+            sess = self._create_http_session()
+            self._request_with_reconnect([sess], "POST", "/api/scale/agent/heartbeat", json=hb_payload, headers=headers, timeout=(4.0, 5.0))
         except Exception:
             pass
+        finally:
+            if sess:
+                try:
+                    sess.close()
+                except Exception:
+                    pass
 
     def on_close_clicked(self):
         self.sync_entries_to_config()
@@ -1294,7 +1736,7 @@ class BonCoreHardwareDesktopApp:
         )
         self.lbl_title.pack(anchor="w")
 
-        local_ip = get_local_ip()
+        local_ip = self.current_local_ip
         self.lbl_sub = tk.Label(
             title_info,
             text=f"IP: {local_ip}  •  ID: {self.cfg.get('terminal_id', 'kasa-1')}  •  v{AGENT_VERSION}",
@@ -1778,185 +2220,216 @@ class BonCoreHardwareDesktopApp:
 
             time.sleep(1.5)
 
-    # --- BULUT SUNUCU İLE RELAY VE EMİR DİNLEME ---
-    def cloud_relay_loop(self):
-        local_ip = get_local_ip()
-        last_heartbeat_time = 0.0
+    def _record_server_success(self):
+        with self._state_lock:
+            self.server_fail_count = 0
+            self.server_success_count += 1
+            was_connected = self.server_connected
+            prev_ok = self.prev_server_ok
+            if not was_connected:
+                self.server_connected = True
+                self.prev_server_ok = True
+        if not was_connected and prev_ok is False:
+            self.show_toast("✅ Sunucu Bağlandı", "BonCore POS bulut sunucusuna başarıyla bağlanıldı.")
+        self.set_site_status("connected")
+
+    def _record_server_failure(self):
+        now = time.time()
+        should_toast = False
+        new_status = None
+        with self._state_lock:
+            if (now - self._last_fail_tick) < 1.8:
+                return
+            self._last_fail_tick = now
+            self.server_success_count = 0
+            self.server_fail_count += 1
+            if self.server_fail_count in (2, 3):
+                new_status = "connecting"
+            elif self.server_fail_count >= 4:
+                if self.server_connected:
+                    self.server_connected = False
+                    if self.prev_server_ok is True:
+                        should_toast = True
+                    self.prev_server_ok = False
+                new_status = "disconnected"
+        if should_toast:
+            self.show_toast("⚠️ Sunucu Bağlantısı Kesildi!", "BonCore bulut sunucusu ile bağlantı koptu. Otomatik tekrar bağlanılıyor...")
+        if new_status:
+            self.set_site_status(new_status)
+
+    # --- BULUT SUNUCU HEARTBEAT (BLOKLAMASIZ BAGLANTI KALP ATISI) ---
+    def heartbeat_loop(self):
+        sess_box = [self._create_http_session()]
+        last_ip_refresh = 0.0
 
         while self.is_running:
-            server_url = self.cfg.get("server_url", "http://77.67.29.77").rstrip("/")
             now = time.time()
-
             try:
-                # 1. Heartbeat
-                if now - last_heartbeat_time >= 4.0:
-                    rc = self.cfg.get("restaurant_code", "").strip()
-                    hb_payload = {
-                        "terminal_id": self.cfg.get("terminal_id", "kasa-1"),
-                        "terminal_name": self.cfg.get("terminal_name", "Kasa 1"),
-                        "local_ip": local_ip,
-                        "version": AGENT_VERSION,
-                        "agent_name": self.cfg.get("terminal_name", "Kasa 1"),
-                        "scale_connected": self.scale_connected,
-                        "scale_ip": self.cfg.get("scale_default_ip", "192.168.1.150"),
-                        "scale_port": int(self.cfg.get("scale_default_port", 2004)),
-                        "last_weight": self.last_weight,
-                        "printers": self.printers_list,
-                        "user_configured": bool(self.cfg.get("user_customized", False)),
-                        "restaurant_code": rc
-                    }
-                    headers = {"X-Restaurant-Code": rc} if rc else {}
-                    hb_resp = self.session.post(
-                        f"{server_url}/api/scale/agent/heartbeat",
-                        json=hb_payload,
-                        headers=headers,
-                        timeout=5.0
-                    )
-                    hb_resp.raise_for_status()
-                    hb_json = hb_resp.json()
+                if self.current_local_ip == "127.0.0.1" or (now - last_ip_refresh) >= 15.0:
+                    self._refresh_local_ip()
+                    last_ip_refresh = now
 
-                    # Sunucudan gelen isim veya parametre güncellemesi varsa senkronize et
-                    srv_name = hb_json.get("terminal_name")
-                    srv_scale_ip = hb_json.get("scale_ip")
-                    srv_scale_port = hb_json.get("scale_port")
-                    cfg_updated_from_srv = False
-                    if srv_name and srv_name != self.cfg.get("terminal_name") and (not self.cfg.get("user_customized") or hb_json.get("admin_override")):
-                        self.cfg["terminal_name"] = srv_name
-                        cfg_updated_from_srv = True
-                        self.root.after(0, lambda n=srv_name: (
-                            self.lbl_title.config(text=f"BonCore • {n}"),
-                            self.ent_terminal_name.delete(0, tk.END),
-                            self.ent_terminal_name.insert(0, n)
-                        ))
-                    if srv_scale_ip and srv_scale_ip != self.cfg.get("scale_default_ip") and (not self.cfg.get("user_customized") or hb_json.get("admin_override")):
-                        self.cfg["scale_default_ip"] = srv_scale_ip
-                        cfg_updated_from_srv = True
-                        self.root.after(0, lambda sip=srv_scale_ip: (
-                            self.ent_scale_ip.delete(0, tk.END),
-                            self.ent_scale_ip.insert(0, sip)
-                        ))
-                    if srv_scale_port and int(srv_scale_port) != int(self.cfg.get("scale_default_port", 2004)) and (not self.cfg.get("user_customized") or hb_json.get("admin_override")):
-                        self.cfg["scale_default_port"] = int(srv_scale_port)
-                        cfg_updated_from_srv = True
-                        self.root.after(0, lambda sp=srv_scale_port: (
-                            self.ent_scale_port.delete(0, tk.END),
-                            self.ent_scale_port.insert(0, str(sp))
-                        ))
-                    if cfg_updated_from_srv:
-                        save_config(self.cfg)
-                    last_heartbeat_time = now
+                rc = self.cfg.get("restaurant_code", "").strip()
+                hb_payload = self._build_heartbeat_payload()
+                headers = {"X-Restaurant-Code": rc} if rc else {}
+                hb_resp = self._request_with_reconnect(
+                    sess_box,
+                    "POST",
+                    "/api/scale/agent/heartbeat",
+                    json=hb_payload,
+                    headers=headers,
+                    timeout=(4.0, 6.0)
+                )
+                hb_json = hb_resp.json()
 
-                # 2. Poll - Emir Dinleme
+                # Sunucudan gelen isim veya parametre güncellemesi varsa senkronize et
+                srv_name = hb_json.get("terminal_name")
+                srv_scale_ip = hb_json.get("scale_ip")
+                srv_scale_port = hb_json.get("scale_port")
+                cfg_updated_from_srv = False
+                if srv_name and srv_name != self.cfg.get("terminal_name") and (not self.cfg.get("user_customized") or hb_json.get("admin_override")):
+                    self.cfg["terminal_name"] = srv_name
+                    cfg_updated_from_srv = True
+                    self.root.after(0, lambda n=srv_name: (
+                        self.lbl_title.config(text=f"BonCore • {n}"),
+                        self.ent_terminal_name.delete(0, tk.END),
+                        self.ent_terminal_name.insert(0, n)
+                    ))
+                if srv_scale_ip and srv_scale_ip != self.cfg.get("scale_default_ip") and (not self.cfg.get("user_customized") or hb_json.get("admin_override")):
+                    self.cfg["scale_default_ip"] = srv_scale_ip
+                    cfg_updated_from_srv = True
+                    self.root.after(0, lambda sip=srv_scale_ip: (
+                        self.ent_scale_ip.delete(0, tk.END),
+                        self.ent_scale_ip.insert(0, sip)
+                    ))
+                if srv_scale_port and int(srv_scale_port) != int(self.cfg.get("scale_default_port", 2004)) and (not self.cfg.get("user_customized") or hb_json.get("admin_override")):
+                    self.cfg["scale_default_port"] = int(srv_scale_port)
+                    cfg_updated_from_srv = True
+                    self.root.after(0, lambda sp=srv_scale_port: (
+                        self.ent_scale_port.delete(0, tk.END),
+                        self.ent_scale_port.insert(0, str(sp))
+                    ))
+                if cfg_updated_from_srv:
+                    save_config(self.cfg)
+
+                self._record_server_success()
+                time.sleep(3.5)
+            except Exception:
+                self._record_server_failure()
+                time.sleep(2.5)
+
+    # --- BULUT SUNUCU EMIR DINLEME (AYRI IS PARCACIGI) ---
+    def poll_loop(self):
+        sess_box = [self._create_http_session()]
+
+        while self.is_running:
+            try:
                 t_id = self.cfg.get("terminal_id", "kasa-1")
                 rc = self.cfg.get("restaurant_code", "").strip()
                 headers = {"X-Restaurant-Code": rc} if rc else {}
-                poll_url = f"{server_url}/api/scale/agent/poll?terminal_id={t_id}"
+                poll_path = f"/api/scale/agent/poll?terminal_id={urllib.parse.quote(t_id)}"
                 if rc:
-                    poll_url += f"&restaurant_code={urllib.parse.quote(rc)}"
-                poll_resp = self.session.get(
-                    poll_url,
+                    poll_path += f"&restaurant_code={urllib.parse.quote(rc)}"
+
+                poll_resp = self._request_with_reconnect(
+                    sess_box,
+                    "GET",
+                    poll_path,
                     headers=headers,
-                    timeout=5.0
+                    timeout=(4.0, 6.0)
                 )
-                poll_resp.raise_for_status()
                 poll_data = poll_resp.json()
+                self._record_server_success()
 
-                self.server_fail_count = 0
-                self.server_success_count += 1
-
-                if not self.server_connected:
-                    self.server_connected = True
-                    if self.prev_server_ok is False:
-                        self.show_toast("✅ Sunucu Bağlandı", "BonCore POS bulut sunucusuna başarıyla bağlanıldı.")
-                    self.prev_server_ok = True
-
-                self.set_site_status("connected")
-
-                # Emir icra et
                 if poll_data.get("has_command"):
-                    req_id = poll_data["req_id"]
-                    action = poll_data.get("action", "read_weight")
-                    target_ip = poll_data.get("ip", self.cfg.get("scale_default_ip", "192.168.1.150"))
-                    target_port = int(poll_data.get("port", self.cfg.get("scale_default_port", 2004)))
-                    timeout = float(poll_data.get("timeout", 2.5))
+                    req_id = str(poll_data.get("req_id", ""))
+                    already_seen = False
+                    with self._state_lock:
+                        if req_id and req_id in self._recent_req_ids:
+                            already_seen = True
+                        elif req_id:
+                            self._recent_req_ids.append(req_id)
+                            if len(self._recent_req_ids) > 100:
+                                self._recent_req_ids = self._recent_req_ids[-50:]
+                    if not already_seen:
+                        threading.Thread(
+                            target=self._execute_bridge_command,
+                            args=(poll_data,),
+                            daemon=True
+                        ).start()
 
-                    if action == "read_weight":
-                        res = read_cas_scale(target_ip, target_port, timeout)
-                        res["req_id"] = req_id
-                        if rc:
-                            res["restaurant_code"] = rc
-                        if res.get("success"):
-                            w = res["weight"]
-                            self.last_weight = w
-                            self.root.after(0, lambda val=w: self.lbl_weight_val.config(text=f"{val:.3f} kg"))
-
-                        self.session.post(
-                            f"{server_url}/api/scale/agent/report",
-                            json=res,
-                            headers=headers,
-                            timeout=5.0
-                        )
-
-                    elif action == "test_connection":
-                        ok = ping_scale_tcp(target_ip, target_port, timeout)
-                        res = {
-                            "req_id": req_id,
-                            "success": ok,
-                            "message": "CAS CL-3000 terazisine bağlandı." if ok else "Teraziye ulaşılamadı."
-                        }
-                        if rc:
-                            res["restaurant_code"] = rc
-                        self.session.post(
-                            f"{server_url}/api/scale/agent/report",
-                            json=res,
-                            headers=headers,
-                            timeout=5.0
-                        )
-
-                    elif action == "print_receipt":
-                        target_printers = poll_data.get("printers", [])
-                        raw_text = poll_data.get("raw_text", "")
-                        results = []
-                        for pr_name in target_printers:
-                            ok = print_slip_to_printer(pr_name, raw_text)
-                            results.append({"printer": pr_name, "success": ok})
-                        ok_count = len([r for r in results if r["success"]])
-                        res = {
-                            "req_id": req_id,
-                            "success": ok_count > 0,
-                            "results": results,
-                            "message": f"{ok_count}/{len(target_printers)} yazıcıdan çıktı alındı." if target_printers else "Yazıcı listesi boş."
-                        }
-                        if rc:
-                            res["restaurant_code"] = rc
-                        self.session.post(
-                            f"{server_url}/api/scale/agent/report",
-                            json=res,
-                            headers=headers,
-                            timeout=5.0
-                        )
-
-                time.sleep(0.5)
-
-            except Exception as e:
-                self.server_success_count = 0
-                self.server_fail_count += 1
-
-                if self.server_fail_count == 1:
-                    # İlk hatada sarı durum (bağlanmaya çalışıyor)
-                    self.set_site_status("connecting")
-                elif self.server_fail_count >= 2:
-                    # Hata devam ediyorsa veya bağlanılamıyorsa kırmızı durum
-                    if self.server_connected:
-                        self.server_connected = False
-                        if self.prev_server_ok is True:
-                            self.show_toast("⚠️ Sunucu Bağlantısı Kesildi!", "BonCore bulut sunucusu ile bağlantı koptu. Otomatik tekrar bağlanılıyor...")
-                        self.prev_server_ok = False
-                    self.set_site_status("disconnected")
-
+                time.sleep(0.65)
+            except Exception:
+                self._record_server_failure()
                 time.sleep(2.0)
 
-            time.sleep(0.3)
+    def _execute_bridge_command(self, poll_data):
+        sess = None
+        try:
+            sess = self._create_http_session()
+            rc = self.cfg.get("restaurant_code", "").strip()
+            headers = {"X-Restaurant-Code": rc} if rc else {}
+            req_id = poll_data["req_id"]
+            action = poll_data.get("action", "read_weight")
+            target_ip = poll_data.get("ip") or self.cfg.get("scale_default_ip", "192.168.1.150")
+            target_port = int(poll_data.get("port") or self.cfg.get("scale_default_port", 2004))
+            timeout = float(poll_data.get("timeout", 2.5))
+
+            res = None
+            if action == "read_weight":
+                res = read_cas_scale(target_ip, target_port, timeout)
+                res["req_id"] = req_id
+                if rc:
+                    res["restaurant_code"] = rc
+                if res.get("success"):
+                    w = res["weight"]
+                    self.last_weight = w
+                    self.root.after(0, lambda val=w: self.lbl_weight_val.config(text=f"{val:.3f} kg"))
+
+            elif action == "test_connection":
+                ok = ping_scale_tcp(target_ip, target_port, timeout)
+                res = {
+                    "req_id": req_id,
+                    "success": ok,
+                    "message": "CAS CL-3000 terazisine bağlandı." if ok else "Teraziye ulaşılamadı."
+                }
+                if rc:
+                    res["restaurant_code"] = rc
+
+            elif action == "print_receipt":
+                target_printers = poll_data.get("printers", [])
+                raw_text = poll_data.get("raw_text", "")
+                results = []
+                for pr_name in target_printers:
+                    ok = print_slip_to_printer(pr_name, raw_text)
+                    results.append({"printer": pr_name, "success": ok})
+                ok_count = len([r for r in results if r["success"]])
+                res = {
+                    "req_id": req_id,
+                    "success": ok_count > 0,
+                    "results": results,
+                    "message": f"{ok_count}/{len(target_printers)} yazıcıdan çıktı alındı." if target_printers else "Yazıcı listesi boş."
+                }
+                if rc:
+                    res["restaurant_code"] = rc
+
+            if res is not None:
+                self._request_with_reconnect(
+                    [sess],
+                    "POST",
+                    "/api/scale/agent/report",
+                    json=res,
+                    headers=headers,
+                    timeout=(4.0, 6.0)
+                )
+        except Exception:
+            pass
+        finally:
+            if sess:
+                try:
+                    sess.close()
+                except Exception:
+                    pass
 
 
     # ==============================================================
@@ -1982,10 +2455,10 @@ class BonCoreHardwareDesktopApp:
 
     def check_for_updates(self, prompt_user=False):
         """Sunucudan en güncel sürüm bilgisini çeker ve gerekirse kullanıcıyı uyarır."""
-        server_url = self.cfg.get("server_url", "http://77.67.29.77").rstrip("/")
-        ver_url = f"{server_url}/api/scale/agent/version"
+        sess = None
         try:
-            resp = self.session.get(ver_url, timeout=6)
+            sess = self._create_http_session()
+            resp = self._request_with_reconnect([sess], "GET", "/api/scale/agent/version", timeout=(4.0, 6.0))
             if resp.status_code == 200:
                 data = resp.json()
                 latest_ver = str(data.get("latest_version", "")).strip()
@@ -2018,6 +2491,12 @@ class BonCoreHardwareDesktopApp:
                     "Bağlantı Hatası",
                     f"Güncelleme sunucusuna bağlanılamadı:\n{e}"
                 ))
+        finally:
+            if sess:
+                try:
+                    sess.close()
+                except Exception:
+                    pass
 
     def _show_update_available_ui(self):
         try:

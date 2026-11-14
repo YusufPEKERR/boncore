@@ -59,11 +59,12 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
     return String(val);
   };
 
-  const loadClosedBills = useCallback(async () => {
+  const loadClosedBills = useCallback(async (overrideDateRange?: string) => {
+    const targetRange = overrideDateRange ?? dateRange;
     setLoading(true);
     try {
       const data = await api.getClosedBillsReport({
-        dateRange,
+        dateRange: targetRange,
         search: searchQuery.trim() || undefined,
         paymentMethod: paymentFilter !== 'all' ? paymentFilter : undefined
       });
@@ -106,6 +107,14 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
       setLoading(false);
     }
   }, [dateRange, searchQuery, paymentFilter]);
+
+  const handleDateRangeSelect = (nextRange: string) => {
+    sound.beep();
+    setDateRange(nextRange);
+    if (nextRange === dateRange) {
+      loadClosedBills(nextRange);
+    }
+  };
 
   useEffect(() => {
     loadClosedBills();
@@ -166,7 +175,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
   const orders: any[] = reportData?.orders || [];
 
   return (
-    <div className={`${embedded ? 'w-full pb-16' : 'flex-1 w-full h-full min-h-0 overflow-y-auto bg-slate-50 dark:bg-slate-950 p-4 md:p-6 pb-28'} space-y-5 text-slate-900 dark:text-slate-100 font-sans touch-pan-y`}>
+    <div className={`${embedded ? 'w-full pb-16' : 'flex-1 w-full min-h-full bg-slate-50 dark:bg-slate-950 p-4 md:p-6 pb-28'} space-y-5 text-slate-900 dark:text-slate-100 font-sans touch-pan-y`}>
       {/* Toast Notification */}
       {toast && (
         <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-extrabold animate-slideDown ${
@@ -252,13 +261,13 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
       {/* Filter Bar: Date Range + Payment Method + Search */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 shadow-xs">
         {/* Date Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+        <div className="relative z-10 flex items-center flex-wrap gap-1.5">
           <Calendar className="w-4 h-4 text-slate-400 shrink-0 mr-1" />
           {DATE_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               type="button"
-              onClick={() => { sound.beep(); setDateRange(opt.value); }}
+              onClick={() => handleDateRangeSelect(opt.value)}
               className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition cursor-pointer ${
                 dateRange === opt.value
                   ? 'bg-brand-600 text-white shadow-xs'

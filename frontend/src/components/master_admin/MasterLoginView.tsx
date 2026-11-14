@@ -114,7 +114,7 @@ export const MasterLoginView: React.FC<MasterLoginViewProps> = ({
         )}
 
         {/* Form */}
-        <form onSubmit={handleLogin} className="space-y-4">
+        <form onSubmit={handleLogin} autoComplete="off" className="space-y-4">
           <div>
             <label htmlFor="master-username" className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
               Master Admin Kullanıcı Adı
@@ -123,10 +123,10 @@ export const MasterLoginView: React.FC<MasterLoginViewProps> = ({
               <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 id="master-username"
-                name="username"
+                name="master_admin_user"
                 type="text"
                 required
-                autoComplete="username"
+                autoComplete="off"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Master kullanıcı adınızı girin"
@@ -143,10 +143,10 @@ export const MasterLoginView: React.FC<MasterLoginViewProps> = ({
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 id="master-password"
-                name="password"
+                name="master_admin_pass"
                 type="password"
                 required
-                autoComplete="current-password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Master güvenlik parolanızı girin"

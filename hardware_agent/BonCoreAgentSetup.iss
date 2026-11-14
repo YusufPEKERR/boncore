@@ -3,7 +3,7 @@
 ; =====================================================================
 
 #define MyAppName "BonCore Donanım Köprüsü"
-#define MyAppVersion "2.4.4"
+#define MyAppVersion "2.4.5"
 #define MyAppPublisher "BonCore POS"
 #define MyAppURL "https://boncore.com"
 #define MyAppExeName "BonCoreAgent.exe"
@@ -27,13 +27,13 @@ SetupIconFile=app_icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 ; PE VersionInfo & SmartScreen Güvenlik Bilgileri:
-VersionInfoVersion=2.4.4.0
+VersionInfoVersion=2.4.5.0
 VersionInfoCompany=BonCore POS
 VersionInfoDescription=BonCore Donanım Köprüsü Kurulum Sihirbazı
-VersionInfoTextVersion=2.4.3
+VersionInfoTextVersion=2.4.5
 VersionInfoCopyright=Copyright (C) 2026 BonCore POS
 VersionInfoProductName=BonCore Donanım Köprüsü
-VersionInfoProductVersion=2.4.3.0
+VersionInfoProductVersion=2.4.5.0
 VersionInfoOriginalFileName=BonCoreDonanimKoprusuSetup.exe
 
 ; HIZ OPTİMİZASYONLARI:
@@ -156,8 +156,16 @@ Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFile
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\{#MyAppExeName}"
 
 [Registry]
-; Windows Başlangıç Otomatik Çalıştırma (Kullanıcı seçtiyse)
+; Windows Başlangıç Otomatik Çalıştırma (Yalnızca tek kanonik kayıt: BonCoreAgent)
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "BonCoreAgent"; ValueData: """{app}\{#MyAppExeName}"" --hidden"; Tasks: autostart; Flags: uninsdeletevalue
+; Kullanıcı kurulumda otomatik başlatmayı kapattıysa eski kaydı sil
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "BonCoreAgent"; Tasks: not autostart; Flags: deletevalue
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"; ValueName: "BonCoreAgent"; Tasks: not autostart; Flags: deletevalue
+; Eski/yinelenen BonCoreHardwareAgent kayıtlarını kurulum ve kaldırmada kesin olarak temizle
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "BonCoreHardwareAgent"; Flags: deletevalue uninsdeletevalue
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"; ValueName: "BonCoreHardwareAgent"; Flags: deletevalue uninsdeletevalue
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "BonCoreHardwareAgent"; Flags: deletevalue uninsdeletevalue
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "BonCoreAgent"; Flags: deletevalue uninsdeletevalue
 
 ; Kurulum sırasında seçilen tercihleri kayıt defterine yaz (Mevcut ayarları ezmez, sıfır kurulumda varsayılan yapar)
 Root: HKCU; Subkey: "Software\BonCoreAgent"; ValueType: dword; ValueName: "AutoStart"; ValueData: 1; Tasks: autostart; Flags: uninsdeletevalue
@@ -196,16 +204,83 @@ begin
   Exec('cmd.exe', '/c taskkill /F /IM {#MyAppExeName} >nul 2>&1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
-// Kaldırma tamamlandıktan sonra kullanıcıya sor ve temizle
+procedure CleanBonCoreRunKey(RootKey: Integer; const Subkey, ApprovedSubkey: string);
+var
+  Names: TArrayOfString;
+  I: Integer;
+  ValStr, LowVal: string;
+begin
+  RegDeleteValue(RootKey, Subkey, 'BonCoreAgent');
+  RegDeleteValue(RootKey, Subkey, 'BonCoreHardwareAgent');
+  RegDeleteValue(RootKey, ApprovedSubkey, 'BonCoreAgent');
+  RegDeleteValue(RootKey, ApprovedSubkey, 'BonCoreHardwareAgent');
+
+  if RegGetValueNames(RootKey, Subkey, Names) then
+  begin
+    for I := 0 to GetArrayLength(Names) - 1 do
+    begin
+      if RegQueryStringValue(RootKey, Subkey, Names[I], ValStr) then
+      begin
+        LowVal := Lowercase(ValStr);
+        if (Pos('boncoreagent', LowVal) > 0) or (Pos('boncore donanım köprüsü', LowVal) > 0) or ((Pos('hardware_agent', LowVal) > 0) and (Pos('desktop_app.py', LowVal) > 0)) then
+        begin
+          RegDeleteValue(RootKey, Subkey, Names[I]);
+          RegDeleteValue(RootKey, ApprovedSubkey, Names[I]);
+        end;
+      end;
+    end;
+  end;
+end;
+
+procedure CleanAllStartupEntries();
+var
+  StartupDirs: array[0..1] of string;
+  ShortcutNames: array[0..2] of string;
+  I, J: Integer;
+  Path: string;
+begin
+  CleanBonCoreRunKey(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run');
+  CleanBonCoreRunKey(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run');
+  if IsWin64 then
+  begin
+    CleanBonCoreRunKey(HKLM64, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run');
+    CleanBonCoreRunKey(HKLM32, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run');
+  end;
+
+  StartupDirs[0] := ExpandConstant('{userstartup}');
+  StartupDirs[1] := ExpandConstant('{commonstartup}');
+  ShortcutNames[0] := 'BonCoreAgent.lnk';
+  ShortcutNames[1] := 'BonCore Donanım Köprüsü.lnk';
+  ShortcutNames[2] := 'BonCore Hardware Agent.lnk';
+  for I := 0 to 1 do
+  begin
+    for J := 0 to 2 do
+    begin
+      Path := AddBackslash(StartupDirs[I]) + ShortcutNames[J];
+      if FileExists(Path) then
+        DeleteFile(Path);
+    end;
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+  begin
+    // Önceki sürümden kalma yinelenen başlangıç kayıtlarını yeni kurulum yazılmadan önce temizle
+    CleanAllStartupEntries();
+  end;
+end;
+
+// Kaldırma tamamlandıktan sonra tüm başlangıç kayıtlarını temizle, kullanıcıya sor ve ayarları temizle
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   AppDataDir: string;
 begin
   if CurUninstallStep = usPostUninstall then
   begin
-    // Başlangıç kayıtlarını garanti temizle
-    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'BonCoreAgent');
-    RegDeleteValue(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Run', 'BonCoreAgent');
+    // Tüm başlangıç kayıtlarını (BonCoreAgent + eski BonCoreHardwareAgent + StartupApproved + Startup kısayolları) garanti temizle
+    CleanAllStartupEntries();
 
     // Kullanıcıya seçtiği dilde sor
     if MsgBox(CustomMessage('CleanUninstallPrompt'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
