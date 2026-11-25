@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   TrendingUp, FileSpreadsheet, DollarSign, Percent, Download,
-  Printer, Search, RefreshCw, ArrowUpRight, Filter, Layers
+  Printer, Search, RefreshCw, ArrowUpRight, Filter, Layers, Bot
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
@@ -84,7 +84,7 @@ export const CostProfitWizardView: React.FC = () => {
     const prodName = p.name || '';
     const matchesSearch = prodName.toLowerCase().includes(searchQuery.toLowerCase()) || catName.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCat = selectedCategory === 'all' || catName === selectedCategory;
-    const matchesMargin = Number(p.margin_percent || 0) >= wizardMinMargin;
+    const matchesMargin = wizardMinMargin <= 0 || (p.has_recipe && Number(p.margin_percent || 0) >= wizardMinMargin);
     const matchesSold = !wizardOnlySold || Number(p.sold_qty || 0) > 0;
     return matchesSearch && matchesCat && matchesMargin && matchesSold;
   });
@@ -119,12 +119,12 @@ export const CostProfitWizardView: React.FC = () => {
       `"${p.name}"`,
       `"${p.category || 'GENEL'}"`,
       Number(p.unit_price || 0).toFixed(2),
-      Number(p.unit_cost || 0).toFixed(2),
-      Number(p.unit_profit || 0).toFixed(2),
-      Number(p.margin_percent || 0).toFixed(1),
+      p.has_recipe ? Number(p.unit_cost || 0).toFixed(2) : 'Reçete Yok',
+      p.has_recipe ? Number(p.unit_profit || 0).toFixed(2) : 'Reçete Yok',
+      p.has_recipe ? Number(p.margin_percent || 0).toFixed(1) : 'Reçete Yok',
       Number(p.sold_qty || 0).toFixed(2),
       Number(p.total_revenue || 0).toFixed(2),
-      Number(p.total_profit || 0).toFixed(2)
+      p.has_recipe ? Number(p.total_profit || 0).toFixed(2) : 'Reçete Yok'
     ]);
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -136,6 +136,15 @@ export const CostProfitWizardView: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const grossProfitVal = Number(summary?.gross_profit || 0);
+  const netProfitVal = Number(summary?.net_profit ?? (grossProfitVal - Number(summary?.total_expenses || 0)));
+  const netMarginVal = Number(
+    summary?.net_margin_percent ??
+      (Number(summary?.total_revenue || 0) > 0
+        ? ((netProfitVal / Number(summary?.total_revenue || 1)) * 100).toFixed(1)
+        : 0)
+  );
+
   return (
     <div className="flex-1 min-h-full overflow-y-auto p-4 sm:p-6 pb-28 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 space-y-6 select-none">
       {/* Header */}
@@ -146,7 +155,7 @@ export const CostProfitWizardView: React.FC = () => {
               Maliyet & Kârlılık Analizi + Rapor Sihirbazı
             </h1>
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-600 text-white uppercase">
-              Adisyo Pro Analitik
+              BonCore Analitik
             </span>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -199,29 +208,29 @@ export const CostProfitWizardView: React.FC = () => {
 
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="text-[11px] font-bold text-slate-400 uppercase">Brüt Kâr</div>
-          <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
-            ₺{Number(summary?.gross_profit || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+          <div className={`text-xl font-black mt-1 ${grossProfitVal < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+            ₺{grossProfitVal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
           </div>
-          <div className="text-[10px] text-emerald-600 font-bold mt-0.5">
-            Brüt Marj: %{Number(summary?.gross_margin_percent ?? (Number(summary?.total_revenue || 0) > 0 ? ((Number(summary?.gross_profit || 0) / Number(summary?.total_revenue || 1)) * 100).toFixed(1) : 0))}
+          <div className={`text-[10px] font-bold mt-0.5 ${grossProfitVal < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600'}`}>
+            Brüt Marj: %{Number(summary?.gross_margin_percent ?? (Number(summary?.total_revenue || 0) > 0 ? ((grossProfitVal / Number(summary?.total_revenue || 1)) * 100).toFixed(1) : 0))}
           </div>
         </div>
 
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="text-[11px] font-bold text-slate-400 uppercase">Kasa Masraf / Giderler</div>
-          <div className="text-xl font-black text-brand-600 dark:text-emerald-400 mt-1">
+          <div className="text-xl font-black text-rose-600 dark:text-rose-400 mt-1">
             ₺{Number(summary?.total_expenses || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
           </div>
           <div className="text-[10px] text-slate-400 mt-0.5">İşletme Gider Çıkışları</div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-md">
-          <div className="text-[11px] font-bold text-emerald-100 uppercase">Net İşletme Kârı</div>
+        <div className={`p-4 rounded-2xl bg-gradient-to-br text-white shadow-md ${netProfitVal < 0 ? 'from-rose-600 to-rose-700' : 'from-emerald-600 to-teal-700'}`}>
+          <div className={`text-[11px] font-bold uppercase ${netProfitVal < 0 ? 'text-rose-100' : 'text-emerald-100'}`}>Net İşletme Kârı</div>
           <div className="text-xl font-black mt-1">
-            ₺{Number(summary?.net_profit ?? (Number(summary?.gross_profit || 0) - Number(summary?.total_expenses || 0))).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+            ₺{netProfitVal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
           </div>
-          <div className="text-[10px] text-emerald-100 font-bold mt-0.5">
-            Net Kârlılık Oranı: %{Number(summary?.net_margin_percent ?? (Number(summary?.total_revenue || 0) > 0 ? (((Number(summary?.gross_profit || 0) - Number(summary?.total_expenses || 0)) / Number(summary?.total_revenue || 1)) * 100).toFixed(1) : 0))}
+          <div className={`text-[10px] font-bold mt-0.5 ${netProfitVal < 0 ? 'text-rose-100' : 'text-emerald-100'}`}>
+            Net Kârlılık Oranı: %{netMarginVal}
           </div>
         </div>
       </div>
@@ -347,7 +356,13 @@ export const CostProfitWizardView: React.FC = () => {
                   <td className="py-3.5 px-4 font-bold text-amber-600">
                     ₺{Number(cat.total_cost || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                   </td>
-                  <td className="py-3.5 px-4 text-right font-black text-emerald-600 dark:text-emerald-400 text-sm">
+                  <td className={`py-3.5 px-4 text-right font-black text-sm ${
+                    Number(cat.total_profit || 0) < 0
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : Number(cat.total_profit || 0) === 0
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-emerald-600 dark:text-emerald-400'
+                  }`}>
                     ₺{Number(cat.total_profit || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                   </td>
                 </tr>
@@ -372,37 +387,90 @@ export const CostProfitWizardView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredProducts.map((p) => (
+                {filteredProducts.map((p) => {
+                  const unitProfitVal = Number(p.unit_profit || 0);
+                  const totalProfitVal = Number(p.total_profit || 0);
+                  const marginVal = Number(p.margin_percent || 0);
+                  return (
                   <tr key={p.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition">
                     <td className="py-3 px-4">
                       <div className="font-extrabold text-slate-900 dark:text-white">{p.name}</div>
-                      <div className="text-[10px] text-slate-400">
-                        {p.has_recipe ? 'Reçeteli Tam Maliyet' : 'Tahmini Hammadde (%35)'}
+                      <div className={`text-[10px] ${p.has_recipe ? 'text-slate-400' : 'text-amber-600 dark:text-amber-400 font-semibold'}`}>
+                        {p.has_recipe ? 'Reçeteli Tam Maliyet' : 'Reçete Yok'}
                       </div>
                     </td>
                     <td className="py-3 px-4 font-semibold text-slate-600 dark:text-slate-400">{p.category || 'GENEL'}</td>
                     <td className="py-3 px-4 font-bold">₺{Number(p.unit_price || 0).toFixed(2)}</td>
-                    <td className="py-3 px-4 font-bold text-amber-600 dark:text-amber-400">₺{Number(p.unit_cost || 0).toFixed(2)}</td>
-                    <td className="py-3 px-4 font-extrabold text-emerald-600 dark:text-emerald-400">₺{Number(p.unit_profit || 0).toFixed(2)}</td>
+                    <td className="py-3 px-4 font-bold">
+                      {p.has_recipe ? (
+                        <span className="text-amber-600 dark:text-amber-400">₺{Number(p.unit_cost || 0).toFixed(2)}</span>
+                      ) : (
+                        <span className="inline-flex px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-bold text-[10px]">
+                          Reçete Yok
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 font-extrabold">
+                      {p.has_recipe ? (
+                        <span className={
+                          unitProfitVal < 0
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : unitProfitVal === 0
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-emerald-600 dark:text-emerald-400'
+                        }>
+                          ₺{unitProfitVal.toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 font-semibold">Reçete Yok</span>
+                      )}
+                    </td>
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${
-                              Number(p.margin_percent || 0) >= 60 ? 'bg-emerald-500' : Number(p.margin_percent || 0) >= 40 ? 'bg-amber-500' : 'bg-brand-500'
-                            }`}
-                            style={{ width: `${Math.min(100, Math.max(0, Number(p.margin_percent || 0)))}%` }}
-                          />
+                      {p.has_recipe ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${
+                                marginVal >= 60 ? 'bg-emerald-500' : marginVal >= 40 ? 'bg-amber-500' : 'bg-rose-500'
+                              }`}
+                              style={{ width: `${Math.min(100, Math.max(0, marginVal))}%` }}
+                            />
+                          </div>
+                          <span className={`font-black ${
+                            marginVal >= 60
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : marginVal >= 40
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : 'text-rose-600 dark:text-rose-400'
+                          }`}>
+                            %{marginVal.toFixed(1)}
+                          </span>
                         </div>
-                        <span className="font-black text-slate-800 dark:text-slate-200">%{Number(p.margin_percent || 0).toFixed(1)}</span>
-                      </div>
+                      ) : (
+                        <span className="inline-flex px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-bold text-[10px]">
+                          Reçete Yok
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 px-4 font-bold">{Number(p.sold_qty || 0).toFixed(1)}</td>
-                    <td className="py-3 px-4 text-right font-black text-emerald-600 dark:text-emerald-400">
-                      ₺{Number(p.total_profit || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                    <td className="py-3 px-4 text-right font-black">
+                      {p.has_recipe ? (
+                        <span className={
+                          totalProfitVal < 0
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : totalProfitVal === 0
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-emerald-600 dark:text-emerald-400'
+                        }>
+                          ₺{totalProfitVal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 font-semibold">Reçete Yok</span>
+                      )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

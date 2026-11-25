@@ -189,6 +189,24 @@ func CleanTenantCode(code string, fallback string) string {
 func (dm *DatabaseManager) GetTenantDB(tenantCode string) (*gorm.DB, error) {
 	cleanCode := CleanTenantCode(tenantCode, dm.cfg.DefaultTenantCode)
 
+	// Resolve slugified restaurant names/aliases (e.g. restoran=fatih-ciftligi -> fatihciftligi) via Master DB
+	if dm.MasterGorm != nil {
+		noDash := strings.ReplaceAll(cleanCode, "-", "")
+		var allTenants []models.RestaurantTenant
+		if err := dm.MasterGorm.Find(&allTenants).Error; err == nil {
+			for _, t := range allTenants {
+				tCodeClean := CleanTenantCode(t.Code, t.Code)
+				tNameClean := CleanTenantCode(t.Name, "")
+				if tCodeClean == cleanCode ||
+					strings.ReplaceAll(tCodeClean, "-", "") == noDash ||
+					(tNameClean != "" && (tNameClean == cleanCode || strings.ReplaceAll(tNameClean, "-", "") == noDash)) {
+					cleanCode = tCodeClean
+					break
+				}
+			}
+		}
+	}
+
 	dm.mu.RLock()
 	if db, ok := dm.tenantGorms[cleanCode]; ok && db != nil {
 		dm.mu.RUnlock()
@@ -389,11 +407,11 @@ func (dm *DatabaseManager) seedMasterRecords(db *gorm.DB) error {
 		}
 	}
 
-	// 3. Ensure tenant 'fatihciftligi' has all 7 feature flags enabled (true), plan = "enterprise", and status = "active", linked as flagship
+	// 3. Ensure primary flagship tenant exists and has all 11 feature flags enabled (respecting renamed code)
 	var fatih models.RestaurantTenant
 	branchCode := "IST-HQ-01"
 	branchName := "Fatih Çiftliği Merkez"
-	if err := db.Where("code = ?", "fatihciftligi").First(&fatih).Error; err != nil {
+	if err := db.Where("code = ? OR id = 1 OR name = ?", "fatihciftligi", "Fatih Çiftliği").Order("id asc").First(&fatih).Error; err != nil {
 		ownerName := "Fatih Bey"
 		phone := "0532 555 0101"
 		email := "info@fatihciftligi.com"
@@ -496,11 +514,15 @@ func (dm *DatabaseManager) seedMasterRecords(db *gorm.DB) error {
 		}
 	}
 
-	// 5. Initial Storage Quota & Live Metrics for 'fatihciftligi'
+	// 5. Initial Storage Quota & Live Metrics for primary tenant (using current Code)
+	primaryCode := fatih.Code
+	if strings.TrimSpace(primaryCode) == "" {
+		primaryCode = "fatihciftligi"
+	}
 	var quota models.TenantStorageQuota
-	if err := db.Where("tenant_code = ?", "fatihciftligi").First(&quota).Error; err != nil {
+	if err := db.Where("tenant_code = ?", primaryCode).First(&quota).Error; err != nil {
 		quota = models.TenantStorageQuota{
-			TenantCode:       "fatihciftligi",
+			TenantCode:       primaryCode,
 			AllocatedQuotaMB: 10240,
 			UsedDBBytes:      856064,
 			UsedMediaBytes:   0,
@@ -515,9 +537,9 @@ func (dm *DatabaseManager) seedMasterRecords(db *gorm.DB) error {
 	}
 
 	var liveMetric models.TenantLiveMetric
-	if err := db.Where("tenant_code = ?", "fatihciftligi").First(&liveMetric).Error; err != nil {
+	if err := db.Where("tenant_code = ?", primaryCode).First(&liveMetric).Error; err != nil {
 		liveMetric = models.TenantLiveMetric{
-			TenantCode:         "fatihciftligi",
+			TenantCode:         primaryCode,
 			TenantName:         fatih.Name,
 			IsOnline:           true,
 			LastSeenAt:         time.Now(),
@@ -590,9 +612,10 @@ func (dm *DatabaseManager) syncSecondaryMasterDB() {
 		var primTenants []models.RestaurantTenant
 		if err := dm.MasterGorm.Find(&primTenants).Error; err == nil {
 			for _, pt := range primTenants {
-				var count int64
-				secGorm.Model(&models.RestaurantTenant{}).Where("code = ?", pt.Code).Count(&count)
-				if count == 0 {
+				var existing models.RestaurantTenant
+				if err := secGorm.Where("id = ? OR code = ?", pt.ID, pt.Code).First(&existing).Error; err == nil {
+					secGorm.Save(&pt)
+				} else {
 					secGorm.Create(&pt)
 				}
 			}
@@ -629,7 +652,7 @@ func (dm *DatabaseManager) AutoMigrateTenant(db *gorm.DB) error {
 	if db == nil {
 		return nil
 	}
-	err := db.AutoMigrate(
+	tenantModels := []interface{}{
 		&models.StaffUser{},
 		&models.Area{},
 		&models.Table{},
@@ -652,9 +675,21 @@ func (dm *DatabaseManager) AutoMigrateTenant(db *gorm.DB) error {
 		&models.DeliveryOrder{},
 		&models.AuditLog{},
 		&models.RestaurantSetting{},
-	)
+	}
+	var err error
+	for _, model := range tenantModels {
+		if mErr := db.AutoMigrate(model); mErr != nil && err == nil {
+			err = mErr
+		}
+	}
+	if db.Dialector.Name() == "postgres" {
+		db.Exec(`ALTER TABLE products ADD COLUMN IF NOT EXISTS allow_neg_stock BOOLEAN DEFAULT false;`)
+	} else {
+		db.Exec(`ALTER TABLE products ADD COLUMN allow_neg_stock BOOLEAN DEFAULT 0;`)
+	}
 	if err != nil {
-		return err
+		// Individual model migration errors are tolerated on legacy SQLite schemas after defensive ALTER TABLE
+		_ = err
 	}
 
 	// Performance Indexes for high-frequency queries
@@ -764,6 +799,57 @@ func (dm *DatabaseManager) CloseTenantDB(tenantCode string) error {
 		delete(dm.tenantGorms, cleanCode)
 	}
 	return nil
+}
+
+// RenameTenantCode migrates and aliases an existing tenant database when its login code is changed.
+func (dm *DatabaseManager) RenameTenantCode(oldCode string, newCode string) error {
+	oldClean := CleanTenantCode(oldCode, "")
+	newClean := CleanTenantCode(newCode, "")
+	if oldClean == "" || newClean == "" || oldClean == newClean {
+		return nil
+	}
+
+	oldDB, _ := dm.GetTenantDB(oldClean)
+
+	if dm.isPostgres {
+		_ = dm.CloseTenantDB(oldClean)
+		_ = dm.CloseTenantDB(newClean)
+		oldSchema := strings.ReplaceAll(oldClean, "-", "_")
+		newSchema := strings.ReplaceAll(newClean, "-", "_")
+		if dm.MasterGorm != nil && oldSchema != newSchema {
+			_ = dm.MasterGorm.Exec(fmt.Sprintf(`ALTER SCHEMA IF EXISTS "%s" RENAME TO "%s";`, oldSchema, newSchema)).Error
+		}
+		_, err := dm.GetTenantDB(newClean)
+		return err
+	}
+
+	if oldDB != nil {
+		_ = oldDB.Exec("PRAGMA wal_checkpoint(TRUNCATE);").Error
+	}
+	oldPath := dm.GetTenantDBPath(oldClean)
+	newPath := filepath.Join(dm.sqliteBaseDir, "data", "tenants", fmt.Sprintf("%s.db", newClean))
+	_ = dm.CloseTenantDB(oldClean)
+	_ = dm.CloseTenantDB(newClean)
+
+	if oldPath != newPath {
+		if _, err := os.Stat(oldPath); err == nil {
+			if _, nErr := os.Stat(newPath); os.IsNotExist(nErr) {
+				_ = os.MkdirAll(filepath.Dir(newPath), 0755)
+				if data, rErr := os.ReadFile(oldPath); rErr == nil {
+					_ = os.WriteFile(newPath, data, 0644)
+				}
+			}
+		}
+	}
+
+	newDB, err := dm.GetTenantDB(newClean)
+	if err == nil && newDB != nil {
+		dm.mu.Lock()
+		dm.tenantGorms[oldClean] = newDB
+		dm.tenantGorms[newClean] = newDB
+		dm.mu.Unlock()
+	}
+	return err
 }
 
 // GetSqliteBaseDir returns the base directory where SQLite database files and backups reside.

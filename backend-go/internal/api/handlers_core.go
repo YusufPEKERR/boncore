@@ -27,15 +27,19 @@ func getTenantDB(c *fiber.Ctx, svc *service.Services) (*gorm.DB, string, error) 
 }
 
 func requirePermission(c *fiber.Ctx, svc *service.Services, db *gorm.DB, operatorName string, permIDs []string, defaultVal bool, errDetail string) error {
-	headerRole := c.Get("X-User-Role")
-	roleKey := svc.Permissions.ResolveOperatorRole(db, headerRole, operatorName)
-	if roleKey == "" {
-		if claims := middleware.GetUserClaims(c); claims != nil && claims.Role != "" {
-			roleKey = svc.Permissions.NormalizeRoleKey(claims.Role)
-		}
+	claims := middleware.GetUserClaims(c)
+	if claims == nil {
+		return fiber.NewError(fiber.StatusUnauthorized, "Bu işlem için oturum açmanız gerekmektedir.")
 	}
-	if roleKey == "" || roleKey == "manager" {
+	roleKey := svc.Permissions.NormalizeRoleKey(claims.Role)
+	if roleKey == "" && claims.Role != "" {
+		roleKey = strings.ToLower(strings.TrimSpace(claims.Role))
+	}
+	if roleKey == "manager" || roleKey == "master_admin" || roleKey == "superadmin" {
 		return nil
+	}
+	if roleKey == "" {
+		return fiber.NewError(fiber.StatusForbidden, errDetail)
 	}
 	if !svc.Permissions.CheckRolePermission(db, roleKey, permIDs, defaultVal) {
 		return fiber.NewError(fiber.StatusForbidden, errDetail)
@@ -44,27 +48,22 @@ func requirePermission(c *fiber.Ctx, svc *service.Services, db *gorm.DB, operato
 }
 
 func verifyCancelAuthorization(c *fiber.Ctx, svc *service.Services, db *gorm.DB, operatorName string, managerPIN *string) bool {
-	headerRole := c.Get("X-User-Role")
-	roleKey := svc.Permissions.ResolveOperatorRole(db, headerRole, operatorName)
-	if roleKey == "manager" {
-		return true
-	}
-	if roleKey != "" {
-		hasPerm := svc.Permissions.CheckRolePermission(db, roleKey, []string{"order_cancel", "order_remove_item"}, false)
-		if hasPerm {
+	if claims := middleware.GetUserClaims(c); claims != nil {
+		roleKey := svc.Permissions.NormalizeRoleKey(claims.Role)
+		if roleKey == "manager" || roleKey == "master_admin" || roleKey == "superadmin" {
 			return true
 		}
-		if strings.TrimSpace(headerRole) != "" && roleKey != "manager" {
-			return false
+		if roleKey != "" && svc.Permissions.CheckRolePermission(db, roleKey, []string{"order_cancel", "order_remove_item"}, false) {
+			return true
 		}
 	}
-	if managerPIN != nil && *managerPIN != "" {
+	if managerPIN != nil && strings.TrimSpace(*managerPIN) != "" {
 		pin := strings.TrimSpace(*managerPIN)
-		if pin == svc.Config.ManagerOverridePIN {
+		if svc.Config.ManagerOverridePIN != "" && pin == svc.Config.ManagerOverridePIN {
 			return true
 		}
 		var mgr models.StaffUser
-		if err := db.Where("pin_code = ? AND role = ? AND is_active = ?", pin, "manager", true).First(&mgr).Error; err == nil {
+		if err := db.Where("pin_code = ? AND LOWER(role) IN ? AND is_active = ?", pin, []string{"manager", "admin", "superadmin", "müdür", "mudur", "yönetici", "yonetici"}, true).First(&mgr).Error; err == nil {
 			return true
 		}
 	}
@@ -110,8 +109,7 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 
 		// 1. Master Admin check
 		uLow := strings.ToLower(username)
-		if (uLow == "master" || uLow == "superadmin") &&
-			(cleanPwd == "masteradmin2026" || cleanPwd == "boncore2026master" || cleanPwd == "123456") {
+		if (uLow == "master" || uLow == "superadmin") && cleanPwd == svc.Config.MasterAdminPassword {
 			token, exp := middleware.CreateAccessToken(svc.Config, 999999, "master_admin", payload.Remember, "master", nil)
 			return c.JSON(fiber.Map{
 				"access_token": token,
@@ -156,19 +154,7 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 			}
 		}
 
-		if targetTenant == nil {
-			for i := range allTenants {
-				t := &allTenants[i]
-				tCodeLow := strings.ToLower(strings.TrimSpace(t.Code))
-				tNameLow := strings.ToLower(strings.TrimSpace(t.Name))
-				if (uLow != "" && strings.Contains(tCodeLow, uLow)) || (len(uLow) >= 4 && strings.Contains(tNameLow, uLow)) {
-					targetTenant = t
-					break
-				}
-			}
-		}
-
-		// 3. Direct staff username lookup across tenants
+		// 3. Direct exact staff username lookup across non-suspended tenants
 		if targetTenant == nil {
 			for i := range allTenants {
 				cand := &allTenants[i]
@@ -184,10 +170,13 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 					if u.Username != nil {
 						uname = strings.ToLower(strings.TrimSpace(*u.Username))
 					}
-					if uname == uLow {
+					if uname != "" && uname == uLow {
 						pwdOK := middleware.VerifyPassword(cleanPwd, u.PasswordHash) || strings.TrimSpace(u.PinCode) == cleanPwd
 						if !pwdOK {
 							return fiber.NewError(fiber.StatusUnauthorized, fmt.Sprintf("'%s' kullanıcısı için girilen şifre veya PIN kodu hatalı.", username))
+						}
+						if strings.EqualFold(cand.Status, "suspended") {
+							return fiber.NewError(fiber.StatusForbidden, fmt.Sprintf("'%s' restoranının aboneliği askıya alınmıştır.", cand.Name))
 						}
 						now := time.Now().UTC()
 						tDB.Model(u).Update("last_login_at", now)
@@ -205,7 +194,7 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 
 		// 4. Tenant + Staff PIN/Password lookup
 		if targetTenant != nil && matchedUser == nil {
-			if targetTenant.Status == "suspended" {
+			if strings.EqualFold(targetTenant.Status, "suspended") {
 				return fiber.NewError(fiber.StatusForbidden, fmt.Sprintf("'%s' restoranının aboneliği askıya alınmıştır.", targetTenant.Name))
 			}
 			tDB, err := svc.DBManager.GetTenantDB(targetTenant.Code)
@@ -268,9 +257,13 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 		if err := c.BodyParser(&payload); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz PIN verisi.")
 		}
+		pin := strings.TrimSpace(payload.PinCode)
+		if pin == "" {
+			return fiber.NewError(fiber.StatusUnauthorized, "Geçersiz PIN Kodu!")
+		}
 		var user models.StaffUser
-		if err := db.Where("pin_code = ? AND is_active = ?", payload.PinCode, true).First(&user).Error; err != nil {
-			if payload.PinCode == svc.Config.ManagerOverridePIN {
+		if err := db.Where("pin_code = ? AND is_active = ?", pin, true).First(&user).Error; err != nil {
+			if svc.Config.ManagerOverridePIN != "" && pin == svc.Config.ManagerOverridePIN {
 				token, _ := middleware.CreateAccessToken(svc.Config, 999, "manager", false, tenantCode, nil)
 				uname := "admin"
 				return c.JSON(models.StaffUserResponse{
@@ -295,6 +288,29 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 			IsActive:    user.IsActive,
 			AccessToken: &token,
 		})
+	})
+
+	group.Post("/verify-manager-pin", func(c *fiber.Ctx) error {
+		db, _, err := getTenantDB(c, svc)
+		if err != nil {
+			return err
+		}
+		if claims := middleware.GetUserClaims(c); claims == nil {
+			return fiber.NewError(fiber.StatusUnauthorized, "Bu işlem için oturum açmanız gerekmektedir.")
+		}
+		var payload models.PinAuthRequest
+		if err := c.BodyParser(&payload); err != nil || strings.TrimSpace(payload.PinCode) == "" {
+			return fiber.NewError(fiber.StatusBadRequest, "Yönetici PIN kodu gereklidir.")
+		}
+		pin := strings.TrimSpace(payload.PinCode)
+		var mgr models.StaffUser
+		if err := db.Where("pin_code = ? AND LOWER(role) IN ? AND is_active = ?", pin, []string{"manager", "admin", "superadmin", "müdür", "mudur", "yönetici", "yonetici"}, true).First(&mgr).Error; err != nil {
+			if svc.Config.ManagerOverridePIN != "" && pin == svc.Config.ManagerOverridePIN {
+				return c.JSON(fiber.Map{"valid": true, "manager_name": "Yönetici"})
+			}
+			return fiber.NewError(fiber.StatusForbidden, "Geçersiz veya yönetici yetkisi olmayan PIN kodu!")
+		}
+		return c.JSON(fiber.Map{"valid": true, "manager_name": mgr.Name, "manager_id": mgr.ID})
 	})
 
 	group.Get("/me", func(c *fiber.Ctx) error {
@@ -345,7 +361,11 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 		var staff []models.StaffUser
 		db.Order("id ASC").Find(&staff)
 		claims := middleware.GetUserClaims(c)
-		includePIN := claims == nil || claims.Role == "manager"
+		includePIN := false
+		if claims != nil {
+			rLow := svc.Permissions.NormalizeRoleKey(claims.Role)
+			includePIN = rLow == "manager" || claims.Role == "master_admin" || claims.Role == "superadmin"
+		}
 		out := make([]fiber.Map, 0, len(staff))
 		for _, u := range staff {
 			out = append(out, serializeStaffUser(u, includePIN))
@@ -356,6 +376,9 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 	group.Post("/staff", func(c *fiber.Ctx) error {
 		db, _, err := getTenantDB(c, svc)
 		if err != nil {
+			return err
+		}
+		if err := requirePermission(c, svc, db, "", []string{"def_users_manage", "users_manage"}, false, "Yeni personel eklemek için yönetici yetkisi gereklidir."); err != nil {
 			return err
 		}
 		var payload models.StaffUserCreate
@@ -369,9 +392,11 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 		if uname == "" {
 			uname = repository.CleanTenantCode(payload.Name, "personel")
 		}
-		pwd := "123456"
-		if payload.Password != nil && *payload.Password != "" {
-			pwd = *payload.Password
+		var pwdHash *string
+		if payload.Password != nil && strings.TrimSpace(*payload.Password) != "" {
+			pwdHash = middleware.HashPassword(strings.TrimSpace(*payload.Password))
+		} else if strings.TrimSpace(payload.PinCode) == "" {
+			return fiber.NewError(fiber.StatusBadRequest, "Şifre veya PIN kodundan en az biri tanımlanmalıdır.")
 		}
 		active := true
 		if payload.IsActive != nil {
@@ -384,7 +409,7 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 		newUser := models.StaffUser{
 			Name:         strings.TrimSpace(payload.Name),
 			Username:     &uname,
-			PasswordHash: middleware.HashPassword(pwd),
+			PasswordHash: pwdHash,
 			Role:         role,
 			PinCode:      payload.PinCode,
 			IsActive:     active,
@@ -398,6 +423,9 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 	group.Put("/staff/:user_id", func(c *fiber.Ctx) error {
 		db, _, err := getTenantDB(c, svc)
 		if err != nil {
+			return err
+		}
+		if err := requirePermission(c, svc, db, "", []string{"def_users_manage", "users_manage"}, false, "Personel bilgilerini güncellemek için yönetici yetkisi gereklidir."); err != nil {
 			return err
 		}
 		userID, _ := strconv.Atoi(c.Params("user_id"))
@@ -453,6 +481,9 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 		if err != nil {
 			return err
 		}
+		if err := requirePermission(c, svc, db, "", []string{"def_users_manage", "users_manage"}, false, "Personel silmek için yönetici yetkisi gereklidir."); err != nil {
+			return err
+		}
 		userID, _ := strconv.Atoi(c.Params("user_id"))
 		var user models.StaffUser
 		if err := db.First(&user, userID).Error; err != nil {
@@ -480,7 +511,112 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 // 2. QR CUSTOMER MENU ROUTER (/api/qr)
 // ============================================================================
 
+func parseQRCategoryIDs(raw interface{}) ([]int, bool) {
+	if raw == nil {
+		return nil, false
+	}
+	arr, isArr := raw.([]interface{})
+	if !isArr {
+		if intArr, ok := raw.([]int); ok {
+			return intArr, true
+		}
+		return nil, false
+	}
+	ids := make([]int, 0, len(arr))
+	for _, el := range arr {
+		switch v := el.(type) {
+		case float64:
+			ids = append(ids, int(v))
+		case int:
+			ids = append(ids, v)
+		case int64:
+			ids = append(ids, int(v))
+		case string:
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				ids = append(ids, n)
+			}
+		}
+	}
+	return ids, true
+}
+
+func loadQRMenuSettings(db *gorm.DB) (bool, []int, bool) {
+	allowTablePayment := true
+	var allowedCategoryIDs []int
+	hasCustomCategories := false
+
+	if m, ok := loadJSONSettingMap(db, "qr_menu_settings"); ok {
+		if v, exists := m["allow_table_payment"].(bool); exists {
+			allowTablePayment = v
+		}
+		if rawCats, exists := m["allowed_category_ids"]; exists && rawCats != nil {
+			if parsed, okParse := parseQRCategoryIDs(rawCats); okParse {
+				allowedCategoryIDs = parsed
+				hasCustomCategories = true
+			}
+		}
+	}
+	return allowTablePayment, allowedCategoryIDs, hasCustomCategories
+}
+
 func RegisterQRRoutes(group fiber.Router, svc *service.Services) {
+	group.Get("/settings", func(c *fiber.Ctx) error {
+		db, _, err := getTenantDB(c, svc)
+		if err != nil {
+			return err
+		}
+		allowTablePayment, allowedCategoryIDs, hasCustomCategories := loadQRMenuSettings(db)
+		return c.JSON(fiber.Map{
+			"allow_table_payment":   allowTablePayment,
+			"allowed_category_ids":  allowedCategoryIDs,
+			"has_custom_categories": hasCustomCategories,
+		})
+	})
+
+	group.Put("/settings", func(c *fiber.Ctx) error {
+		db, tenantCode, err := getTenantDB(c, svc)
+		if err != nil {
+			return err
+		}
+		var body map[string]interface{}
+		if err := c.BodyParser(&body); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz QR menü ayar verisi.")
+		}
+
+		allowTablePayment, allowedCategoryIDs, hasCustomCategories := loadQRMenuSettings(db)
+		if v, ok := body["allow_table_payment"].(bool); ok {
+			allowTablePayment = v
+		}
+		if rawCats, exists := body["allowed_category_ids"]; exists {
+			if rawCats == nil {
+				hasCustomCategories = false
+				allowedCategoryIDs = nil
+			} else if parsed, okParse := parseQRCategoryIDs(rawCats); okParse {
+				hasCustomCategories = true
+				allowedCategoryIDs = parsed
+			}
+		}
+
+		toSave := map[string]interface{}{
+			"allow_table_payment":  allowTablePayment,
+			"allowed_category_ids": nil,
+		}
+		if hasCustomCategories {
+			toSave["allowed_category_ids"] = allowedCategoryIDs
+		}
+		saveJSONSettingVal(db, "qr_menu_settings", toSave)
+
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "QR_SETTINGS_UPDATED", toSave)
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "MENU_UPDATED", toSave)
+
+		return c.JSON(fiber.Map{
+			"status":                "ok",
+			"allow_table_payment":   allowTablePayment,
+			"allowed_category_ids":  allowedCategoryIDs,
+			"has_custom_categories": hasCustomCategories,
+		})
+	})
+
 	group.Get("/table/:table_id/menu", func(c *fiber.Ctx) error {
 		db, _, err := getTenantDB(c, svc)
 		if err != nil {
@@ -508,27 +644,91 @@ func RegisterQRRoutes(group fiber.Router, svc *service.Services) {
 					}
 				}
 				activeOrderData = fiber.Map{
-					"order_id":    o.ID,
-					"order_no":    o.OrderNo,
-					"status":      o.Status,
-					"subtotal":    o.Subtotal,
-					"grand_total": o.GrandTotal,
-					"items":       items,
+					"order_id":        o.ID,
+					"order_no":        o.OrderNo,
+					"status":          o.Status,
+					"subtotal":        o.Subtotal,
+					"grand_total":     o.GrandTotal,
+					"paid_total":      o.PaidTotal,
+					"remaining_total": o.RemainingTotal,
+					"is_prepaid":      o.RemainingTotal <= 0.01 && o.PaidTotal > 0,
+					"notes":           o.Notes,
+					"items":           items,
 				}
 				break
 			}
 		}
 
 		var categories []models.Category
-		db.Preload("Products.Variants").Preload("Products.ModifierGroups.Options").Order("order_index ASC").Find(&categories)
+		db.Preload("Products.Variants").
+			Preload("Products.ModifierGroups.Options").
+			Preload("Products.Recipes.Ingredient").
+			Order("order_index ASC, id ASC").
+			Find(&categories)
 
+		var allIngList []models.Ingredient
+		db.Find(&allIngList)
+		allIngs := make(map[string]*models.Ingredient, len(allIngList))
+		for i := range allIngList {
+			key := service.NormalizeStockName(allIngList[i].Name)
+			allIngs[key] = &allIngList[i]
+		}
+
+		allowTablePayment, allowedCategoryIDs, hasCustomCategories := loadQRMenuSettings(db)
+		allowedSet := make(map[int]bool, len(allowedCategoryIDs))
+		if hasCustomCategories {
+			for _, id := range allowedCategoryIDs {
+				allowedSet[id] = true
+			}
+		}
+
+		allCategories := make([]fiber.Map, 0, len(categories))
 		menuTree := make([]fiber.Map, 0, len(categories))
 		for _, cat := range categories {
+			catProducts := cat.Products
+			sort.Slice(catProducts, func(i, j int) bool {
+				if catProducts[i].OrderIndex != catProducts[j].OrderIndex {
+					return catProducts[i].OrderIndex < catProducts[j].OrderIndex
+				}
+				return catProducts[i].ID < catProducts[j].ID
+			})
+
 			prods := make([]fiber.Map, 0)
-			for _, p := range cat.Products {
-				if !p.IsAvailable {
+			for _, p := range catProducts {
+				if !p.IsAvailable || p.BasePrice <= 0 {
 					continue
 				}
+				unitLabel := "Adet"
+				directIng := allIngs[service.NormalizeStockName(p.Name)]
+				if directIng != nil && directIng.Unit != "" && len(p.Recipes) == 0 {
+					unitLabel = directIng.Unit
+				}
+				if unitLabel == "Adet" {
+					lowerName := strings.ToLower(strings.TrimSpace(p.Name))
+					if strings.Contains(lowerName, "(kg)") || strings.HasSuffix(lowerName, " kg") || strings.Contains(lowerName, "/kg") {
+						unitLabel = "Kg"
+					}
+				}
+				calcBOMStock, recipeItems, missingIngredients := service.CalculateBOMStock(p.Name, p.Recipes)
+				hasRecipe := len(recipeItems) > 0
+				hasStockTracking := false
+				var stockVal interface{} = nil
+				if hasRecipe {
+					hasStockTracking = true
+					avail := calcBOMStock
+					_, negAware, _, _ := service.GetProductAvailableStock(nil, p)
+					if negAware < 0 {
+						avail = negAware
+					}
+					stockVal = avail
+				} else if directIng != nil {
+					hasStockTracking = true
+					stockVal = service.Round3(directIng.CurrentStock)
+				} else if p.AllowNegStock {
+					hasStockTracking = true
+					stockVal = 0.0
+				}
+
 				variants := make([]fiber.Map, 0, len(p.Variants))
 				for _, v := range p.Variants {
 					variants = append(variants, fiber.Map{"id": v.ID, "name": v.Name, "price_delta": v.PriceDelta})
@@ -546,33 +746,56 @@ func RegisterQRRoutes(group fiber.Router, svc *service.Services) {
 					allergens = models.StringSlice{}
 				}
 				prods = append(prods, fiber.Map{
-					"id":              p.ID,
-					"name":            p.Name,
-					"description":     p.Description,
-					"base_price":      p.BasePrice,
-					"image_url":       p.ImageURL,
-					"calories":        p.Calories,
-					"allergens":       allergens,
-					"is_vegan":        p.IsVegan,
-					"is_spicy":        p.IsSpicy,
-					"variants":        variants,
-					"modifier_groups": mgs,
+					"id":                   p.ID,
+					"name":                 p.Name,
+					"description":          p.Description,
+					"base_price":           p.BasePrice,
+					"unit":                 unitLabel,
+					"image_url":            p.ImageURL,
+					"calories":             p.Calories,
+					"allergens":            allergens,
+					"is_vegan":             p.IsVegan,
+					"is_spicy":             p.IsSpicy,
+					"is_available":         p.IsAvailable,
+					"stock_quantity":       stockVal,
+					"has_stock_tracking":   hasStockTracking,
+					"has_recipe":           hasRecipe,
+					"allow_negative_stock": p.AllowNegStock,
+					"missing_ingredients":  missingIngredients,
+					"variants":             variants,
+					"modifier_groups":      mgs,
 				})
 			}
-			menuTree = append(menuTree, fiber.Map{
-				"id":       cat.ID,
-				"name":     cat.Name,
-				"icon":     cat.Icon,
-				"products": prods,
-			})
+			if len(prods) > 0 {
+				allCategories = append(allCategories, fiber.Map{
+					"id":            cat.ID,
+					"name":          cat.Name,
+					"icon":          cat.Icon,
+					"product_count": len(prods),
+				})
+				if !hasCustomCategories || allowedSet[int(cat.ID)] {
+					menuTree = append(menuTree, fiber.Map{
+						"id":       cat.ID,
+						"name":     cat.Name,
+						"icon":     cat.Icon,
+						"products": prods,
+					})
+				}
+			}
 		}
 
 		return c.JSON(fiber.Map{
-			"table_id":     table.ID,
-			"table_name":   table.Name,
-			"status":       table.Status,
-			"active_order": activeOrderData,
-			"menu":         menuTree,
+			"table_id":       table.ID,
+			"table_name":     table.Name,
+			"status":         table.Status,
+			"active_order":   activeOrderData,
+			"menu":           menuTree,
+			"all_categories": allCategories,
+			"qr_settings": fiber.Map{
+				"allow_table_payment":   allowTablePayment,
+				"allowed_category_ids":  allowedCategoryIDs,
+				"has_custom_categories": hasCustomCategories,
+			},
 		})
 	})
 
@@ -590,6 +813,15 @@ func RegisterQRRoutes(group fiber.Router, svc *service.Services) {
 		var order models.Order
 		var table models.Table
 		var addedAmount float64
+		type pendingStockInfo struct {
+			ItemID       int     `json:"item_id"`
+			ProductID    int     `json:"product_id"`
+			ProductName  string  `json:"product_name"`
+			Quantity     float64 `json:"quantity"`
+			CurrentStock float64 `json:"current_stock"`
+			Message      string  `json:"message"`
+		}
+		var pendingStockApprovals []pendingStockInfo
 
 		txErr := db.Transaction(func(tx *gorm.DB) error {
 			if err := repository.WithRowLock(tx).Preload("Orders.Items").First(&table, tableID).Error; err != nil {
@@ -606,7 +838,15 @@ func RegisterQRRoutes(group fiber.Router, svc *service.Services) {
 			}
 
 			now := time.Now().UTC()
+			orderNote := ""
+			if payload.Notes != nil {
+				orderNote = strings.TrimSpace(*payload.Notes)
+			}
 			if !found {
+				var notesPtr *string
+				if orderNote != "" {
+					notesPtr = &orderNote
+				}
 				orderNo := fmt.Sprintf("QR-%s-%d-%04d", now.Format("20060102150405"), table.ID, now.UnixNano()%10000)
 				tid := table.ID
 				order = models.Order{
@@ -615,6 +855,7 @@ func RegisterQRRoutes(group fiber.Router, svc *service.Services) {
 					OrderType:  "qr_order",
 					Status:     "open",
 					WaiterName: "QR Masadan Sipariş",
+					Notes:      notesPtr,
 					CreatedAt:  now,
 				}
 				if err := tx.Create(&order).Error; err != nil {
@@ -626,37 +867,113 @@ func RegisterQRRoutes(group fiber.Router, svc *service.Services) {
 				table.CurrentOrderID = &order.ID
 				table.WaiterName = &wName
 				tx.Save(&table)
+			} else if orderNote != "" {
+				if order.Notes != nil && strings.TrimSpace(*order.Notes) != "" {
+					existingNote := strings.TrimSpace(*order.Notes)
+					if !strings.Contains(existingNote, orderNote) {
+						combined := existingNote + " | " + orderNote
+						order.Notes = &combined
+					}
+				} else {
+					order.Notes = &orderNote
+				}
+				tx.Save(&order)
 			}
+
+			remainingAvailByProd := make(map[int]float64)
+			trackingByProd := make(map[int]bool)
 
 			for _, it := range payload.Items {
 				var prod models.Product
-				hasProd := tx.First(&prod, it.ProductID).Error == nil
-				pName := "Ürün"
-				station := "kitchen"
-				basePrice := 0.0
-				if hasProd {
-					pName = prod.Name
-					station = prod.Station
-					basePrice = prod.BasePrice
+				if err := tx.Preload("Variants").Preload("ModifierGroups.Options").Preload("Recipes.Ingredient").First(&prod, it.ProductID).Error; err != nil {
+					return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("Seçilen ürün menüde bulunamadı (ID: %d).", it.ProductID))
 				}
-				if it.UnitPrice != nil {
-					basePrice = *it.UnitPrice
+				pName := prod.Name
+				station := prod.Station
+				// Always derive price strictly from database (ignore client-supplied UnitPrice/Modifier Price)
+				basePrice := prod.BasePrice
+				if it.VariantName != nil && strings.TrimSpace(*it.VariantName) != "" {
+					vTarget := strings.TrimSpace(*it.VariantName)
+					for _, vr := range prod.Variants {
+						if strings.EqualFold(strings.TrimSpace(vr.Name), vTarget) {
+							basePrice += vr.PriceDelta
+							break
+						}
+					}
+				}
+				modPriceLookup := make(map[string]float64)
+				for _, mg := range prod.ModifierGroups {
+					for _, opt := range mg.Options {
+						modPriceLookup[strings.ToLower(strings.TrimSpace(opt.Name))] = opt.Price
+					}
 				}
 				modSum := 0.0
+				validatedMods := make([]models.SelectedModifier, 0, len(it.SelectedModifiers))
 				for _, m := range it.SelectedModifiers {
-					modSum += m.Price
+					authPrice := modPriceLookup[strings.ToLower(strings.TrimSpace(m.Name))]
+					mCopy := m
+					mCopy.Price = authPrice
+					validatedMods = append(validatedMods, mCopy)
+					modSum += authPrice
 				}
+				it.SelectedModifiers = validatedMods
 				qty := it.Quantity
 				if qty <= 0 {
-					qty = 1.0
+					return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("'%s' için geçersiz ürün miktarı.", pName))
 				}
+
+				itemStatus := "pending"
+				requiresStockConfirm := false
+				var availStockAtCheck float64
+				if !prod.IsAvailable {
+					return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("Efendim maalesef %s elimizde kalmadı.", pName))
+				}
+				tracked, seen := trackingByProd[it.ProductID]
+				if !seen {
+					t, av, _, _ := service.GetProductAvailableStock(tx, prod)
+					tracked = t
+					availStockAtCheck = av
+					trackingByProd[it.ProductID] = t
+					remainingAvailByProd[it.ProductID] = av
+				} else {
+					availStockAtCheck = remainingAvailByProd[it.ProductID]
+				}
+				if tracked && (availStockAtCheck <= 0 || availStockAtCheck+1e-9 < qty) {
+					if !prod.AllowNegStock {
+						return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("Efendim maalesef %s elimizde kalmadı.", pName))
+					}
+					itemStatus = "stock_confirm"
+					requiresStockConfirm = true
+				} else if tracked {
+					remainingAvailByProd[it.ProductID] = service.Round3(availStockAtCheck - qty)
+				}
+
 				lineUnit := basePrice + modSum
 				lineTotal := service.Round2(lineUnit * qty)
 				addedAmount += lineTotal
 
+				itemNoteText := ""
+				if it.KitchenNote != nil {
+					trimmedItemNote := strings.TrimSpace(*it.KitchenNote)
+					if trimmedItemNote != "" && trimmedItemNote != "Masadan QR Sipariş" {
+						itemNoteText = trimmedItemNote
+					}
+				}
+				if itemNoteText == "" && orderNote != "" {
+					itemNoteText = orderNote
+				} else if itemNoteText != "" && orderNote != "" && !strings.Contains(itemNoteText, orderNote) {
+					itemNoteText = itemNoteText + " | " + orderNote
+				}
 				note := "[QR Müşteri Notu]"
-				if it.KitchenNote != nil && *it.KitchenNote != "" {
-					note = fmt.Sprintf("[QR Müşteri Notu] %s", *it.KitchenNote)
+				if itemNoteText != "" {
+					note = fmt.Sprintf("[QR Müşteri Notu] %s", itemNoteText)
+				}
+				if requiresStockConfirm {
+					if itemNoteText != "" {
+						note = fmt.Sprintf("[STOK YOK - ONAY BEKLİYOR] [QR Müşteri Notu] %s", itemNoteText)
+					} else {
+						note = "[STOK YOK - ONAY BEKLİYOR] [QR Müşteri Notu]"
+					}
 				}
 				oi := models.OrderItem{
 					OrderID:           order.ID,
@@ -671,7 +988,7 @@ func RegisterQRRoutes(group fiber.Router, svc *service.Services) {
 					KitchenNote:       &note,
 					CourseStage:       1,
 					IsHold:            false,
-					Status:            "pending",
+					Status:            itemStatus,
 					Station:           station,
 					AddedBy:           "QR Müşteri",
 					CreatedAt:         now,
@@ -679,7 +996,27 @@ func RegisterQRRoutes(group fiber.Router, svc *service.Services) {
 				if err := tx.Create(&oi).Error; err != nil {
 					return err
 				}
-				_ = service.DeductOrderIngredients(tx, it.ProductID, qty, order.OrderNo, 2)
+				if requiresStockConfirm {
+					pendingStockApprovals = append(pendingStockApprovals, pendingStockInfo{
+						ItemID:       oi.ID,
+						ProductID:    it.ProductID,
+						ProductName:  pName,
+						Quantity:     qty,
+						CurrentStock: availStockAtCheck,
+						Message:      fmt.Sprintf("⚠️ %s %s istedi ama stok yok! Devam edilsin mi?", table.Name, pName),
+					})
+				} else {
+					_ = service.DeductOrderIngredients(tx, it.ProductID, qty, order.OrderNo, 2)
+				}
+			}
+
+			if len(pendingStockApprovals) > 0 {
+				names := make([]string, 0, len(pendingStockApprovals))
+				for _, pa := range pendingStockApprovals {
+					names = append(names, fmt.Sprintf("%s (%gx)", pa.ProductName, pa.Quantity))
+				}
+				waiterReason := fmt.Sprintf("⚠️ %s (%s) istedi ama stok yok! Devam edilsin mi?", table.Name, strings.Join(names, ", "))
+				tx.Model(&table).Update("waiter_call_reason", waiterReason)
 			}
 
 			order.Subtotal = service.Round2(order.Subtotal + addedAmount)
@@ -696,18 +1033,41 @@ func RegisterQRRoutes(group fiber.Router, svc *service.Services) {
 			"order_no":   order.OrderNo,
 			"total":      addedAmount,
 		})
-		_ = svc.Broadcaster.BroadcastToChannel(tenantCode, "kds", "KDS_NEW_ORDER", fiber.Map{
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "KDS_NEW_ORDER", fiber.Map{
 			"order_id": order.ID,
 			"order_no": order.OrderNo,
 		})
 		_ = svc.Broadcaster.BroadcastToTable(tenantCode, table.ID, "TABLE_ORDER_UPDATED", fiber.Map{
 			"order_id": order.ID,
 		})
+		if len(pendingStockApprovals) > 0 {
+			names := make([]string, 0, len(pendingStockApprovals))
+			for _, pa := range pendingStockApprovals {
+				names = append(names, fmt.Sprintf("%s (%gx)", pa.ProductName, pa.Quantity))
+			}
+			alertMsg := fmt.Sprintf("⚠️ %s %s istedi ama stok yok! Devam edilsin mi?", table.Name, strings.Join(names, ", "))
+			_ = svc.Broadcaster.BroadcastAll(tenantCode, "OUT_OF_STOCK_ORDER_ALERT", fiber.Map{
+				"order_id":   order.ID,
+				"order_no":   order.OrderNo,
+				"table_id":   table.ID,
+				"table_name": table.Name,
+				"items":      pendingStockApprovals,
+				"message":    alertMsg,
+			})
+			_ = svc.Broadcaster.BroadcastAll(tenantCode, "AREAS_UPDATED", fiber.Map{"table_id": table.ID})
+		}
 
+		respMsg := "Siparişiniz mutfağa iletildi!"
+		if len(pendingStockApprovals) > 0 {
+			respMsg = "Siparişiniz alındı. Stok onayı için mutfak ve garsona bilgi verildi."
+		}
 		return c.JSON(fiber.Map{
-			"status":   "success",
-			"message":  "Siparişiniz mutfağa iletildi!",
-			"order_id": order.ID,
+			"status":                 "success",
+			"message":                respMsg,
+			"order_id":               order.ID,
+			"notes":                  order.Notes,
+			"pending_stock_approval": len(pendingStockApprovals) > 0,
+			"pending_stock_items":    pendingStockApprovals,
 		})
 	})
 }
@@ -743,21 +1103,7 @@ func RegisterTablesRoutes(group fiber.Router, svc *service.Services) {
 				hasTableReady := false
 				tableReadySummary := ""
 
-				if table.Status == "empty" && table.CurrentOrderID == nil {
-					for _, o := range table.Orders {
-						if o.Status == "open" || o.Status == "bill_requested" {
-							newSt := "cancelled"
-							if o.PaidTotal > 0 {
-								newSt = "paid"
-							}
-							db.Model(&models.Order{}).Where("id = ?", o.ID).Updates(map[string]interface{}{
-								"status":          newSt,
-								"remaining_total": 0.0,
-								"closed_at":       now,
-							})
-						}
-					}
-				} else if len(table.Orders) > 0 {
+				if (table.Status != "empty" || table.CurrentOrderID != nil) && len(table.Orders) > 0 {
 					orders := table.Orders
 					sort.Slice(orders, func(i, j int) bool {
 						return orders[i].ID > orders[j].ID
@@ -769,36 +1115,12 @@ func RegisterTablesRoutes(group fiber.Router, svc *service.Services) {
 						if o.Status != "open" && o.Status != "bill_requested" {
 							continue
 						}
-						validCount := 0
-						for _, it := range o.Items {
-							if !it.IsVoided {
-								validCount++
-							}
-						}
-						if (validCount == 0 && o.GrandTotal <= 0.01) || (o.RemainingTotal <= 0.01 && o.PaidTotal > 0) {
-							newSt := "cancelled"
-							if o.PaidTotal > 0 {
-								newSt = "paid"
-							}
-							db.Model(&models.Order{}).Where("id = ?", o.ID).Updates(map[string]interface{}{
-								"status":          newSt,
-								"remaining_total": 0.0,
-								"closed_at":       now,
-							})
-							continue
+						if table.CurrentOrderID != nil && o.ID == *table.CurrentOrderID {
+							chosenOrder = o
+							break
 						}
 						if chosenOrder == nil {
 							chosenOrder = o
-						} else {
-							newSt := "cancelled"
-							if o.PaidTotal > 0 {
-								newSt = "paid"
-							}
-							db.Model(&models.Order{}).Where("id = ?", o.ID).Updates(map[string]interface{}{
-								"status":          newSt,
-								"remaining_total": 0.0,
-								"closed_at":       now,
-							})
 						}
 					}
 
@@ -826,11 +1148,6 @@ func RegisterTablesRoutes(group fiber.Router, svc *service.Services) {
 						}
 						tableReadySummary = strings.Join(readyItemsList, ", ")
 
-						// Masa SADECE tüm sipariş kalemleri hazır olduğunda hazır olarak gözüksün:
-						// - Geçerli kalemler bulunmalı (validItemsCount > 0)
-						// - Mutfakta hazırlığı süren hiçbir kalem kalmamış olmalı (preparingItemsCount == 0)
-						// - En az 1 hazır kalem bulunmalı (readyItemsCount > 0)
-						// Böylece yeni sipariş girildiğinde (preparingItemsCount > 0) masa anında hazır olmaktan çıkar.
 						if validItemsCount > 0 && preparingItemsCount == 0 && readyItemsCount > 0 {
 							hasTableReady = true
 						} else {
@@ -848,6 +1165,8 @@ func RegisterTablesRoutes(group fiber.Router, svc *service.Services) {
 							"grand_total":         chosenOrder.GrandTotal,
 							"paid_total":          chosenOrder.PaidTotal,
 							"remaining_total":     chosenOrder.RemainingTotal,
+							"is_prepaid":          chosenOrder.RemainingTotal <= 0.01 && chosenOrder.PaidTotal > 0,
+							"notes":               chosenOrder.Notes,
 							"subtotal":            chosenOrder.Subtotal,
 							"discount_amount":     chosenOrder.DiscountAmount,
 							"kuver_count":         chosenOrder.KuverCount,
@@ -858,25 +1177,6 @@ func RegisterTablesRoutes(group fiber.Router, svc *service.Services) {
 							"created_at":          createdISO,
 						}
 					}
-				}
-
-				if activeOrder == nil && table.Status != "reserved" {
-					if table.Status != "empty" || table.CurrentOrderID != nil {
-						db.Model(&models.Table{}).Where("id = ?", table.ID).Updates(map[string]interface{}{
-							"status":             "empty",
-							"opened_at":          nil,
-							"kuver_count":        0,
-							"waiter_name":        nil,
-							"current_order_id":   nil,
-							"waiter_call_reason": nil,
-						})
-					}
-					table.Status = "empty"
-					table.OpenedAt = nil
-					table.KuverCount = 0
-					table.WaiterName = nil
-					table.CurrentOrderID = nil
-					table.WaiterCallReason = nil
 				}
 
 				durationMinutes := 0
@@ -967,6 +1267,9 @@ func RegisterTablesRoutes(group fiber.Router, svc *service.Services) {
 		}
 		if err := requirePermission(c, svc, db, payload.OperatorName, []string{"order_table_move_merge"}, true, "Masa taşıma ve birleştirme yetkiniz bulunmamaktadır."); err != nil {
 			return err
+		}
+		if payload.SourceTableID == payload.TargetTableID {
+			return fiber.NewError(fiber.StatusBadRequest, "Aynı masayı kendisine taşıyamazsınız.")
 		}
 
 		var srcTable, targetTable models.Table
@@ -1085,6 +1388,9 @@ func RegisterTablesRoutes(group fiber.Router, svc *service.Services) {
 		if err := requirePermission(c, svc, db, payload.OperatorName, []string{"order_table_move_merge"}, true, "Masa taşıma ve birleştirme yetkiniz bulunmamaktadır."); err != nil {
 			return err
 		}
+		if payload.SourceTableID == payload.TargetTableID {
+			return fiber.NewError(fiber.StatusBadRequest, "Aynı masayı kendisiyle birleştiremezsiniz.")
+		}
 
 		var srcTable, targetTable models.Table
 		txErr := db.Transaction(func(tx *gorm.DB) error {
@@ -1123,20 +1429,21 @@ func RegisterTablesRoutes(group fiber.Router, svc *service.Services) {
 			}
 
 			tx.Model(&models.OrderItem{}).Where("order_id = ?", srcOrder.ID).Update("order_id", targetOrder.ID)
+			tx.Model(&models.Payment{}).Where("order_id = ?", srcOrder.ID).Update("order_id", targetOrder.ID)
 
-			targetOrder.Subtotal = service.Round2(targetOrder.Subtotal + srcOrder.Subtotal)
 			targetOrder.DiscountAmount = service.Round2(targetOrder.DiscountAmount + srcOrder.DiscountAmount)
-			targetOrder.TreatAmount = service.Round2(targetOrder.TreatAmount + srcOrder.TreatAmount)
 			targetOrder.KuverCount += srcOrder.KuverCount
 			targetOrder.KuverTotal = service.Round2(targetOrder.KuverTotal + srcOrder.KuverTotal)
 			targetOrder.ServiceCharge = service.Round2(targetOrder.ServiceCharge + srcOrder.ServiceCharge)
-			targetOrder.PaidTotal = service.Round2(targetOrder.PaidTotal + srcOrder.PaidTotal)
-			targetOrder.GrandTotal = service.Round2(targetOrder.GrandTotal + srcOrder.GrandTotal)
-			targetOrder.RemainingTotal = math.Max(0.0, service.Round2(targetOrder.GrandTotal-targetOrder.PaidTotal))
+			recalculateOrderTotals(tx, targetOrder)
 			tx.Save(targetOrder)
 
 			mergeNote := fmt.Sprintf("Masa %s ile birleştirildi.", targetTable.Name)
+			nowMerge := time.Now().UTC()
 			srcOrder.Status = "cancelled"
+			srcOrder.PaidTotal = 0
+			srcOrder.RemainingTotal = 0
+			srcOrder.ClosedAt = &nowMerge
 			srcOrder.Notes = &mergeNote
 			tx.Save(srcOrder)
 
@@ -1182,6 +1489,9 @@ func RegisterTablesRoutes(group fiber.Router, svc *service.Services) {
 		}
 		if err := requirePermission(c, svc, db, payload.OperatorName, []string{"order_transfer_item"}, true, "Ürün aktarma yetkiniz bulunmamaktadır."); err != nil {
 			return err
+		}
+		if payload.SourceTableID == payload.TargetTableID {
+			return fiber.NewError(fiber.StatusBadRequest, "Aynı masaya ürün aktarılamaz.")
 		}
 
 		var srcTable, targetTable models.Table
@@ -1242,26 +1552,31 @@ func RegisterTablesRoutes(group fiber.Router, svc *service.Services) {
 				tx.Save(&targetTable)
 			}
 
-			var transferredAmt float64
+			transferredCount := 0
 			for _, itemID := range payload.OrderItemIDs {
 				var item models.OrderItem
-				if err := repository.WithRowLock(tx).Where("id = ? AND order_id = ?", itemID, srcOrder.ID).First(&item).Error; err == nil {
+				if err := repository.WithRowLock(tx).Where("id = ? AND order_id = ? AND is_voided = ?", itemID, srcOrder.ID, false).First(&item).Error; err == nil {
 					tx.Model(&item).Update("order_id", targetOrder.ID)
-					transferredAmt += item.TotalPrice
+					transferredCount++
 				}
 			}
+			if transferredCount == 0 {
+				return fiber.NewError(fiber.StatusBadRequest, "Aktarılacak geçerli ürün bulunamadı.")
+			}
 
-			srcOrder.Subtotal = math.Max(0.0, service.Round2(srcOrder.Subtotal-transferredAmt))
-			srcOrder.GrandTotal = math.Max(0.0, service.Round2(srcOrder.Subtotal-srcOrder.DiscountAmount-srcOrder.TreatAmount+srcOrder.KuverTotal+srcOrder.ServiceCharge))
-			srcOrder.RemainingTotal = math.Max(0.0, service.Round2(srcOrder.GrandTotal-srcOrder.PaidTotal))
+			recalculateOrderTotals(tx, srcOrder)
+			recalculateOrderTotals(tx, targetOrder)
 
-			targetOrder.Subtotal = service.Round2(targetOrder.Subtotal + transferredAmt)
-			targetOrder.GrandTotal = math.Max(0.0, service.Round2(targetOrder.Subtotal-targetOrder.DiscountAmount-targetOrder.TreatAmount+targetOrder.KuverTotal+targetOrder.ServiceCharge))
-			targetOrder.RemainingTotal = math.Max(0.0, service.Round2(targetOrder.GrandTotal-targetOrder.PaidTotal))
-
-			if srcOrder.Subtotal <= 0.001 {
-				srcOrder.Status = "paid"
+			var remValid int64
+			tx.Model(&models.OrderItem{}).Where("order_id = ? AND is_voided = ?", srcOrder.ID, false).Count(&remValid)
+			if remValid == 0 && srcOrder.Subtotal <= 0.001 {
+				if srcOrder.PaidTotal > 0 {
+					srcOrder.Status = "paid"
+				} else {
+					srcOrder.Status = "cancelled"
+				}
 				srcOrder.RemainingTotal = 0.0
+				srcOrder.ClosedAt = &now
 				srcTable.Status = "empty"
 				srcTable.OpenedAt = nil
 				srcTable.KuverCount = 0
@@ -1294,9 +1609,19 @@ func RegisterTablesRoutes(group fiber.Router, svc *service.Services) {
 		if err := c.BodyParser(&payload); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz kuver verisi.")
 		}
+		if payload.KuverCount < 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "Kuver kişi sayısı negatif olamaz.")
+		}
+		if err := requirePermission(c, svc, db, "", []string{"order_add_kuver_service"}, true, "Kuver ücreti düzenleme yetkiniz bulunmamaktadır."); err != nil {
+			return err
+		}
 		var table models.Table
 		if err := db.Preload("Orders").First(&table, tableID).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Masa bulunamadı.")
+		}
+		unitKuverPrice := loadSettingFloat(db, "kuver_DefaultPrice", svc.Config.DefaultKuverPrice)
+		if kp := loadSettingFloat(db, "kuver_price", 0); kp > 0 {
+			unitKuverPrice = kp
 		}
 		table.KuverCount = payload.KuverCount
 		db.Save(&table)
@@ -1305,9 +1630,8 @@ func RegisterTablesRoutes(group fiber.Router, svc *service.Services) {
 			ord := &table.Orders[i]
 			if ord.Status == "open" || ord.Status == "bill_requested" {
 				ord.KuverCount = payload.KuverCount
-				ord.KuverTotal = float64(payload.KuverCount) * svc.Config.DefaultKuverPrice
-				ord.GrandTotal = math.Max(0.0, service.Round2(ord.Subtotal-ord.DiscountAmount-ord.TreatAmount+ord.KuverTotal+ord.ServiceCharge))
-				ord.RemainingTotal = math.Max(0.0, service.Round2(ord.GrandTotal-ord.PaidTotal))
+				ord.KuverTotal = service.Round2(float64(payload.KuverCount) * unitKuverPrice)
+				recalculateOrderTotals(db, ord)
 				db.Save(ord)
 				break
 			}
@@ -1476,19 +1800,38 @@ func RegisterTablesRoutes(group fiber.Router, svc *service.Services) {
 		if err != nil {
 			return err
 		}
+		if err := requirePermission(c, svc, db, "", []string{"def_table_area"}, false, "Bölge silme yetkiniz bulunmamaktadır."); err != nil {
+			return err
+		}
 		areaID, _ := strconv.Atoi(c.Params("area_id"))
 		var area models.Area
 		if err := db.Preload("Tables").First(&area, areaID).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Bölge bulunamadı.")
 		}
-		for _, t := range area.Tables {
-			if t.Status == "occupied" || t.Status == "bill_requested" {
-				return fiber.NewError(fiber.StatusBadRequest, "Bu bölgede aktif dolu masa bulunmaktadır. Önce masaları kapatınız.")
+		txErr := db.Transaction(func(tx *gorm.DB) error {
+			for _, t := range area.Tables {
+				if t.Status != "empty" && t.Status != "available" {
+					return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("'%s' masası aktif/açık durumda. Önce masaları kapatınız.", t.Name))
+				}
+				var openCnt int64
+				tx.Model(&models.Order{}).Where("table_id = ? AND status IN ?", t.ID, []string{"open", "bill_requested"}).Count(&openCnt)
+				if openCnt > 0 {
+					return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("'%s' masasında kapatılmamış açık adisyon bulunmaktadır.", t.Name))
+				}
 			}
-			db.Model(&models.Order{}).Where("table_id = ?", t.ID).Update("table_id", nil)
-			db.Delete(&t)
+			for _, t := range area.Tables {
+				if err := tx.Model(&models.Order{}).Where("table_id = ?", t.ID).Update("table_id", nil).Error; err != nil {
+					return err
+				}
+				if err := tx.Delete(&t).Error; err != nil {
+					return err
+				}
+			}
+			return tx.Delete(&area).Error
+		})
+		if txErr != nil {
+			return txErr
 		}
-		db.Delete(&area)
 		_ = svc.Broadcaster.BroadcastAll(tenantCode, "AREAS_UPDATED", fiber.Map{"deleted_area_id": areaID})
 		return c.JSON(fiber.Map{"status": "success", "message": "Bölge silindi."})
 	})
@@ -1566,13 +1909,21 @@ func RegisterTablesRoutes(group fiber.Router, svc *service.Services) {
 		if err != nil {
 			return err
 		}
+		if err := requirePermission(c, svc, db, "", []string{"def_table_area"}, false, "Masa silme yetkiniz bulunmamaktadır."); err != nil {
+			return err
+		}
 		tableID, _ := strconv.Atoi(c.Params("table_id"))
 		var table models.Table
 		if err := db.First(&table, tableID).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Masa bulunamadı.")
 		}
-		if table.Status == "occupied" || table.Status == "bill_requested" {
-			return fiber.NewError(fiber.StatusBadRequest, "Masa şu anda dolu! Önce hesabı kapatınız.")
+		if table.Status != "empty" && table.Status != "available" {
+			return fiber.NewError(fiber.StatusBadRequest, "Masa şu anda aktif/dolu! Önce hesabı kapatınız.")
+		}
+		var openCnt int64
+		db.Model(&models.Order{}).Where("table_id = ? AND status IN ?", tableID, []string{"open", "bill_requested"}).Count(&openCnt)
+		if openCnt > 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "Bu masaya bağlı açık adisyon bulunmaktadır.")
 		}
 		db.Model(&models.Order{}).Where("table_id = ?", tableID).Update("table_id", nil)
 		db.Delete(&table)
@@ -1639,7 +1990,7 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 		db.Find(&allIngList)
 		allIngs := make(map[string]*models.Ingredient, len(allIngList))
 		for i := range allIngList {
-			key := strings.ToLower(strings.TrimSpace(allIngList[i].Name))
+			key := service.NormalizeStockName(allIngList[i].Name)
 			allIngs[key] = &allIngList[i]
 		}
 
@@ -1660,7 +2011,7 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 				}
 				stockQty := 0.0
 				unitLabel := "Adet"
-				directIng := allIngs[strings.ToLower(strings.TrimSpace(p.Name))]
+				directIng := allIngs[service.NormalizeStockName(p.Name)]
 				if directIng != nil && directIng.Unit != "" {
 					unitLabel = directIng.Unit
 				}
@@ -1670,8 +2021,9 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 				if hasRecipe {
 					stockQty = calcBOMStock
 					unitLabel = "Adet"
-					if p.AllowNegStock && len(p.Recipes) == 1 && p.Recipes[0].Ingredient != nil && p.Recipes[0].Amount > 0 && p.Recipes[0].Ingredient.CurrentStock < 0 {
-						stockQty = service.Round3(p.Recipes[0].Ingredient.CurrentStock / p.Recipes[0].Amount)
+					_, negAware, _, _ := service.GetProductAvailableStock(nil, p)
+					if negAware < 0 {
+						stockQty = negAware
 					}
 				} else if directIng != nil {
 					stockQty = service.Round3(directIng.CurrentStock)
@@ -1897,15 +2249,22 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 		if err != nil {
 			return err
 		}
+		if err := requirePermission(c, svc, db, "", []string{"prod_manage_menu"}, true, "Kategori silme yetkiniz bulunmamaktadır."); err != nil {
+			return err
+		}
 		catID, _ := strconv.Atoi(c.Params("cat_id"))
 		var cat models.Category
 		if err := db.First(&cat, catID).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Kategori bulunamadı.")
 		}
-		db.Where("LOWER(category_name) = ?", strings.ToLower(strings.TrimSpace(cat.Name))).Delete(&models.Ingredient{})
+		var prodCount int64
+		db.Model(&models.Product{}).Where("category_id = ?", catID).Count(&prodCount)
+		if prodCount > 0 {
+			return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("Bu kategoride %d adet ürün bulunmaktadır. Lütfen önce ürünleri başka kategoriye taşıyın veya silin.", prodCount))
+		}
 		db.Delete(&cat)
 		_ = svc.Broadcaster.BroadcastAll(tenantCode, "MENU_UPDATED", fiber.Map{"category_id": catID})
-		return c.JSON(fiber.Map{"status": "success", "message": "Kategori ve bağlı stok kalemleri silindi."})
+		return c.JSON(fiber.Map{"status": "success", "message": "Kategori başarıyla silindi."})
 	})
 
 	group.Post("/items", func(c *fiber.Ctx) error {
@@ -1914,18 +2273,19 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 			return err
 		}
 		var payload struct {
-			CategoryID    int     `json:"category_id"`
-			Name          string  `json:"name"`
-			Description   *string `json:"description"`
-			BasePrice     float64 `json:"base_price"`
-			PluCode       *string `json:"plu_code"`
-			Barcode       *string `json:"barcode"`
-			Station       string  `json:"station"`
-			IsAvailable   *bool   `json:"is_available"`
-			ShowInPos     *bool   `json:"show_in_pos"`
-			Unit               string  `json:"unit"`
-			StockQuantity      float64 `json:"stock_quantity"`
-			AllowNegativeStock *bool   `json:"allow_negative_stock"`
+			CategoryID         int      `json:"category_id"`
+			Name               string   `json:"name"`
+			Description        *string  `json:"description"`
+			BasePrice          float64  `json:"base_price"`
+			VatRate            *float64 `json:"vat_rate"`
+			PluCode            *string  `json:"plu_code"`
+			Barcode            *string  `json:"barcode"`
+			Station            string   `json:"station"`
+			IsAvailable        *bool    `json:"is_available"`
+			ShowInPos          *bool    `json:"show_in_pos"`
+			Unit               string   `json:"unit"`
+			StockQuantity      float64  `json:"stock_quantity"`
+			AllowNegativeStock *bool    `json:"allow_negative_stock"`
 		}
 		_ = c.BodyParser(&payload)
 		station := payload.Station
@@ -1944,11 +2304,16 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 		if payload.AllowNegativeStock != nil {
 			allowNeg = *payload.AllowNegativeStock
 		}
+		vatRate := 10.0
+		if payload.VatRate != nil && *payload.VatRate >= 0 {
+			vatRate = *payload.VatRate
+		}
 		prod := models.Product{
 			CategoryID:    payload.CategoryID,
 			Name:          strings.TrimSpace(payload.Name),
 			Description:   payload.Description,
 			BasePrice:     payload.BasePrice,
+			VatRate:       vatRate,
 			PluCode:       payload.PluCode,
 			Barcode:       payload.Barcode,
 			Station:       station,
@@ -1956,7 +2321,9 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 			ShowInPos:     showPos,
 			AllowNegStock: allowNeg,
 		}
-		db.Create(&prod)
+		if err := db.Create(&prod).Error; err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("Ürün oluşturulamadı: %v", err))
+		}
 		if strings.TrimSpace(prod.Name) != "" {
 			var directIng models.Ingredient
 			unitStr := strings.TrimSpace(payload.Unit)
@@ -1992,6 +2359,7 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 		if err := db.First(&prod, prodID).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Ürün bulunamadı.")
 		}
+		oldName := prod.Name
 		var payload map[string]interface{}
 		_ = c.BodyParser(&payload)
 		if v, ok := payload["name"].(string); ok {
@@ -1999,6 +2367,45 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 		}
 		if v, ok := payload["base_price"].(float64); ok {
 			prod.BasePrice = v
+		}
+		if v, ok := payload["vat_rate"].(float64); ok && v >= 0 {
+			prod.VatRate = v
+		}
+		if v, exists := payload["plu_code"]; exists {
+			if s, ok := v.(string); ok {
+				tr := strings.TrimSpace(s)
+				if tr == "" {
+					prod.PluCode = nil
+				} else {
+					prod.PluCode = &tr
+				}
+			} else if v == nil {
+				prod.PluCode = nil
+			}
+		}
+		if v, exists := payload["barcode"]; exists {
+			if s, ok := v.(string); ok {
+				tr := strings.TrimSpace(s)
+				if tr == "" {
+					prod.Barcode = nil
+				} else {
+					prod.Barcode = &tr
+				}
+			} else if v == nil {
+				prod.Barcode = nil
+			}
+		}
+		if v, exists := payload["description"]; exists {
+			if s, ok := v.(string); ok {
+				tr := strings.TrimSpace(s)
+				if tr == "" {
+					prod.Description = nil
+				} else {
+					prod.Description = &tr
+				}
+			} else if v == nil {
+				prod.Description = nil
+			}
 		}
 		if v, ok := payload["category_id"].(float64); ok {
 			prod.CategoryID = int(v)
@@ -2016,17 +2423,32 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 			prod.AllowNegStock = v
 		}
 		db.Save(&prod)
-		if stockVal, hasStock := payload["stock_quantity"].(float64); hasStock && strings.TrimSpace(prod.Name) != "" {
+		if strings.TrimSpace(prod.Name) != "" {
+			stockVal, hasStock := payload["stock_quantity"].(float64)
 			unitStr, hasUnit := payload["unit"].(string)
 			unitStr = strings.TrimSpace(unitStr)
 			var directIng models.Ingredient
-			if ingID, found := service.FindIngredientIDByName(db, prod.Name); found && db.First(&directIng, ingID).Error == nil {
-				directIng.CurrentStock = service.Round3(stockVal)
+			foundIng := false
+			if oldName != "" {
+				if ingID, found := service.FindIngredientIDByName(db, oldName); found && db.First(&directIng, ingID).Error == nil {
+					foundIng = true
+				}
+			}
+			if !foundIng {
+				if ingID, found := service.FindIngredientIDByName(db, prod.Name); found && db.First(&directIng, ingID).Error == nil {
+					foundIng = true
+				}
+			}
+			if foundIng {
+				directIng.Name = strings.TrimSpace(prod.Name)
+				if hasStock {
+					directIng.CurrentStock = service.Round3(stockVal)
+				}
 				if hasUnit && unitStr != "" {
 					directIng.Unit = unitStr
 				}
 				db.Save(&directIng)
-			} else {
+			} else if hasStock {
 				if unitStr == "" {
 					unitStr = "Adet"
 				}
@@ -2052,17 +2474,22 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 		if err := db.First(&prod, prodID).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Ürün bulunamadı.")
 		}
-		var cnt int64
-		db.Model(&models.OrderItem{}).Where("product_id = ?", prodID).Count(&cnt)
-		if cnt > 0 {
-			prod.IsAvailable = false
-			db.Save(&prod)
-			_ = svc.Broadcaster.BroadcastAll(tenantCode, "MENU_UPDATED", fiber.Map{"product_id": prodID})
-			return c.JSON(fiber.Map{"status": "archived", "message": "Geçmiş sipariş kaydı olduğu için ürün pasife alındı ve stoğu sıfırlandı."})
+		if db.Dialector.Name() == "sqlite" {
+			db.Exec("PRAGMA foreign_keys = OFF;")
+			defer db.Exec("PRAGMA foreign_keys = ON;")
 		}
+		var mgs []models.ModifierGroup
+		db.Where("product_id = ?", prodID).Find(&mgs)
+		for _, mg := range mgs {
+			db.Where("group_id = ?", mg.ID).Delete(&models.ModifierOption{})
+		}
+		db.Where("product_id = ?", prodID).Delete(&models.ModifierGroup{})
+		db.Where("product_id = ?", prodID).Delete(&models.ProductVariant{})
 		db.Where("product_id = ?", prodID).Delete(&models.Recipe{})
-		db.Delete(&prod)
+		if err := db.Delete(&prod).Error; err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, fmt.Sprintf("Ürün silinemedi: %v", err))
+		}
 		_ = svc.Broadcaster.BroadcastAll(tenantCode, "MENU_UPDATED", fiber.Map{"product_id": prodID})
-		return c.JSON(fiber.Map{"status": "success", "message": "Ürün ve bağlı stok kartı tamamen silindi."})
+		return c.JSON(fiber.Map{"status": "deleted", "id": prod.ID, "message": "Ürün ve bağlı reçetesi tamamen silindi."})
 	})
 }

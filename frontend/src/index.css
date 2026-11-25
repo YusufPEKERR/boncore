@@ -61,6 +61,26 @@
     height: 100%;
   }
 
+  html, body, #root {
+    height: 100%;
+  }
+
+  @supports not (height: 100dvh) {
+    .safari9-app-shell {
+      height: 100vh !important;
+    }
+    .safari9-main-fill {
+      height: calc(100vh - 3.5rem) !important;
+      min-height: calc(100vh - 3.5rem) !important;
+    }
+    @media (max-width: 767px) {
+      .safari9-main-fill {
+        height: calc(100vh - 7rem) !important;
+        min-height: calc(100vh - 7rem) !important;
+      }
+    }
+  }
+
   body {
     background-color: var(--color-canvas);
     color: var(--color-text-main);
@@ -663,22 +683,82 @@ html.dark .master-admin-root table td {
 }
 
 /* =========================================================
-   TERMAL FİŞ & GÜN SONU / X-RAPORU YAZDIRMA STİLLERİ
-   (Sayfa genelini gizler, yalnızca .printable-thermal-receipt yazdırılır)
+   QR KOD TOPLU & TEKLİ YAZDIRMA + TERMAL FİŞ STİLLERİ
    ========================================================= */
+@media screen {
+  .printable-qr-sheet {
+    display: none !important;
+  }
+}
+
 @media print {
-  /* Sayfadaki tüm standart layout, navbar, buton ve kartları gizle */
-  body * {
+  /* 1) QR Kod Yazdırma Modu (A4 Sayfa, Yanyana CM Kartlar) */
+  html:has(body.qr-print-mode),
+  body.qr-print-mode {
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.qr-print-mode > *:not(.printable-qr-sheet) {
+    display: none !important;
+  }
+
+  body.qr-print-mode .printable-qr-sheet,
+  body.qr-print-mode .printable-qr-sheet * {
+    visibility: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body.qr-print-mode .printable-qr-sheet {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    align-items: flex-start !important;
+    align-content: flex-start !important;
+    justify-content: flex-start !important;
+    gap: 0.35cm !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0.2cm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    page: qrSheet;
+  }
+
+  body.qr-print-mode .printable-qr-card {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: 1.5px solid #0f172a !important;
+    border-radius: 8px !important;
+    padding: 0.22cm !important;
+    text-align: center !important;
+    box-sizing: border-box !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* 2) Standart Termal Fiş & Gün Sonu / X-Raporu Yazdırma Modu */
+  body:not(.qr-print-mode) * {
     visibility: hidden !important;
   }
 
-  /* Yalnızca yazdırılması gereken fiş / rapor alanını görünür kıl */
-  .printable-thermal-receipt,
-  .printable-thermal-receipt * {
+  body:not(.qr-print-mode) .printable-thermal-receipt,
+  body:not(.qr-print-mode) .printable-thermal-receipt * {
     visibility: visible !important;
   }
 
-  .printable-thermal-receipt {
+  body:not(.qr-print-mode) .printable-thermal-receipt {
     position: fixed !important;
     left: 0 !important;
     top: 0 !important;
@@ -697,18 +777,16 @@ html.dark .master-admin-root table td {
     z-index: 999999 !important;
   }
 
-  /* Renkleri temizle; siyah metin & beyaz zemin */
-  .printable-thermal-receipt [class*="text-"] {
+  body:not(.qr-print-mode) .printable-thermal-receipt [class*="text-"] {
     color: #000000 !important;
   }
-  .printable-thermal-receipt [class*="bg-"] {
+  body:not(.qr-print-mode) .printable-thermal-receipt [class*="bg-"] {
     background-color: transparent !important;
   }
-  .printable-thermal-receipt [class*="border-"] {
+  body:not(.qr-print-mode) .printable-thermal-receipt [class*="border-"] {
     border-color: #000000 !important;
   }
 
-  /* Butonları ve yazdırma tetikleyicilerini asla basma */
   .no-print,
   button,
   .btn {
@@ -718,6 +796,11 @@ html.dark .master-admin-root table td {
   @page {
     size: 80mm auto;
     margin: 0;
+  }
+
+  @page qrSheet {
+    size: A4 portrait;
+    margin: 6mm;
   }
 }
 

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { StaffUser } from '../../types';
 import { sound } from '../../services/sound';
+import { StaffShiftAndTipPanels } from './StaffShiftAndTipPanels';
 
 interface UsersManagementProps {
   currentUser: StaffUser | null;
@@ -77,6 +78,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [userSubTab, setUserSubTab] = useState<'staff' | 'shifts' | 'tips'>('staff');
   const [showPins, setShowPins] = useState<Record<number, boolean>>({});
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -99,7 +101,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
   const [formEmail, setFormEmail] = useState<string>('');
   const [formPhone, setFormPhone] = useState<string>('');
   const [formRole, setFormRole] = useState<'waiter' | 'kitchen' | 'chef' | 'courier' | 'cashier' | 'manager' | 'call_center' | 'technical'>('manager');
-  const [formPin, setFormPin] = useState<string>('1234');
+  const [formPin, setFormPin] = useState<string>('');
   const [formActive, setFormActive] = useState<boolean>(true);
 
   useEffect(() => {
@@ -137,11 +139,11 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
     setEditingUser(null);
     setFormName('');
     setFormUsername('');
-    setFormPassword('123456');
+    setFormPassword('');
     setFormEmail('');
     setFormPhone('');
     setFormRole('waiter');
-    setFormPin('1234');
+    setFormPin('');
     setFormActive(true);
     setIsRoleDropdownOpen(false);
     setIsModalOpen(true);
@@ -155,7 +157,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
     setFormEmail(u.email || '');
     setFormPhone(u.phone || '');
     setFormRole((u.role as any) || 'manager');
-    setFormPin(u.pin_code || '1234');
+    setFormPin(u.pin_code || '');
     setFormActive(u.is_active);
     setIsRoleDropdownOpen(false);
     setIsModalOpen(true);
@@ -189,17 +191,22 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
           username: formUsername.trim() || undefined,
           password: formPassword.trim() || undefined,
           role: formRole,
-          pin_code: formPin,
+          pin_code: formPin.trim() || undefined,
           is_active: formActive
         });
         showToast('Kullanıcı bilgileri ve giriş yetkileri başarıyla güncellendi.', 'success');
       } else {
+        if (!formPassword.trim() && !formPin.trim()) {
+          showToast('Yeni kullanıcı için en az bir parola veya 4 haneli PIN kodu giriniz.', 'error');
+          sound.warning();
+          return;
+        }
         await api.createStaff({
           name: formName,
           username: formUsername.trim() || undefined,
-          password: formPassword.trim() || '123456',
+          password: formPassword.trim() || undefined,
           role: formRole,
-          pin_code: formPin,
+          pin_code: formPin.trim() || undefined,
           is_active: formActive
         });
         showToast('Yeni kullanıcı başarıyla oluşturuldu.', 'success');
@@ -302,7 +309,7 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
         <div className={`p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-lg transition-all animate-slideDown ${
           toast.type === 'success' 
             ? 'bg-emerald-600/95 text-white border border-emerald-500' 
-            : 'bg-brand-600/95 text-white border border-brand-500'
+            : 'bg-rose-600/95 text-white border border-rose-500'
         }`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
           <span>{toast.message}</span>
@@ -401,11 +408,11 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                   {/* Quick PIN */}
                   <div className="col-span-2 flex items-center gap-2">
                     <span className="font-mono font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg">
-                      {isPinVisible ? u.pin_code : '● ● ● ●'}
+                      {isPinVisible ? (u.pin_code || 'Gizli') : '● ● ● ●'}
                     </span>
                     <button
                       onClick={() => togglePinVisibility(u.id)}
-                      className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
+                      className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded cursor-pointer"
                       title={isPinVisible ? 'Gizle' : 'Göster'}
                     >
                       {isPinVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -591,8 +598,8 @@ export const UsersManagement: React.FC<UsersManagementProps> = ({ currentUser, o
                     maxLength={4}
                     value={formPin}
                     onChange={(e) => setFormPin(e.target.value)}
-                    placeholder="Örn: 2001"
-                    required
+                    placeholder={editingUser ? 'Değiştirmek için...' : '4 haneli PIN'}
+                    required={!editingUser && !formPassword.trim()}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-slate-900 dark:text-white font-black text-sm tracking-widest focus:outline-none focus:border-brand-500"
                   />
                   <p className="text-[9px] text-slate-400 mt-1">POS ve sipariş onayı için kullanılır.</p>

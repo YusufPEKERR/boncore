@@ -14,6 +14,8 @@ interface MasterTenantsViewProps {
   onRefresh: () => void;
   onSelectTenantUsers: (tenantId: number) => void;
   onImpersonateTenant: (tenant: any) => void;
+  openAddModalOnMount?: boolean;
+  onAddModalOpened?: () => void;
 }
 
 export interface TenantFeatureState {
@@ -147,11 +149,46 @@ export const getRecommendedFeatures = (plan: string): TenantFeatureState => {
   }
 };
 
+const getMasterHeaders = (includeJson = false): Record<string, string> => {
+  const headers: Record<string, string> = {};
+  if (includeJson) {
+    headers['Content-Type'] = 'application/json';
+  }
+  try {
+    const token = localStorage.getItem('boncore_master_token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  } catch {}
+  return headers;
+};
+
+const INITIAL_NEW_FORM = {
+  name: '',
+  code: '',
+  owner_name: '',
+  phone: '',
+  email: '',
+  city: 'İstanbul',
+  tax_number: '',
+  tax_office: '',
+  address: '',
+  plan: 'pro',
+  monthly_price: 1490,
+  status: 'active',
+  admin_username: '',
+  admin_password: '',
+  admin_pin: '',
+  notes: ''
+};
+
 export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
   tenants,
   onRefresh,
   onSelectTenantUsers,
-  onImpersonateTenant
+  onImpersonateTenant,
+  openAddModalOnMount,
+  onAddModalOpened
 }) => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [planFilter, setPlanFilter] = useState<string>('all');
@@ -164,29 +201,25 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
   const [loadingFeatures, setLoadingFeatures] = useState<boolean>(false);
 
   // New Tenant Form state
-  const [newForm, setNewForm] = useState({
-    name: '',
-    code: '',
-    owner_name: '',
-    phone: '',
-    email: '',
-    city: 'İstanbul',
-    tax_number: '',
-    tax_office: '',
-    address: '',
-    plan: 'pro',
-    monthly_price: 1490,
-    status: 'active',
-    admin_username: '',
-    admin_password: '123456',
-    notes: ''
-  });
+  const [newForm, setNewForm] = useState({ ...INITIAL_NEW_FORM });
   const [newFeatures, setNewFeatures] = useState<TenantFeatureState>(getRecommendedFeatures('pro'));
   const [codeManuallyEdited, setCodeManuallyEdited] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (openAddModalOnMount) {
+      setIsAddModalOpen(true);
+      onAddModalOpened?.();
+    }
+  }, [openAddModalOnMount, onAddModalOpened]);
 
   const slugify = (text: string) => {
     const tr: Record<string, string> = { 'ç': 'c', 'ğ': 'g', 'ı': 'i', 'ö': 'o', 'ş': 's', 'ü': 'u', 'Ç': 'c', 'Ğ': 'g', 'İ': 'i', 'Ö': 'o', 'Ş': 's', 'Ü': 'u' };
     return text.split('').map(char => tr[char] || char).join('').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  };
+
+  const sanitizeCodeInput = (text: string) => {
+    const tr: Record<string, string> = { 'ç': 'c', 'ğ': 'g', 'ı': 'i', 'ö': 'o', 'ş': 's', 'ü': 'u', 'Ç': 'c', 'Ğ': 'g', 'İ': 'i', 'I': 'i', 'Ö': 'o', 'Ş': 's', 'Ü': 'u', ' ': '-' };
+    return text.split('').map(char => tr[char] ?? char).join('').toLowerCase().replace(/[^a-z0-9\-_]/g, '');
   };
 
   const handleNameChange = (val: string) => {
@@ -266,13 +299,15 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
 
   const handleStartEdit = async (tenant: any) => {
     sound.beep();
-    setEditingTenant({ ...tenant });
+    setEditingTenant({ ...tenant, original_code: tenant.code });
     setLoadingFeatures(true);
     // Initialize with recommended defaults first
     setEditingFeatures(getRecommendedFeatures(tenant.plan || 'pro'));
 
     try {
-      const res = await fetch(`/api/master/tenants/${tenant.id}/features?_t=${Date.now()}`);
+      const res = await fetch(`/api/master/tenants/${tenant.id}/features?_t=${Date.now()}`, {
+        headers: getMasterHeaders(false)
+      });
       if (res.ok) {
         const d = await res.json();
         setEditingFeatures({
@@ -317,34 +352,44 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
       alert('Lütfen restoran adını girin.');
       return;
     }
+    if (!newForm.owner_name.trim()) {
+      alert('Lütfen yetkili adı soyadını girin.');
+      return;
+    }
 
     sound.cashDrawer();
     try {
       const res = await fetch('/api/master/tenants', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getMasterHeaders(true),
         body: JSON.stringify({
           ...newForm,
+          owner_name: newForm.owner_name.trim(),
+          admin_username: newForm.admin_username.trim() || undefined,
+          admin_password: newForm.admin_password.trim() || undefined,
+          admin_pin: newForm.admin_pin.trim() || undefined,
           code: newForm.code ? newForm.code.trim().toLowerCase() : slugify(newForm.name)
         })
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'Restoran eklenemedi.');
+        throw new Error(err.detail || err.error || err.message || 'Restoran eklenemedi.');
       }
       const data = await res.json();
 
       // Also initialize feature toggles
       const tenantId = data?.id || data?.tenant?.id;
-      const tenantCode = data?.code || data?.tenant?.code || data?.credentials?.restaurant_code || newForm.code;
-      const adminUser = data?.admin_username || data?.credentials?.admin_username || newForm.admin_username || 'admin';
-      const adminPass = data?.admin_password || data?.credentials?.admin_password || newForm.admin_password || '123456';
-      const adminPin = data?.pin_code || data?.credentials?.admin_pin || '1234';
+      const creds = data?.credentials || {};
+      const tenantCode = creds.restaurant_code || data?.code || data?.tenant?.code || newForm.code;
+      const adminUser = creds.admin_username || data?.admin_username || newForm.admin_username || 'admin';
+      const adminPass = creds.admin_password || data?.admin_password || newForm.admin_password || '(Otomatik oluşturuldu)';
+      const adminPin = creds.admin_pin || data?.pin_code || newForm.admin_pin || '(Otomatik oluşturuldu)';
+      const ownerDisplay = data?.tenant?.owner_name || newForm.owner_name.trim();
 
       if (tenantId) {
         await fetch(`/api/master/tenants/${tenantId}/features`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getMasterHeaders(true),
           body: JSON.stringify({
             plan: newForm.plan,
             ...newFeatures
@@ -352,9 +397,11 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
         }).catch(() => null);
       }
 
-      alert(`✅ Restoran başarıyla oluşturuldu!\n\n🏢 Restoran Kodu: @${tenantCode}\n👤 Yönetici Kullanıcı: ${adminUser}\n🔑 Şifre: ${adminPass}\n🔢 Hızlı PIN: ${adminPin}`);
+      alert(`✅ Restoran başarıyla oluşturuldu!\n\n🏢 Restoran Kodu: @${tenantCode}\n👤 Yetkili Adı: ${ownerDisplay}\n🪪 Yönetici Kullanıcı: ${adminUser}\n🔑 Şifre: ${adminPass}\n🔢 Hızlı PIN: ${adminPin}`);
       setIsAddModalOpen(false);
       setCodeManuallyEdited(false);
+      setNewForm({ ...INITIAL_NEW_FORM });
+      setNewFeatures(getRecommendedFeatures('pro'));
       onRefresh();
     } catch (err: any) {
       alert(err.message || 'Hata oluştu.');
@@ -370,15 +417,16 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
       // 1. Update basic tenant fields
       const res = await fetch(`/api/master/tenants/${editingTenant.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getMasterHeaders(true),
         body: JSON.stringify({
           code: editingTenant.code?.trim().toLowerCase(),
           name: editingTenant.name,
           display_name: editingTenant.display_name ?? editingTenant.name,
-          owner_name: editingTenant.owner_name,
+          owner_name: (editingTenant.owner_name || '').trim(),
           phone: editingTenant.phone,
           email: editingTenant.email,
           city: editingTenant.city,
+          tax_number: editingTenant.tax_number,
           plan: editingTenant.plan,
           monthly_price: Number(editingTenant.monthly_price),
           status: editingTenant.status,
@@ -387,13 +435,15 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'Güncelleme başarısız.');
+        throw new Error(err.detail || err.error || err.message || 'Güncelleme başarısız.');
       }
+      const data = await res.json().catch(() => ({}));
+      const updatedCode = data?.code || data?.tenant?.code || editingTenant.code?.trim().toLowerCase();
 
       // 2. Update feature flags via dedicated PUT /api/master/tenants/:id/features
       const featRes = await fetch(`/api/master/tenants/${editingTenant.id}/features`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getMasterHeaders(true),
         body: JSON.stringify({
           plan: editingTenant.plan,
           feature_qr_menu: editingFeatures.feature_qr_menu,
@@ -416,8 +466,13 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
         console.warn('Feature update warning');
       }
 
-      const data = await res.json().catch(() => ({}));
-      alert(`Restoran bilgileri ve 11 modül lisansı başarıyla kaydedildi!`);
+      try {
+        if (updatedCode && editingTenant.original_code && localStorage.getItem('boncore_restaurant_code') === editingTenant.original_code) {
+          localStorage.setItem('boncore_restaurant_code', updatedCode);
+        }
+      } catch {}
+
+      alert(`Restoran bilgileri (@${updatedCode}) ve 11 modül lisansı başarıyla kaydedildi!`);
       setEditingTenant(null);
       onRefresh();
     } catch (err: any) {
@@ -429,10 +484,13 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
     sound.warning();
     if (window.confirm(`"${name}" restoran kaydını ve tüm aboneliğini silmek istediğinize emin misiniz?`)) {
       try {
-        const res = await fetch(`/api/master/tenants/${id}`, { method: 'DELETE' });
+        const res = await fetch(`/api/master/tenants/${id}`, {
+          method: 'DELETE',
+          headers: getMasterHeaders(false)
+        });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          throw new Error(err.detail || 'Restoran silinemedi.');
+          throw new Error(err.detail || err.error || err.message || 'Restoran silinemedi.');
         }
         onRefresh();
       } catch (e: any) {
@@ -668,7 +726,7 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                       value={newForm.code}
                       onChange={(e) => {
                         setCodeManuallyEdited(true);
-                        setNewForm({ ...newForm, code: e.target.value.toLowerCase().replace(/[^a-z0-9\-_]/g, '') });
+                        setNewForm({ ...newForm, code: sanitizeCodeInput(e.target.value) });
                       }}
                       placeholder="bebek-balikcisi"
                       className="w-full pl-7 pr-3.5 py-2.5 rounded-xl bg-slate-800 border border-emerald-500/50 text-emerald-300 font-mono font-bold focus:border-emerald-400 focus:outline-none"
@@ -677,12 +735,13 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block mb-1">İşletme Yetkilisi / Sahibi</label>
+                  <label className="block mb-1 text-emerald-300">Yetkili Adı Soyadı (İşletme Yetkilisi) *</label>
                   <input
                     type="text"
+                    required
                     value={newForm.owner_name}
                     onChange={(e) => setNewForm({ ...newForm, owner_name: e.target.value })}
-                    placeholder="Örn: Mehmet Bey"
+                    placeholder="Örn: Mehmet Yılmaz"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -832,16 +891,38 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
               {/* Initial User Credentials Box */}
               <div className="p-4 rounded-2xl bg-slate-850 border border-emerald-500/30 space-y-3">
                 <div className="text-xs font-black text-emerald-400">
-                  🔑 Otomatik Yönetici Giriş Bilgileri
+                  🔑 Otomatik Yetkili / Yönetici Giriş Bilgileri
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block mb-1 text-[11px] text-slate-300">Yetkili / Yönetici Adı Soyadı *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newForm.owner_name}
+                      onChange={(e) => setNewForm({ ...newForm, owner_name: e.target.value })}
+                      placeholder="Örn: Mehmet Yılmaz"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1 text-[11px] text-slate-400">Hızlı Giriş PIN Kodu</label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={newForm.admin_pin}
+                      onChange={(e) => setNewForm({ ...newForm, admin_pin: e.target.value })}
+                      placeholder="Boşsa otomatik üretilir"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono text-xs"
+                    />
+                  </div>
                   <div>
                     <label className="block mb-1 text-[11px] text-slate-400">Yönetici Kullanıcı Adı</label>
                     <input
                       type="text"
                       value={newForm.admin_username}
                       onChange={(e) => setNewForm({ ...newForm, admin_username: e.target.value })}
-                      placeholder="Boş bırakılırsa otomatik üretilir"
+                      placeholder="admin (boşsa otomatik)"
                       className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono text-xs"
                     />
                   </div>
@@ -851,6 +932,7 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                       type="text"
                       value={newForm.admin_password}
                       onChange={(e) => setNewForm({ ...newForm, admin_password: e.target.value })}
+                      placeholder="Boşsa güvenli şifre üretilir"
                       className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono text-xs"
                     />
                   </div>
@@ -901,7 +983,7 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                       type="text"
                       required
                       value={editingTenant.code || ''}
-                      onChange={(e) => setEditingTenant({ ...editingTenant, code: e.target.value.toLowerCase().replace(/[^a-z0-9\-_]/g, '') })}
+                      onChange={(e) => setEditingTenant({ ...editingTenant, code: sanitizeCodeInput(e.target.value) })}
                       className="w-full pl-7 pr-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-emerald-400 font-mono font-bold"
                     />
                   </div>
@@ -930,7 +1012,52 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block mb-1 text-emerald-300">Yetkili Adı Soyadı (İşletme Yetkilisi) *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingTenant.owner_name || ''}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, owner_name: e.target.value })}
+                    placeholder="Örn: Mehmet Yılmaz"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block mb-1">Telefon</label>
+                  <input
+                    type="text"
+                    value={editingTenant.phone || ''}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, phone: e.target.value })}
+                    placeholder="0532 000 00 00"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block mb-1">E-Posta Adresi</label>
+                  <input
+                    type="email"
+                    value={editingTenant.email || ''}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, email: e.target.value })}
+                    placeholder="restoran@gmail.com"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block mb-1">Şehir</label>
+                  <input
+                    type="text"
+                    value={editingTenant.city || ''}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, city: e.target.value })}
+                    placeholder="İstanbul"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white"
+                  />
+                </div>
+
                 <div>
                   <label className="block mb-1">Abonelik Planı</label>
                   <select
@@ -968,11 +1095,12 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block mb-1">Telefon</label>
+                  <label className="block mb-1">VKN / TCKN</label>
                   <input
                     type="text"
-                    value={editingTenant.phone || ''}
-                    onChange={(e) => setEditingTenant({ ...editingTenant, phone: e.target.value })}
+                    value={editingTenant.tax_number || ''}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, tax_number: e.target.value })}
+                    placeholder="10 Haneli Vergi No"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white"
                   />
                 </div>

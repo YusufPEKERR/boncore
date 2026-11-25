@@ -34,6 +34,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
 }) => {
   const [dateRange, setDateRange] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
   const [paymentFilter, setPaymentFilter] = useState<string>('all');
   const [loading, setLoading] = useState<boolean>(true);
   const [reportData, setReportData] = useState<any>(null);
@@ -59,13 +60,18 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
     return String(val);
   };
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
   const loadClosedBills = useCallback(async (overrideDateRange?: string) => {
     const targetRange = overrideDateRange ?? dateRange;
     setLoading(true);
     try {
       const data = await api.getClosedBillsReport({
         dateRange: targetRange,
-        search: searchQuery.trim() || undefined,
+        search: debouncedSearch || undefined,
         paymentMethod: paymentFilter !== 'all' ? paymentFilter : undefined
       });
       if (Array.isArray(data)) {
@@ -106,7 +112,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [dateRange, searchQuery, paymentFilter]);
+  }, [dateRange, debouncedSearch, paymentFilter]);
 
   const handleDateRangeSelect = (nextRange: string) => {
     sound.beep();
@@ -179,7 +185,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
       {/* Toast Notification */}
       {toast && (
         <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-extrabold animate-slideDown ${
-          toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-brand-600 text-white'
+          toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
         }`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
           <span>{toast.message}</span>
@@ -327,7 +333,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
                 const activeItems = (bill.items || []).filter((i: any) => !i.is_voided);
                 const previewText = activeItems
                   .slice(0, 3)
-                  .map((i: any) => `${Number.isInteger(i.quantity) ? i.quantity + 'x' : i.quantity + ' Kg'} ${i.product_name}`)
+                  .map((i: any) => `${Number.isInteger(i.quantity) ? i.quantity + 'x' : i.quantity + ' ' + (i.unit || 'Kg')} ${i.product_name}`)
                   .join(', ');
                 const extraCount = activeItems.length > 3 ? ` +${activeItems.length - 3} ürün` : '';
 
@@ -344,7 +350,7 @@ export const ClosedBillsReport: React.FC<ClosedBillsReportProps> = ({
                         <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-extrabold ${
                           bill.status === 'paid'
                             ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400'
-                            : 'bg-emerald-50 dark:bg-emerald-950/60 text-brand-600 dark:text-emerald-400'
+                            : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
                         }`}>
                           {bill.status === 'paid' ? 'Ödendi / Kapalı' : 'İptal Edildi'}
                         </span>

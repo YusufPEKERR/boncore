@@ -17,8 +17,6 @@ interface AdisyoSidebarProps {
   setActiveTab: (tab: string) => void;
   currentUser: StaffUser | null;
   restaurantTitle?: string;
-  onOpenQrallModal: () => void;
-  onOpenOkcModal?: () => void;
   onLogout?: () => void;
   onOpenLanding?: () => void;
 }
@@ -30,27 +28,19 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
   setActiveTab,
   currentUser,
   restaurantTitle = 'BONCORE RESTORAN',
-  onOpenQrallModal,
-  onOpenOkcModal,
   onLogout,
   onOpenLanding
 }) => {
-  const [isIntegrationsOpen, setIsIntegrationsOpen] = useState<boolean>(() => {
-    const saved = localStorage.getItem('boncore_menu_integrations_open');
-    if (saved !== null) return saved === 'true';
-    return activeTab === 'integration_menu';
-  });
-
   const [isDefinitionsOpen, setIsDefinitionsOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem('boncore_menu_definitions_open');
     if (saved !== null) return saved === 'true';
-    return ['settings', 'table_definition', 'product_definition', 'kitchen_groups', 'inventory', 'profile'].includes(activeTab);
+    return ['settings', 'table_definition', 'product_definition', 'kitchen_groups'].includes(activeTab);
   });
 
   const [isOperationsOpen, setIsOperationsOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem('boncore_menu_operations_open');
     if (saved !== null) return saved === 'true';
-    return ['cashier', 'audit'].includes(activeTab);
+    return ['inventory', 'cashier', 'audit'].includes(activeTab);
   });
 
   const [isUsersOpen, setIsUsersOpen] = useState<boolean>(() => {
@@ -62,12 +52,8 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
   const [isReportsOpen, setIsReportsOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem('boncore_menu_reports_open');
     if (saved !== null) return saved === 'true';
-    return ['restaurant_statistics', 'closed_bills_report', 'product_sales_report', 'day_end_report'].includes(activeTab);
+    return ['restaurant_statistics', 'closed_bills_report', 'product_sales_report', 'day_end_report', 'cost_profit'].includes(activeTab);
   });
-
-  useEffect(() => {
-    localStorage.setItem('boncore_menu_integrations_open', String(isIntegrationsOpen));
-  }, [isIntegrationsOpen]);
 
   useEffect(() => {
     localStorage.setItem('boncore_menu_definitions_open', String(isDefinitionsOpen));
@@ -116,7 +102,7 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-extrabold text-base text-slate-900 dark:text-white tracking-tight">BonCore <span className="text-brand-600 dark:text-emerald-400">POS</span></span>
-                <span className="text-[9px] font-bold text-slate-400 bg-slate-200/70 dark:bg-slate-800 px-1.5 py-0.2 rounded">v2.0</span>
+                <span className="text-[9px] font-bold text-slate-400 bg-slate-200/70 dark:bg-slate-800 px-1.5 py-0.2 rounded">v2.4</span>
               </div>
               <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide truncate max-w-[170px]">
                 {restaurantTitle}
@@ -148,64 +134,38 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
             </button>
           )}
 
-          {/* Entegrasyon İşlemleri Dropdown */}
+          {/* Entegrasyon Menü İşlemleri */}
           {canTab('integration_menu') && (
-            <div>
-              <button
-                onClick={() => setIsIntegrationsOpen(!isIntegrationsOpen)}
-                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition"
-              >
-                <div className="flex items-center gap-3">
-                  <Layers className="w-4 h-4 text-slate-500" />
-                  <span className="font-bold">Entegrasyon İşlemleri</span>
-                </div>
-                {isIntegrationsOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
-              </button>
-
-              {isIntegrationsOpen && (
-                <div className="pl-7 pr-1 py-1 space-y-0.5 border-l-2 border-slate-100 dark:border-slate-800 ml-4">
-                  <button
-                    onClick={() => handleNavClick('integration_menu')}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between ${
-                      activeTab === 'integration_menu' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <span>Ürün Eşleştirme Ekranı</span>
-                  </button>
-                  <button
-                    onClick={() => handleNavClick('integration_menu')}
-                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center justify-between"
-                  >
-                    <span>Entegrasyon İşlemleri</span>
-                    <span className="bg-[#338d35] text-white text-[8px] font-black px-1 py-0.2 rounded">Yeni</span>
-                  </button>
-                </div>
-              )}
-            </div>
+            <button
+              onClick={() => handleNavClick('integration_menu')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
+                activeTab === 'integration_menu'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Layers className="w-4 h-4 text-slate-500" />
+              <span>Entegrasyon Menü İşlemleri</span>
+            </button>
           )}
 
           {/* Dijital Menü (QR) */}
           {canTab('qr') && (
             <button
               onClick={() => handleNavClick('qr')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
                 activeTab === 'qr'
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
                   : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
-              <div className="flex items-center gap-3">
-                <Smartphone className="w-4 h-4 text-slate-500" />
-                <span>Dijital Menü (QR)</span>
-              </div>
-              <span className="bg-[#338d35] text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-md">
-                Canlı
-              </span>
+              <Smartphone className="w-4 h-4 text-slate-500" />
+              <span>Dijital Menü (QR)</span>
             </button>
           )}
 
           {/* Tanımlamalar Dropdown */}
-          {(canTab('settings') || canTab('table_definition') || canTab('product_definition') || canTab('inventory') || canTab('kitchen_groups') || canTab('profile')) && (
+          {(canTab('settings') || canTab('table_definition') || canTab('product_definition') || canTab('kitchen_groups')) && (
             <div>
               <button
                 onClick={() => setIsDefinitionsOpen(!isDefinitionsOpen)}
@@ -250,14 +210,6 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                       Menü / Ürünler
                     </button>
                   )}
-                  {canTab('inventory') && (
-                    <button
-                      onClick={() => handleNavClick('inventory')}
-                      className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-                    >
-                      Birimler & Reçeteler
-                    </button>
-                  )}
                   {canTab('kitchen_groups') && (
                     <button
                       onClick={() => handleNavClick('kitchen_groups')}
@@ -266,16 +218,6 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                       }`}
                     >
                       Mutfak Grupları
-                    </button>
-                  )}
-                  {canTab('profile') && (
-                    <button
-                      onClick={() => handleNavClick('profile')}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
-                        activeTab === 'profile' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                      }`}
-                    >
-                      Profil & Kullanıcı Bilgisi
                     </button>
                   )}
                 </div>
@@ -332,17 +274,14 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
           {canTab('customers') && (
             <button
               onClick={() => handleNavClick('customers')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
                 activeTab === 'customers'
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
                   : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
-              <div className="flex items-center gap-3">
-                <Gift className="w-4 h-4 text-brand-500" />
-                <span>Müşteri Sadakat & Cari</span>
-              </div>
-              <span className="bg-[#338d35] text-white text-[8px] font-black px-1.5 py-0.5 rounded">CRM</span>
+              <Gift className="w-4 h-4 text-brand-500" />
+              <span>Müşteri Sadakat & Cari</span>
             </button>
           )}
 
@@ -350,53 +289,14 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
           {canTab('reservations') && (
             <button
               onClick={() => handleNavClick('reservations')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
                 activeTab === 'reservations'
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
                   : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
-              <div className="flex items-center gap-3">
-                <FileText className="w-4 h-4 text-indigo-500" />
-                <span>Masa Rezervasyon</span>
-              </div>
-              <span className="bg-indigo-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded">Pro</span>
-            </button>
-          )}
-
-          {/* Self-Servis Kiosk & CFD */}
-          {canTab('kiosk') && (
-            <button
-              onClick={() => handleNavClick('kiosk')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
-                activeTab === 'kiosk'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
-                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Smartphone className="w-4 h-4 text-emerald-500" />
-                <span>Kiosk & Çağrı Ekranı</span>
-              </div>
-              <span className="bg-emerald-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded">CFD</span>
-            </button>
-          )}
-
-          {/* Otel Yönetim (PMS Oda Folyo) */}
-          {canTab('hotel') && (
-            <button
-              onClick={() => handleNavClick('hotel')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left ${
-                activeTab === 'hotel'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
-                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Warehouse className="w-4 h-4 text-amber-500" />
-                <span>Otel Yönetim (PMS)</span>
-              </div>
-              <span className="bg-amber-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded">Folyo</span>
+              <FileText className="w-4 h-4 text-indigo-500" />
+              <span>Masa Rezervasyon</span>
             </button>
           )}
 
@@ -419,7 +319,9 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                   {canTab('inventory') && (
                     <button
                       onClick={() => handleNavClick('inventory')}
-                      className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                        activeTab === 'inventory' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
                     >
                       Stok İşlemleri
                     </button>
@@ -427,17 +329,11 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                   {canTab('cashier') && (
                     <button
                       onClick={() => handleNavClick('cashier')}
-                      className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
+                        activeTab === 'cashier' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
                     >
                       Gider / Masraf İşlemleri
-                    </button>
-                  )}
-                  {canTab('inventory') && (
-                    <button
-                      onClick={() => handleNavClick('inventory')}
-                      className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-                    >
-                      Zayi / Fire İşlemleri
                     </button>
                   )}
                   {canTab('audit') && (
@@ -555,50 +451,17 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                   {canTab('cost_profit') && (
                     <button
                       onClick={() => handleNavClick('cost_profit')}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between ${
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition ${
                         activeTab === 'cost_profit' ? 'text-[#338d35] font-bold bg-emerald-50/80 dark:bg-emerald-950/40' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
                       }`}
                     >
                       <span>Maliyet & Rapor Sihirbazı</span>
-                      <span className="bg-emerald-600 text-white text-[8px] font-black px-1 py-0.2 rounded">Pro</span>
                     </button>
                   )}
                 </div>
               )}
             </div>
           )}
-
-          {/* Uygulama Mağazası (Frame 190) */}
-          {canTab('app_store') && (
-            <button
-              onClick={() => handleNavClick('app_store')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${
-                activeTab === 'app_store'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#338d35] dark:text-emerald-400 font-bold border-l-4 border-[#338d35]'
-                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-              }`}
-            >
-              <Store className="w-4 h-4 text-slate-500" />
-              <span>Uygulama Mağazası</span>
-            </button>
-          )}
-
-          {/* Tavsiye Et ve Kazan */}
-          <button
-            onClick={() => {
-              onClose();
-              onOpenQrallModal();
-            }}
-            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition text-left text-slate-700 dark:text-slate-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-          >
-            <div className="flex items-center gap-3">
-              <Award className="w-4 h-4 text-amber-500" />
-              <span>Tavsiye Et ve Kazan</span>
-            </div>
-            <span className="bg-[#338d35] text-white text-[9px] font-black px-1.5 py-0.5 rounded">
-              Yeni
-            </span>
-          </button>
         </div>
 
         {/* Bottom User Profile & Logout Card */}
@@ -628,20 +491,6 @@ export const AdisyoSidebar: React.FC<AdisyoSidebarProps> = ({
                 </button>
               )}
             </div>
-          )}
-
-          {onOpenLanding && (
-            <button
-              onClick={() => {
-                sound.beep();
-                onClose();
-                onOpenLanding();
-              }}
-              className="w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-            >
-              <Globe className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>Tanıtım & Anasayfa</span>
-            </button>
           )}
 
           {onLogout && (

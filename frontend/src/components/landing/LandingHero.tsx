@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Sparkles, ArrowRight, Play, CheckCircle2, ShieldCheck, 
   WifiOff, Smartphone, Monitor, ChefHat, Layers, Receipt, 
@@ -18,6 +18,28 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   onQuickDemoLogin
 }) => {
   const [activeShowcaseTab, setActiveShowcaseTab] = useState<'pos' | 'kds' | 'qr' | 'reports'>('pos');
+  const [demoPaymentToast, setDemoPaymentToast] = useState<string | null>(null);
+  const demoToastTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (demoToastTimerRef.current !== null) {
+        window.clearTimeout(demoToastTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleDemoPayment = () => {
+    sound.cashDrawer();
+    setDemoPaymentToast('Demoda Kasa Tahsilatı simüle edildi! (₺1.240,00)');
+    if (demoToastTimerRef.current !== null) {
+      window.clearTimeout(demoToastTimerRef.current);
+    }
+    demoToastTimerRef.current = window.setTimeout(() => {
+      setDemoPaymentToast(null);
+      demoToastTimerRef.current = null;
+    }, 3500);
+  };
 
   return (
     <section className="relative pt-28 pb-16 sm:pt-36 sm:pb-24 overflow-hidden">
@@ -234,9 +256,16 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => { sound.cashDrawer(); alert('Demoda Kasa Tahsilatı simüle edildi!'); }}
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                      {demoPaymentToast && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 text-xs font-extrabold animate-fadeIn">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span>{demoPaymentToast}</span>
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleDemoPayment}
                         className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-black text-xs shadow-sm cursor-pointer"
                       >
                         Nakit / POS Tahsil Et

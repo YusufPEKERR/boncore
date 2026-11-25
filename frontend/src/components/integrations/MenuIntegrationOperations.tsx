@@ -13,7 +13,6 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
   categories,
   onRefreshData
 }) => {
-  const [selectedBrand, setSelectedBrand] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showWarningToast, setShowWarningToast] = useState<boolean>(false);
@@ -46,14 +45,6 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
     
     return matchesSearch;
   });
-
-  const brandLabelMap: Record<string, string> = {
-    all: 'Yemeksepeti • Getir • Trendyol',
-    yemeksepeti: 'Yemeksepeti',
-    getir: 'Getir Yemek',
-    trendyol: 'Trendyol Yemek',
-    migros: 'Migros Yemek'
-  };
 
   return (
     <div className="flex-1 min-h-full overflow-y-auto p-4 sm:p-6 pb-28 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none animate-fadeIn font-sans transition-colors duration-200 space-y-6">
@@ -97,20 +88,6 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
               <option value="passive">Sadece Pasif</option>
             </select>
           </div>
-
-          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold">
-            <select
-              value={selectedBrand}
-              onChange={(e) => setSelectedBrand(e.target.value)}
-              className="bg-[#338d35] text-white px-3 py-1.5 rounded-lg font-bold focus:outline-none"
-            >
-              <option value="all">Kanal Seç (Tümü)</option>
-              <option value="yemeksepeti">Yemeksepeti</option>
-              <option value="getir">Getir Yemek</option>
-              <option value="trendyol">Trendyol Yemek</option>
-              <option value="migros">Migros Yemek</option>
-            </select>
-          </div>
         </div>
       </div>
 
@@ -118,8 +95,7 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-x-auto">
         <div className="min-w-[540px]">
           <div className="grid grid-cols-12 bg-slate-50 dark:bg-slate-800/60 p-4 border-b border-slate-200 dark:border-slate-800 text-xs font-black text-slate-700 dark:text-slate-300 uppercase">
-            <div className="col-span-5">Ürün Adı & Kategori</div>
-            <div className="col-span-3">Entegrasyon Kanalı</div>
+            <div className="col-span-8">Ürün Adı & Kategori</div>
             <div className="col-span-2">Fiyat</div>
             <div className="col-span-2 text-right">Satışa Açık/Kapalı</div>
           </div>
@@ -129,14 +105,9 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
               const isAvail = availableMap[p.id] !== undefined ? availableMap[p.id] : (p.is_available ?? true);
               return (
                 <div key={p.id} className="grid grid-cols-12 p-4 items-center text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                  <div className="col-span-5">
+                  <div className="col-span-8">
                     <div className="font-bold text-slate-900 dark:text-white uppercase">{p.name}</div>
                     <div className="text-[10px] text-slate-400 font-semibold">{p.categoryName}</div>
-                  </div>
-                  <div className="col-span-3 flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 font-extrabold text-[10px]">
-                      {brandLabelMap[selectedBrand] || 'Tüm Kanallar'}
-                    </span>
                   </div>
                   <div className="col-span-2 font-mono font-bold text-slate-800 dark:text-slate-200">
                     ₺{Number(p.base_price || 0).toFixed(2)}

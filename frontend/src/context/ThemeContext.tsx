@@ -15,8 +15,10 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<Theme>(() => {
-    const saved = localStorage.getItem('boncore_theme');
-    if (saved === 'dark' || saved === 'light') return saved;
+    try {
+      const saved = localStorage.getItem('boncore_theme');
+      if (saved === 'dark' || saved === 'light') return saved;
+    } catch {}
     return 'light';
   });
 
@@ -29,7 +31,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       root.classList.remove('dark');
       root.classList.add('light');
     }
-    localStorage.setItem('boncore_theme', theme);
+    try {
+      localStorage.setItem('boncore_theme', theme);
+    } catch {}
   }, [theme]);
 
   const toggleTheme = () => {

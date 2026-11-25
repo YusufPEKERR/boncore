@@ -146,6 +146,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     try {
       const data = await api.getOrder(orderId);
       if (data.status === 'paid' || (data.remaining_total <= 0.01 && data.paid_total > 0)) {
+        if (data.status !== 'paid') {
+          try {
+            await api.settlePayment({
+              order_id: orderId,
+              payments: [],
+              cashier_name: cashierName || 'Kasiyer',
+              close_table: true,
+            });
+          } catch (closeErr) {
+            console.warn('Prepaid order table close error:', closeErr);
+          }
+        }
         showNotice('Bu masanın ödemesi zaten tamamlanmıştır.', false);
         setTimeout(() => {
           onPaymentCompleted();
@@ -163,10 +175,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
-  // Append Digit with rule: Girilen tutar kalan borçtan büyükse 0 yap!
+  // Append Digit: kalan borcu aşarsa kalan tutara sabitler ve bilgi verir
   const handleAppendDigit = (digit: string) => {
+    const rem = order?.remaining_total || 0;
     setPayAmount(prev => {
-      const rem = order?.remaining_total || 0;
       // Eğer ekranda tam kalan borç yazıyorsa veya 0/0.00 ise yeni rakamla başla
       let nextVal = digit;
       if (prev !== '0.00' && prev !== '0' && prev !== rem.toFixed(2)) {
@@ -174,10 +186,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
 
       const nextNum = parseFloat(nextVal);
-      // KULLANICI KURALI: Girilen sayı kalan borçtan büyükse ödenecek tutarı 0 yap!
-      if (!isNaN(nextNum) && nextNum > rem) {
+      if (!isNaN(nextNum) && nextNum > rem + 0.001) {
         sound.warning();
-        return '0.00';
+        setTimeout(() => {
+          showNotice('Girilen tutar kalan borçtan fazla olamaz, kalan tutara ayarlandı.', false);
+        }, 0);
+        return rem.toFixed(2);
       }
       return nextVal;
     });

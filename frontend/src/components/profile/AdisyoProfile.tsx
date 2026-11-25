@@ -11,8 +11,6 @@ interface AdisyoProfileProps {
 
 export const AdisyoProfile: React.FC<AdisyoProfileProps> = ({ currentUser, onUserUpdated }) => {
   const [activeTab, setActiveTab] = useState<string>('user_info');
-  const [email, setEmail] = useState<string>('admin@boncorepos.com');
-  const [phone, setPhone] = useState<string>('+90 532 000 00 00');
   const [name, setName] = useState<string>(currentUser?.name || 'Restoran Yöneticisi');
   const [username, setUsername] = useState<string>(currentUser?.username || 'admin');
 
@@ -37,9 +35,7 @@ export const AdisyoProfile: React.FC<AdisyoProfileProps> = ({ currentUser, onUse
 
   const tabs = [
     { id: 'user_info', label: 'Kullanıcı Bilgileri' },
-    { id: 'password', label: 'Parola & PIN Değişikliği' },
-    { id: 'privacy', label: 'Gizlilik ve Güvenlik' },
-    { id: 'account', label: 'Lisans & Hesap Bilgileri' }
+    { id: 'password', label: 'Parola & PIN Değişikliği' }
   ];
 
   const showNotice = (text: string, type: 'success' | 'error') => {
@@ -155,7 +151,7 @@ export const AdisyoProfile: React.FC<AdisyoProfileProps> = ({ currentUser, onUse
             <div className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn ${
               notice.type === 'success'
                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800'
-                : 'bg-emerald-50 text-brand-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800'
+                : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800'
             }`}>
               {notice.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
               <span>{notice.text}</span>
@@ -194,21 +190,12 @@ export const AdisyoProfile: React.FC<AdisyoProfileProps> = ({ currentUser, onUse
                 />
               </div>
               <div>
-                <label className="text-slate-500 block mb-1">E-Posta:</label>
+                <label className="text-slate-500 block mb-1">Kullanıcı Adı:</label>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-slate-900 dark:text-white"
-                />
-              </div>
-              <div>
-                <label className="text-slate-500 block mb-1">Telefon:</label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-slate-900 dark:text-white"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-slate-900 dark:text-white font-mono"
                 />
               </div>
               <button
@@ -310,36 +297,6 @@ export const AdisyoProfile: React.FC<AdisyoProfileProps> = ({ currentUser, onUse
             </div>
           )}
 
-          {activeTab === 'account' && (
-            <div className="space-y-6 max-w-xl text-xs">
-              <h3 className="text-sm font-black text-slate-900 dark:text-white">Üyelik ve Lisans Bilgileri</h3>
-              <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
-                BonCore POS v2.4 lisansınız yerel (Local-first) ve bulut senkronize modda sınırsız ve kesintisiz çalışacak şekilde yapılandırılmıştır.
-              </p>
-              <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2">
-                <div className="flex justify-between font-bold">
-                  <span className="text-slate-500">Mevcut Plan:</span>
-                  <span className="text-emerald-600">BonCore POS Enterprise v2.4</span>
-                </div>
-                <div className="flex justify-between font-bold">
-                  <span className="text-slate-500">Lisans Durumu:</span>
-                  <span className="text-blue-600">Ömür Boyu Aktif</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'privacy' && (
-            <div className="space-y-4 max-w-xl text-xs">
-              <div className="flex items-center gap-2 text-slate-900 dark:text-white font-black text-sm">
-                <Shield className="w-4 h-4 text-emerald-500" />
-                <span>Oturum ve Güvenlik Politikası</span>
-              </div>
-              <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
-                Tüm kullanıcı parolaları PBKDF2-SHA256 algoritması ile şifrelenerek saklanır ve oturumlarınız kriptografik imzalı erişim anahtarları (Bearer Token) ile korunur.
-              </p>
-            </div>
-          )}
         </div>
       </div>
     </div>

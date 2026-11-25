@@ -66,7 +66,7 @@ func (ps *PermissionService) NormalizeRoleKey(rawRole string) string {
 	}
 	r := strings.ToLower(strings.TrimSpace(decoded))
 	switch r {
-	case "admin", "müdür", "mudur", "manager":
+	case "admin", "müdür", "mudur", "yönetici", "yonetici", "superadmin", "manager":
 		return "manager"
 	case "kasa", "kasiyer", "cashier":
 		return "cashier"
@@ -76,6 +76,8 @@ func (ps *PermissionService) NormalizeRoleKey(rawRole string) string {
 		return "courier"
 	case "garson", "waiter":
 		return "waiter"
+	case "çağrı merkezi", "cagri merkezi", "call_center":
+		return "call_center"
 	default:
 		return r
 	}

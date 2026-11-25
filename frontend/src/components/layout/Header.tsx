@@ -69,7 +69,13 @@ export const Header: React.FC<HeaderProps> = ({
   useEffect(() => {
     const checkSupportReplies = async () => {
       try {
-        const res = await fetch(`/api/support/tickets?_t=${Date.now()}`);
+        const token = localStorage.getItem('boncore_token');
+        const rCode = localStorage.getItem('boncore_restaurant_code');
+        if (!token && !rCode) return;
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (rCode) headers['X-Restaurant-Code'] = rCode;
+        const res = await fetch(`/api/support/tickets?_t=${Date.now()}`, { headers });
         if (res.ok) {
           const tickets = await res.json();
           if (Array.isArray(tickets)) {
@@ -107,33 +113,33 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-    <header className="h-14 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-3 md:px-4 flex items-center justify-between select-none z-30 shadow-sm transition-colors duration-200">
+    <header className="h-14 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-2 sm:px-3 md:px-4 flex items-center justify-between select-none z-30 shadow-sm transition-colors duration-200 overflow-hidden max-w-full">
       {/* Left: Hamburger Menu Button + Brand + Title */}
-      <div className="flex items-center gap-2.5 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
         <button
           onClick={() => { sound.beep(); onOpenSidebar(); }}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition font-bold text-xs cursor-pointer border border-slate-200/60 dark:border-slate-700/60"
+          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition font-bold text-xs cursor-pointer border border-slate-200/60 dark:border-slate-700/60 shrink-0"
         >
           <Menu className="w-4 h-4 text-slate-600 dark:text-slate-300" />
           <span className="hidden sm:inline">Menü</span>
         </button>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
           <img 
             src="/icon-192.png" 
             alt="BonCore POS" 
-            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover shadow-sm shrink-0" 
+            className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl object-cover shadow-sm shrink-0" 
           />
-          <div className="leading-tight">
+          <div className="leading-tight min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="font-black text-xs sm:text-sm text-slate-900 dark:text-white tracking-tight">
+              <span className="font-black text-xs sm:text-sm text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
                 BonCore <span className="text-[#338d35] dark:text-emerald-400">POS</span>
               </span>
               <span className="hidden md:inline-block text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
-                v2.0
+                v2.4
               </span>
             </div>
-            <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate max-w-[140px] sm:max-w-[200px]">
+            <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate max-w-[95px] xs:max-w-[120px] sm:max-w-[200px]">
               {restaurantTitle}
             </div>
           </div>
@@ -142,30 +148,36 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Center: [Masalar] / [Siparişler] Switcher Tabs + Live Date & Time Clock */}
       <div className="hidden md:flex items-center gap-3">
-        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
-          <button
-            onClick={() => { sound.beep(); setActiveTab('tables'); }}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-              activeTab === 'tables' || activeTab === 'dashboard'
-                ? 'bg-[#338d35] hover:bg-[#28702a] text-white shadow-sm shadow-emerald-600/20'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <Grid className="w-3.5 h-3.5" />
-            <span>Masalar</span>
-          </button>
-          <button
-            onClick={() => { sound.beep(); setActiveTab('pos'); }}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-              activeTab === 'pos'
-                ? 'bg-[#338d35] hover:bg-[#28702a] text-white shadow-sm shadow-emerald-600/20'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>POS Sipariş</span>
-          </button>
-        </div>
+        {(canTab('tables') || canTab('pos')) && (
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+            {canTab('tables') && (
+              <button
+                onClick={() => { sound.beep(); setActiveTab('tables'); }}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  activeTab === 'tables'
+                    ? 'bg-[#338d35] hover:bg-[#28702a] text-white shadow-sm shadow-emerald-600/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Grid className="w-3.5 h-3.5" />
+                <span>Masalar</span>
+              </button>
+            )}
+            {canTab('pos') && (
+              <button
+                onClick={() => { sound.beep(); setActiveTab('pos'); }}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  activeTab === 'pos'
+                    ? 'bg-[#338d35] hover:bg-[#28702a] text-white shadow-sm shadow-emerald-600/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>POS Sipariş</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Live Date & Clock Pill */}
         <div 
@@ -184,7 +196,7 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Right Controls Bar */}
-      <div className="flex items-center gap-1.5 sm:gap-2">
+      <div className="flex items-center gap-1 sm:gap-1.5 md:gap-2 shrink-0">
         {/* Waiter Buzzer Notification Bell */}
         {buzzerCount > 0 && (
           <button
@@ -205,19 +217,19 @@ export const Header: React.FC<HeaderProps> = ({
         {onRefreshData && (
           <button
             onClick={() => { sound.beep(); onRefreshData(); }}
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+            className="p-1.5 sm:p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
             title="Verileri Yenile"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
         )}
 
-        {/* Caller ID / Phone Icon */}
+        {/* Paket Servis / Phone Icon */}
         {canTab('delivery') && (
           <button
             onClick={() => { sound.beep(); setActiveTab('delivery'); }}
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-            title="Caller ID Santral & Paket"
+            className="hidden sm:flex p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+            title="Paket Servis & Kurye"
           >
             <PhoneCall className="w-4 h-4" />
           </button>
@@ -231,7 +243,7 @@ export const Header: React.FC<HeaderProps> = ({
               const ok = await requestNotificationPermission();
               if (ok) setNotifPerm('granted');
             }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-200 border border-amber-500/40 text-[11px] font-extrabold transition cursor-pointer animate-pulse"
+            className="flex items-center gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-200 border border-amber-500/40 text-[11px] font-extrabold transition cursor-pointer animate-pulse"
             title="Cihaz / Tarayıcı Bildirimlerini Aç"
           >
             <BellRing className="w-3.5 h-3.5 text-amber-500" />
@@ -247,7 +259,7 @@ export const Header: React.FC<HeaderProps> = ({
                 tag: 'boncore-test-ping'
               });
             }}
-            className="p-2 rounded-xl text-emerald-600 dark:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer hidden sm:flex"
+            className="p-1.5 sm:p-2 rounded-xl text-emerald-600 dark:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer hidden sm:flex"
             title="Cihaz Bildirimleri Aktif (Test Gönder)"
           >
             <BellRing className="w-4 h-4" />
@@ -257,7 +269,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Wifi / Connectivity status */}
         <div
           title={isConnected ? 'Canlı WebSocket Bağlantısı Aktif' : 'Çevrimdışı Mod'}
-          className={`p-2 rounded-xl flex items-center gap-1 ${isConnected ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-500 animate-pulse'}`}
+          className={`hidden sm:flex p-2 rounded-xl items-center gap-1 ${isConnected ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-500 animate-pulse'}`}
         >
           <Wifi className="w-4 h-4" />
         </div>
@@ -265,7 +277,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Theme Toggle Button */}
         <button
           onClick={onToggleTheme}
-          className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+          className="p-1.5 sm:p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
           title={theme === 'dark' ? 'Açık Temaya Geç' : 'Koyu Temaya Geç'}
         >
           {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
@@ -283,18 +295,6 @@ export const Header: React.FC<HeaderProps> = ({
         >
           {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
         </button>
-
-        {/* Anasayfa / Tanıtım Sitesi Button */}
-        {onOpenLanding && (
-          <button
-            onClick={() => { sound.beep(); onOpenLanding(); }}
-            className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 text-[11px] font-bold transition cursor-pointer shadow-2xs"
-            title="Tanıtım & Pazarlama Anasayfasına Git"
-          >
-            <Globe className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Anasayfa</span>
-          </button>
-        )}
 
         {/* Destek İste Pill Button */}
         <button
@@ -314,10 +314,10 @@ export const Header: React.FC<HeaderProps> = ({
         {/* User Account / PIN Profile Chip */}
         <button
           onClick={onOpenPinModal}
-          className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 transition text-xs font-bold cursor-pointer"
+          className="flex items-center gap-2 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 transition text-xs font-bold cursor-pointer"
           title="Personel Değiştir / Hızlı PIN"
         >
-          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#338d35] to-emerald-600 text-white font-black text-[11px] flex items-center justify-center shadow-sm">
+          <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-gradient-to-br from-[#338d35] to-emerald-600 text-white font-black text-[11px] flex items-center justify-center shadow-sm">
             {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : <UserIcon className="w-3.5 h-3.5" />}
           </div>
           <div className="text-left leading-tight hidden sm:block">
@@ -334,7 +334,7 @@ export const Header: React.FC<HeaderProps> = ({
         {onLogout && (
           <button
             onClick={() => { sound.beep(); onLogout(); }}
-            className="p-2 rounded-xl bg-slate-100 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-emerald-950/50 text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-emerald-400 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+            className="p-1.5 sm:p-2 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/50 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
             title="Güvenli Çıkış Yap"
           >
             <LogOut className="w-4 h-4" />

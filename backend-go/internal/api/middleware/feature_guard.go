@@ -92,7 +92,7 @@ func CheckTenantDelinquencyMiddleware(svc *service.Services) fiber.Handler {
 		if strings.HasPrefix(path, "/api/master") ||
 			strings.HasPrefix(path, "/health") ||
 			strings.HasPrefix(path, "/api/auth/login") ||
-			strings.HasPrefix(path, "/api/auth/pin-login") ||
+			strings.HasPrefix(path, "/api/auth/login-pin") ||
 			strings.HasPrefix(path, "/api/heartbeat") ||
 			strings.HasPrefix(path, "/ws") ||
 			strings.HasPrefix(path, "/static") {

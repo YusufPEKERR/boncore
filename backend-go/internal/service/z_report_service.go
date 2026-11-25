@@ -123,7 +123,7 @@ func GetOrCreateActiveRegister(db *gorm.DB) models.CashRegister {
 	var reg models.CashRegister
 	if err := db.Where("status = ?", "open").Order("id desc").First(&reg).Error; err != nil {
 		reg = models.CashRegister{
-			OpeningFloat: 1500.0,
+			OpeningFloat: 0.0,
 			OpenedBy:     "Sistem Otomatik",
 			Status:       "open",
 		}
@@ -132,41 +132,69 @@ func GetOrCreateActiveRegister(db *gorm.DB) models.CashRegister {
 	return reg
 }
 
-// CalculateReportSummary calculates total revenues, payments breakdown, expenses, and voids for the register.
+// CalculateReportSummary calculates total revenues, payments breakdown, expenses, real VAT, and voids for the register.
 func CalculateReportSummary(db *gorm.DB, reg models.CashRegister) fiber.Map {
+	ordQuery := db.Model(&models.Order{}).Where("created_at >= ?", reg.OpenedAt)
+	payQuery := db.Model(&models.Payment{}).Where("created_at >= ?", reg.OpenedAt)
+	expQuery := db.Model(&models.CashExpense{}).Where("created_at >= ?", reg.OpenedAt)
+	logQuery := db.Model(&models.AuditLog{}).Where("timestamp >= ? AND action_type IN ?", reg.OpenedAt, []string{"VOID_ITEM", "APPLY_DISCOUNT", "APPLY_ITEM_DISCOUNT", "TREAT_ITEMS"})
+	if reg.ClosedAt != nil && !reg.ClosedAt.IsZero() {
+		ordQuery = ordQuery.Where("created_at <= ?", *reg.ClosedAt)
+		payQuery = payQuery.Where("created_at <= ?", *reg.ClosedAt)
+		expQuery = expQuery.Where("created_at <= ?", *reg.ClosedAt)
+		logQuery = logQuery.Where("timestamp <= ?", *reg.ClosedAt)
+	}
+
 	var orders []models.Order
-	db.Where("created_at >= ?", reg.OpenedAt).Find(&orders)
+	ordQuery.Find(&orders)
 
 	var paidOrders, openOrders, cancelledOrders []models.Order
+	cancelledOrderIDs := make(map[int]bool)
+	paidOrderIDs := make([]int, 0)
 	for _, o := range orders {
 		switch o.Status {
 		case "paid":
 			paidOrders = append(paidOrders, o)
-		case "open":
+			paidOrderIDs = append(paidOrderIDs, o.ID)
+		case "open", "bill_requested":
 			openOrders = append(openOrders, o)
 		case "cancelled":
 			cancelledOrders = append(cancelledOrders, o)
+			cancelledOrderIDs[o.ID] = true
 		}
 	}
 
 	var payments []models.Payment
-	db.Where("created_at >= ?", reg.OpenedAt).Find(&payments)
+	payQuery.Find(&payments)
 
 	methodTotals := map[string]float64{
 		"cash":         0.0,
 		"credit_card":  0.0,
 		"multinet":     0.0,
 		"sodexo":       0.0,
+		"ticket":       0.0,
+		"meal_card":    0.0,
+		"online":       0.0,
 		"open_account": 0.0,
 	}
 	totalTips := 0.0
 	for _, p := range payments {
+		if cancelledOrderIDs[p.OrderID] {
+			continue
+		}
+		var linkedOrder models.Order
+		if p.OrderID > 0 {
+			if err := db.Select("id, status").First(&linkedOrder, p.OrderID).Error; err == nil && linkedOrder.Status == "cancelled" {
+				continue
+			}
+		}
 		methodTotals[p.PaymentMethod] = Round2(methodTotals[p.PaymentMethod] + p.Amount)
 		totalTips = Round2(totalTips + p.TipAmount)
 	}
 
 	var expenses []models.CashExpense
-	db.Where("created_at >= ?", reg.OpenedAt).Find(&expenses)
+	expQuery.Find(&expenses)
+	openingFloat := reg.OpeningFloat
 	cashIn := 0.0
 	cashOut := 0.0
 	expensesList := make([]fiber.Map, 0, len(expenses))
@@ -176,7 +204,11 @@ func CalculateReportSummary(db *gorm.DB, reg models.CashRegister) fiber.Map {
 			expType = "out"
 		}
 		if expType == "in" {
-			cashIn += e.Amount
+			if strings.EqualFold(strings.TrimSpace(e.Category), "Açılış Avansı") {
+				openingFloat += e.Amount
+			} else {
+				cashIn += e.Amount
+			}
 		} else {
 			cashOut += e.Amount
 		}
@@ -195,26 +227,29 @@ func CalculateReportSummary(db *gorm.DB, reg models.CashRegister) fiber.Map {
 			"created_at":   cStr,
 		})
 	}
+	openingFloat = Round2(openingFloat)
 	cashIn = Round2(cashIn)
 	cashOut = Round2(cashOut)
 	totalExpenses := cashOut
 
 	var voidLogs []models.AuditLog
-	db.Where("timestamp >= ? AND action_type IN ?", reg.OpenedAt, []string{"VOID_ITEM", "APPLY_DISCOUNT", "TREAT_ITEMS"}).Find(&voidLogs)
+	logQuery.Find(&voidLogs)
 
 	grossSales := 0.0
 	totalDiscounts := 0.0
+	totalTreats := 0.0
 	totalKuver := 0
 	for _, o := range paidOrders {
 		grossSales += o.Subtotal
 		totalDiscounts += o.DiscountAmount
+		totalTreats += o.TreatAmount
 		totalKuver += o.KuverCount
 	}
 	netSales := 0.0
 	for _, v := range methodTotals {
 		netSales += v
 	}
-	cashExpected := Round2(reg.OpeningFloat + methodTotals["cash"] + cashIn - cashOut)
+	cashExpected := Round2(openingFloat + methodTotals["cash"] + cashIn - cashOut)
 
 	openOrdersTotal := 0.0
 	for _, o := range openOrders {
@@ -225,13 +260,17 @@ func CalculateReportSummary(db *gorm.DB, reg models.CashRegister) fiber.Map {
 		avgTicket = Round2(netSales / float64(len(paidOrders)))
 	}
 
-	vat1Base := Round2(netSales * 0.05)
-	vat1Tax := Round2(vat1Base * 0.01)
-	vat10Base := Round2(netSales * 0.80)
-	vat10Tax := Round2(vat10Base * 0.10)
-	vat20Base := Round2(netSales * 0.15)
-	vat20Tax := Round2(vat20Base * 0.20)
-	totalTax := Round2(vat1Tax + vat10Tax + vat20Tax)
+	// Real product-based tax-inclusive VAT breakdown
+	itemsByOrder := make(map[int][]models.OrderItem)
+	if len(paidOrderIDs) > 0 {
+		var paidItems []models.OrderItem
+		db.Where("order_id IN ? AND is_voided = ?", paidOrderIDs, false).Find(&paidItems)
+		for _, it := range paidItems {
+			itemsByOrder[it.OrderID] = append(itemsByOrder[it.OrderID], it)
+		}
+	}
+	prodVatMap := BuildProductVATMap(db)
+	vb := CalculateOrdersVATBreakdown(paidOrders, itemsByOrder, prodVatMap)
 
 	revenue := Round2(netSales)
 	if revenue == 0 && grossSales > 0 {
@@ -249,7 +288,7 @@ func CalculateReportSummary(db *gorm.DB, reg models.CashRegister) fiber.Map {
 		"status":                 reg.Status,
 		"opened_at":              openedAtStr,
 		"opened_by":              reg.OpenedBy,
-		"opening_float":          reg.OpeningFloat,
+		"opening_float":          openingFloat,
 		"total_orders":           len(paidOrders),
 		"paid_orders_count":      len(paidOrders),
 		"open_orders_count":      len(openOrders),
@@ -260,17 +299,18 @@ func CalculateReportSummary(db *gorm.DB, reg models.CashRegister) fiber.Map {
 		"gross_sales":            Round2(grossSales),
 		"total_revenue":          revenue,
 		"total_discounts":        Round2(totalDiscounts),
+		"total_treats":           Round2(totalTreats),
 		"net_sales":              Round2(netSales),
 		"total_tips":             totalTips,
 		"payment_breakdown":      methodTotals,
 		"vat_summary": fiber.Map{
-			"vat_1":       vat1Tax,
-			"vat_10":      vat10Tax,
-			"vat_20":      vat20Tax,
-			"vat_1_base":  vat1Base,
-			"vat_10_base": vat10Base,
-			"vat_20_base": vat20Base,
-			"total_vat":   totalTax,
+			"vat_1":       vb.Vat1Tax,
+			"vat_10":      vb.Vat10Tax,
+			"vat_20":      vb.Vat20Tax,
+			"vat_1_base":  vb.Vat1Base,
+			"vat_10_base": vb.Vat10Base,
+			"vat_20_base": vb.Vat20Base,
+			"total_vat":   vb.TotalTax,
 		},
 		"total_expenses":         Round2(totalExpenses),
 		"cash_in":                cashIn,
@@ -281,94 +321,125 @@ func CalculateReportSummary(db *gorm.DB, reg models.CashRegister) fiber.Map {
 	}
 }
 
-// ExecuteZReport performs the complete, immutable financial day-end register closure.
+// ExecuteZReport performs the complete, immutable transactional day-end register closure.
 func ExecuteZReport(db *gorm.DB, tenantCode string, closedBy string, forceClose bool, hub ws.EventBroadcaster) (fiber.Map, error) {
 	if closedBy == "" {
 		closedBy = "Müdür"
 	}
 
-	reg := GetOrCreateActiveRegister(db)
-	summary := CalculateReportSummary(db, reg)
+	var summary fiber.Map
+	txErr := db.Transaction(func(tx *gorm.DB) error {
+		reg := GetOrCreateActiveRegister(tx)
 
-	var openOrders []models.Order
-	db.Preload("Table").Where("status = ?", "open").Find(&openOrders)
-	if len(openOrders) > 0 {
-		if forceClose {
-			nowClosed := time.Now().UTC()
-			closedNote := fmt.Sprintf("Z-Raporu sırasında (%s tarafından) otomatik kapatıldı", closedBy)
-			for i := range openOrders {
-				openOrders[i].Status = "cancelled"
-				openOrders[i].Notes = &closedNote
-				openOrders[i].ClosedAt = &nowClosed
-				db.Save(&openOrders[i])
-				if openOrders[i].TableID != nil {
-					db.Model(&models.Table{}).Where("id = ?", *openOrders[i].TableID).Updates(map[string]interface{}{
-						"status":           "empty",
-						"current_order_id": nil,
-						"opened_at":        nil,
-						"kuver_count":      0,
-					})
+		var openOrders []models.Order
+		tx.Preload("Table").Preload("Items").Where("status IN ?", []string{"open", "bill_requested"}).Find(&openOrders)
+		if len(openOrders) > 0 {
+			if forceClose {
+				nowClosed := time.Now().UTC()
+				closedNote := fmt.Sprintf("Z-Raporu sırasında (%s tarafından) otomatik kapatıldı", closedBy)
+				for i := range openOrders {
+					// Restore stock for non-voided items on open orders closed by force
+					for _, it := range openOrders[i].Items {
+						if !it.IsVoided {
+							_ = RestoreOrderIngredients(tx, it.ProductID, it.Quantity, openOrders[i].OrderNo, 2)
+						}
+					}
+					openOrders[i].Status = "cancelled"
+					openOrders[i].Notes = &closedNote
+					openOrders[i].RemainingTotal = 0.0
+					openOrders[i].ClosedAt = &nowClosed
+					if err := tx.Save(&openOrders[i]).Error; err != nil {
+						return err
+					}
+					if openOrders[i].TableID != nil {
+						tx.Model(&models.Table{}).Where("id = ?", *openOrders[i].TableID).Updates(map[string]interface{}{
+							"status":             "empty",
+							"current_order_id":   nil,
+							"opened_at":          nil,
+							"kuver_count":        0,
+							"waiter_name":        nil,
+							"waiter_call_reason": nil,
+						})
+					}
 				}
-			}
-			summary = CalculateReportSummary(db, reg)
-		} else {
-			var orderDescriptions []string
-			for _, o := range openOrders {
-				desc := fmt.Sprintf("#%s", o.OrderNo)
-				if o.Table != nil {
-					desc += fmt.Sprintf(" (%s Masası)", o.Table.Name)
-				} else if o.OrderType == "takeaway" {
-					desc += " (Gel-Al / Paket)"
-				} else if o.OrderType == "delivery" {
-					desc += " (Paket Servis)"
-				} else {
-					desc += " (Hızlı Satış)"
+			} else {
+				var orderDescriptions []string
+				for _, o := range openOrders {
+					desc := fmt.Sprintf("#%s", o.OrderNo)
+					if o.Table != nil {
+						desc += fmt.Sprintf(" (%s Masası)", o.Table.Name)
+					} else if o.OrderType == "takeaway" {
+						desc += " (Gel-Al / Paket)"
+					} else if o.OrderType == "delivery" {
+						desc += " (Paket Servis)"
+					} else {
+						desc += " (Hızlı Satış)"
+					}
+					desc += fmt.Sprintf(" ₺%.2f", o.GrandTotal)
+					orderDescriptions = append(orderDescriptions, desc)
 				}
-				desc += fmt.Sprintf(" ₺%.2f", o.GrandTotal)
-				orderDescriptions = append(orderDescriptions, desc)
+				return fmt.Errorf("Açıkta %d adet adisyon var: %s. Z-Raporu almadan önce adisyonu kapatmalı veya iptal etmelisiniz.", len(openOrders), strings.Join(orderDescriptions, ", "))
 			}
-			return nil, fmt.Errorf("Açıkta %d adet adisyon var: %s. Z-Raporu almadan önce adisyonu kapatmalı veya iptal etmelisiniz.", len(openOrders), strings.Join(orderDescriptions, ", "))
 		}
-	}
 
-	now := time.Now().UTC()
-	reg.Status = "closed"
-	reg.ClosedAt = &now
-	reg.ClosedBy = &closedBy
-	pBreakdown := summary["payment_breakdown"].(map[string]float64)
-	reg.TotalCash = pBreakdown["cash"]
-	reg.TotalCard = pBreakdown["credit_card"]
-	reg.TotalMultinet = pBreakdown["multinet"]
-	reg.TotalSodexo = pBreakdown["sodexo"]
-	reg.TotalDiscounts = summary["total_discounts"].(float64)
-	reg.TotalExpenses = summary["total_expenses"].(float64)
-	reg.TotalRevenue = summary["net_sales"].(float64)
-	zNo := fmt.Sprintf("Z-%s-%04d", now.Format("20060102"), reg.ID)
-	reg.ZReportNo = &zNo
-	db.Save(&reg)
+		now := time.Now().UTC()
+		reg.ClosedAt = &now
+		summary = CalculateReportSummary(tx, reg)
 
-	newReg := models.CashRegister{
-		OpeningFloat: 1500.0,
-		OpenedBy:     closedBy,
-		Status:       "open",
-	}
-	db.Create(&newReg)
+		reg.Status = "closed"
+		reg.ClosedBy = &closedBy
+		pBreakdown := summary["payment_breakdown"].(map[string]float64)
+		reg.TotalCash = pBreakdown["cash"]
+		reg.TotalCard = pBreakdown["credit_card"]
+		reg.TotalMultinet = pBreakdown["multinet"]
+		reg.TotalSodexo = pBreakdown["sodexo"]
+		reg.TotalTicket = pBreakdown["ticket"]
+		reg.TotalOther = Round2(pBreakdown["open_account"] + pBreakdown["online"] + pBreakdown["meal_card"])
+		reg.TotalDiscounts = summary["total_discounts"].(float64)
+		reg.TotalTreats = summary["total_treats"].(float64)
+		reg.TotalExpenses = summary["total_expenses"].(float64)
+		if vatMap, ok := summary["vat_summary"].(fiber.Map); ok {
+			reg.TotalVat1, _ = vatMap["vat_1"].(float64)
+			reg.TotalVat10, _ = vatMap["vat_10"].(float64)
+			reg.TotalVat20, _ = vatMap["vat_20"].(float64)
+		}
+		reg.TotalRevenue = summary["net_sales"].(float64)
+		zNo := fmt.Sprintf("Z-%s-%04d", now.In(TurkeyLoc()).Format("20060102"), reg.ID)
+		reg.ZReportNo = &zNo
+		if err := tx.Save(&reg).Error; err != nil {
+			return err
+		}
 
-	db.Create(&models.AuditLog{
-		ActionType:   "Z_REPORT_CLOSED",
-		OperatorName: closedBy,
-		OperatorRole: "manager",
-		TargetRef:    &zNo,
-		Details:      models.JSONMap(summary),
+		newReg := models.CashRegister{
+			OpeningFloat: 0.0,
+			OpenedBy:     closedBy,
+			Status:       "open",
+		}
+		if err := tx.Create(&newReg).Error; err != nil {
+			return err
+		}
+
+		tx.Create(&models.AuditLog{
+			ActionType:   "Z_REPORT_CLOSED",
+			OperatorName: closedBy,
+			OperatorRole: "manager",
+			TargetRef:    &zNo,
+			Details:      models.JSONMap(summary),
+		})
+
+		summary["status"] = "closed"
+		summary["report_type"] = "Z-RAPORU (GÜN SONU KESİN KAPANIŞ)"
+		summary["closed_at"] = now.Format(time.RFC3339)
+		summary["closed_by"] = closedBy
+		summary["z_report_no"] = zNo
+		return nil
 	})
-
-	summary["report_type"] = "Z-RAPORU (GÜN SONU KESİN KAPANIŞ)"
-	summary["closed_at"] = now.Format(time.RFC3339)
-	summary["closed_by"] = closedBy
-	summary["z_report_no"] = zNo
+	if txErr != nil {
+		return nil, txErr
+	}
 
 	if hub != nil {
-		_ = hub.BroadcastToChannel(tenantCode, "pos", "Z_REPORT_COMPLETED", summary)
+		_ = hub.BroadcastAll(tenantCode, "Z_REPORT_COMPLETED", summary)
 	}
 	return summary, nil
 }

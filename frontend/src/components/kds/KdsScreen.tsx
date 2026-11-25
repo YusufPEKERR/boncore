@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
+import { extractCourseFromNote, extractSeatFromNote } from '../../services/competitorFeatures';
 import { useWebSocket } from '../../services/websocket';
 import { KitchenGroupItem } from './KitchenGroupsDefinitions';
 
@@ -26,6 +27,7 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
   const [stageFilter, setStageFilter] = useState<'all' | 'preparing' | 'ready'>('preparing');
   const [sortAZ, setSortAZ] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
+  const [approvingItemId, setApprovingItemId] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
   const loadStationTabs = async () => {
@@ -34,7 +36,7 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
       if (Array.isArray(groups) && groups.length > 0) {
         const activeOnes = groups
           .filter(g => g.is_active !== false)
-          .map(g => ({ id: g.id, label: g.name }));
+          .map(g => ({ id: g.code || String(g.id), label: g.name }));
         setStationTabs(activeOnes.length > 0 ? activeOnes : DEFAULT_STATIONS);
       }
     } catch {
@@ -49,6 +51,22 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
   useWebSocket('all', (type) => {
     if (type === 'KITCHEN_GROUPS_UPDATED') {
       loadStationTabs();
+    } else if (type === 'OUT_OF_STOCK_ORDER_ALERT') {
+      sound.warning();
+      loadKdsOrders();
+    } else if (
+      type === 'KDS_NEW_ORDER' ||
+      type === 'KDS_ORDER_PREPAID' ||
+      type === 'KDS_HOLD_FIRE_TOGGLED' ||
+      type === 'KDS_ITEMS_ADDED' ||
+      type === 'KDS_ITEM_VOIDED' ||
+      type === 'KDS_ORDER_READY_ALL' ||
+      type === 'ORDER_UPDATED' ||
+      type === 'ORDER_PAID' ||
+      type === 'STOCK_APPROVAL_RESOLVED' ||
+      type === 'KDS_ITEM_STATUS_CHANGED'
+    ) {
+      loadKdsOrders();
     }
   });
 
@@ -85,6 +103,20 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
       await loadKdsOrders();
     } catch (e) {
       sound.warning();
+    }
+  };
+
+  const handleApproveNegativeStock = async (itemId: number) => {
+    sound.beep();
+    setApprovingItemId(itemId);
+    try {
+      await api.approveOutOfStockItem(itemId, 'Mutfak KDS');
+      sound.kitchenBell();
+      await loadKdsOrders();
+    } catch (e) {
+      sound.warning();
+    } finally {
+      setApprovingItemId(null);
     }
   };
 
@@ -241,6 +273,9 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
       <div className="flex-1 overflow-y-auto md:overflow-x-auto p-3 sm:p-6 pb-28 flex flex-col md:flex-row gap-4 sm:gap-5 bg-slate-100 dark:bg-slate-950">
         {processedOrders.map((o) => {
           const isAllReady = o.items.every((it: any) => it.status === 'ready' || it.status === 'served');
+          const isPrepaid = Boolean(
+            o.is_prepaid || (Number(o.paid_total || 0) > 0 && Number(o.remaining_total ?? 1) <= 0.01)
+          );
           return (
             <div
               key={o.order_id}
@@ -281,51 +316,112 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
               </div>
 
               {/* Time Badge Row */}
-              <div className="px-3.5 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                <span className={`px-2.5 py-1 rounded font-mono font-extrabold text-[11px] shadow-sm text-white ${
-                  isAllReady ? 'bg-emerald-600' : 'bg-[#338d35]'
-                }`}>
-                  {isAllReady ? 'Tamamlandı' : 'Hazırlanıyor'} {getElapsedFormatted(o.created_at)}
-                </span>
+              <div className="px-3.5 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 flex-wrap text-xs">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className={`px-2.5 py-1 rounded font-mono font-extrabold text-[11px] shadow-sm text-white ${
+                    isAllReady ? 'bg-emerald-600' : 'bg-[#338d35]'
+                  }`}>
+                    {isAllReady ? 'Tamamlandı' : 'Hazırlanıyor'} {getElapsedFormatted(o.created_at)}
+                  </span>
+                  {isPrepaid && (
+                    <span className="px-2 py-1 rounded bg-emerald-600 text-white font-black text-[10px] shadow-sm">
+                      ✓ ÖN ÖDEME ALINDI
+                    </span>
+                  )}
+                </div>
                 <span className="text-[11px] text-slate-400 font-semibold">{o.order_no}</span>
               </div>
+
+              {o.notes && String(o.notes).trim() !== '' && (
+                <div className="mx-3.5 mt-2.5 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/70 text-xs text-amber-900 dark:text-amber-200">
+                  <span className="font-black uppercase text-[10px] tracking-wide mr-1.5">Müşteri Notu:</span>
+                  <span className="font-semibold">{o.notes}</span>
+                </div>
+              )}
 
               {/* Items List */}
               <div className="flex-1 overflow-y-auto p-3.5 space-y-2">
                 {o.items.map((it: any) => {
                   const isReady = it.status === 'ready' || it.status === 'served';
+                  const isStockConfirm =
+                    it.status === 'stock_confirm' ||
+                    it.kds_status === 'stock_confirm' ||
+                    Boolean(it.requires_stock_approval) ||
+                    Boolean(it.kitchen_note && String(it.kitchen_note).includes('[STOK YOK - ONAY BEKLİYOR]'));
                   return (
                     <div
                       key={it.id}
-                      className={`p-3 rounded-xl border flex items-center justify-between gap-2 transition ${
-                        isReady
-                          ? 'border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/50 dark:bg-emerald-950/20'
-                          : 'border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40'
+                      className={`p-3 rounded-xl border flex flex-col gap-2 transition ${
+                        isStockConfirm
+                          ? 'border-rose-400 dark:border-rose-600 bg-rose-50/90 dark:bg-rose-950/30 ring-1 ring-rose-500/30'
+                          : isReady
+                            ? 'border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/50 dark:bg-emerald-950/20'
+                            : 'border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40'
                       }`}
                     >
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-bold text-slate-900 dark:text-white">
-                          <span className="font-black mr-1.5">{Number.isInteger(Number(it.quantity)) ? `${it.quantity}x` : `${Number(Number(it.quantity).toFixed(3))} Kg`}</span>
-                          <span className="uppercase">{it.product_name}</span>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold text-slate-900 dark:text-white">
+                            <span className="font-black mr-1.5">{Number.isInteger(Number(it.quantity)) ? `${it.quantity}x` : `${Number(Number(it.quantity).toFixed(3))} Kg`}</span>
+                            <span className="uppercase">{it.product_name}</span>
+                          </div>
+                          {it.variant_name && (
+                            <div className="text-[10px] text-slate-500">{it.variant_name}</div>
+                          )}
+                          {(Number(it.course_stage) > 1 || extractCourseFromNote(it.kitchen_note) || extractSeatFromNote(it.kitchen_note)) && (
+                            <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                              {(Number(it.course_stage) > 1 || extractCourseFromNote(it.kitchen_note)) && (
+                                <span className="px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 text-[10px] font-black">
+                                  {extractCourseFromNote(it.kitchen_note) || `${it.course_stage}. Servis`}
+                                </span>
+                              )}
+                              {extractSeatFromNote(it.kitchen_note) && (
+                                <span className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[10px] font-bold">
+                                  🪑 {extractSeatFromNote(it.kitchen_note)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {it.kitchen_note && (
+                            <div className="text-[10px] text-blue-600 dark:text-blue-400 italic">Not: {it.kitchen_note}</div>
+                          )}
                         </div>
-                        {it.variant_name && (
-                          <div className="text-[10px] text-slate-500">{it.variant_name}</div>
-                        )}
-                        {it.kitchen_note && (
-                          <div className="text-[10px] text-blue-600 dark:text-blue-400 italic">Not: {it.kitchen_note}</div>
+
+                        {!isStockConfirm && (
+                          <button
+                            onClick={() => handleProgressItem(it.id, it.status)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-sm shrink-0 ${
+                              it.status === 'served'
+                                ? 'bg-slate-600 text-white'
+                                : isReady
+                                  ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                  : 'bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white hover:bg-slate-100'
+                            }`}
+                          >
+                            {it.status === 'served' ? 'Servis Edildi' : isReady ? 'Hazırlandı' : 'Hazır'}
+                          </button>
                         )}
                       </div>
 
-                      <button
-                        onClick={() => handleProgressItem(it.id, it.status)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-sm ${
-                          isReady
-                            ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                            : 'bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white hover:bg-slate-100'
-                        }`}
-                      >
-                        {isReady ? 'Hazırlandı' : 'Hazır'}
-                      </button>
+                      {isStockConfirm && (
+                        <div className="p-2.5 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-rose-300 dark:border-rose-700 space-y-2">
+                          <div className="flex items-start gap-1.5 text-[11px] font-extrabold text-rose-700 dark:text-rose-300 leading-snug">
+                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                            <span>Müşteri bu ürünü istedi ama stok yok! Devam edilsin mi?</span>
+                          </div>
+                          <div className="text-[10px] font-semibold text-slate-600 dark:text-slate-400">
+                            Onaylarsanız stok eksiye (-) düşecektir (0 → -{Number(it.quantity || 1)}).
+                          </div>
+                          <button
+                            type="button"
+                            disabled={approvingItemId === it.id}
+                            onClick={() => handleApproveNegativeStock(it.id)}
+                            className="w-full py-1.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-black text-xs shadow-sm transition cursor-pointer"
+                          >
+                            {approvingItemId === it.id ? 'Onaylanıyor...' : 'Yine de Devam Et'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

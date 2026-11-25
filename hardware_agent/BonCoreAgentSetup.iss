@@ -282,8 +282,8 @@ begin
     // Tüm başlangıç kayıtlarını (BonCoreAgent + eski BonCoreHardwareAgent + StartupApproved + Startup kısayolları) garanti temizle
     CleanAllStartupEntries();
 
-    // Kullanıcıya seçtiği dilde sor
-    if MsgBox(CustomMessage('CleanUninstallPrompt'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+    // Kullanıcıya seçtiği dilde sor (/SUPPRESSMSGBOXES kullanıldığında otomatik Hayır seçilir)
+    if SuppressibleMsgBox(CustomMessage('CleanUninstallPrompt'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then
     begin
       AppDataDir := ExpandConstant('{userappdata}\BonCoreAgent');
       if DirExists(AppDataDir) then

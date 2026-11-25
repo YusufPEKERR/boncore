@@ -198,7 +198,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
     if (!confirm('GÜN SONU Z-RAPORU ALINACAK VE KASA KAPATILACAK! Emin misiniz?')) return;
     sound.beep();
     try {
-      const res = await api.closeZReport(currentUser?.name || 'Müdür', '9999');
+      const res = await api.closeZReport(currentUser?.name || 'Müdür');
       setZReportData(res);
       sound.cashDrawer();
       showToast('Z-Raporu başarıyla oluşturuldu ve kasa kapatıldı.', 'success');
@@ -208,7 +208,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
         const force = confirm(`${err.message}\n\nAçık kalan adisyonları yönetici onayıyla kapatıp Z-Raporunu almak istiyor musunuz?`);
         if (force) {
           try {
-            const res = await api.closeZReport(currentUser?.name || 'Müdür', '9999', true);
+            const res = await api.closeZReport(currentUser?.name || 'Müdür', undefined, true);
             setZReportData(res);
             sound.cashDrawer();
             showToast('Açık adisyonlar kapatıldı ve Z-Raporu başarıyla alındı.', 'success');
@@ -256,7 +256,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
           return ' '.repeat(sp) + t;
         };
 
-        const activeRestName = localStorage.getItem('boncore_active_restaurant_name') || 'FATİH ÇİFTLİĞİ';
+        const activeRestName = localStorage.getItem('boncore_active_restaurant_name') || localStorage.getItem('boncore_restaurant_name') || 'BONCORE POS';
         const lines: string[] = [];
         lines.push(sep);
         lines.push(center(activeRestName.toLocaleUpperCase('tr-TR')));
@@ -267,7 +267,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
         if (data.z_report_no) lines.push(`Z No: ${data.z_report_no}`);
         lines.push(subSep);
 
-        lines.push(padLR('AÇILIŞ AVANSI:', `₺${formatMoney(data.opening_float ?? 1500)}`));
+        lines.push(padLR('AÇILIŞ AVANSI:', `₺${formatMoney(data.opening_float ?? 0)}`));
         lines.push(padLR('TOPLAM SATIŞ (CİRO):', `₺${formatMoney(data.total_revenue ?? data.net_sales)}`));
         lines.push(padLR('  - Tamamlanan Adisyon:', `${data.total_orders ?? data.paid_orders_count ?? 0} Adet`));
         lines.push(padLR('KASADAN ÇIKIŞ / MASRAF:', `₺${formatMoney(data.total_expenses ?? 0)}`));
@@ -280,15 +280,31 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
 
         lines.push(center('-- ÖDEME DAĞILIMI --'));
         const pBreak = data.payment_breakdown || {};
-        const pCash = getPayAmount(pBreak.cash);
-        const pCard = getPayAmount(pBreak.credit_card);
-        const pMulti = getPayAmount(pBreak.multinet);
-        const pSodexo = getPayAmount(pBreak.sodexo);
-
-        lines.push(padLR('NAKİT TAHSİLAT:', `₺${formatMoney(pCash)}`));
-        lines.push(padLR('KREDİ KARTI / POS:', `₺${formatMoney(pCard)}`));
-        if (pMulti > 0) lines.push(padLR('MULTİNET:', `₺${formatMoney(pMulti)}`));
-        if (pSodexo > 0) lines.push(padLR('SODEXO:', `₺${formatMoney(pSodexo)}`));
+        const paymentLabelMap: Record<string, string> = {
+          cash: 'NAKİT TAHSİLAT',
+          credit_card: 'KREDİ KARTI / POS',
+          multinet: 'MULTİNET',
+          sodexo: 'SODEXO',
+          ticket: 'TİCKET',
+          open_account: 'AÇIK HESAP (CARİ)',
+          meal_card: 'YEMEK KARTI',
+          online: 'ONLİNE ÖDEME'
+        };
+        const printedPayKeys = new Set<string>();
+        ['cash', 'credit_card'].forEach((k) => {
+          printedPayKeys.add(k);
+          lines.push(padLR(`${paymentLabelMap[k]}:`, `₺${formatMoney(getPayAmount(pBreak[k]))}`));
+        });
+        Object.entries(pBreak).forEach(([k, val]) => {
+          if (printedPayKeys.has(k)) return;
+          const amt = getPayAmount(val);
+          if (amt > 0) {
+            const lbl = (val && typeof val === 'object' && (val as any).name)
+              ? String((val as any).name).toLocaleUpperCase('tr-TR')
+              : (paymentLabelMap[k] || k.toLocaleUpperCase('tr-TR'));
+            lines.push(padLR(`${lbl}:`, `₺${formatMoney(amt)}`));
+          }
+        });
 
         lines.push(subSep);
         lines.push(padLR('AÇIKTA BEKLEYEN ADİSYON:', `${data.open_orders_count || 0} Adet`));
@@ -459,7 +475,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
             ₺{formatMoney(xReport?.cash_in_drawer)}
           </div>
           <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 font-medium">
-            ₺{formatMoney(xReport?.opening_float ?? 1500)} Açılış Avansı Dahil
+            ₺{formatMoney(xReport?.opening_float ?? 0)} Açılış Avansı Dahil
           </div>
         </div>
 
@@ -506,7 +522,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
             <div className="flex rounded-2xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-200 dark:border-slate-700">
               <button
                 type="button"
-                onClick={() => { sound.beep(); setExpenseType('out'); }}
+                onClick={() => { sound.beep(); setExpenseType('out'); setExpenseCategory('Tedarikçi'); }}
                 className={`flex-1 py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 ${
                   expenseType === 'out'
                     ? 'bg-amber-600 text-white shadow-md'
@@ -517,7 +533,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
               </button>
               <button
                 type="button"
-                onClick={() => { sound.beep(); setExpenseType('in'); }}
+                onClick={() => { sound.beep(); setExpenseType('in'); setExpenseCategory('Açılış Avansı'); }}
                 className={`flex-1 py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 ${
                   expenseType === 'in'
                     ? 'bg-emerald-600 text-white shadow-md'
@@ -705,7 +721,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
               className="printable-thermal-receipt p-4 bg-slate-900 dark:bg-slate-950 rounded-2xl border border-slate-800 font-thermal text-xs text-slate-300 space-y-1 overflow-x-auto shadow-inner select-text"
             >
               <div className="text-center font-bold text-white tracking-widest">==========================================</div>
-              <div className="text-center font-black text-amber-400 text-sm tracking-wider">BONCORE POS • FATİH ÇİFTLİĞİ</div>
+              <div className="text-center font-black text-amber-400 text-sm tracking-wider">BONCORE POS • {(localStorage.getItem('boncore_active_restaurant_name') || localStorage.getItem('boncore_restaurant_name') || 'RESTORAN').toLocaleUpperCase('tr-TR')}</div>
               <div className="text-center font-bold text-white text-xs">
                 {zReportData ? (zReportData.title || 'RESMİ GÜN SONU Z-RAPORU') : (xReport?.title || 'X-RAPORU (GÜN İÇİ ARA DENETİM)')}
               </div>
@@ -804,7 +820,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
               <div className="font-bold text-white text-[11px]">KASA ÇEKMECESİ NAKİT HAREKETİ:</div>
               <div className="flex justify-between text-[11px] text-amber-300">
                 <span>Açılış Kasa Avansı:</span>
-                <span className="font-mono">+₺{formatMoney((zReportData || xReport)?.opening_float ?? 1500)}</span>
+                <span className="font-mono">+₺{formatMoney((zReportData || xReport)?.opening_float ?? 0)}</span>
               </div>
               <div className="flex justify-between text-[11px] text-emerald-400">
                 <span>Nakit Satış Tahsilatı:</span>
@@ -859,15 +875,20 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
               {expenses.length > 0 && (
                 <>
                   <div className="text-center font-bold text-slate-600 dark:text-slate-700 py-0.5">------------------------------------------</div>
-                  <div className="font-bold text-white text-[10px]">GÜN İÇİ MASRAFLAR ({expenses.length} Kalem):</div>
-                  {expenses.slice(0, 4).map((exp, idx) => (
-                    <div key={idx} className="flex justify-between text-[10px]">
-                      <span className="truncate max-w-[180px]">• {exp.description || exp.category}</span>
-                      <span className="font-mono text-rose-300">-₺{formatMoney(exp.amount)}</span>
-                    </div>
-                  ))}
+                  <div className="font-bold text-white text-[10px]">GÜN İÇİ KASA HAREKETLERİ ({expenses.length} Kalem):</div>
+                  {expenses.slice(0, 4).map((exp, idx) => {
+                    const isCashIn = exp.expense_type === 'in' || exp.type === 'in';
+                    return (
+                      <div key={idx} className="flex justify-between text-[10px]">
+                        <span className="truncate max-w-[180px]">• {exp.description || exp.category}</span>
+                        <span className={`font-mono ${isCashIn ? 'text-emerald-300' : 'text-rose-300'}`}>
+                          {isCashIn ? '+' : '-'}₺{formatMoney(exp.amount)}
+                        </span>
+                      </div>
+                    );
+                  })}
                   {expenses.length > 4 && (
-                    <div className="text-[9px] text-slate-500 text-center">...ve {expenses.length - 4} masraf daha</div>
+                    <div className="text-[9px] text-slate-500 text-center">...ve {expenses.length - 4} hareket daha</div>
                   )}
                 </>
               )}

@@ -48,7 +48,7 @@ export const MasterDashboardView: React.FC<MasterDashboardViewProps> = ({
             🔄 Verileri Yenile
           </button>
           <button
-            onClick={() => { sound.beep(); onNavigateTab('tenants'); }}
+            onClick={() => { sound.beep(); onNavigateTab('tenants-add'); }}
             className="px-4 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-emerald-600 hover:from-brand-500 hover:to-emerald-500 text-white text-xs font-black transition cursor-pointer shadow-md flex items-center gap-1.5"
           >
             <span>+ Yeni Restoran Ekle</span>

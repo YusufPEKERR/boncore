@@ -91,11 +91,17 @@ def main():
             except Exception:
                 time.sleep(0.4)
 
-        # 2. Start Frontend
-        print("[2/2] React + Vite Frontend başlatılıyor (Port 80)...")
+        # 2. Build & Start Frontend (preview mode serves legacy ES5 SystemJS bundle for iPad 2 / iOS 9+ too)
+        print("[2/2] React + Vite Frontend derleniyor ve baslatiliyor (Port 80)...")
         npm_cmd = find_npm()
+        subprocess.run(
+            [npm_cmd, "run", "build"],
+            cwd=frontend_dir,
+            shell=(os.name == "nt"),
+            check=True
+        )
         frontend_proc = subprocess.Popen(
-            [npm_cmd, "run", "dev"],
+            [npm_cmd, "run", "preview"],
             cwd=frontend_dir,
             shell=(os.name == "nt")
         )

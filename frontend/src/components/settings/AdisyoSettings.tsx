@@ -12,6 +12,7 @@ import { localHardware, sanitizePrinterConfigs } from '../../services/localHardw
 import { PaymentMethodConfig, PrinterConfig } from '../../types';
 import { ReceiptDesignSettings, ReceiptDesignConfig, defaultReceiptDesign } from './ReceiptDesignSettings';
 import { PrinterSettingsModal } from './PrinterSettingsModal';
+import { HappyHourSettingsPanel } from './HappyHourSettingsPanel';
 
 export const defaultPaymentMethods: PaymentMethodConfig[] = [
   { id: 'cash', name: 'Nakit Türk Lirası (TRY)', icon: '💵', desc: 'Kasada anlık nakit tahsilat', is_active: true },
@@ -46,7 +47,7 @@ interface AdisyoSettingsProps {
 export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdated }) => {
   const [activeSubTab, setActiveSubTab] = useState<string>(() => {
     const saved = localStorage.getItem('boncore_settings_subtab');
-    const valid = ['parameters', 'discounts', 'payments', 'currency', 'address', 'receipt_design', 'scale'];
+    const valid = ['parameters', 'discounts', 'payments', 'address', 'receipt_design', 'scale'];
     return saved && valid.includes(saved) ? saved : 'parameters';
   });
 
@@ -93,7 +94,6 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     scale_enabled?: boolean;
   }>>([]);
   const [selectedLiveTerminalId, setSelectedLiveTerminalId] = useState<string>('');
-  const [newTerminalName, setNewTerminalName] = useState<string>('Kasa 2 - Paket Servis');
   const [editingTerminalId, setEditingTerminalId] = useState<string | null>(null);
   const [editingTerminalName, setEditingTerminalName] = useState<string>('');
   const [editingScaleIp, setEditingScaleIp] = useState<string>('');
@@ -111,7 +111,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [printerTestStatus, setPrinterTestStatus] = useState<{ loading: boolean; message?: string; success?: boolean } | null>(null);
   const [customPrinterInput, setCustomPrinterInput] = useState<string>('');
   const [printerSearchQuery, setPrinterSearchQuery] = useState<string>('');
-  const [showVirtualPrinters, setShowVirtualPrinters] = useState<boolean>(false);
+  const [showVirtualPrintersByTerminal, setShowVirtualPrintersByTerminal] = useState<Record<string, boolean>>({});
   const [downloadingAgent, setDownloadingAgent] = useState<boolean>(false);
   const [downloadStatusText, setDownloadStatusText] = useState<string>('');
 
@@ -121,7 +121,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     setDownloadStatusText('İndirme Başlatılıyor...');
     sound.beep();
     try {
-      const restaurantCode = localStorage.getItem('boncore_restaurant_code') || 'fatihciftligi';
+      const restaurantCode = localStorage.getItem('boncore_restaurant_code') || 'default';
       const termName = customTerminalName?.trim() || '';
       const params = new URLSearchParams();
       params.set('restaurant_code', restaurantCode);
@@ -145,7 +145,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
       setTimeout(() => setDownloadStatusText(''), 3000);
     } catch (err) {
       console.warn('Download link fallback:', err);
-      const restaurantCode = localStorage.getItem('boncore_restaurant_code') || 'fatihciftligi';
+      const restaurantCode = localStorage.getItem('boncore_restaurant_code') || 'default';
       const termName = customTerminalName?.trim() || '';
       const fallbackUrl = `/api/scale/download-agent?restaurant_code=${encodeURIComponent(restaurantCode)}${termName ? `&terminal_name=${encodeURIComponent(termName)}` : ''}`;
       window.location.href = fallbackUrl;
@@ -580,7 +580,9 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
         if (data.eur_rate !== undefined) setEurRate(Number(data.eur_rate));
         if (data.gbp_rate !== undefined) setGbpRate(Number(data.gbp_rate));
 
-        if (data.restaurant_name !== undefined) setRestaurantName(String(data.restaurant_name));
+        if (data.restaurant_name !== undefined || data.store_name !== undefined) {
+          setRestaurantName(String(data.restaurant_name ?? data.store_name));
+        }
         if (data.tax_office !== undefined) setTaxOffice(String(data.tax_office));
         if (data.tax_number !== undefined) setTaxNumber(String(data.tax_number));
         if (data.city !== undefined) setCity(String(data.city));
@@ -718,10 +720,10 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     sound.beep();
 
     const payload = {
-      is_kuver_enabled: false,
-      kuver_price: 0,
+      is_kuver_enabled: isKuverEnabled,
+      kuver_price: kuverPrice,
       kuver_title: kuverTitle,
-      auto_kuver_on_table_open: false,
+      auto_kuver_on_table_open: autoKuverOnTableOpen,
       is_service_charge_enabled: isServiceChargeEnabled,
       service_charge_rate: serviceChargeRate,
       service_charge_type: serviceChargeType,
@@ -739,6 +741,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
       usd_rate: usdRate,
       eur_rate: eurRate,
       gbp_rate: gbpRate,
+      store_name: restaurantName,
       restaurant_name: restaurantName,
       tax_office: taxOffice,
       tax_number: taxNumber,
@@ -754,11 +757,13 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     localStorage.setItem('boncore_kuver_price', kuverPrice.toString());
     localStorage.setItem('boncore_service_enabled', isServiceChargeEnabled.toString());
     localStorage.setItem('boncore_service_rate', serviceChargeRate.toString());
+    localStorage.setItem('boncore_service_type', serviceChargeType);
     localStorage.setItem('boncore_discounts', JSON.stringify(discounts));
     localStorage.setItem('boncore_payment_methods', JSON.stringify(paymentMethods));
     localStorage.setItem('boncore_receipt_design', JSON.stringify(receiptDesign));
     localStorage.setItem('boncore_tax_number', taxNumber);
     localStorage.setItem('boncore_restaurant_name', restaurantName);
+    if (restaurantName) localStorage.setItem('boncore_active_restaurant_name', restaurantName);
 
     // Save to SQLite Database
     try {
@@ -819,10 +824,9 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     { id: 'parameters', label: 'Garsoniye & KDV' },
     { id: 'discounts', label: 'İndirim & İkram Tanımları' },
     { id: 'payments', label: 'Ödeme Tipleri' },
-    { id: 'currency', label: 'Döviz Ayarları' },
     { id: 'address', label: 'Adres & Şirket Bilgileri' },
     { id: 'receipt_design', label: '🧾 Fiş & Adisyon Tasarımı' },
-    { id: 'scale', label: '⚖️ CAS Terazi (Ethernet)' }
+    { id: 'scale', label: '🖨️ Yazıcılar & Terazi (Donanım)' }
   ];
 
   return (
@@ -881,72 +885,10 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
             </div>
           )}
 
-          {/* TAB 1: Kuver, Garsoniye & KDV Parametreleri */}
+          {/* TAB 1: Garsoniye & KDV Parametreleri */}
           {activeSubTab === 'parameters' && (
             <div className="space-y-8 text-xs">
-              {/* 1. Kuver Ayarları Kartı */}
-              <div className="hidden p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
-                  <div className="flex items-center gap-2">
-                    <Utensils className="w-4 h-4 text-amber-500" />
-                    <h3 className="text-sm font-black text-slate-900 dark:text-white">Kuver / Kişi Başı Ücret Ayarları</h3>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={isKuverEnabled} 
-                      onChange={(e) => {
-                        sound.beep();
-                        setIsKuverEnabled(e.target.checked);
-                      }} 
-                      className="sr-only peer" 
-                    />
-                    <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-semibold">
-                  <div>
-                    <label className="text-slate-500 block mb-1">Kişi Başı Sabit Kuver Tutarı (₺):</label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={kuverPrice}
-                      onChange={(e) => setKuverPrice(Number(e.target.value))}
-                      disabled={!isKuverEnabled}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-slate-900 dark:text-white font-bold disabled:opacity-50"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-slate-500 block mb-1">Adisyonda Gözükecek Kuver Başlığı:</label>
-                    <input
-                      type="text"
-                      value={kuverTitle}
-                      onChange={(e) => setKuverTitle(e.target.value)}
-                      disabled={!isKuverEnabled}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-slate-900 dark:text-white disabled:opacity-50"
-                    />
-                  </div>
-
-                  <div className="flex flex-col justify-end">
-                    <label className="flex items-center gap-2 cursor-pointer p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={autoKuverOnTableOpen}
-                        onChange={(e) => setAutoKuverOnTableOpen(e.target.checked)}
-                        disabled={!isKuverEnabled}
-                        className="w-4 h-4 rounded text-brand-600 accent-brand-600"
-                      />
-                      <span className="text-[11px] text-slate-700 dark:text-slate-300 font-bold">
-                        Masa açıldığında kişi sayısına göre otomatik ekle
-                      </span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              {/* 2. Garsoniye & Servis Ücreti Kartı */}
+              {/* 1. Garsoniye & Servis Ücreti Kartı */}
               <div className="p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
                   <div className="flex items-center gap-2">
@@ -1170,48 +1112,52 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
 
               {/* Discounts Table */}
               <div className="bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                <div className="grid grid-cols-12 p-3.5 bg-slate-100 dark:bg-slate-800 text-xs font-black text-slate-700 dark:text-slate-300 uppercase">
-                  <div className="col-span-5">İndirim Adı</div>
-                  <div className="col-span-3 text-center">İndirim Miktarı</div>
-                  <div className="col-span-2 text-center">Yetki Durumu</div>
-                  <div className="col-span-2 text-right">İşlem</div>
-                </div>
-
-                <div className="divide-y divide-slate-200 dark:divide-slate-800 text-xs font-semibold">
-                  {discounts.map((disc) => (
-                    <div key={disc.id} className="grid grid-cols-12 p-3.5 items-center hover:bg-white dark:hover:bg-slate-800/60 transition">
-                      <div className="col-span-5 font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <Tag className="w-4 h-4 text-brand-600" />
-                        <span>{disc.name}</span>
-                      </div>
-
-                      <div className="col-span-3 text-center font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
-                        {disc.type === 'percent' ? `%${disc.value}` : `₺${Number(disc.value || 0).toFixed(2)}`}
-                      </div>
-
-                      <div className="col-span-2 text-center">
-                        {disc.requires_auth ? (
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-brand-700 dark:bg-emerald-950/40 dark:text-emerald-400 text-[10px] font-bold">
-                            Müdür PIN Gerekli
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 text-[10px] font-bold">
-                            Serbest
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="col-span-2 flex justify-end">
-                        <button
-                          onClick={() => handleDeleteDiscount(disc.id)}
-                          className="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
-                          title="Sil"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[540px]">
+                    <div className="grid grid-cols-12 p-3.5 bg-slate-100 dark:bg-slate-800 text-xs font-black text-slate-700 dark:text-slate-300 uppercase">
+                      <div className="col-span-5">İndirim Adı</div>
+                      <div className="col-span-3 text-center">İndirim Miktarı</div>
+                      <div className="col-span-2 text-center">Yetki Durumu</div>
+                      <div className="col-span-2 text-right">İşlem</div>
                     </div>
-                  ))}
+
+                    <div className="divide-y divide-slate-200 dark:divide-slate-800 text-xs font-semibold">
+                      {discounts.map((disc) => (
+                        <div key={disc.id} className="grid grid-cols-12 p-3.5 items-center hover:bg-white dark:hover:bg-slate-800/60 transition">
+                          <div className="col-span-5 font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <Tag className="w-4 h-4 text-brand-600" />
+                            <span>{disc.name}</span>
+                          </div>
+
+                          <div className="col-span-3 text-center font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
+                            {disc.type === 'percent' ? `%${disc.value}` : `₺${Number(disc.value || 0).toFixed(2)}`}
+                          </div>
+
+                          <div className="col-span-2 text-center">
+                            {disc.requires_auth ? (
+                              <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 text-[10px] font-bold">
+                                Müdür PIN Gerekli
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 text-[10px] font-bold">
+                                Serbest
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="col-span-2 flex justify-end">
+                            <button
+                              onClick={() => handleDeleteDiscount(disc.id)}
+                              className="p-1.5 text-slate-400 hover:text-brand-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                              title="Sil"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1375,57 +1321,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
             </div>
           )}
 
-          {/* TAB 4: Döviz Ayarları */}
-          {activeSubTab === 'currency' && (
-            <div className="space-y-6 text-xs">
-              <h3 className="text-base font-black text-slate-900 dark:text-white">Döviz Kurları ve Yabancı Para Tahsilatı</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-semibold">
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <div className="flex items-center justify-between font-bold">
-                    <span>USD ($) Dolar Kuru:</span>
-                    <span className="text-blue-600">Alış / Satış</span>
-                  </div>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={usdRate}
-                    onChange={(e) => setUsdRate(Number(e.target.value))}
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-base font-black text-slate-900 dark:text-white"
-                  />
-                </div>
-
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <div className="flex items-center justify-between font-bold">
-                    <span>EUR (€) Euro Kuru:</span>
-                    <span className="text-emerald-600">Alış / Satış</span>
-                  </div>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={eurRate}
-                    onChange={(e) => setEurRate(Number(e.target.value))}
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-base font-black text-slate-900 dark:text-white"
-                  />
-                </div>
-
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                  <div className="flex items-center justify-between font-bold">
-                    <span>GBP (£) Sterlin Kuru:</span>
-                    <span className="text-purple-600">Alış / Satış</span>
-                  </div>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={gbpRate}
-                    onChange={(e) => setGbpRate(Number(e.target.value))}
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-base font-black text-slate-900 dark:text-white"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 5: Adres & Şirket Bilgileri */}
+          {/* TAB 4: Adres & Şirket Bilgileri */}
           {activeSubTab === 'address' && (
             <div className="space-y-6 text-xs font-semibold">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1814,8 +1710,8 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       }`}
                     >
                       <div>
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-2 min-w-0">
                             {editingTerminalId === term.id ? (
                               <div className="flex flex-col gap-2 w-full bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-purple-500/50 shadow-sm">
                                 <div className="flex items-center gap-1.5">
@@ -1876,7 +1772,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                                 </div>
                               </div>
                             ) : (
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                                 <span className="text-sm font-black text-slate-900 dark:text-white">
                                   {term.name}
                                 </span>
@@ -1891,7 +1787,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                                     setEditingScaleIp(term.scale_ip || '192.168.1.150');
                                     setEditingScalePort(term.scale_port || 2004);
                                   }}
-                                  className="p-1 rounded text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 cursor-pointer"
+                                  className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center rounded text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 cursor-pointer"
                                   title="Kasa Adı, Terazi IP ve Portu Düzenle"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
@@ -2037,47 +1933,6 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                     </div>
                   ))}
                 </div>
-
-                {/* Yeni Kasa Kurulum Paketi İndirme Alanı */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div className="space-y-1">
-                    <span className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <Plus className="w-4 h-4 text-emerald-600" />
-                      Yeni Bir Kasa / Bilgisayar Ekle
-                    </span>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Yeni kasanız için bir isim belirleyip indirin. İndirilen paketi diğer bilgisayarda çalıştırdığınızda otomatik bu isimle kaydolur ve kapanıp açılsa bile ayarları sıfırlanmaz.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <input
-                      type="text"
-                      value={newTerminalName}
-                      onChange={(e) => setNewTerminalName(e.target.value)}
-                      placeholder="Örn: Kasa 2 - Paket"
-                      className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white w-full sm:w-48"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadAgentZip(newTerminalName)}
-                      disabled={downloadingAgent}
-                      className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white active:scale-95 text-white font-black text-xs shadow-sm transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer disabled:opacity-60"
-                    >
-                      {downloadingAgent ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>{downloadStatusText || 'Hazırlanıyor...'}</span>
-                        </>
-                      ) : (
-                        <>
-                          <Download className="w-4 h-4" />
-                          <span>Bu Kasa İçin İndir (.ZIP)</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
               </div>
 
               {/* TERMAL YAZICI VE OTOMATİK ÇIKTI YÖNETİMİ (IP ADRESİNE VE İSME GÖRE GRUPLANMIŞ) */}
@@ -2123,8 +1978,8 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                   </div>
                 </div>
 
-                {/* Arama / Filtre ve Sanal Yazıcı Gizleme Barı */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                {/* Arama / Filtre Barı */}
+                <div className="flex items-center bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800">
                   <div className="flex items-center gap-2 flex-1">
                     <input
                       type="text"
@@ -2134,15 +1989,6 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                       className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-900 dark:text-white"
                     />
                   </div>
-                  <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer px-2 py-1 select-none">
-                    <input
-                      type="checkbox"
-                      checked={showVirtualPrinters}
-                      onChange={(e) => setShowVirtualPrinters(e.target.checked)}
-                      className="w-3.5 h-3.5 rounded accent-blue-600"
-                    />
-                    <span>PDF / OneNote / Fax Sanal Yazıcılarını Göster</span>
-                  </label>
                 </div>
 
                 {/* Test Durum Bildirimi */}
@@ -2182,6 +2028,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
 
                     return groupedTerminals.map((term) => {
                       const ipAddr = term.local_ip || term.id;
+                      const showVirtualForTerm = Boolean(showVirtualPrintersByTerminal[term.id]);
                       // Bu kasadaki yazıcıları isme göre alfabetik sırala (Fiziksel termal yazıcılar üstte, sanal yazıcılar altta)
                       const allPrinters = [...(term.printers || [])].sort((a, b) => {
                         const va = isVirtualPrinter(a);
@@ -2190,8 +2037,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                         return a.localeCompare(b, 'tr');
                       });
 
-                      const filteredPrinters = allPrinters.filter(prName => {
-                        if (!showVirtualPrinters && isVirtualPrinter(prName)) return false;
+                      const searchMatchedPrinters = allPrinters.filter(prName => {
                         if (!q) return true;
                         return (
                           prName.toLowerCase().includes(q) ||
@@ -2200,7 +2046,12 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                         );
                       });
 
-                      if (filteredPrinters.length === 0) return null;
+                      if (searchMatchedPrinters.length === 0) return null;
+
+                      const filteredPrinters = searchMatchedPrinters.filter(prName => {
+                        if (!showVirtualForTerm && isVirtualPrinter(prName)) return false;
+                        return true;
+                      });
 
                       const thermalCount = filteredPrinters.filter(p => !isVirtualPrinter(p)).length;
 
@@ -2223,7 +2074,22 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                               </span>
                             </div>
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer px-2.5 py-1 rounded-full bg-white/80 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 select-none hover:border-blue-400 transition">
+                                <input
+                                  type="checkbox"
+                                  checked={showVirtualForTerm}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setShowVirtualPrintersByTerminal(prev => ({
+                                      ...prev,
+                                      [term.id]: checked,
+                                    }));
+                                  }}
+                                  className="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer"
+                                />
+                                <span>Sanal Yazıcıları Göster</span>
+                              </label>
                               {term.is_online ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-500/30">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
@@ -2239,7 +2105,11 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
 
                           {/* Bu IP'deki Yazıcı Kartları (İsme Göre Sıralı) */}
                           <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                            {filteredPrinters.map((prName) => {
+                            {filteredPrinters.length === 0 ? (
+                              <div className="md:col-span-2 py-3 px-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-center text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                Bu bilgisayarda görünür fiziksel termal yazıcı yok. Sanal yazıcıları (PDF / OneNote / Fax) görmek için sağ üstteki <strong>Sanal Yazıcıları Göster</strong> kutucuğunu işaretleyin.
+                              </div>
+                            ) : filteredPrinters.map((prName) => {
                               const qualifiedKey = `${ipAddr}::${prName}`;
                               const isVirtual = isVirtualPrinter(prName);
                               const printerCfg = printerConfigs.find(c =>

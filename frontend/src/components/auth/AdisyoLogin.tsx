@@ -290,9 +290,6 @@ export const AdisyoLogin: React.FC<AdisyoLoginProps> = ({
                   />
                   <span>Restoranı & Cihazı Hatırla</span>
                 </label>
-                <span className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
-                  Multi-Tenant PBKDF2
-                </span>
               </div>
 
               <button

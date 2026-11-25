@@ -416,8 +416,8 @@ export const initialPermissions: PermissionItem[] = [
   },
   {
     id: 'tab_inventory',
-    title: 'Stok, Birimler, Reçeteler & Zayi Sekmesi',
-    description: 'Tanımlamalar ve İşlemler altındaki "Birimler & Reçeteler", "Stok İşlemleri" ve "Zayi / Fire" sekmelerini görmesini sağlar.',
+    title: 'Stok İşlemleri Sekmesi',
+    description: 'İşlemler altındaki "Stok İşlemleri" sekmesini görmesini sağlar.',
     group: 'Sekmeler',
     roles: { waiter: false, kitchen: true, courier: false, cashier: true, manager: true, call_center: false }
   },
@@ -441,20 +441,6 @@ export const initialPermissions: PermissionItem[] = [
     description: 'Sol menüdeki "Masa Rezervasyon" sekmesini görmesini sağlar.',
     group: 'Sekmeler',
     roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: true }
-  },
-  {
-    id: 'tab_kiosk',
-    title: 'Kiosk & Çağrı Ekranı (CFD) Sekmesi',
-    description: 'Sol menüdeki "Kiosk & Çağrı Ekranı" sekmesini görmesini sağlar.',
-    group: 'Sekmeler',
-    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
-  },
-  {
-    id: 'tab_hotel',
-    title: 'Otel Yönetim (PMS) Sekmesi',
-    description: 'Sol menüdeki "Otel Yönetim (PMS)" sekmesini görmesini sağlar.',
-    group: 'Sekmeler',
-    roles: { waiter: false, kitchen: false, courier: false, cashier: true, manager: true, call_center: false }
   },
   {
     id: 'tab_audit',
@@ -502,13 +488,6 @@ export const initialPermissions: PermissionItem[] = [
     id: 'tab_cost_profit',
     title: 'Maliyet & Rapor Sihirbazı Sekmesi',
     description: 'Raporlar altındaki "Maliyet & Rapor Sihirbazı" sekmesini görmesini sağlar.',
-    group: 'Sekmeler',
-    roles: { waiter: false, kitchen: false, courier: false, cashier: false, manager: true, call_center: false }
-  },
-  {
-    id: 'tab_app_store',
-    title: 'Uygulama Mağazası Sekmesi',
-    description: 'Sol menüdeki "Uygulama Mağazası" sekmesini görmesini sağlar.',
     group: 'Sekmeler',
     roles: { waiter: false, kitchen: false, courier: false, cashier: false, manager: true, call_center: false }
   },

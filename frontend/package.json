@@ -6,25 +6,35 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview",
+    "preview": "vite preview --host",
+    "start": "npm run build && npm run preview",
     "test": "node --test tests/frontend.test.mjs"
   },
+  "browserslist": [
+    "ie 11",
+    "ios >= 9",
+    "safari >= 9",
+    "defaults"
+  ],
   "dependencies": {
     "clsx": "^2.1.1",
     "dexie": "^4.0.11",
     "lucide-react": "^0.475.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "tailwind-merge": "^3.0.0"
+    "tailwind-merge": "^3.0.0",
+    "whatwg-fetch": "^3.6.20"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-legacy": "^6.1.1",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
+    "terser": "^5.51.2",
     "typescript": "^5.7.3",
     "vite": "^6.1.0"
   }

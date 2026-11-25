@@ -11,6 +11,20 @@ interface MasterLeadsViewProps {
   onRefresh: () => void;
 }
 
+const getMasterHeaders = (includeJson = false): Record<string, string> => {
+  const headers: Record<string, string> = {};
+  if (includeJson) {
+    headers['Content-Type'] = 'application/json';
+  }
+  try {
+    const token = localStorage.getItem('boncore_master_token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  } catch {}
+  return headers;
+};
+
 export const MasterLeadsView: React.FC<MasterLeadsViewProps> = ({ leads, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -32,14 +46,16 @@ export const MasterLeadsView: React.FC<MasterLeadsViewProps> = ({ leads, onRefre
     try {
       const res = await fetch(`/api/master/leads/${leadId}/status`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getMasterHeaders(true),
         body: JSON.stringify({ status: newStatus })
       });
-      if (res.ok) {
-        onRefresh();
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || err.error || err.message || 'Durum güncellenemedi.');
       }
-    } catch (e) {
-      alert('Durum güncellenemedi.');
+      onRefresh();
+    } catch (e: any) {
+      alert(e?.message || 'Durum güncellenemedi.');
     }
   };
 
@@ -48,10 +64,21 @@ export const MasterLeadsView: React.FC<MasterLeadsViewProps> = ({ leads, onRefre
     if (window.confirm(`"${companyName}" işletmesi için 14 günlük ücretsiz hesap oluşturulup restorana dönüştürülsün mü?`)) {
       setConvertingId(leadId);
       try {
-        const res = await fetch(`/api/master/leads/${leadId}/convert`, { method: 'POST' });
-        if (!res.ok) throw new Error('Dönüştürme başarısız.');
+        const res = await fetch(`/api/master/leads/${leadId}/convert`, {
+          method: 'POST',
+          headers: getMasterHeaders(false)
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || err.error || err.message || 'Dönüştürme başarısız.');
+        }
         const data = await res.json();
-        alert(`🎉 Harika! Müşteri adayı başarıyla restorana dönüştürüldü!\n\nRestoran Kodu: ${data.tenant_name}\nYönetici Kullanıcı Adı: ${data.admin_username}\nŞifre: ${data.admin_password}\nPIN: ${data.pin_code}`);
+        const creds = data?.credentials || {};
+        const tenantCode = creds.restaurant_code || data?.tenant?.code || data?.tenant_name || '-';
+        const adminUser = creds.admin_username || data?.admin_username || 'admin';
+        const adminPass = creds.admin_password || data?.admin_password || '-';
+        const adminPin = creds.admin_pin || data?.pin_code || '-';
+        alert(`🎉 Harika! Müşteri adayı başarıyla restorana dönüştürüldü!\n\nRestoran Kodu: ${tenantCode}\nYönetici Kullanıcı Adı: ${adminUser}\nŞifre: ${adminPass}\nPIN: ${adminPin}`);
         onRefresh();
       } catch (err: any) {
         alert(err.message || 'Hata oluştu.');
@@ -140,13 +167,19 @@ export const MasterLeadsView: React.FC<MasterLeadsViewProps> = ({ leads, onRefre
                 filteredLeads.map((lead) => {
                   const rawPhone = lead.phone.replace(/[^0-9]/g, '');
                   const waNumber = rawPhone.startsWith('90') ? rawPhone : `90${rawPhone.replace(/^0/, '')}`;
+                  const parsedDate = lead.created_at ? new Date(lead.created_at) : null;
+                  const isValidDate = parsedDate !== null && !isNaN(parsedDate.getTime());
                   return (
                     <tr key={lead.id} className="hover:bg-slate-850/60 transition">
-                      <td className="py-3.5 px-4 text-slate-400 font-mono text-[11px]">
-                        {lead.created_at ? new Date(lead.created_at).toLocaleDateString('tr-TR') : 'Bugün'}
-                        <div className="text-[10px] text-slate-500">
-                          {lead.created_at ? new Date(lead.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : ''}
-                        </div>
+                      <td className="py-3.5 px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                        {isValidDate
+                          ? parsedDate!.toLocaleDateString('tr-TR')
+                          : (lead.created_at ? String(lead.created_at) : 'Bugün')}
+                        {isValidDate && (
+                          <div className="text-[10px] text-slate-500">
+                            {parsedDate!.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        )}
                       </td>
 
                       <td className="py-3.5 px-4">
@@ -215,7 +248,7 @@ export const MasterLeadsView: React.FC<MasterLeadsViewProps> = ({ leads, onRefre
                       </td>
 
                       <td className="py-3.5 px-4 text-right">
-                        {lead.status !== 'musteri_oldu' ? (
+                        {lead.status !== 'musteri_oldu' && lead.status !== 'converted' ? (
                           <button
                             onClick={() => handleConvertToTenant(lead.id, lead.company_name)}
                             disabled={convertingId === lead.id}

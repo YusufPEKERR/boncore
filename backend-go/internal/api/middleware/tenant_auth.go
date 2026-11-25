@@ -121,46 +121,25 @@ func DecodeAccessToken(cfg *config.Config, token string) (*TokenClaims, error) {
 	return &claims, nil
 }
 
-// DecodeAccessTokenFast extracts the payload without DB lookup for fast tenant resolution.
-func DecodeAccessTokenFast(token string) *TokenClaims {
-	parts := strings.SplitN(token, ".", 2)
-	if len(parts) < 1 {
-		return nil
+// ResolveTenantCodeFromRequest resolves tenant code safely:
+// 1. If the caller already has HMAC-verified tenant claims (non-master), ALWAYS lock to claims.RC so headers cannot spoof another tenant.
+// 2. Otherwise (unauthenticated public/QR/WS/login or master_admin), check Header -> Cookie -> Query Param -> fallback.
+func ResolveTenantCodeFromRequest(c *fiber.Ctx, fallback string, verifiedClaims *TokenClaims) string {
+	// 1. Authenticated non-master tenant claim takes strict precedence over client headers
+	if verifiedClaims != nil && verifiedClaims.RC != "" {
+		roleLow := strings.ToLower(strings.TrimSpace(verifiedClaims.Role))
+		if roleLow != "master_admin" && roleLow != "superadmin" {
+			return repository.CleanTenantCode(verifiedClaims.RC, fallback)
+		}
 	}
-	rawJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return nil
-	}
-	var claims TokenClaims
-	if err := json.Unmarshal(rawJSON, &claims); err != nil {
-		return nil
-	}
-	return &claims
-}
 
-// ResolveTenantCodeFromRequest implements the exact 4-step resolution priority from `backend/app/database.py`:
-// 1. Header: X-Restaurant-Code or X-Tenant-Code
-// 2. Authorization: Bearer token `rc` claim
-// 3. Cookie: boncore_restaurant_code or restaurant_code
-// 4. Query param: restaurant / restaurant_code / tenant / tenant_code
-// 5. Fallback: DefaultTenantCode ("fatihciftligi")
-func ResolveTenantCodeFromRequest(c *fiber.Ctx, fallback string) string {
-	// 1. Custom Header
+	// 2. Custom Header (for QR, Hardware Agent, or Master Admin inspection)
 	hCode := c.Get("X-Restaurant-Code")
 	if hCode == "" {
 		hCode = c.Get("X-Tenant-Code")
 	}
 	if hCode != "" {
 		return repository.CleanTenantCode(hCode, fallback)
-	}
-
-	// 2. JWT Bearer Token Payload
-	authHeader := c.Get("Authorization")
-	if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
-		token := strings.TrimSpace(authHeader[7:])
-		if claims := DecodeAccessTokenFast(token); claims != nil && claims.RC != "" {
-			return repository.CleanTenantCode(claims.RC, fallback)
-		}
 	}
 
 	// 3. Cookie
@@ -173,7 +152,7 @@ func ResolveTenantCodeFromRequest(c *fiber.Ctx, fallback string) string {
 	}
 
 	// 4. Query Parameter
-	for _, qKey := range []string{"restaurant", "restaurant_code", "tenant", "tenant_code"} {
+	for _, qKey := range []string{"restoran", "restaurant", "restaurant_code", "tenant", "tenant_code"} {
 		if qVal := c.Query(qKey); qVal != "" {
 			return repository.CleanTenantCode(qVal, fallback)
 		}
@@ -182,19 +161,21 @@ func ResolveTenantCodeFromRequest(c *fiber.Ctx, fallback string) string {
 	return fallback
 }
 
-// TenantAndAuthMiddleware attaches the resolved `tenant_code` and optional `user_claims` to Fiber's context.
+// TenantAndAuthMiddleware verifies Bearer HMAC tokens first and attaches `user_claims` and isolated `tenant_code`.
 func TenantAndAuthMiddleware(cfg *config.Config) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		tenantCode := ResolveTenantCodeFromRequest(c, cfg.DefaultTenantCode)
-		c.Locals(ContextTenantKey, tenantCode)
-
+		var verifiedClaims *TokenClaims
 		authHeader := c.Get("Authorization")
 		if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
 			token := strings.TrimSpace(authHeader[7:])
 			if claims, err := DecodeAccessToken(cfg, token); err == nil {
+				verifiedClaims = claims
 				c.Locals(ContextUserClaims, claims)
 			}
 		}
+
+		tenantCode := ResolveTenantCodeFromRequest(c, cfg.DefaultTenantCode, verifiedClaims)
+		c.Locals(ContextTenantKey, tenantCode)
 		return c.Next()
 	}
 }
@@ -204,7 +185,8 @@ func GetTenantCode(c *fiber.Ctx) string {
 	if val, ok := c.Locals(ContextTenantKey).(string); ok && val != "" {
 		return val
 	}
-	if resolved := ResolveTenantCodeFromRequest(c, ""); resolved != "" {
+	claims := GetUserClaims(c)
+	if resolved := ResolveTenantCodeFromRequest(c, "", claims); resolved != "" {
 		c.Locals(ContextTenantKey, resolved)
 		return resolved
 	}

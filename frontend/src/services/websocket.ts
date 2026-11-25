@@ -24,7 +24,12 @@ export function useWebSocket(channel: string = 'pos', onEvent?: WSEventCallback,
       if (unmounted) return;
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const host = window.location.host;
-      const wsUrl = `${protocol}//${host}/ws/${channel}`;
+      let rc = '';
+      try {
+        rc = (localStorage.getItem('boncore_restaurant_code') || '').trim();
+      } catch {}
+      const qs = rc ? `?restaurant_code=${encodeURIComponent(rc)}` : '';
+      const wsUrl = `${protocol}//${host}/ws/${channel}${qs}`;
 
       try {
         const ws = new WebSocket(wsUrl);
@@ -48,7 +53,7 @@ export function useWebSocket(channel: string = 'pos', onEvent?: WSEventCallback,
             // Audio chime based on real-time event
             if (type === 'WAITER_CALL_ALERT') {
               sound.waiterBuzzer();
-            } else if (type === 'KDS_NEW_ORDER' || type === 'KDS_ITEMS_FIRED') {
+            } else if (type === 'KDS_NEW_ORDER' || type === 'KDS_ITEMS_FIRED' || type === 'KDS_HOLD_FIRE_TOGGLED') {
               sound.kitchenBell();
             } else if (type === 'KITCHEN_ORDER_READY_ALERT') {
               sound.kitchenBell();
@@ -56,7 +61,12 @@ export function useWebSocket(channel: string = 'pos', onEvent?: WSEventCallback,
               sound.cashDrawer();
             } else if (type === 'KDS_ITEM_VOIDED') {
               sound.warning();
-            } else if (type === 'ONLINE_ORDER_INCOMING' || type === 'CALLER_ID_INCOMING') {
+            } else if (
+              type === 'ONLINE_ORDER_INCOMING' ||
+              type === 'ONLINE_ORDER_INGESTED' ||
+              type === 'CALLER_ID_INCOMING' ||
+              type === 'CALLER_ID_RINGING'
+            ) {
               sound.waiterBuzzer();
             }
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/boncore/pos-backend/internal/api"
+	"github.com/boncore/pos-backend/internal/api/middleware"
 	"github.com/boncore/pos-backend/internal/config"
 	"github.com/boncore/pos-backend/internal/models"
 	"github.com/boncore/pos-backend/internal/repository"
@@ -56,6 +57,13 @@ func execTest(t *testing.T, app *fiber.App, req *http.Request) *http.Response {
 	return resp
 }
 
+func newMasterReq(svc *service.Services, method, path string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, path, body)
+	tok, _ := middleware.CreateAccessToken(svc.Config, 999999, "master_admin", true, "master", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	return req
+}
+
 // -----------------------------------------------------------------------------
 // R1: Feature Flags & Plan Management
 // -----------------------------------------------------------------------------
@@ -63,8 +71,15 @@ func TestR1_FeatureFlagsAndPlans(t *testing.T) {
 	app, svc := setupTestApp(t)
 	defer svc.DBManager.Close()
 
+	// 0. Unauthenticated GET /api/master/stats -> 401 Unauthorized
+	unauthReq := httptest.NewRequest("GET", "/api/master/stats", nil)
+	unauthResp := execTest(t, app, unauthReq)
+	if unauthResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unauthenticated /api/master/stats, got %d", unauthResp.StatusCode)
+	}
+
 	// 1. GET /api/master/plans
-	req := httptest.NewRequest("GET", "/api/master/plans", nil)
+	req := newMasterReq(svc, "GET", "/api/master/plans", nil)
 	resp := execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/master/plans failed: status %d", resp.StatusCode)
@@ -76,7 +91,7 @@ func TestR1_FeatureFlagsAndPlans(t *testing.T) {
 	}
 
 	// 2. GET /api/master/tenants/fatihciftligi/features
-	req = httptest.NewRequest("GET", "/api/master/tenants/fatihciftligi/features", nil)
+	req = newMasterReq(svc, "GET", "/api/master/tenants/fatihciftligi/features", nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/master/tenants/fatihciftligi/features failed: status %d", resp.StatusCode)
@@ -94,7 +109,7 @@ func TestR1_FeatureFlagsAndPlans(t *testing.T) {
 		"plan_code":        "enterprise",
 	}
 	payloadBytes, _ := json.Marshal(updatePayload)
-	req = httptest.NewRequest("PUT", "/api/master/tenants/fatihciftligi/features", bytes.NewReader(payloadBytes))
+	req = newMasterReq(svc, "PUT", "/api/master/tenants/fatihciftligi/features", bytes.NewReader(payloadBytes))
 	req.Header.Set("Content-Type", "application/json")
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
@@ -187,7 +202,7 @@ func TestR2_FleetMonitoringAndHeartbeat(t *testing.T) {
 	}
 
 	// 2. GET /api/master/fleet
-	req = httptest.NewRequest("GET", "/api/master/fleet", nil)
+	req = newMasterReq(svc, "GET", "/api/master/fleet", nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/master/fleet failed: status %d", resp.StatusCode)
@@ -225,7 +240,7 @@ func TestR3_BillingAndDelinquency(t *testing.T) {
 	defer svc.DBManager.Close()
 
 	// 1. GET /api/master/billing/gateway-settings (check masked secrets)
-	req := httptest.NewRequest("GET", "/api/master/billing/gateway-settings", nil)
+	req := newMasterReq(svc, "GET", "/api/master/billing/gateway-settings", nil)
 	resp := execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/master/billing/gateway-settings failed: status %d", resp.StatusCode)
@@ -245,7 +260,7 @@ func TestR3_BillingAndDelinquency(t *testing.T) {
 		"is_production":    false,
 	}
 	pBytes, _ := json.Marshal(putPayload)
-	req = httptest.NewRequest("PUT", "/api/master/billing/gateway-settings", bytes.NewReader(pBytes))
+	req = newMasterReq(svc, "PUT", "/api/master/billing/gateway-settings", bytes.NewReader(pBytes))
 	req.Header.Set("Content-Type", "application/json")
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
@@ -255,7 +270,7 @@ func TestR3_BillingAndDelinquency(t *testing.T) {
 	// 3. POST /api/master/billing/test-connection
 	testConnPayload := map[string]interface{}{"gateway_provider": "paytr"}
 	tcBytes, _ := json.Marshal(testConnPayload)
-	req = httptest.NewRequest("POST", "/api/master/billing/test-connection", bytes.NewReader(tcBytes))
+	req = newMasterReq(svc, "POST", "/api/master/billing/test-connection", bytes.NewReader(tcBytes))
 	req.Header.Set("Content-Type", "application/json")
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
@@ -270,7 +285,7 @@ func TestR3_BillingAndDelinquency(t *testing.T) {
 		"due_date_days": 10,
 	}
 	invBytes, _ := json.Marshal(invPayload)
-	req = httptest.NewRequest("POST", "/api/master/invoices", bytes.NewReader(invBytes))
+	req = newMasterReq(svc, "POST", "/api/master/invoices", bytes.NewReader(invBytes))
 	req.Header.Set("Content-Type", "application/json")
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusCreated {
@@ -283,21 +298,21 @@ func TestR3_BillingAndDelinquency(t *testing.T) {
 	invID := int(invData["id"].(float64))
 
 	// 5. GET /api/master/invoices
-	req = httptest.NewRequest("GET", "/api/master/invoices", nil)
+	req = newMasterReq(svc, "GET", "/api/master/invoices", nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/master/invoices failed: status %d", resp.StatusCode)
 	}
 
 	// 6. PUT /api/master/invoices/:id/pay
-	req = httptest.NewRequest("PUT", fmt.Sprintf("/api/master/invoices/%d/pay", invID), nil)
+	req = newMasterReq(svc, "PUT", fmt.Sprintf("/api/master/invoices/%d/pay", invID), nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT /api/master/invoices/:id/pay failed: status %d", resp.StatusCode)
 	}
 
 	// 7. POST /api/master/invoices/run-due-check
-	req = httptest.NewRequest("POST", "/api/master/invoices/run-due-check", nil)
+	req = newMasterReq(svc, "POST", "/api/master/invoices/run-due-check", nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("POST /api/master/invoices/run-due-check failed: status %d", resp.StatusCode)
@@ -375,7 +390,7 @@ func TestR4_FranchiseAndMenuClone(t *testing.T) {
 		"primary_tenant_code": "fatihciftligi",
 	}
 	bBytes, _ := json.Marshal(brandPayload)
-	req := httptest.NewRequest("POST", "/api/master/brands", bytes.NewReader(bBytes))
+	req := newMasterReq(svc, "POST", "/api/master/brands", bytes.NewReader(bBytes))
 	req.Header.Set("Content-Type", "application/json")
 	resp := execTest(t, app, req)
 	if resp.StatusCode != http.StatusCreated {
@@ -387,14 +402,14 @@ func TestR4_FranchiseAndMenuClone(t *testing.T) {
 	brandID := int(bRes["brand"].(map[string]interface{})["id"].(float64))
 
 	// 2. GET /api/master/brands
-	req = httptest.NewRequest("GET", "/api/master/brands", nil)
+	req = newMasterReq(svc, "GET", "/api/master/brands", nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/master/brands failed: status %d", resp.StatusCode)
 	}
 
 	// 3. GET /api/master/brands/:id/analytics
-	req = httptest.NewRequest("GET", fmt.Sprintf("/api/master/brands/%d/analytics", brandID), nil)
+	req = newMasterReq(svc, "GET", fmt.Sprintf("/api/master/brands/%d/analytics", brandID), nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/master/brands/:id/analytics failed: status %d", resp.StatusCode)
@@ -409,7 +424,7 @@ func TestR4_FranchiseAndMenuClone(t *testing.T) {
 		"price_adjustment_percent": 10.0,
 	}
 	cBytes, _ := json.Marshal(clonePayload)
-	req = httptest.NewRequest("POST", "/api/master/menu/clone", bytes.NewReader(cBytes))
+	req = newMasterReq(svc, "POST", "/api/master/menu/clone", bytes.NewReader(cBytes))
 	req.Header.Set("Content-Type", "application/json")
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
@@ -440,7 +455,7 @@ func TestR5_BroadcastAnnouncements(t *testing.T) {
 		"dismissible":   true,
 	}
 	bcBytes, _ := json.Marshal(bcPayload)
-	req := httptest.NewRequest("POST", "/api/master/broadcast", bytes.NewReader(bcBytes))
+	req := newMasterReq(svc, "POST", "/api/master/broadcast", bytes.NewReader(bcBytes))
 	req.Header.Set("Content-Type", "application/json")
 	resp := execTest(t, app, req)
 	if resp.StatusCode != http.StatusCreated {
@@ -501,7 +516,7 @@ func TestR6_SupportTicketing(t *testing.T) {
 	}
 
 	// 3. GET /api/master/tickets (Master Admin list)
-	req = httptest.NewRequest("GET", "/api/master/tickets", nil)
+	req = newMasterReq(svc, "GET", "/api/master/tickets", nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/master/tickets failed: status %d", resp.StatusCode)
@@ -514,7 +529,7 @@ func TestR6_SupportTicketing(t *testing.T) {
 		"performed_by":     "Master Admin",
 	}
 	sBytes, _ := json.Marshal(statusPayload)
-	req = httptest.NewRequest("PUT", fmt.Sprintf("/api/master/tickets/%d/status", ticketID), bytes.NewReader(sBytes))
+	req = newMasterReq(svc, "PUT", fmt.Sprintf("/api/master/tickets/%d/status", ticketID), bytes.NewReader(sBytes))
 	req.Header.Set("Content-Type", "application/json")
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
@@ -530,7 +545,7 @@ func TestR7_BackupAndStorageQuota(t *testing.T) {
 	defer svc.DBManager.Close()
 
 	// 1. POST /api/master/tenants/fatihciftligi/backup (generate backup)
-	req := httptest.NewRequest("POST", "/api/master/tenants/fatihciftligi/backup", nil)
+	req := newMasterReq(svc, "POST", "/api/master/tenants/fatihciftligi/backup", nil)
 	resp := execTest(t, app, req)
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("POST /api/master/tenants/fatihciftligi/backup failed: status %d", resp.StatusCode)
@@ -542,21 +557,21 @@ func TestR7_BackupAndStorageQuota(t *testing.T) {
 	backupID := int(bData["id"].(float64))
 
 	// 2. GET /api/master/tenants/fatihciftligi/backups (list backups)
-	req = httptest.NewRequest("GET", "/api/master/tenants/fatihciftligi/backups", nil)
+	req = newMasterReq(svc, "GET", "/api/master/tenants/fatihciftligi/backups", nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/master/tenants/fatihciftligi/backups failed: status %d", resp.StatusCode)
 	}
 
 	// 3. GET /api/master/backups/:id/download (download backup archive)
-	req = httptest.NewRequest("GET", fmt.Sprintf("/api/master/backups/%d/download", backupID), nil)
+	req = newMasterReq(svc, "GET", fmt.Sprintf("/api/master/backups/%d/download", backupID), nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/master/backups/:id/download failed: status %d", resp.StatusCode)
 	}
 
 	// 4. GET /api/master/tenants/fatihciftligi/quota (storage quota calculation)
-	req = httptest.NewRequest("GET", "/api/master/tenants/fatihciftligi/quota", nil)
+	req = newMasterReq(svc, "GET", "/api/master/tenants/fatihciftligi/quota", nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/master/tenants/fatihciftligi/quota failed: status %d", resp.StatusCode)
@@ -569,7 +584,7 @@ func TestR7_BackupAndStorageQuota(t *testing.T) {
 	}
 
 	// 5. GET /api/master/storage/summary (platform-wide storage overview)
-	req = httptest.NewRequest("GET", "/api/master/storage/summary", nil)
+	req = newMasterReq(svc, "GET", "/api/master/storage/summary", nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/master/storage/summary failed: status %d", resp.StatusCode)

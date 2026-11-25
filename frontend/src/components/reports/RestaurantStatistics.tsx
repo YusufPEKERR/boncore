@@ -29,7 +29,7 @@ interface RestaurantStatisticsProps {
 
 export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNavigateTab }) => {
   const [activeTab, setActiveTab] = useState<string>('summary');
-  const [dateRange, setDateRange] = useState<string>('Tüm Zamanlar (Canlı)');
+  const [dateRange, setDateRange] = useState<string>('Bugün (Canlı)');
   const [showDateMenu, setShowDateMenu] = useState<boolean>(false);
   const [stats, setStats] = useState<any>(null);
   const [stockItems, setStockItems] = useState<Ingredient[]>([]);
@@ -63,8 +63,6 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
 
   const tabs = [
     { id: 'summary', label: 'Özet' },
-    { id: 'closed_bills', label: 'Kapatılan Adisyonlar' },
-    { id: 'stock_report', label: 'Stok Durum Raporu' },
     { id: 'daily_turnover', label: 'Günlük Ciro Verileri' },
     { id: 'chart_data', label: 'Grafik Verileri' },
     { id: 'delivery', label: 'Paket Siparişler' },
@@ -514,9 +512,9 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
       </div>
 
       {/* Right Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
         {/* Top Action & Date Bar */}
-        <div className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 flex items-center justify-between shadow-sm shrink-0 relative z-20">
+        <div className="min-h-14 py-2 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 flex flex-wrap items-center justify-between gap-2 shadow-sm shrink-0 relative z-20">
           <div className="relative">
             <button
               onClick={() => { sound.beep(); setShowDateMenu(!showDateMenu); }}
@@ -689,38 +687,40 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                   <span className="text-xs text-slate-400 font-medium">Toplam {waiterList.length} Personel</span>
                 </div>
 
-                <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-                  <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
-                    <div className="col-span-4">Personel Adı</div>
-                    <div className="col-span-2 text-center">Sipariş Sayısı</div>
-                    <div className="col-span-2 text-center">Ort. Adisyon</div>
-                    <div className="col-span-2 text-right">Bahşiş / Tip</div>
-                    <div className="col-span-2 text-right">Toplam Satış</div>
-                  </div>
-
-                  {waiterList.map((w: any, idx: number) => (
-                    <div key={idx} className="grid grid-cols-12 p-4 items-center font-semibold hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                      <div className="col-span-4 flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 font-black text-slate-800 dark:text-white flex items-center justify-center text-xs">
-                          {idx + 1}
-                        </div>
-                        <div>
-                          <span className="font-bold text-slate-900 dark:text-white uppercase">{w.waiter_name}</span>
-                          {w.badge && (
-                            <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 font-bold">
-                              {w.badge}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-span-2 text-center font-mono">{w.orders_count || 0}</div>
-                      <div className="col-span-2 text-center font-mono">₺{((w.total_sales || 0) / Math.max(1, w.orders_count || 0)).toFixed(2)}</div>
-                      <div className="col-span-2 text-right font-mono text-emerald-600">₺{(w.total_tip || 0).toFixed(2)}</div>
-                      <div className="col-span-2 text-right font-mono font-black text-slate-900 dark:text-white">
-                        ₺{(w.total_sales || 0).toFixed(2)}
-                      </div>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[640px] divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                    <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
+                      <div className="col-span-4">Personel Adı</div>
+                      <div className="col-span-2 text-center">Sipariş Sayısı</div>
+                      <div className="col-span-2 text-center">Ort. Adisyon</div>
+                      <div className="col-span-2 text-right">Bahşiş / Tip</div>
+                      <div className="col-span-2 text-right">Toplam Satış</div>
                     </div>
-                  ))}
+
+                    {waiterList.map((w: any, idx: number) => (
+                      <div key={idx} className="grid grid-cols-12 p-4 items-center font-semibold hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                        <div className="col-span-4 flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 font-black text-slate-800 dark:text-white flex items-center justify-center text-xs">
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <span className="font-bold text-slate-900 dark:text-white uppercase">{w.waiter_name}</span>
+                            {w.badge && (
+                              <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 font-bold">
+                                {w.badge}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-span-2 text-center font-mono">{w.orders_count || 0}</div>
+                        <div className="col-span-2 text-center font-mono">₺{((w.total_sales || 0) / Math.max(1, w.orders_count || 0)).toFixed(2)}</div>
+                        <div className="col-span-2 text-right font-mono text-emerald-600">₺{(w.total_tip || 0).toFixed(2)}</div>
+                        <div className="col-span-2 text-right font-mono font-black text-slate-900 dark:text-white">
+                          ₺{(w.total_sales || 0).toFixed(2)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -778,36 +778,38 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                   <span className="text-xs text-slate-400 font-medium">Bugünkü Kasa İcmali</span>
                 </div>
 
-                <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-                  <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
-                    <div className="col-span-4">Ödeme Yöntemi</div>
-                    <div className="col-span-2 text-center">İşlem Adedi</div>
-                    <div className="col-span-3 text-right">Toplam Tutar</div>
-                    <div className="col-span-3 text-right">Cirodaki Payı</div>
-                  </div>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[640px] divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                    <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
+                      <div className="col-span-4">Ödeme Yöntemi</div>
+                      <div className="col-span-2 text-center">İşlem Adedi</div>
+                      <div className="col-span-3 text-right">Toplam Tutar</div>
+                      <div className="col-span-3 text-right">Cirodaki Payı</div>
+                    </div>
 
-                  {Object.entries(dailyData.payment_breakdown).map(([key, item]: any) => (
-                    <div key={key} className="grid grid-cols-12 p-4 items-center font-semibold hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                      <div className="col-span-4 flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
-                        <span className="font-bold text-slate-900 dark:text-white">{item.name}</span>
-                      </div>
-                      <div className="col-span-2 text-center font-mono">{item.count} Adet</div>
-                      <div className="col-span-3 text-right font-mono font-black text-slate-900 dark:text-white">
-                        ₺{Number(item.amount || 0).toFixed(2)}
-                      </div>
-                      <div className="col-span-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <div className="w-24 bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
-                            <div className="h-full rounded-full" style={{ width: `${item.percent}%`, backgroundColor: item.color }} />
+                    {Object.entries(dailyData.payment_breakdown).map(([key, item]: any) => (
+                      <div key={key} className="grid grid-cols-12 p-4 items-center font-semibold hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                        <div className="col-span-4 flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
+                          <span className="font-bold text-slate-900 dark:text-white">{item.name}</span>
+                        </div>
+                        <div className="col-span-2 text-center font-mono">{item.count} Adet</div>
+                        <div className="col-span-3 text-right font-mono font-black text-slate-900 dark:text-white">
+                          ₺{Number(item.amount || 0).toFixed(2)}
+                        </div>
+                        <div className="col-span-3 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <div className="w-24 bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
+                              <div className="h-full rounded-full" style={{ width: `${item.percent}%`, backgroundColor: item.color }} />
+                            </div>
+                            <span className="font-mono font-bold text-slate-600 dark:text-slate-400 w-12 text-right">
+                              %{item.percent}
+                            </span>
                           </div>
-                          <span className="font-mono font-bold text-slate-600 dark:text-slate-400 w-12 text-right">
-                            %{item.percent}
-                          </span>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -857,33 +859,35 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                     <span className="text-xs text-slate-400 font-medium">Pik Saatler</span>
                   </div>
 
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-                    <div className="grid grid-cols-12 p-3 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
-                      <div className="col-span-3">Saat Dilimi</div>
-                      <div className="col-span-2 text-center">Sipariş</div>
-                      <div className="col-span-3 text-right">Ciro (₺)</div>
-                      <div className="col-span-2 text-right">Ort. Sepet</div>
-                      <div className="col-span-2 text-right">Pay (%)</div>
-                    </div>
-
-                    {dailyData.hourly_breakdown.map((h: any, idx: number) => (
-                      <div key={idx} className="grid grid-cols-12 p-3 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                        <div className="col-span-3 font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                          {h.percent > 20 && <Sparkles className="w-3 h-3 text-amber-500" />}
-                          <span>{h.time_range}</span>
-                        </div>
-                        <div className="col-span-2 text-center font-mono">{h.orders_count}</div>
-                        <div className="col-span-3 text-right font-mono font-black text-slate-900 dark:text-white">
-                          ₺{Number(h.turnover || 0).toFixed(2)}
-                        </div>
-                        <div className="col-span-2 text-right font-mono text-slate-500">
-                          ₺{Number(h.avg_ticket || 0).toFixed(2)}
-                        </div>
-                        <div className="col-span-2 text-right font-mono font-bold text-emerald-600">
-                          %{h.percent}
-                        </div>
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[640px] divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                      <div className="grid grid-cols-12 p-3 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
+                        <div className="col-span-3">Saat Dilimi</div>
+                        <div className="col-span-2 text-center">Sipariş</div>
+                        <div className="col-span-3 text-right">Ciro (₺)</div>
+                        <div className="col-span-2 text-right">Ort. Sepet</div>
+                        <div className="col-span-2 text-right">Pay (%)</div>
                       </div>
-                    ))}
+
+                      {dailyData.hourly_breakdown.map((h: any, idx: number) => (
+                        <div key={idx} className="grid grid-cols-12 p-3 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                          <div className="col-span-3 font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                            {h.percent > 20 && <Sparkles className="w-3 h-3 text-amber-500" />}
+                            <span>{h.time_range}</span>
+                          </div>
+                          <div className="col-span-2 text-center font-mono">{h.orders_count}</div>
+                          <div className="col-span-3 text-right font-mono font-black text-slate-900 dark:text-white">
+                            ₺{Number(h.turnover || 0).toFixed(2)}
+                          </div>
+                          <div className="col-span-2 text-right font-mono text-slate-500">
+                            ₺{Number(h.avg_ticket || 0).toFixed(2)}
+                          </div>
+                          <div className="col-span-2 text-right font-mono font-bold text-emerald-600">
+                            %{h.percent}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -898,32 +902,34 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                   <span className="text-xs text-slate-400 font-medium">Son İşlemler</span>
                 </div>
 
-                <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-                  <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
-                    <div className="col-span-2">Adisyon No</div>
-                    <div className="col-span-2">Masa / Kanal</div>
-                    <div className="col-span-2">Garson / Kasiyer</div>
-                    <div className="col-span-2 text-center">Saat</div>
-                    <div className="col-span-2">Ödeme Türü</div>
-                    <div className="col-span-2 text-right">Tutar</div>
-                  </div>
-
-                  {(dailyData.recent_bills || []).map((b: any) => (
-                    <div key={b.id} className="grid grid-cols-12 p-3.5 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                      <div className="col-span-2 font-mono font-bold text-slate-900 dark:text-white">{b.order_no}</div>
-                      <div className="col-span-2 font-bold text-slate-700 dark:text-slate-300">{b.table_name}</div>
-                      <div className="col-span-2 text-slate-500">{b.waiter}</div>
-                      <div className="col-span-2 text-center font-mono text-slate-500">{b.time}</div>
-                      <div className="col-span-2">
-                        <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[10px]">
-                          {b.payment_method}
-                        </span>
-                      </div>
-                      <div className="col-span-2 text-right font-mono font-black text-slate-900 dark:text-white">
-                        ₺{Number(b.grand_total || 0).toFixed(2)}
-                      </div>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[640px] divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                    <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
+                      <div className="col-span-2">Adisyon No</div>
+                      <div className="col-span-2">Masa / Kanal</div>
+                      <div className="col-span-2">Garson / Kasiyer</div>
+                      <div className="col-span-2 text-center">Saat</div>
+                      <div className="col-span-2">Ödeme Türü</div>
+                      <div className="col-span-2 text-right">Tutar</div>
                     </div>
-                  ))}
+
+                    {(dailyData.recent_bills || []).map((b: any) => (
+                      <div key={b.id} className="grid grid-cols-12 p-3.5 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                        <div className="col-span-2 font-mono font-bold text-slate-900 dark:text-white">{b.order_no}</div>
+                        <div className="col-span-2 font-bold text-slate-700 dark:text-slate-300">{b.table_name}</div>
+                        <div className="col-span-2 text-slate-500">{b.waiter}</div>
+                        <div className="col-span-2 text-center font-mono text-slate-500">{b.time}</div>
+                        <div className="col-span-2">
+                          <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[10px]">
+                            {b.payment_method}
+                          </span>
+                        </div>
+                        <div className="col-span-2 text-right font-mono font-black text-slate-900 dark:text-white">
+                          ₺{Number(b.grand_total || 0).toFixed(2)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1227,41 +1233,43 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                   <span className="text-xs text-slate-400 font-medium">Motorlu Kurye İcmali</span>
                 </div>
 
-                <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-                  <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
-                    <div className="col-span-3">Kurye Adı & Plaka</div>
-                    <div className="col-span-2 text-center">Teslimat Adedi</div>
-                    <div className="col-span-2 text-right">Tahsil Edilen Nakit</div>
-                    <div className="col-span-2 text-right">Tahsil Edilen Kart</div>
-                    <div className="col-span-1 text-center">Ort. Süre</div>
-                    <div className="col-span-2 text-right">Durumu</div>
-                  </div>
-
-                  {(deliveryData?.couriers || []).map((c: any) => (
-                    <div key={c.id} className="grid grid-cols-12 p-4 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                      <div className="col-span-3 font-bold text-slate-900 dark:text-white">
-                        <div>{c.name}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">{c.plate} - {c.phone}</div>
-                      </div>
-                      <div className="col-span-2 text-center font-mono font-bold">{c.deliveries_count} Paket</div>
-                      <div className="col-span-2 text-right font-mono font-bold text-emerald-600">
-                        ₺{Number(c.cash_collected || 0).toFixed(2)}
-                      </div>
-                      <div className="col-span-2 text-right font-mono font-bold text-blue-600">
-                        ₺{Number(c.card_collected || 0).toFixed(2)}
-                      </div>
-                      <div className="col-span-1 text-center font-mono text-slate-500">{c.avg_time}</div>
-                      <div className="col-span-2 text-right">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                          c.status === 'Dağıtımda'
-                            ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-600'
-                            : 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600'
-                        }`}>
-                          {c.status}
-                        </span>
-                      </div>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[640px] divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                    <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
+                      <div className="col-span-3">Kurye Adı & Plaka</div>
+                      <div className="col-span-2 text-center">Teslimat Adedi</div>
+                      <div className="col-span-2 text-right">Tahsil Edilen Nakit</div>
+                      <div className="col-span-2 text-right">Tahsil Edilen Kart</div>
+                      <div className="col-span-1 text-center">Ort. Süre</div>
+                      <div className="col-span-2 text-right">Durumu</div>
                     </div>
-                  ))}
+
+                    {(deliveryData?.couriers || []).map((c: any) => (
+                      <div key={c.id} className="grid grid-cols-12 p-4 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                        <div className="col-span-3 font-bold text-slate-900 dark:text-white">
+                          <div>{c.name}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">{c.plate} - {c.phone}</div>
+                        </div>
+                        <div className="col-span-2 text-center font-mono font-bold">{c.deliveries_count} Paket</div>
+                        <div className="col-span-2 text-right font-mono font-bold text-emerald-600">
+                          ₺{Number(c.cash_collected || 0).toFixed(2)}
+                        </div>
+                        <div className="col-span-2 text-right font-mono font-bold text-blue-600">
+                          ₺{Number(c.card_collected || 0).toFixed(2)}
+                        </div>
+                        <div className="col-span-1 text-center font-mono text-slate-500">{c.avg_time}</div>
+                        <div className="col-span-2 text-right">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                            c.status === 'Dağıtımda'
+                              ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-600'
+                              : 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600'
+                          }`}>
+                            {c.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -1275,37 +1283,39 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                   <span className="text-xs text-slate-400 font-medium">Tüm Paketler</span>
                 </div>
 
-                <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-                  <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
-                    <div className="col-span-2">Sipariş & Platform</div>
-                    <div className="col-span-3">Müşteri & Adres</div>
-                    <div className="col-span-2">Kurye</div>
-                    <div className="col-span-2">Ödeme Türü</div>
-                    <div className="col-span-1 text-center">Saat</div>
-                    <div className="col-span-2 text-right">Tutar & Durum</div>
-                  </div>
-
-                  {deliveryData.orders.map((o: any) => (
-                    <div key={o.id} className="grid grid-cols-12 p-4 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                      <div className="col-span-2">
-                        <div className="font-mono font-bold text-slate-900 dark:text-white">{o.order_no}</div>
-                        <span className="text-[10px] font-bold text-brand-600">{o.platform}</span>
-                      </div>
-                      <div className="col-span-3">
-                        <div className="font-bold text-slate-800 dark:text-slate-200">{o.customer} ({o.phone})</div>
-                        <div className="text-[11px] text-slate-400 truncate">{o.address}</div>
-                      </div>
-                      <div className="col-span-2 font-bold text-slate-700 dark:text-slate-300">{o.courier}</div>
-                      <div className="col-span-2 text-slate-500 font-medium">{o.payment}</div>
-                      <div className="col-span-1 text-center font-mono text-slate-500">{o.time}</div>
-                      <div className="col-span-2 text-right">
-                        <div className="font-mono font-black text-slate-900 dark:text-white">₺{Number(o.amount || 0).toFixed(2)}</div>
-                        <span className={`text-[10px] font-bold ${o.status === 'Yolda' ? 'text-amber-600' : 'text-emerald-600'}`}>
-                          {o.status}
-                        </span>
-                      </div>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[640px] divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                    <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
+                      <div className="col-span-2">Sipariş & Platform</div>
+                      <div className="col-span-3">Müşteri & Adres</div>
+                      <div className="col-span-2">Kurye</div>
+                      <div className="col-span-2">Ödeme Türü</div>
+                      <div className="col-span-1 text-center">Saat</div>
+                      <div className="col-span-2 text-right">Tutar & Durum</div>
                     </div>
-                  ))}
+
+                    {deliveryData.orders.map((o: any) => (
+                      <div key={o.id} className="grid grid-cols-12 p-4 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                        <div className="col-span-2">
+                          <div className="font-mono font-bold text-slate-900 dark:text-white">{o.order_no}</div>
+                          <span className="text-[10px] font-bold text-brand-600">{o.platform}</span>
+                        </div>
+                        <div className="col-span-3">
+                          <div className="font-bold text-slate-800 dark:text-slate-200">{o.customer} ({o.phone})</div>
+                          <div className="text-[11px] text-slate-400 truncate">{o.address}</div>
+                        </div>
+                        <div className="col-span-2 font-bold text-slate-700 dark:text-slate-300">{o.courier}</div>
+                        <div className="col-span-2 text-slate-500 font-medium">{o.payment}</div>
+                        <div className="col-span-1 text-center font-mono text-slate-500">{o.time}</div>
+                        <div className="col-span-2 text-right">
+                          <div className="font-mono font-black text-slate-900 dark:text-white">₺{Number(o.amount || 0).toFixed(2)}</div>
+                          <span className={`text-[10px] font-bold ${o.status === 'Yolda' ? 'text-amber-600' : 'text-emerald-600'}`}>
+                            {o.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1389,37 +1399,39 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                   <span className="text-xs text-slate-400 font-medium">Detaylı Karşılaştırma</span>
                 </div>
 
-                <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-                  <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
-                    <div className="col-span-6">Satış Kanalı</div>
-                    <div className="col-span-2 text-center">Sipariş Sayısı</div>
-                    <div className="col-span-2 text-right">Ortalama Masa Sepeti</div>
-                    <div className="col-span-2 text-right">Kanal Cirosu</div>
-                  </div>
-
-                  {channelData.map((ch: any) => (
-                    <div key={ch.id} className="grid grid-cols-12 p-4 items-center font-semibold hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                      <div className="col-span-6 flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                          {ch.id === 'dine_in' && <Store className="w-4 h-4 text-emerald-600" />}
-                          {ch.id === 'delivery' && <Truck className="w-4 h-4 text-brand-600" />}
-                          {ch.id === 'takeaway' && <ShoppingBag className="w-4 h-4 text-amber-500" />}
-                          {ch.id === 'qr_order' && <QrCode className="w-4 h-4 text-blue-600" />}
-                        </div>
-                        <div>
-                          <div className="font-bold text-slate-900 dark:text-white">{ch.name}</div>
-                          <div className="text-[10px] text-slate-400">{ch.description} • Ort. Masada Kalma: {ch.avg_stay}</div>
-                        </div>
-                      </div>
-                      <div className="col-span-2 text-center font-mono font-bold">{ch.orders} Adet</div>
-                      <div className="col-span-2 text-right font-mono font-bold text-slate-600 dark:text-slate-400">
-                        ₺{Number(ch.avg_ticket || 0).toFixed(2)}
-                      </div>
-                      <div className="col-span-2 text-right font-mono font-black text-slate-900 dark:text-white">
-                        ₺{Number(ch.turnover || 0).toFixed(2)}
-                      </div>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[640px] divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                    <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
+                      <div className="col-span-6">Satış Kanalı</div>
+                      <div className="col-span-2 text-center">Sipariş Sayısı</div>
+                      <div className="col-span-2 text-right">Ortalama Masa Sepeti</div>
+                      <div className="col-span-2 text-right">Kanal Cirosu</div>
                     </div>
-                  ))}
+
+                    {channelData.map((ch: any) => (
+                      <div key={ch.id} className="grid grid-cols-12 p-4 items-center font-semibold hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                        <div className="col-span-6 flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                            {ch.id === 'dine_in' && <Store className="w-4 h-4 text-emerald-600" />}
+                            {ch.id === 'delivery' && <Truck className="w-4 h-4 text-brand-600" />}
+                            {ch.id === 'takeaway' && <ShoppingBag className="w-4 h-4 text-amber-500" />}
+                            {ch.id === 'qr_order' && <QrCode className="w-4 h-4 text-blue-600" />}
+                          </div>
+                          <div>
+                            <div className="font-bold text-slate-900 dark:text-white">{ch.name}</div>
+                            <div className="text-[10px] text-slate-400">{ch.description} • Ort. Masada Kalma: {ch.avg_stay}</div>
+                          </div>
+                        </div>
+                        <div className="col-span-2 text-center font-mono font-bold">{ch.orders} Adet</div>
+                        <div className="col-span-2 text-right font-mono font-bold text-slate-600 dark:text-slate-400">
+                          ₺{Number(ch.avg_ticket || 0).toFixed(2)}
+                        </div>
+                        <div className="col-span-2 text-right font-mono font-black text-slate-900 dark:text-white">
+                          ₺{Number(ch.turnover || 0).toFixed(2)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1521,48 +1533,50 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                   <span className="text-xs text-slate-400 font-medium">Toplam {filteredWaiters.length} Garson</span>
                 </div>
 
-                <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-                  <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
-                    <div className="col-span-4">Personel Adı & Rozet</div>
-                    <div className="col-span-1 text-center">Sipariş</div>
-                    <div className="col-span-3 text-right">Ort. Adisyon Tutarı</div>
-                    <div className="col-span-2 text-right">Bahşiş (Tip)</div>
-                    <div className="col-span-2 text-right">Toplam Satış</div>
-                  </div>
-
-                  {filteredWaiters.map((w: any, idx: number) => (
-                    <div key={idx} className="grid grid-cols-12 p-4 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                      <div className="col-span-4 flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs ${
-                          idx === 0 
-                            ? 'bg-amber-100 text-amber-800 border-2 border-amber-400' 
-                            : idx === 1 
-                              ? 'bg-slate-200 text-slate-700' 
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                        }`}>
-                          {idx + 1}
-                        </div>
-                        <div>
-                          <div className="font-bold text-slate-900 dark:text-white uppercase">{w.waiter_name}</div>
-                          {w.badge && (
-                            <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                              ★ {w.badge}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-span-1 text-center font-mono font-bold">{w.orders_count}</div>
-                      <div className="col-span-3 text-right font-mono text-slate-500">
-                        ₺{((w.total_sales || 0) / Math.max(1, w.orders_count || 0)).toFixed(2)}
-                      </div>
-                      <div className="col-span-2 text-right font-mono font-bold text-emerald-600">
-                        ₺{(w.total_tip || 0).toFixed(2)}
-                      </div>
-                      <div className="col-span-2 text-right font-mono font-black text-slate-900 dark:text-white">
-                        ₺{(w.total_sales || 0).toFixed(2)}
-                      </div>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[640px] divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                    <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
+                      <div className="col-span-4">Personel Adı & Rozet</div>
+                      <div className="col-span-1 text-center">Sipariş</div>
+                      <div className="col-span-3 text-right">Ort. Adisyon Tutarı</div>
+                      <div className="col-span-2 text-right">Bahşiş (Tip)</div>
+                      <div className="col-span-2 text-right">Toplam Satış</div>
                     </div>
-                  ))}
+
+                    {filteredWaiters.map((w: any, idx: number) => (
+                      <div key={idx} className="grid grid-cols-12 p-4 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                        <div className="col-span-4 flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs ${
+                            idx === 0 
+                              ? 'bg-amber-100 text-amber-800 border-2 border-amber-400' 
+                              : idx === 1 
+                                ? 'bg-slate-200 text-slate-700' 
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                          }`}>
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <div className="font-bold text-slate-900 dark:text-white uppercase">{w.waiter_name}</div>
+                            {w.badge && (
+                              <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                ★ {w.badge}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-span-1 text-center font-mono font-bold">{w.orders_count}</div>
+                        <div className="col-span-3 text-right font-mono text-slate-500">
+                          ₺{((w.total_sales || 0) / Math.max(1, w.orders_count || 0)).toFixed(2)}
+                        </div>
+                        <div className="col-span-2 text-right font-mono font-bold text-emerald-600">
+                          ₺{(w.total_tip || 0).toFixed(2)}
+                        </div>
+                        <div className="col-span-2 text-right font-mono font-black text-slate-900 dark:text-white">
+                          ₺{(w.total_sales || 0).toFixed(2)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1655,33 +1669,35 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                     <span className="text-xs text-slate-400 font-medium">{complimentaryData.treat_items.length} Kayıt</span>
                   </div>
 
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-                    <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
-                      <div className="col-span-1 text-center">Saat</div>
-                      <div className="col-span-2">Masa / Adisyon</div>
-                      <div className="col-span-3">İkram Edilen Ürün</div>
-                      <div className="col-span-1 text-center">Adet</div>
-                      <div className="col-span-2">Yetkili / Personel</div>
-                      <div className="col-span-2">Gerekçe</div>
-                      <div className="col-span-1 text-right">Tutar</div>
-                    </div>
-
-                    {complimentaryData.treat_items.map((t: any) => (
-                      <div key={t.id} className="grid grid-cols-12 p-3.5 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                        <div className="col-span-1 text-center font-mono text-slate-500">{t.time}</div>
-                        <div className="col-span-2 font-bold text-slate-900 dark:text-white">
-                          <div>{t.table_name}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">{t.order_no}</div>
-                        </div>
-                        <div className="col-span-3 font-bold text-amber-600 dark:text-amber-400">{t.product_name}</div>
-                        <div className="col-span-1 text-center font-mono font-bold">{t.quantity || 1}</div>
-                        <div className="col-span-2 text-slate-700 dark:text-slate-300 font-medium">{t.staff}</div>
-                        <div className="col-span-2 text-slate-500 text-[11px]">{t.reason}</div>
-                        <div className="col-span-1 text-right font-mono font-black text-amber-600">
-                          ₺{Number(t.amount || 0).toFixed(2)}
-                        </div>
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[640px] divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                      <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
+                        <div className="col-span-1 text-center">Saat</div>
+                        <div className="col-span-2">Masa / Adisyon</div>
+                        <div className="col-span-3">İkram Edilen Ürün</div>
+                        <div className="col-span-1 text-center">Adet</div>
+                        <div className="col-span-2">Yetkili / Personel</div>
+                        <div className="col-span-2">Gerekçe</div>
+                        <div className="col-span-1 text-right">Tutar</div>
                       </div>
-                    ))}
+
+                      {complimentaryData.treat_items.map((t: any) => (
+                        <div key={t.id} className="grid grid-cols-12 p-3.5 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                          <div className="col-span-1 text-center font-mono text-slate-500">{t.time}</div>
+                          <div className="col-span-2 font-bold text-slate-900 dark:text-white">
+                            <div>{t.table_name}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">{t.order_no}</div>
+                          </div>
+                          <div className="col-span-3 font-bold text-amber-600 dark:text-amber-400">{t.product_name}</div>
+                          <div className="col-span-1 text-center font-mono font-bold">{t.quantity || 1}</div>
+                          <div className="col-span-2 text-slate-700 dark:text-slate-300 font-medium">{t.staff}</div>
+                          <div className="col-span-2 text-slate-500 text-[11px]">{t.reason}</div>
+                          <div className="col-span-1 text-right font-mono font-black text-amber-600">
+                            ₺{Number(t.amount || 0).toFixed(2)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1697,29 +1713,31 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                     <span className="text-xs text-slate-400 font-medium">{(complimentaryData?.void_items || []).length} Kayıt</span>
                   </div>
 
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-                    <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
-                      <div className="col-span-1 text-center">Saat</div>
-                      <div className="col-span-2">Masa No</div>
-                      <div className="col-span-3">İptal Edilen Ürün</div>
-                      <div className="col-span-2">İptal Eden Personel</div>
-                      <div className="col-span-2">İptal Sebebi</div>
-                      <div className="col-span-2 text-right">Tutar & Onay</div>
-                    </div>
-
-                    {(complimentaryData?.void_items || []).map((v: any) => (
-                      <div key={v.id} className="grid grid-cols-12 p-3.5 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                        <div className="col-span-1 text-center font-mono text-slate-500">{v.time}</div>
-                        <div className="col-span-2 font-bold text-slate-900 dark:text-white">{v.table_name}</div>
-                        <div className="col-span-3 font-bold text-brand-600 dark:text-emerald-400">{v.product_name}</div>
-                        <div className="col-span-2 text-slate-700 dark:text-slate-300 font-medium">{v.staff}</div>
-                        <div className="col-span-2 text-slate-500 text-[11px]">{v.reason}</div>
-                        <div className="col-span-2 text-right">
-                          <div className="font-mono font-black text-brand-600">₺{Number(v.amount || 0).toFixed(2)}</div>
-                          <div className="text-[10px] text-slate-400 font-medium">{v.approved_by}</div>
-                        </div>
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[640px] divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                      <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
+                        <div className="col-span-1 text-center">Saat</div>
+                        <div className="col-span-2">Masa No</div>
+                        <div className="col-span-3">İptal Edilen Ürün</div>
+                        <div className="col-span-2">İptal Eden Personel</div>
+                        <div className="col-span-2">İptal Sebebi</div>
+                        <div className="col-span-2 text-right">Tutar & Onay</div>
                       </div>
-                    ))}
+
+                      {(complimentaryData?.void_items || []).map((v: any) => (
+                        <div key={v.id} className="grid grid-cols-12 p-3.5 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                          <div className="col-span-1 text-center font-mono text-slate-500">{v.time}</div>
+                          <div className="col-span-2 font-bold text-slate-900 dark:text-white">{v.table_name}</div>
+                          <div className="col-span-3 font-bold text-brand-600 dark:text-emerald-400">{v.product_name}</div>
+                          <div className="col-span-2 text-slate-700 dark:text-slate-300 font-medium">{v.staff}</div>
+                          <div className="col-span-2 text-slate-500 text-[11px]">{v.reason}</div>
+                          <div className="col-span-2 text-right">
+                            <div className="font-mono font-black text-brand-600">₺{Number(v.amount || 0).toFixed(2)}</div>
+                            <div className="text-[10px] text-slate-400 font-medium">{v.approved_by}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1735,30 +1753,32 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
                     <span className="text-xs text-slate-400 font-medium">{(complimentaryData?.discount_orders || []).length} Kayıt</span>
                   </div>
 
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-                    <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
-                      <div className="col-span-1 text-center">Saat</div>
-                      <div className="col-span-2">Adisyon & Masa</div>
-                      <div className="col-span-2 text-center">İndirim Oranı</div>
-                      <div className="col-span-3">Gerekçe / Açıklama</div>
-                      <div className="col-span-2">Uygulayan Yetkili</div>
-                      <div className="col-span-2 text-right">İndirim Tutarı</div>
-                    </div>
-
-                    {(complimentaryData?.discount_orders || []).map((d: any) => (
-                      <div key={d.id} className="grid grid-cols-12 p-3.5 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                        <div className="col-span-1 text-center font-mono text-slate-500">{d.time}</div>
-                        <div className="col-span-2 font-bold text-slate-900 dark:text-white">{d.table_name}</div>
-                        <div className="col-span-2 text-center font-mono font-bold text-blue-600">
-                          {d.rate ? `%${d.rate}` : 'Sabit Tutar'}
-                        </div>
-                        <div className="col-span-3 text-slate-500 text-[11px]">{d.reason}</div>
-                        <div className="col-span-2 text-slate-700 dark:text-slate-300 font-medium">{d.staff}</div>
-                        <div className="col-span-2 text-right font-mono font-black text-blue-600">
-                          -₺{Number(d.amount || 0).toFixed(2)}
-                        </div>
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[640px] divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                      <div className="grid grid-cols-12 p-3.5 bg-slate-50 dark:bg-slate-800/50 font-black text-slate-400 uppercase text-[11px]">
+                        <div className="col-span-1 text-center">Saat</div>
+                        <div className="col-span-2">Adisyon & Masa</div>
+                        <div className="col-span-2 text-center">İndirim Oranı</div>
+                        <div className="col-span-3">Gerekçe / Açıklama</div>
+                        <div className="col-span-2">Uygulayan Yetkili</div>
+                        <div className="col-span-2 text-right">İndirim Tutarı</div>
                       </div>
-                    ))}
+
+                      {(complimentaryData?.discount_orders || []).map((d: any) => (
+                        <div key={d.id} className="grid grid-cols-12 p-3.5 items-center hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                          <div className="col-span-1 text-center font-mono text-slate-500">{d.time}</div>
+                          <div className="col-span-2 font-bold text-slate-900 dark:text-white">{d.table_name}</div>
+                          <div className="col-span-2 text-center font-mono font-bold text-blue-600">
+                            {d.rate ? `%${d.rate}` : 'Sabit Tutar'}
+                          </div>
+                          <div className="col-span-3 text-slate-500 text-[11px]">{d.reason}</div>
+                          <div className="col-span-2 text-slate-700 dark:text-slate-300 font-medium">{d.staff}</div>
+                          <div className="col-span-2 text-right font-mono font-black text-blue-600">
+                            -₺{Number(d.amount || 0).toFixed(2)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}

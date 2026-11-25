@@ -50,7 +50,7 @@ export interface ReceiptDesignConfig {
 }
 
 export const defaultReceiptDesign: ReceiptDesignConfig = {
-  header_title: 'FATİH ÇİFTLİĞİ',
+  header_title: '',
   header_sub: '',
   show_logo: false,
   paper_width: '80mm',
@@ -390,7 +390,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               {/* Header Weight */}
               <div>
                 <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5">Yazı Kalınlığı:</span>
-                <div className="grid grid-cols-4 gap-1.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                   {weightOptions.map((w) => (
                     <button
                       key={w.id}
@@ -452,7 +452,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               {/* Body Weight */}
               <div>
                 <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5">Yazı Kalınlığı:</span>
-                <div className="grid grid-cols-4 gap-1.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                   {weightOptions.map((w) => (
                     <button
                       key={w.id}
@@ -514,7 +514,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               {/* Sub Weight */}
               <div>
                 <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5">Yazı Kalınlığı:</span>
-                <div className="grid grid-cols-4 gap-1.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                   {weightOptions.map((w) => (
                     <button
                       key={w.id}
@@ -536,13 +536,13 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
             </div>
 
             {/* D) GENEL TOPLAM KALINLIĞI */}
-            <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+            <div className="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
               <div>
                 <div className="text-xs font-black text-slate-800 dark:text-slate-200">Genel Toplam Tutar Kalınlığı</div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">Fişteki "GENEL TOPLAM" satırının vurgu seviyesi</div>
               </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {[
                   { id: 'bold', label: 'Kalın (700)' },
                   { id: 'extrabold', label: 'Çok Kalın (800)' },
@@ -605,7 +605,7 @@ export const ReceiptDesignSettings: React.FC<ReceiptDesignSettingsProps> = ({
               {/* Çizgi Kalınlığı Seçimi */}
               <div>
                 <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5">Çizgi Kalınlığı:</span>
-                <div className="grid grid-cols-4 gap-1.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                   {[
                     { val: 1, label: '1 px (İnce)' },
                     { val: 2, label: '2 px (Standart)' },

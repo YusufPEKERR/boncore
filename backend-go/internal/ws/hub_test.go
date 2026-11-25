@@ -113,3 +113,78 @@ func TestHubBroadcastAndSub5msLatency(t *testing.T) {
 		t.Fatal("expected deleted key to miss cache")
 	}
 }
+
+func TestHubMultiTenantIsolation(t *testing.T) {
+	hub := NewHub("")
+	defer hub.Close()
+
+	clientA := NewClient(hub, nil, "pos", nil, "tenant-alpha")
+	allClientA := NewClient(hub, nil, "all", nil, "tenant-alpha")
+	clientB := NewClient(hub, nil, "pos", nil, "tenant-beta")
+	allClientB := NewClient(hub, nil, "all", nil, "tenant-beta")
+	table5 := 5
+	qrClientA := NewClient(hub, nil, "pos", &table5, "tenant-alpha")
+	qrClientB := NewClient(hub, nil, "pos", &table5, "tenant-beta")
+
+	hub.Register(clientA)
+	hub.Register(allClientA)
+	hub.Register(clientB)
+	hub.Register(allClientB)
+	hub.Register(qrClientA)
+	hub.Register(qrClientB)
+
+	// 1. Broadcast to tenant-alpha must NOT reach tenant-beta
+	if err := hub.BroadcastToChannel("tenant-alpha", "pos", "ORDER_CREATED", map[string]interface{}{"id": 1}); err != nil {
+		t.Fatalf("BroadcastToChannel error: %v", err)
+	}
+	select {
+	case <-clientA.send:
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("tenant-alpha client did not receive broadcast")
+	}
+	select {
+	case <-allClientA.send:
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("tenant-alpha all client did not receive broadcast")
+	}
+	select {
+	case leaked := <-clientB.send:
+		t.Fatalf("TENANT LEAK: tenant-beta client received tenant-alpha message: %s", string(leaked))
+	default:
+	}
+	select {
+	case leaked := <-allClientB.send:
+		t.Fatalf("TENANT LEAK: tenant-beta all client received tenant-alpha message: %s", string(leaked))
+	default:
+	}
+
+	// 2. Table broadcast for same table ID 5 on tenant-alpha must NOT leak to tenant-beta
+	if err := hub.BroadcastToTable("tenant-alpha", 5, "TABLE_ORDER_UPDATED", map[string]interface{}{"table": 5}); err != nil {
+		t.Fatalf("BroadcastToTable error: %v", err)
+	}
+	select {
+	case <-qrClientA.send:
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("tenant-alpha QR client did not receive table message")
+	}
+	select {
+	case leaked := <-qrClientB.send:
+		t.Fatalf("TENANT LEAK: tenant-beta QR client received tenant-alpha table message: %s", string(leaked))
+	default:
+	}
+
+	// 3. Global announcement (tenantCode == "") reaches all tenants
+	if err := hub.BroadcastToChannel("", "pos", "ANNOUNCEMENT_BROADCAST", map[string]interface{}{"title": "Duyuru"}); err != nil {
+		t.Fatalf("global broadcast error: %v", err)
+	}
+	select {
+	case <-clientA.send:
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("tenant-alpha missed global broadcast")
+	}
+	select {
+	case <-clientB.send:
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("tenant-beta missed global broadcast")
+	}
+}

@@ -29,6 +29,7 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submittedTicket, setSubmittedTicket] = useState<any | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // History & Conversation state
   const [tickets, setTickets] = useState<any[]>([]);
@@ -36,7 +37,16 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({
   const [selectedTicket, setSelectedTicket] = useState<any | null>(null);
   const [replyMessage, setReplyMessage] = useState<string>('');
   const [sendingReply, setSendingReply] = useState<boolean>(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
   const [previewZoomImage, setPreviewZoomImage] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
 
   useEffect(() => {
     if (isOpen) {
@@ -46,6 +56,8 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({
     } else {
       setSelectedTicket(null);
       setPreviewZoomImage(null);
+      setFormError(null);
+      setReplyError(null);
     }
   }, [isOpen, activeTab, initialTicketId]);
 
@@ -86,15 +98,15 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({
   };
 
   const handleRemoveFile = () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setSelectedFile(null);
     setPreviewUrl(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!subject.trim() || !description.trim()) {
-      alert('Lütfen konu ve açıklama giriniz.');
+      setFormError('Lütfen konu ve açıklama giriniz.');
       return;
     }
 
@@ -121,14 +133,14 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'Talep iletilemedi.');
+        throw new Error(err.detail || err.error || err.message || 'Talep iletilemedi.');
       }
 
       const data = await res.json();
       sound.cashDrawer();
       setSubmittedTicket(data.ticket);
     } catch (err: any) {
-      alert(err.message || 'Destek talebi gönderilirken bir hata oluştu.');
+      setFormError(err.message || 'Destek talebi gönderilirken bir hata oluştu.');
     } finally {
       setIsSubmitting(false);
     }
@@ -140,6 +152,7 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({
 
     sound.beep();
     setSendingReply(true);
+    setReplyError(null);
     try {
       const senderName = currentUser?.name || 'Restoran Yetkilisi';
       const res = await fetch(`/api/support/tickets/${selectedTicket.id}/reply`, {
@@ -153,7 +166,7 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || 'Cevap gönderilemedi.');
+        throw new Error(err.detail || err.error || err.message || 'Cevap gönderilemedi.');
       }
 
       const resData = await res.json();
@@ -177,7 +190,7 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({
       setSelectedTicket(updatedTicket);
       setTickets(prev => prev.map(t => t.id === selectedTicket.id ? updatedTicket : t));
     } catch (err: any) {
-      alert(err.message || 'Cevap iletilirken hata oluştu.');
+      setReplyError(err.message || 'Cevap iletilirken hata oluştu.');
     } finally {
       setSendingReply(false);
     }
@@ -186,6 +199,7 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({
   const resetForm = () => {
     setSubject('');
     setDescription('');
+    setFormError(null);
     handleRemoveFile();
     setSubmittedTicket(null);
   };
@@ -244,7 +258,7 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({
         {!selectedTicket && (
           <div className="flex border-b border-slate-200 dark:border-slate-800 text-xs font-bold px-4 pt-2 bg-slate-50 dark:bg-slate-850 shrink-0">
             <button
-              onClick={() => { sound.beep(); setActiveTab('create'); }}
+              onClick={() => { sound.beep(); setFormError(null); setActiveTab('create'); }}
               className={`pb-2.5 px-3 border-b-2 transition cursor-pointer ${
                 activeTab === 'create'
                   ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-black'
@@ -254,7 +268,7 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({
               Yeni Talep Oluştur
             </button>
             <button
-              onClick={() => { sound.beep(); setActiveTab('history'); }}
+              onClick={() => { sound.beep(); setFormError(null); setActiveTab('history'); }}
               className={`pb-2.5 px-3 border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
                 activeTab === 'history'
                   ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-black'
@@ -279,7 +293,7 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({
               {/* Back & Header */}
               <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 shrink-0">
                 <button
-                  onClick={() => { sound.beep(); setSelectedTicket(null); }}
+                  onClick={() => { sound.beep(); setReplyError(null); setSelectedTicket(null); }}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs cursor-pointer transition"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
@@ -423,6 +437,18 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({
                 )}
               </div>
 
+              {replyError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center justify-between gap-2 shrink-0">
+                  <span className="flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{replyError}</span>
+                  </span>
+                  <button type="button" onClick={() => setReplyError(null)} className="text-rose-500 hover:text-rose-700 cursor-pointer">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
               {/* Reply Box */}
               <form onSubmit={handleSendReply} className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center gap-2 shrink-0">
                 <input
@@ -476,6 +502,17 @@ export const SupportTicketModal: React.FC<SupportTicketModalProps> = ({
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
+                {formError && (
+                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span>{formError}</span>
+                    </span>
+                    <button type="button" onClick={() => setFormError(null)} className="text-rose-500 hover:text-rose-700 cursor-pointer">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
                 
                 {/* Category & Priority */}
                 <div className="grid grid-cols-2 gap-3">

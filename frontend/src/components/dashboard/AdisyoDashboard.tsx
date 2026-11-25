@@ -3,47 +3,38 @@ import {
   Layers, Users, BarChart2, ArrowLeftRight, TrendingUp, 
   CreditCard, PieChart, RefreshCw, Clock, ChevronRight, Utensils, Wallet 
 } from 'lucide-react';
-import { Area } from '../../types';
+import { Area, StaffUser } from '../../types';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
 import { useWebSocket } from '../../services/websocket';
+import { useRolePermissions } from '../../services/permissions';
 
 interface AdisyoDashboardProps {
   areas: Area[];
+  currentUser?: StaffUser | null;
   onNavigateToTables: () => void;
   onNavigateTab?: (tab: string) => void;
 }
 
-export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavigateToTables, onNavigateTab }) => {
+export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, currentUser = null, onNavigateToTables, onNavigateTab }) => {
+  const { canTab } = useRolePermissions(currentUser);
   const [stats, setStats] = useState<any>(null);
   const [expensesTotal, setExpensesTotal] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Live Real-Time Date & Clock State
-  const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const lastDayRef = useRef<number>(new Date().getDate());
 
   useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
-      setCurrentTime(now);
       // Auto-refresh when crossing midnight into a new business day
       if (now.getDate() !== lastDayRef.current) {
         lastDayRef.current = now.getDate();
         loadDashboardData();
       }
-    }, 1000);
+    }, 10000);
     return () => clearInterval(timer);
   }, []);
-
-  const turkishDaysFull = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
-  const turkishMonthsFull = [
-    'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
-    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
-  ];
-
-  const liveFullDateStr = `${currentTime.getDate()} ${turkishMonthsFull[currentTime.getMonth()]} ${currentTime.getFullYear()}, ${turkishDaysFull[currentTime.getDay()]}`;
-  const liveTimeStr = currentTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   useEffect(() => {
     loadDashboardData();
@@ -69,7 +60,7 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
     setLoading(true);
     try {
       const [statsData, expData] = await Promise.all([
-        api.getRestaurantStatistics('all'),
+        api.getRestaurantStatistics('today'),
         api.getExpenses()
       ]);
       setStats(statsData);
@@ -87,7 +78,7 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
   };
 
   const allTables = (areas || []).flatMap(a => (a && a.tables) || []).filter(Boolean);
-  const occupiedCount = allTables.filter(t => t && (t.status === 'occupied' || t.status === 'bill_requested')).length;
+  const occupiedCount = allTables.filter(t => t && (t.status !== 'empty' || !!t.active_order)).length;
   const emptyCount = Math.max(0, allTables.length - occupiedCount);
   const occupancyPercent = allTables.length > 0 ? ((occupiedCount / allTables.length) * 100).toFixed(1) : '0.0';
   const emptyPercent = (100 - parseFloat(occupancyPercent)).toFixed(1);
@@ -98,7 +89,7 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
 
   // Live KPI values
   const liveTurnover = Number(stats?.total_turnover ?? stats?.total_revenue ?? stats?.daily_turnover?.net_sales ?? stats?.kpi?.total_revenue ?? 0);
-  const activeTableCount = allTables.filter(t => t && t.status !== 'empty').length;
+  const activeTableCount = occupiedCount;
 
   // Dynamic Hourly Chart Data from real backend statistics
   const hourlyPoints: { hour: string; turnover: number; orders: number }[] =
@@ -134,44 +125,21 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
 
   return (
     <div className="flex-1 min-h-full overflow-y-auto p-4 sm:p-6 pb-28 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 space-y-6 select-none animate-fadeIn transition-colors duration-200">
-      {/* Live Operational Day & Time Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-brand-600 flex items-center justify-center font-bold">
-            <Clock className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-black text-slate-900 dark:text-white">
-                {liveFullDateStr}
-              </h2>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-[10px] font-black text-emerald-700 dark:text-emerald-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span>Canlı Çalışma Günü</span>
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Tüm cirolar, saatlik satışlar ve masa istatistikleri canlı Türkiye saatine (UTC+3) göre anlık güncellenir.
-            </p>
-          </div>
+      {/* Compact Section Header */}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">Güncel İşletme Özeti</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Bugünün canlı ciro, gider ve masa doluluk göstergeleri</p>
         </div>
-
-        <div className="flex items-center gap-3 sm:border-l sm:pl-4 border-slate-200 dark:border-slate-800">
-          <div className="text-right">
-            <div className="text-[10px] uppercase font-bold text-slate-400">Canlı Sistem Saati</div>
-            <div className="font-mono text-base font-black text-slate-900 dark:text-white tracking-wider">
-              {liveTimeStr}
-            </div>
-          </div>
-          <button
-            onClick={() => { sound.beep(); loadDashboardData(); }}
-            disabled={loading}
-            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer"
-            title="Verileri Yenile"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-brand-600' : ''}`} />
-          </button>
-        </div>
+        <button
+          onClick={() => { sound.beep(); loadDashboardData(); }}
+          disabled={loading}
+          className="px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+          title="Verileri Yenile"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-brand-600' : ''}`} />
+          <span>Yenile</span>
+        </button>
       </div>
 
       {/* 4 Top KPI Metric Cards */}
@@ -241,70 +209,80 @@ export const AdisyoDashboard: React.FC<AdisyoDashboardProps> = ({ areas, onNavig
 
       {/* Quick Action Shortcuts */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-        <button
-          onClick={() => { sound.beep(); onNavigateTab ? onNavigateTab('tables') : onNavigateToTables(); }}
-          className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
-        >
-          <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
-            <Utensils className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Masalar / Salon</div>
-            <div className="text-[10px] text-slate-400">Canlı Kat Planı</div>
-          </div>
-        </button>
+        {canTab('tables') && (
+          <button
+            onClick={() => { sound.beep(); onNavigateTab ? onNavigateTab('tables') : onNavigateToTables(); }}
+            className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
+          >
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
+              <Utensils className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Masalar / Salon</div>
+              <div className="text-[10px] text-slate-400">Canlı Kat Planı</div>
+            </div>
+          </button>
+        )}
 
-        <button
-          onClick={() => { sound.beep(); onNavigateTab?.('cashier'); }}
-          className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-sky-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
-        >
-          <div className="w-9 h-9 rounded-xl bg-sky-50 dark:bg-sky-950/60 text-sky-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
-            <Wallet className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Kasa & Ödemeler</div>
-            <div className="text-[10px] text-slate-400">Tahsilat & Çekmece</div>
-          </div>
-        </button>
+        {canTab('cashier') && (
+          <button
+            onClick={() => { sound.beep(); onNavigateTab?.('cashier'); }}
+            className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-sky-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
+          >
+            <div className="w-9 h-9 rounded-xl bg-sky-50 dark:bg-sky-950/60 text-sky-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
+              <Wallet className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Kasa & Ödemeler</div>
+              <div className="text-[10px] text-slate-400">Tahsilat & Çekmece</div>
+            </div>
+          </button>
+        )}
 
-        <button
-          onClick={() => { sound.beep(); onNavigateTab?.('kds'); }}
-          className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-amber-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
-        >
-          <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
-            <Clock className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Mutfak (KDS)</div>
-            <div className="text-[10px] text-slate-400">Sipariş Ekranı</div>
-          </div>
-        </button>
+        {canTab('kds') && (
+          <button
+            onClick={() => { sound.beep(); onNavigateTab?.('kds'); }}
+            className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-amber-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
+          >
+            <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
+              <Clock className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Mutfak (KDS)</div>
+              <div className="text-[10px] text-slate-400">Sipariş Ekranı</div>
+            </div>
+          </button>
+        )}
 
-        <button
-          onClick={() => { sound.beep(); onNavigateTab?.('product_sales_report'); }}
-          className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-purple-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
-        >
-          <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
-            <TrendingUp className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Ürün Satış Raporu</div>
-            <div className="text-[10px] text-purple-600 font-bold">Porsiyon & Ciro</div>
-          </div>
-        </button>
+        {canTab('product_sales_report') && (
+          <button
+            onClick={() => { sound.beep(); onNavigateTab?.('product_sales_report'); }}
+            className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-purple-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
+          >
+            <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
+              <TrendingUp className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Ürün Satış Raporu</div>
+              <div className="text-[10px] text-purple-600 font-bold">Porsiyon & Ciro</div>
+            </div>
+          </button>
+        )}
 
-        <button
-          onClick={() => { sound.beep(); onNavigateTab?.('day_end_report'); }}
-          className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-brand-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
-        >
-          <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-brand-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
-            <BarChart2 className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Gün Sonu (Z)</div>
-            <div className="text-[10px] text-brand-600 font-bold">Mali Kapanış</div>
-          </div>
-        </button>
+        {canTab('day_end_report') && (
+          <button
+            onClick={() => { sound.beep(); onNavigateTab?.('day_end_report'); }}
+            className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-brand-500 shadow-xs hover:shadow transition text-left flex items-center gap-3 cursor-pointer group"
+          >
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-brand-600 flex items-center justify-center font-bold group-hover:scale-105 transition">
+              <BarChart2 className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">Gün Sonu (Z)</div>
+              <div className="text-[10px] text-brand-600 font-bold">Mali Kapanış</div>
+            </div>
+          </button>
+        )}
       </div>
 
       {/* Main Chart: Günlük Satış Miktarları (Real Hourly Breakdown) */}

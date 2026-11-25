@@ -50,6 +50,8 @@ export interface ActiveOrderSummary {
   discount_amount: number;
   paid_total?: number;
   remaining_total?: number;
+  is_prepaid?: boolean;
+  notes?: string | null;
   kuver_count: number;
   waiter_name: string;
   items_count: number;
@@ -103,6 +105,7 @@ export interface Product {
   modifier_groups?: ModifierGroup[];
   unit?: string;
   stock_quantity?: number;
+  has_stock_tracking?: boolean;
   has_recipe?: boolean;
   recipe_items?: Array<{
     ingredient_id: number;
@@ -151,7 +154,8 @@ export interface OrderItem {
   kitchen_note?: string;
   course_stage: number; // 1: 1. Kurs, 2: 2. Kurs, 3: Tatlı
   is_hold: boolean;
-  status?: 'pending' | 'hold' | 'preparing' | 'ready' | 'served' | 'voided';
+  status?: 'pending' | 'hold' | 'preparing' | 'ready' | 'served' | 'voided' | 'stock_confirm';
+  requires_stock_approval?: boolean;
   station?: string;
   is_voided?: boolean;
   void_reason?: string;
@@ -269,7 +273,7 @@ export interface DeliveryOrder {
   address_zone?: string;
   courier_id?: number;
   courier_name?: string;
-  courier_status: 'unassigned' | 'assigned' | 'on_the_way' | 'delivered' | 'cancelled';
+  courier_status: 'unassigned' | 'pending' | 'preparing' | 'assigned' | 'dispatched' | 'on_the_way' | 'delivered' | 'cancelled';
   payment_type: string;
   grand_total: number;
   notes?: string;

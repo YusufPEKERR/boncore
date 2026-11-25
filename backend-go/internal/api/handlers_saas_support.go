@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,19 +83,41 @@ func RegisterSaaSSupportRoutes(masterGroup fiber.Router, rootApi fiber.Router, s
 			submittedByRole = "manager"
 		}
 
-		// Handle optional screenshot attachment
+		// Handle optional screenshot attachment with strict size, extension, and MIME allowlist
 		var attachmentURL *string
 		fileHeader, fErr := c.FormFile("screenshot")
 		if fErr == nil && fileHeader != nil {
+			const maxUploadBytes = 10 * 1024 * 1024 // 10 MB
+			if fileHeader.Size > maxUploadBytes {
+				return fiber.NewError(fiber.StatusBadRequest, "Ek dosya boyutu en fazla 10 MB olabilir.")
+			}
+			cleanOrigName := filepath.Base(fileHeader.Filename)
+			ext := strings.ToLower(filepath.Ext(cleanOrigName))
+			allowedExts := map[string]bool{
+				".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".gif": true, ".pdf": true,
+			}
+			if !allowedExts[ext] {
+				return fiber.NewError(fiber.StatusBadRequest, "Desteklenmeyen dosya türü. Yalnızca PNG, JPG, WEBP, GIF veya PDF yüklenebilir.")
+			}
+			fHandle, oErr := fileHeader.Open()
+			if oErr != nil {
+				return fiber.NewError(fiber.StatusBadRequest, "Yüklenen dosya okunamadı.")
+			}
+			sniffBuf := make([]byte, 512)
+			n, _ := fHandle.Read(sniffBuf)
+			_ = fHandle.Close()
+			detectedMime := http.DetectContentType(sniffBuf[:n])
+			allowedMimes := map[string]bool{
+				"image/png": true, "image/jpeg": true, "image/webp": true, "image/gif": true, "application/pdf": true,
+			}
+			if !allowedMimes[detectedMime] {
+				return fiber.NewError(fiber.StatusBadRequest, "Dosya içeriği güvenlik doğrulamasından geçemedi.")
+			}
+
 			randBytes := make([]byte, 8)
 			_, _ = rand.Read(randBytes)
 			randHex := hex.EncodeToString(randBytes)
-			cleanOrigName := filepath.Base(fileHeader.Filename)
-			ext := filepath.Ext(cleanOrigName)
-			if ext == "" {
-				ext = ".png"
-			}
-			destFilename := fmt.Sprintf("ticket_%s_%s%s", time.Now().Format("20060102150405"), randHex, ext)
+			destFilename := fmt.Sprintf("ticket_%s_%s_%s%s", tenantCode, time.Now().Format("20060102150405"), randHex, ext)
 			destPath := filepath.Join(uploadsDir, destFilename)
 
 			if sErr := c.SaveFile(fileHeader, destPath); sErr == nil {

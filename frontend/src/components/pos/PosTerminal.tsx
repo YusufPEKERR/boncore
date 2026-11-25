@@ -15,6 +15,20 @@ import { ProductModifierModal } from './ProductModifierModal';
 import { printThermalReceipt } from '../fiscal/FiscalModal';
 import { initialPermissions, mergeWithInitialPermissions, PermissionItem } from '../permissions/RightsManagement';
 import { broadcastPermissionsUpdate } from '../../services/permissions';
+import {
+  COMPETITOR_EVENT,
+  CourseTag,
+  ProductExtraMeta,
+  TableTimerState,
+  calculateTimerCharge,
+  clearTableTimer,
+  decrementProductPortion,
+  formatCourseSeatNote,
+  getActiveHappyHourRules,
+  getAllProductExtraMeta,
+  getTableTimer,
+  startTableTimer,
+} from '../../services/competitorFeatures';
 
 interface PosTerminalProps {
   categories: Category[];
@@ -98,6 +112,32 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
   // Live Timer for table elapsed time
   const [posNow, setPosNow] = useState<number>(Date.now());
+
+  // Rakip Özellikleri: Servis Sırası (Course Firing), Kişi (Seat) Siparişi, Happy Hour, Porsiyon 86 & Süreli Masa
+  const [selectedCourse, setSelectedCourse] = useState<CourseTag>('1. Servis');
+  const [selectedSeat, setSelectedSeat] = useState<string>('Ortak');
+  const [activeHappyHours, setActiveHappyHours] = useState(() => getActiveHappyHourRules());
+  const [productMetaMap, setProductMetaMap] = useState<Record<number, ProductExtraMeta>>(() => getAllProductExtraMeta());
+  const [tableTimer, setTableTimer] = useState<TableTimerState | null>(() =>
+    activeTable ? getTableTimer(activeTable.id) : null
+  );
+  const [isTimerModalOpen, setIsTimerModalOpen] = useState<boolean>(false);
+  const [timerTariffName, setTimerTariffName] = useState<string>('VIP Lounge / Masa Kullanım');
+  const [timerHourlyRate, setTimerHourlyRate] = useState<number>(180);
+
+  useEffect(() => {
+    setTableTimer(activeTable ? getTableTimer(activeTable.id) : null);
+  }, [activeTable?.id]);
+
+  useEffect(() => {
+    const syncComp = () => {
+      setActiveHappyHours(getActiveHappyHourRules());
+      setProductMetaMap(getAllProductExtraMeta());
+      if (activeTable) setTableTimer(getTableTimer(activeTable.id));
+    };
+    window.addEventListener(COMPETITOR_EVENT, syncComp);
+    return () => window.removeEventListener(COMPETITOR_EVENT, syncComp);
+  }, [activeTable?.id]);
   useEffect(() => {
     const timer = setInterval(() => setPosNow(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -166,14 +206,14 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [isTreatModalOpen, setIsTreatModalOpen] = useState<boolean>(false);
   const [treatReason, setTreatReason] = useState<string>('Müessese İkramı');
   const [treatSelectedItems, setTreatSelectedItems] = useState<number[]>([]);
-  const [treatManagerPin, setTreatManagerPin] = useState<string>('9999');
+  const [treatManagerPin, setTreatManagerPin] = useState<string>('');
 
   // Void Item Modal
   const [isVoidModalOpen, setIsVoidModalOpen] = useState<boolean>(false);
   const [selectedItemForVoid, setSelectedItemForVoid] = useState<OrderItem | null>(null);
   const [voidReasonCode, setVoidReasonCode] = useState<string>('MUSTERI_VAZGECTI');
   const [voidReasonText, setVoidReasonText] = useState<string>('Müşteri vazgeçti');
-  const [voidManagerPin, setVoidManagerPin] = useState<string>('9999');
+  const [voidManagerPin, setVoidManagerPin] = useState<string>('');
 
   // Cancel Entire Order Modal
   const [isCancelOrderModalOpen, setIsCancelOrderModalOpen] = useState<boolean>(false);
@@ -252,10 +292,12 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [settings, setSettings] = useState<{
     isServiceEnabled: boolean;
     serviceRate: number;
+    serviceType: 'percent' | 'fixed';
     discounts: Array<{ id?: number; name: string; type: 'percent' | 'fixed'; value: number; is_active?: boolean }>;
   }>({
     isServiceEnabled: false,
     serviceRate: 10.0,
+    serviceType: 'percent',
     discounts: defaultPosDiscounts,
   });
 
@@ -348,11 +390,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       const newSettings = {
         isServiceEnabled: data.is_service_charge_enabled ?? false,
         serviceRate: data.service_charge_rate ?? 10.0,
+        serviceType: (data.service_charge_type === 'fixed' ? 'fixed' : 'percent') as 'percent' | 'fixed',
         discounts: loadedDiscounts,
       };
       setSettings(newSettings);
       localStorage.setItem('boncore_service_enabled', String(newSettings.isServiceEnabled));
       localStorage.setItem('boncore_service_rate', String(newSettings.serviceRate));
+      localStorage.setItem('boncore_service_type', newSettings.serviceType);
       localStorage.setItem('boncore_discounts', JSON.stringify(loadedDiscounts));
       if (data.role_permissions && Array.isArray(data.role_permissions)) {
         const mergedPerms = mergeWithInitialPermissions(data.role_permissions);
@@ -372,6 +416,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       setSettings({
         isServiceEnabled: localStorage.getItem('boncore_service_enabled') === 'true',
         serviceRate: parseFloat(localStorage.getItem('boncore_service_rate') || '10.00'),
+        serviceType: (localStorage.getItem('boncore_service_type') === 'fixed' ? 'fixed' : 'percent'),
         discounts: cachedDiscounts,
       });
     }
@@ -384,7 +429,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const loadOrder = async (orderId: number) => {
     try {
       const ord = await api.getOrder(orderId);
-      if (ord.status === 'paid' || ord.remaining_total <= 0.05) {
+      if (ord.status === 'paid') {
         setActiveOrderId(null);
         setExistingOrder(null);
         setCartItems([]);
@@ -448,28 +493,36 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     return Number(total.toFixed(3));
   };
 
-  // Check if any recipe (BOM) ingredient or direct product stock is out of stock before adding to order
+  // Helper to compute live stock subtracting unsaved items currently in cart
+  const getEffectiveProductStock = (product: Product): number | null => {
+    if (product.stock_quantity === undefined || product.stock_quantity === null) {
+      return null;
+    }
+    const unsavedInCart = cartItems
+      .filter(i => !i.id && !i.is_voided && i.product_id === product.id)
+      .reduce((sum, i) => sum + Number(i.quantity || 0), 0);
+    return Number((Number(product.stock_quantity) - unsavedInCart).toFixed(3));
+  };
+
+  // Check if any recipe (BOM) ingredient or direct product stock is out of stock / insufficient before adding to order
   const checkBomStockBeforeAdd = (
     product: Product,
     requestedQty: number = 1,
     mode: 'add' | 'set' = 'add',
     onContinueCallback?: () => void
   ): boolean => {
-    // Eksi (-) stok izni açık olan ürünlerde stok kontrolü engelleme yapmaz
-    if (product.allow_negative_stock) {
-      return true;
-    }
-
     const unsavedInCart = cartItems
       .filter(i => !i.id && !i.is_voided && i.product_id === product.id)
       .reduce((sum, i) => sum + Number(i.quantity), 0);
     const totalTargetQty = mode === 'set' ? requestedQty : Number((unsavedInCart + requestedQty).toFixed(3));
 
     if (!product.has_recipe || !product.recipe_items || product.recipe_items.length === 0) {
-      // Gramajlı / doğrudan stok takipli ürün kontrolü
-      if (isWeightProduct(product)) {
+      // Gramajlı veya stok takipli doğrudan ürün kontrolü (0 veya istenenden az stokta uyar + "Yine de Devam Et")
+      if (product.stock_quantity !== undefined && product.stock_quantity !== null) {
         const avail = Number(product.stock_quantity ?? 0);
+        const unitLabel = product.unit || (isWeightProduct(product) ? 'Kg' : 'Adet');
         if (avail <= 0 || avail + 1e-9 < totalTargetQty) {
+          const projected = Number((avail - totalTargetQty).toFixed(3));
           sound.warning();
           setBomStockWarningModal({
             productName: product.name,
@@ -478,13 +531,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 ingredient_name: product.name,
                 current_stock: Number(avail.toFixed(3)),
                 required_amount: totalTargetQty,
-                unit: product.unit || 'Kg'
+                unit: unitLabel
               }
             ],
             onContinue: onContinueCallback
           });
           showToast(
-            `⚠️ "${product.name}" için yeterli stok yok! (Mevcut: ${Number(avail.toFixed(3))} ${product.unit || 'Kg'}, İstenen: ${totalTargetQty} ${product.unit || 'Kg'})`,
+            `⚠️ "${product.name}" için yeterli stok yok! (Mevcut: ${Number(avail.toFixed(3))} ${unitLabel}, İstenen: ${totalTargetQty} ${unitLabel} → İşlem Sonrası: ${projected} ${unitLabel})`,
             'error'
           );
           return false;
@@ -515,7 +568,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       });
       const names = missing.map(m => `${m.ingredient_name} (Stok: ${m.current_stock} ${m.unit})`).join(', ');
       showToast(
-        `⚠️ "${product.name}" reçetesindeki [${names}] stoğu bitti!`,
+        `⚠️ "${product.name}" için stok yetersiz / bitti! [${names}]`,
         'error'
       );
       return false;
@@ -701,7 +754,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     setWeightModalProduct(null);
   };
 
-  const handleProductClick = (product: Product) => {
+  const handleProductClick = (product: Product, bypassStockCheck: boolean = false) => {
     if (!canOrderGeneral) {
       sound.warning();
       showToast('Genel sipariş alma yetkiniz kapalıdır.', 'error');
@@ -719,12 +772,27 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return;
     }
 
-    // Reçetesinde (BOM) stoğu biten malzeme varsa sipariş girişini engelle ve uyar
-    if (!isWeightProduct(product) && !checkBomStockBeforeAdd(product, 1, 'add')) {
-      return;
+    // Canlı Porsiyon "86" Kontrolü
+    const prodMeta = productMetaMap[product.id];
+    if (prodMeta && prodMeta.remainingPortions !== null) {
+      const inUnsavedCart = cartItems
+        .filter((i) => !i.id && i.product_id === product.id)
+        .reduce((s, i) => s + Number(i.quantity || 0), 0);
+      if (prodMeta.remainingPortions - inUnsavedCart <= 0) {
+        sound.warning();
+        showToast(`"${product.name}" günlük porsiyon limiti tükendi (86)!`, 'error');
+        return;
+      }
     }
-    if (isWeightProduct(product) && product.missing_ingredients && product.missing_ingredients.length > 0) {
-      checkBomStockBeforeAdd(product, 1, 'add');
+
+    const hasOptions = Boolean(
+      (product.variants && product.variants.length > 0) ||
+      (product.modifier_groups && product.modifier_groups.length > 0)
+    );
+
+    // Kg / Gramaj ürünlerde modal açılıp istenen net gramaj üzerinden stok kontrolü yapılır;
+    // Seçeneksiz adetli ürünlerde doğrudan eklemeden önce stok kontrolü yapılır ve onaylanırsa devam edilir
+    if (!bypassStockCheck && !isWeightProduct(product) && !hasOptions && !checkBomStockBeforeAdd(product, 1, 'add', () => handleProductClick(product, true))) {
       return;
     }
 
@@ -736,12 +804,16 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return;
     }
 
-    if ((product.variants && product.variants.length > 0) || (product.modifier_groups && product.modifier_groups.length > 0)) {
+    if (hasOptions) {
       setSelectedProductForModal(product);
       return;
     }
-    // Add or increment simple piece item
-    const existingIndex = cartItems.findIndex(i => !i.id && i.product_id === product.id && (!i.selected_modifiers || i.selected_modifiers.length === 0));
+    const courseStageNum = selectedCourse === '2. Servis' ? 2 : selectedCourse === '3. Servis (Tatlı)' ? 3 : 1;
+    const courseSeatNote = formatCourseSeatNote(selectedCourse, selectedSeat);
+    // Add or increment simple piece item (group by course & seat note)
+    const existingIndex = cartItems.findIndex(
+      i => !i.id && i.product_id === product.id && (i.kitchen_note || '') === courseSeatNote && (!i.selected_modifiers || i.selected_modifiers.length === 0)
+    );
     if (existingIndex > -1) {
       if (!canEditItemQty) {
         sound.warning();
@@ -764,8 +836,9 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         total_price: product.base_price,
         selected_modifiers: [],
         negative_modifiers: [],
-        course_stage: 1,
-        is_hold: false,
+        kitchen_note: courseSeatNote,
+        course_stage: courseStageNum,
+        is_hold: courseStageNum > 1,
         added_by: currentUser?.name || 'Garson'
       };
       setCartItems(prev => [...prev, newItem]);
@@ -818,9 +891,9 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     }
   };
 
-  const handleAddModifiedItem = (item: OrderItem) => {
+  const handleAddModifiedItem = (item: OrderItem, bypassStockCheck: boolean = false) => {
     const prod = allProductsMap.get(item.product_id);
-    if (prod && !checkBomStockBeforeAdd(prod, Number(item.quantity || 1), 'add')) {
+    if (!bypassStockCheck && prod && !checkBomStockBeforeAdd(prod, Number(item.quantity || 1), 'add', () => handleAddModifiedItem(item, true))) {
       return;
     }
     sound.beep();
@@ -855,6 +928,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       sound.warning();
       setIsVoidModalOpen(false);
       setSelectedItemForVoid(null);
+      setVoidManagerPin('');
       if (activeOrderId) {
         await loadOrder(activeOrderId);
       }
@@ -934,6 +1008,10 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         };
         await api.createOrder(payload);
       }
+      unsavedItems.forEach((it) => {
+        decrementProductPortion(it.product_id, Number(it.quantity || 1));
+      });
+      setProductMetaMap(getAllProductExtraMeta());
       sound.kitchenBell();
 
       // Otomatik Mutfak & Kategori Dağıtımlı Fiş Çıktısı:
@@ -1375,17 +1453,27 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         return;
       }
 
+      const alreadyPrepaid = Boolean(
+        existingOrder &&
+          unsavedItems.length === 0 &&
+          (existingOrder.paid_total || 0) > 0 &&
+          Number(existingOrder.remaining_total ?? 1) <= 0.01
+      );
       const payAmount = (existingOrder && unsavedItems.length === 0 && existingOrder.remaining_total > 0)
         ? existingOrder.remaining_total
         : grandTotal;
 
       await api.settlePayment({
         order_id: targetOrderId,
-        payments: [{ method, amount: payAmount }],
+        payments: alreadyPrepaid ? [] : [{ method, amount: payAmount }],
         cashier_name: currentUser?.name || 'Garson',
         close_table: true
       });
 
+      unsavedItems.forEach((it) => {
+        decrementProductPortion(it.product_id, Number(it.quantity || 1));
+      });
+      setProductMetaMap(getAllProductExtraMeta());
       sound.cashDrawer();
 
       // Fiş yazdırma işlemi
@@ -1511,6 +1599,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       sound.cashDrawer();
       await loadOrder(activeOrderId);
       setIsTreatModalOpen(false);
+      setTreatManagerPin('');
       showToast('İkram başarıyla uygulandı.', 'success');
       onRefreshData();
     } catch (err: any) {
@@ -1561,6 +1650,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [showBreakdown, setShowBreakdown] = useState<boolean>(false);
   const [mobilePosView, setMobilePosView] = useState<'menu' | 'cart'>('menu');
 
+  const toggleAdisyonPanel = (panel: 'note' | 'treat' | 'discount') => {
+    sound.beep();
+    setIsNoteModalOpen(prev => (panel === 'note' ? !prev : false));
+    setIsTreatModalOpen(prev => (panel === 'treat' ? !prev : false));
+    setIsDiscountModalOpen(prev => (panel === 'discount' ? !prev : false));
+  };
+
   // Listen to WebSocket events (settings, KDS kitchen statuses, order updates)
   useWebSocket('pos', (type, data) => {
     if (type === 'SETTINGS_UPDATED' && data) {
@@ -1570,11 +1666,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       const newSettings = {
         isServiceEnabled: data.is_service_charge_enabled ?? settings.isServiceEnabled,
         serviceRate: data.service_charge_rate ?? settings.serviceRate,
+        serviceType: (data.service_charge_type ? (data.service_charge_type === 'fixed' ? 'fixed' : 'percent') : settings.serviceType) as 'percent' | 'fixed',
         discounts: updatedDiscounts,
       };
       setSettings(newSettings);
       localStorage.setItem('boncore_service_enabled', String(newSettings.isServiceEnabled));
       localStorage.setItem('boncore_service_rate', String(newSettings.serviceRate));
+      localStorage.setItem('boncore_service_type', newSettings.serviceType);
       localStorage.setItem('boncore_discounts', JSON.stringify(updatedDiscounts));
       if (data.role_permissions && Array.isArray(data.role_permissions)) {
         const mergedPerms = mergeWithInitialPermissions(data.role_permissions);
@@ -1608,7 +1706,12 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       }
     }
 
-    if (type === 'KITCHEN_ORDER_READY_ALERT' || type === 'ORDER_UPDATED') {
+    if (
+      type === 'KITCHEN_ORDER_READY_ALERT' ||
+      type === 'ORDER_UPDATED' ||
+      type === 'OUT_OF_STOCK_ORDER_ALERT' ||
+      type === 'STOCK_APPROVAL_RESOLVED'
+    ) {
       const curOrderId = activeOrderIdRef.current;
       if (curOrderId && (!data?.order_id || data.order_id === curOrderId)) {
         loadOrder(curOrderId);
@@ -1621,13 +1724,23 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
   // Calculate totals (No kuver)
   const subtotal = cartItems.filter(i => !i.is_voided).reduce((sum, i) => sum + i.total_price, 0);
-  const serviceChargeTotal = (subtotal * serviceRate) / 100;
+  const serviceChargeTotal = settings.serviceType === 'fixed'
+    ? (subtotal > 0 ? serviceRate : 0)
+    : (subtotal * serviceRate) / 100;
   const discountTotal = (existingOrder && existingOrder.discount_amount > 0)
     ? existingOrder.discount_amount 
     : (discountPercent > 0 ? (subtotal * discountPercent) / 100 : 0);
   const treatTotal = existingOrder?.treat_amount || 0;
   const grandTotal = Math.max(0, subtotal + serviceChargeTotal - discountTotal - treatTotal);
-  const vatAmount = ((grandTotal) * 10) / 110; // %10 KDV Dahil tutarı
+  const rawVatTotal = cartItems
+    .filter(i => !i.is_voided && !i.is_treat)
+    .reduce((acc, i) => {
+      const itemGross = i.total_price ?? (i.unit_price * i.quantity);
+      const prodVatRate = Number(allProductsMap.get(i.product_id)?.vat_rate ?? 10);
+      const safeRate = prodVatRate >= 0 ? prodVatRate : 10;
+      return acc + (itemGross * safeRate) / (100 + safeRate);
+    }, 0);
+  const vatAmount = subtotal > 0 ? rawVatTotal * (grandTotal / subtotal) : (grandTotal * 10) / 110;
   const activeCartCount = cartItems.filter(i => !i.is_voided).length;
 
   // Live preview values for the Weight Modal
@@ -1648,7 +1761,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         <div className={`absolute top-4 right-4 z-50 p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-2xl transition-all animate-slideDown ${
           toast.type === 'success' 
             ? 'bg-emerald-600/95 text-white border border-emerald-500' 
-            : 'bg-brand-600/95 text-white border border-brand-500'
+            : 'bg-rose-600/95 text-white border border-rose-500'
         }`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />}
           <span>{toast.message}</span>
@@ -1710,7 +1823,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       </div>
 
       {/* Left Panel: Adisyon & Cart - ~380px on desktop, full width when active on mobile */}
-      <div className={`${mobilePosView === 'cart' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[380px] flex-1 lg:flex-none flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shadow-lg z-10 min-h-0`}>
+      <div className={`${mobilePosView === 'cart' ? 'flex' : 'hidden'} lg:flex relative w-full lg:w-[380px] flex-1 lg:flex-none flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shadow-lg z-10 min-h-0`}>
         {/* Ticket Top Header: ← Masa + Action Icons */}
         <div className="p-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/60 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -1745,32 +1858,6 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           </div>
 
           <div className="flex items-center gap-1">
-            {activeTable && canMoveTable && (
-              <button 
-                type="button"
-                onClick={handleOpenMoveTableModal}
-                className="p-1.5 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 rounded-lg bg-blue-50/80 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/60 transition cursor-pointer"
-                title="Masayı Başka Masaya Taşı"
-              >
-                <ArrowRightLeft className="w-4 h-4" />
-              </button>
-            )}
-            <button 
-              onClick={() => setIsNoteModalOpen(true)}
-              className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-200/50"
-              title="Not Ekle"
-            >
-              <FileText className="w-4 h-4" />
-            </button>
-            {canDiscount && (
-              <button 
-                onClick={() => setIsDiscountModalOpen(true)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-200/50"
-                title="İndirim / İkram"
-              >
-                <DollarSign className="w-4 h-4" />
-              </button>
-            )}
             <button 
               onClick={() => {
                 const hasUnsaved = cartItems.some(i => !i.id);
@@ -1820,7 +1907,14 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               </button>
             )}
             <span className="font-bold text-emerald-600 dark:text-emerald-400">
-              {activeOrderId ? 'Açık Hesap' : 'Yeni Sipariş'}
+              {activeOrderId
+                ? existingOrder &&
+                  (existingOrder.paid_total || 0) > 0 &&
+                  Number(existingOrder.remaining_total ?? Math.max(0, grandTotal - (existingOrder.paid_total || 0))) <= 0.01 &&
+                  cartItems.filter(i => !i.id).length === 0
+                  ? '✓ Ön Ödeme Alındı'
+                  : 'Açık Hesap'
+                : 'Yeni Sipariş'}
             </span>
           </div>
         </div>
@@ -1893,9 +1987,38 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   )}
 
                   {/* Status Indicator */}
-                  <div className="flex items-center gap-2 mt-1">
+                  <div className="flex items-center flex-wrap gap-2 mt-1">
                     {isSaved ? (
-                      (item.status === 'ready' || item.status === 'served') ? (
+                      (item.status === 'stock_confirm' ||
+                        item.requires_stock_approval ||
+                        (item.kitchen_note && item.kitchen_note.includes('[STOK YOK - ONAY BEKLİYOR]'))) ? (
+                        <div className="flex items-center flex-wrap gap-1.5 bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-700 px-2 py-1 rounded-lg">
+                          <span className="text-[10px] font-black text-rose-700 dark:text-rose-300 flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3 shrink-0" />
+                            <span>Stok Yok! Devam edilsin mi?</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              sound.beep();
+                              try {
+                                await api.approveOutOfStockItem(item.id!, currentUser?.name || 'Garson');
+                                sound.kitchenBell();
+                                showToast(`${item.product_name} için eksi stok onaylandı, mutfağa iletildi!`, 'success');
+                                if (activeOrderId) await loadOrder(activeOrderId);
+                                onRefreshData();
+                              } catch (err: any) {
+                                sound.warning();
+                                showToast(err?.message || 'Stok onaylanamadı.', 'error');
+                              }
+                            }}
+                            className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-black shadow-xs cursor-pointer transition"
+                          >
+                            Yine de Devam Et
+                          </button>
+                        </div>
+                      ) : (item.status === 'ready' || item.status === 'served') ? (
                         <span className="text-[9px] font-black text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-400 dark:border-emerald-700 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs animate-fadeIn">
                           <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
                           <span>Teslim Edildi</span>
@@ -2006,8 +2129,287 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           )}
         </div>
 
-        {/* Bottom Bar: Total Summary + Breakdown Drawer + 3 Action Buttons */}
+        {/* Bottom Bar: Inline Adisyon Tools + Active Panel + Total Summary + Action Buttons */}
         <div className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 space-y-2 shadow-2xl shrink-0">
+          {/* Adisyon Notu Preview (when present and editor is collapsed) */}
+          {Boolean(orderNote?.trim()) && !isNoteModalOpen && (
+            <button
+              type="button"
+              onClick={() => toggleAdisyonPanel('note')}
+              className="w-full text-left px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/70 text-[11px] text-amber-800 dark:text-amber-300 flex items-center justify-between gap-2 cursor-pointer"
+              title="Adisyon notunu düzenle"
+            >
+              <span className="truncate font-semibold">📝 Not: {orderNote}</span>
+              <span className="text-[10px] font-black shrink-0 underline">Düzenle</span>
+            </button>
+          )}
+
+          {/* Inline Adisyon Operations: Adisyon Notu / İkram Uygula / İndirim Uygula */}
+          <div className="grid grid-cols-3 gap-1.5">
+            <button
+              type="button"
+              onClick={() => toggleAdisyonPanel('note')}
+              className={`py-1.5 px-2 rounded-xl border text-[11px] font-extrabold flex items-center justify-center gap-1 transition cursor-pointer ${
+                isNoteModalOpen || Boolean(orderNote?.trim())
+                  ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-400 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+              }`}
+              title="Adisyon Notu Ekle / Düzenle"
+            >
+              <FileText className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">Adisyon Notu</span>
+            </button>
+
+            {canTreat && (
+              <button
+                type="button"
+                onClick={() => toggleAdisyonPanel('treat')}
+                className={`py-1.5 px-2 rounded-xl border text-[11px] font-extrabold flex items-center justify-center gap-1 transition cursor-pointer ${
+                  isTreatModalOpen || treatTotal > 0
+                    ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-400 text-amber-700 dark:text-amber-300'
+                    : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                }`}
+                title="Adisyona İkram Uygula"
+              >
+                <Utensils className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">İkram Uygula</span>
+              </button>
+            )}
+
+            {canDiscount && (
+              <button
+                type="button"
+                onClick={() => toggleAdisyonPanel('discount')}
+                className={`py-1.5 px-2 rounded-xl border text-[11px] font-extrabold flex items-center justify-center gap-1 transition cursor-pointer ${
+                  isDiscountModalOpen || discountTotal > 0
+                    ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-400 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                }`}
+                title="Adisyona İndirim Uygula"
+              >
+                <DollarSign className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">İndirim Uygula</span>
+              </button>
+            )}
+          </div>
+
+          {/* Inline Adisyon Notu Panel (inside Adisyon) */}
+          {isNoteModalOpen && (
+            <div className="p-3 bg-slate-50 dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2.5 animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Adisyon Notu</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsNoteModalOpen(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <textarea
+                rows={2}
+                value={orderNote}
+                onChange={(e) => setOrderNote(e.target.value)}
+                placeholder="Örn: Müşteri cam kenarı tercih ediyor, hesap ayrı ödenecek..."
+                className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsNoteModalOpen(false)}
+                  className="flex-1 py-1.5 rounded-xl bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs cursor-pointer"
+                >
+                  Kapat
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveOrderNote}
+                  className="flex-1 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-black text-xs transition cursor-pointer"
+                >
+                  Kaydet
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Inline Adisyona İndirim Uygula Panel (inside Adisyon) */}
+          {isDiscountModalOpen && (
+            <div className="p-3 bg-slate-50 dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2.5 max-h-72 overflow-y-auto animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Adisyona İndirim Uygula</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsDiscountModalOpen(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500">Tanımlı İndirim Şablonları:</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {settings.discounts.filter(d => d.is_active !== false).map((d, i) => (
+                    <button
+                      key={d.id || i}
+                      type="button"
+                      onClick={() => handleApplyDiscountSubmit(d.value, d.name, d.type)}
+                      className="p-2 bg-white hover:bg-emerald-50 dark:bg-slate-900 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 hover:border-emerald-400 rounded-xl text-left transition flex items-center justify-between gap-1 cursor-pointer"
+                    >
+                      <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate">{d.name}</span>
+                      <span className="font-mono font-black text-brand-600 text-[11px] shrink-0">
+                        {d.type === 'fixed' ? `₺${d.value}` : `%${d.value}`}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {!predefinedDiscountOnly && (
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-700 space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-500">Özel Yüzdesel İndirim (%):</label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      placeholder="10"
+                      value={discountPercent === 0 ? '' : discountPercent}
+                      onChange={(e) => setDiscountPercent(Number(e.target.value) || 0)}
+                      className="w-20 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2 font-mono text-center font-black text-xs text-slate-900 dark:text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (discountPercent > 0) {
+                          handleApplyDiscountSubmit(discountPercent, `%${discountPercent} Özel İndirim`);
+                        } else {
+                          setIsDiscountModalOpen(false);
+                        }
+                      }}
+                      className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow transition cursor-pointer"
+                    >
+                      Özel İndirimi Uygula
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Inline Adisyona İkram Uygula Panel (inside Adisyon) */}
+          {isTreatModalOpen && (
+            <div className="p-3 bg-slate-50 dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2.5 max-h-72 overflow-y-auto animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Utensils className="w-4 h-4 text-amber-500" />
+                  <h3 className="text-xs font-black text-slate-900 dark:text-white">Adisyona İkram Uygula</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsTreatModalOpen(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500">İkram Nedeni:</label>
+                <div className="flex flex-wrap gap-1">
+                  {['Müessese İkramı', 'Şef İkramı', 'Özel İkram', 'Hizmet Telafisi', 'Yönetim Onayı'].map(r => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => { sound.beep(); setTreatReason(r); }}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${
+                        treatReason === r
+                          ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {!canTreat && (
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500">Yetkili / Müdür PIN Kodu:</label>
+                  <input
+                    type="password"
+                    maxLength={6}
+                    value={treatManagerPin}
+                    onChange={(e) => setTreatManagerPin(e.target.value)}
+                    placeholder="PIN"
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2 font-mono text-center font-black tracking-widest text-xs text-slate-900 dark:text-white"
+                  />
+                </div>
+              )}
+
+              {canTreatItem && existingOrder && existingOrder.items && existingOrder.items.length > 0 && (
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500">Kalem Bazlı İkram (Opsiyonel):</label>
+                  <div className="max-h-28 overflow-y-auto space-y-1 border border-slate-200 dark:border-slate-700 rounded-xl p-1.5 bg-white dark:bg-slate-900">
+                    {existingOrder.items.filter(it => !it.is_voided && it.id).map(it => {
+                      const itemId = Number(it.id);
+                      const isSelected = treatSelectedItems.includes(itemId);
+                      return (
+                        <div
+                          key={itemId}
+                          onClick={() => {
+                            sound.beep();
+                            setTreatSelectedItems(prev =>
+                              isSelected ? prev.filter(id => id !== itemId) : [...prev, itemId]
+                            );
+                          }}
+                          className={`p-1.5 rounded-lg text-[11px] flex items-center justify-between cursor-pointer border transition ${
+                            isSelected
+                              ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 text-amber-900 dark:text-amber-200 font-bold'
+                              : 'bg-slate-50 dark:bg-slate-800/60 border-transparent text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <span className="truncate pr-2">{formatCartQuantityLabel(it.quantity, isCartItemWeight(it))} {it.product_name}</span>
+                          <span className="font-mono shrink-0">₺{it.total_price.toFixed(2)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-1.5 pt-1">
+                {canCloseComplimentary && (
+                  <button
+                    type="button"
+                    onClick={() => handleApplyTreatSubmit(true)}
+                    disabled={loading}
+                    className={`${canTreatItem ? '' : 'col-span-2'} py-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-black text-[11px] shadow transition flex items-center justify-center cursor-pointer`}
+                  >
+                    <span>TÜM ADİSYON İKRAM</span>
+                  </button>
+                )}
+                {canTreatItem && (
+                  <button
+                    type="button"
+                    onClick={() => handleApplyTreatSubmit(false)}
+                    disabled={loading || treatSelectedItems.length === 0}
+                    className={`${canCloseComplimentary ? '' : 'col-span-2'} py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-black text-[11px] shadow transition flex items-center justify-center cursor-pointer`}
+                  >
+                    <span>SEÇİLENLERİ İKRAM ET ({treatSelectedItems.length})</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Expandable Breakdown Details */}
           {showBreakdown && (
             <div className="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px] font-semibold space-y-1.5 animate-fadeIn">
@@ -2017,7 +2419,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               </div>
               {serviceChargeTotal > 0 && (
                 <div className="flex justify-between text-blue-600 dark:text-blue-400">
-                  <span>Servis Bedeli (%{serviceRate}):</span>
+                  <span>{settings.serviceType === 'fixed' ? `Servis Bedeli (Sabit):` : `Servis Bedeli (%${serviceRate}):`}</span>
                   <span className="font-mono font-bold">+₺{serviceChargeTotal.toFixed(2)}</span>
                 </div>
               )}
@@ -2088,9 +2490,15 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 {existingOrder && (existingOrder.paid_total || 0) > 0 ? 'Toplam / Ödenen:' : 'Toplam Tutar'}
               </span>
               {existingOrder && (existingOrder.paid_total || 0) > 0 && (
-                <span className="text-[10px] text-brand-600 dark:text-emerald-400 font-black font-mono mt-0.5">
-                  Kalan: ₺{((existingOrder.remaining_total !== undefined ? existingOrder.remaining_total : Math.max(0, grandTotal - (existingOrder.paid_total || 0)))).toFixed(2)}
-                </span>
+                Number(existingOrder.remaining_total !== undefined ? existingOrder.remaining_total : Math.max(0, grandTotal - (existingOrder.paid_total || 0))) <= 0.01 ? (
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-black mt-0.5">
+                    ✓ Ön Ödeme Alındı
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-brand-600 dark:text-emerald-400 font-black font-mono mt-0.5">
+                    Kalan: ₺{((existingOrder.remaining_total !== undefined ? existingOrder.remaining_total : Math.max(0, grandTotal - (existingOrder.paid_total || 0)))).toFixed(2)}
+                  </span>
+                )
               )}
             </div>
 
@@ -2117,51 +2525,86 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           </div>
           {/* Action Buttons: ÖDE, HIZLI ÖDE, YAZDIR, KAYDET */}
           <div className="flex items-center gap-1.5 pt-1">
-            {canShowPayButton && (
-              <button
-                onClick={async () => {
-                  sound.beep();
-                  const unsavedItems = cartItems.filter(i => !i.id);
-                  let targetId = activeOrderId;
-                  if (unsavedItems.length > 0) {
-                    setLoading(true);
-                    try {
-                      if (targetId) {
-                        await api.addItemsToOrder(targetId, unsavedItems, currentUser?.name || 'Garson');
-                        await loadOrder(targetId);
-                      } else {
-                        const res = await api.createOrder({
-                          table_id: activeTable?.id || null,
-                          order_type: activeTable ? 'dine_in' : 'takeaway',
-                          items: unsavedItems,
-                          waiter_name: currentUser?.name || 'Garson',
-                          notes: orderNote || null,
-                          kuver_count: 0
+            {canShowPayButton && (() => {
+              const unsavedItems = cartItems.filter(i => !i.id);
+              const isPrepaidReadyToClose = Boolean(
+                activeOrderId &&
+                  existingOrder &&
+                  unsavedItems.length === 0 &&
+                  (existingOrder.paid_total || 0) > 0 &&
+                  Number(existingOrder.remaining_total !== undefined ? existingOrder.remaining_total : Math.max(0, grandTotal - (existingOrder.paid_total || 0))) <= 0.01
+              );
+              return (
+                <button
+                  onClick={async () => {
+                    sound.beep();
+                    if (isPrepaidReadyToClose && activeOrderId) {
+                      setLoading(true);
+                      try {
+                        await api.settlePayment({
+                          order_id: activeOrderId,
+                          payments: [],
+                          cashier_name: currentUser?.name || 'Kasiyer',
+                          close_table: true
                         });
-                        targetId = res.order_id;
-                        if (targetId) await loadOrder(targetId);
+                        sound.cashDrawer();
+                        showToast('Ön ödemeli masa hesabı kapatıldı.', 'success');
+                        setActiveOrderId(null);
+                        setExistingOrder(null);
+                        setCartItems([]);
+                        setOrderNote('');
+                        onRefreshData();
+                        if (activeTable) onBackToTables();
+                      } catch (err: any) {
+                        showToast(err.message || 'Masa kapatılamadı.', 'error');
+                      } finally {
+                        setLoading(false);
                       }
-                      onRefreshData();
-                    } catch (err: any) {
-                      showToast(err.message || 'Sipariş kaydedilemedi.', 'error');
-                      setLoading(false);
                       return;
                     }
-                    setLoading(false);
-                  }
-                  if (targetId) {
-                    onOpenCheckout(targetId, activeTable);
-                  }
-                }}
-                disabled={loading || (cartItems.length === 0 && !activeOrderId)}
-                className="flex-1 min-w-0 py-3 px-2 rounded-xl bg-[#27ae60] hover:bg-[#219653] disabled:opacity-50 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Tag className="w-3.5 h-3.5 flex-shrink-0" />
-                <span className="truncate">
-                  ÖDE ₺{(existingOrder && cartItems.filter(i => !i.id).length === 0 ? existingOrder.remaining_total : grandTotal).toFixed(2)}
-                </span>
-              </button>
-            )}
+                    let targetId = activeOrderId;
+                    if (unsavedItems.length > 0) {
+                      setLoading(true);
+                      try {
+                        if (targetId) {
+                          await api.addItemsToOrder(targetId, unsavedItems, currentUser?.name || 'Garson');
+                          await loadOrder(targetId);
+                        } else {
+                          const res = await api.createOrder({
+                            table_id: activeTable?.id || null,
+                            order_type: activeTable ? 'dine_in' : 'takeaway',
+                            items: unsavedItems,
+                            waiter_name: currentUser?.name || 'Garson',
+                            notes: orderNote || null,
+                            kuver_count: 0
+                          });
+                          targetId = res.order_id;
+                          if (targetId) await loadOrder(targetId);
+                        }
+                        onRefreshData();
+                      } catch (err: any) {
+                        showToast(err.message || 'Sipariş kaydedilemedi.', 'error');
+                        setLoading(false);
+                        return;
+                      }
+                      setLoading(false);
+                    }
+                    if (targetId) {
+                      onOpenCheckout(targetId, activeTable);
+                    }
+                  }}
+                  disabled={loading || (cartItems.length === 0 && !activeOrderId)}
+                  className="flex-1 min-w-0 py-3 px-2 rounded-xl bg-[#27ae60] hover:bg-[#219653] disabled:opacity-50 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Tag className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="truncate">
+                    {isPrepaidReadyToClose
+                      ? 'MASAYI KAPAT (ÖN ÖDEMELİ)'
+                      : `ÖDE ₺${(existingOrder && unsavedItems.length === 0 ? existingOrder.remaining_total : grandTotal).toFixed(2)}`}
+                  </span>
+                </button>
+              );
+            })()}
 
             {canShowFastPayButton && (
               <button
@@ -2249,37 +2692,6 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               <span className="hidden sm:inline">Z-A</span>
             </button>
 
-            {/* Note Button 📄 */}
-            <button
-              onClick={() => setIsNoteModalOpen(true)}
-              className="p-2 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition"
-              title="Adisyon Notu"
-            >
-              <FileText className="w-4 h-4" />
-            </button>
-
-            {/* Treat Button 🍽️ */}
-            {canTreat && (
-              <button
-                onClick={() => { sound.beep(); setIsTreatModalOpen(true); }}
-                className="p-2 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition"
-                title="İkram Uygula"
-              >
-                <Utensils className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* Discount Button 💵 */}
-            {canDiscount && (
-              <button
-                onClick={() => setIsDiscountModalOpen(true)}
-                className="p-2 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition"
-                title="İndirim Uygula"
-              >
-                <DollarSign className="w-4 h-4" />
-              </button>
-            )}
-
             {/* Table Transfer Button ⇄ */}
             {activeTable && canMoveTable && (
               <button
@@ -2363,8 +2775,12 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 pb-28 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 sm:gap-3.5 content-start">
           {displayedProducts.map((p) => {
             const qty = getProductQuantityInCart(p.id);
-            const isPassive = p.is_available === false;
+            const meta = productMetaMap[p.id];
+            const rem86 = meta && meta.remainingPortions !== null ? Math.max(0, meta.remainingPortions - qty) : null;
+            const isSoldOut86 = rem86 !== null && rem86 <= 0;
+            const isPassive = p.is_available === false || isSoldOut86;
             const isWeight = isWeightProduct(p);
+            const effectiveStock = getEffectiveProductStock(p);
             return (
               <div
                 key={p.id}
@@ -2373,6 +2789,17 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   isPassive ? 'opacity-55 grayscale cursor-not-allowed' : 'cursor-pointer'
                 }`}
               >
+                {rem86 !== null && (
+                  <span className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-black z-10 ${
+                    isSoldOut86
+                      ? 'bg-rose-600 text-white'
+                      : rem86 <= 5
+                        ? 'bg-amber-500 text-slate-950'
+                        : 'bg-slate-800/80 text-white'
+                  }`}>
+                    {isSoldOut86 ? 'TÜKENDİ (86)' : `Son ${rem86}`}
+                  </span>
+                )}
                 <div className={qty > 0 ? 'pr-8' : 'pr-2'}>
                   <h4 className="font-extrabold text-xs md:text-sm text-slate-900 dark:text-white uppercase tracking-tight leading-snug group-hover:text-brand-600 transition line-clamp-2">
                     {p.name}
@@ -2387,15 +2814,15 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                     <span className="text-[9px] font-bold text-brand-600 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded">
                       Pasif
                     </span>
-                  ) : canViewStock && p.stock_quantity !== undefined && p.stock_quantity !== null ? (
+                  ) : canViewStock && effectiveStock !== null ? (
                     <span className={
-                      p.allow_negative_stock && p.stock_quantity < 0
+                      effectiveStock < 0
                         ? 'text-[9px] font-mono font-black px-1.5 py-0.5 rounded truncate text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800'
-                        : p.stock_quantity <= 0
-                          ? 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded truncate text-brand-600 bg-emerald-50 dark:bg-emerald-950/50'
-                          : 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded truncate text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50'
+                        : effectiveStock === 0
+                          ? 'text-[9px] font-mono font-black px-1.5 py-0.5 rounded truncate text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700'
+                          : 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded truncate text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800'
                     }>
-                      {Number(Number(p.stock_quantity).toFixed(3))} {p.unit || 'Adet'}
+                      {effectiveStock} {p.unit || 'Adet'}
                     </span>
                   ) : p.variants && p.variants.length > 0 ? (
                     <span className="text-[9px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-950/50 px-1.5 py-0.5 rounded">
@@ -2497,15 +2924,21 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mt-0.5">
                     Birim Fiyat: <span className="font-mono font-bold text-slate-800 dark:text-slate-200">₺{weightModalProduct.base_price.toFixed(2)} / Kg</span>
-                    {weightModalProduct.stock_quantity !== undefined && (
-                      <span className={`ml-2 ${
-                        weightModalProduct.allow_negative_stock && weightModalProduct.stock_quantity < 0
-                          ? 'text-rose-600 dark:text-rose-400 font-black'
-                          : 'text-emerald-600 dark:text-emerald-400'
-                      }`}>
-                        • Stok: {Number(Number(weightModalProduct.stock_quantity).toFixed(3))} {weightModalProduct.unit || 'Kg'}
-                      </span>
-                    )}
+                    {(() => {
+                      const effWeightStock = getEffectiveProductStock(weightModalProduct);
+                      if (effWeightStock === null) return null;
+                      return (
+                        <span className={`ml-2 ${
+                          effWeightStock < 0
+                            ? 'text-rose-600 dark:text-rose-400 font-black'
+                            : effWeightStock === 0
+                              ? 'text-amber-600 dark:text-amber-400 font-black'
+                              : 'text-emerald-600 dark:text-emerald-400 font-bold'
+                        }`}>
+                          • Stok: {effWeightStock} {weightModalProduct.unit || 'Kg'}
+                        </span>
+                      );
+                    })()}
                   </p>
                 </div>
               </div>
@@ -2681,209 +3114,6 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               >
                 {existingUnsavedWeightItem ? 'Miktarı Güncelle' : 'Adisyona Ekle'}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Note Modal */}
-      {isNoteModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn font-sans">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
-            <h3 className="text-base font-black">Adisyon Notu Ekle</h3>
-            <textarea
-              rows={3}
-              value={orderNote}
-              onChange={(e) => setOrderNote(e.target.value)}
-              placeholder="Örn: Müşteri cam kenarı tercih ediyor, hesap ayrı ödenecek..."
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-900 dark:text-white"
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={() => setIsNoteModalOpen(false)}
-                className="flex-1 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs"
-              >
-                Kapat
-              </button>
-              <button
-                onClick={handleSaveOrderNote}
-                className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-black text-xs transition"
-              >
-                Kaydet
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Discount Modal */}
-      {isDiscountModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn font-sans">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
-            <h3 className="text-base font-black">Adisyona İndirim Uygula</h3>
-
-            {/* Defined Quick Templates from Settings */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-500">Tanımlı İndirim Şablonları (Restaurant Tanımlamaları):</label>
-              <div className="grid grid-cols-2 gap-2">
-                {settings.discounts.filter(d => d.is_active !== false).map((d, i) => (
-                  <button
-                    key={d.id || i}
-                    onClick={() => handleApplyDiscountSubmit(d.value, d.name, d.type)}
-                    className="p-2.5 bg-slate-50 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 hover:border-emerald-400 rounded-xl text-left transition flex items-center justify-between gap-1"
-                  >
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{d.name}</span>
-                    <span className="font-mono font-black text-brand-600 text-xs shrink-0">
-                      {d.type === 'fixed' ? `₺${d.value}` : `%${d.value}`}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Custom Discount Input */}
-            {!predefinedDiscountOnly && (
-              <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
-                <label className="text-[11px] font-bold text-slate-500">Özel Yüzdesel İndirim (%):</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    placeholder="10"
-                    value={discountPercent === 0 ? '' : discountPercent}
-                    onChange={(e) => setDiscountPercent(Number(e.target.value) || 0)}
-                    className="w-24 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-center font-black text-slate-900 dark:text-white"
-                  />
-                  <button
-                    onClick={() => {
-                      if (discountPercent > 0) {
-                        handleApplyDiscountSubmit(discountPercent, `%${discountPercent} Özel İndirim`);
-                      } else {
-                        setIsDiscountModalOpen(false);
-                      }
-                    }}
-                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow transition cursor-pointer"
-                  >
-                    Özel İndirimi Uygula
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <div className="flex justify-end pt-1">
-              <button
-                onClick={() => setIsDiscountModalOpen(false)}
-                className="px-4 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs"
-              >
-                Kapat
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Treat Modal (İkram Modalı) */}
-      {isTreatModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn font-sans">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Utensils className="w-5 h-5 text-amber-500" />
-                <h3 className="text-base font-black">Adisyona İkram Uygula</h3>
-              </div>
-              <button onClick={() => setIsTreatModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Quick Reason Chips */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-500">İkram Nedeni:</label>
-              <div className="flex flex-wrap gap-1.5">
-                {['Müessese İkramı', 'Şef İkramı', 'Özel İkram', 'Hizmet Telafisi', 'Yönetim Onayı'].map(r => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => { sound.beep(); setTreatReason(r); }}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold border transition cursor-pointer ${
-                      treatReason === r
-                        ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
-                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                    }`}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Manager PIN Verification (Sadece ikram yetkisi yoksa gösterilir) */}
-            {!canTreat && (
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-500">Yetkili / Müdür PIN Kodu:</label>
-                <input
-                  type="password"
-                  maxLength={6}
-                  value={treatManagerPin}
-                  onChange={(e) => setTreatManagerPin(e.target.value)}
-                  placeholder="9999"
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-center font-black tracking-widest text-slate-900 dark:text-white"
-                />
-              </div>
-            )}
-
-            {/* Itemized Selection if existing order has saved items */}
-            {canTreatItem && existingOrder && existingOrder.items && existingOrder.items.length > 0 && (
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-500">Kalem Bazlı İkram (Opsiyonel):</label>
-                <div className="max-h-36 overflow-y-auto space-y-1 border border-slate-200 dark:border-slate-800 rounded-2xl p-2">
-                  {existingOrder.items.filter(it => !it.is_voided).map(it => {
-                    const isSelected = treatSelectedItems.includes(it.id);
-                    return (
-                      <div
-                        key={it.id}
-                        onClick={() => {
-                          sound.beep();
-                          setTreatSelectedItems(prev =>
-                            isSelected ? prev.filter(id => id !== it.id) : [...prev, it.id]
-                          );
-                        }}
-                        className={`p-2 rounded-xl text-xs flex items-center justify-between cursor-pointer border transition ${
-                          isSelected
-                            ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 text-amber-900 dark:text-amber-200 font-bold'
-                            : 'bg-slate-50 dark:bg-slate-800/60 border-transparent text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        <span>{formatCartQuantityLabel(it.quantity, isCartItemWeight(it))} {it.product_name}</span>
-                        <span className="font-mono">₺{it.total_price.toFixed(2)}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-2 pt-2">
-              {canCloseComplimentary && (
-                <button
-                  onClick={() => handleApplyTreatSubmit(true)}
-                  disabled={loading}
-                  className={`${canTreatItem ? '' : 'col-span-2'} py-3 rounded-2xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-black text-xs shadow-md transition flex items-center justify-center gap-1 cursor-pointer`}
-                >
-                  <span>TÜM ADİSYON İKRAM</span>
-                </button>
-              )}
-              {canTreatItem && (
-                <button
-                  onClick={() => handleApplyTreatSubmit(false)}
-                  disabled={loading || treatSelectedItems.length === 0}
-                  className={`${canCloseComplimentary ? '' : 'col-span-2'} py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-black text-xs shadow-md transition flex items-center justify-center gap-1 cursor-pointer`}
-                >
-                  <span>SEÇİLENLERİ İKRAM ET ({treatSelectedItems.length})</span>
-                </button>
-              )}
             </div>
           </div>
         </div>
@@ -3131,7 +3361,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             {/* Otomatik Fiş Bilgilendirmesi */}
             <div className="flex items-center justify-center gap-2 text-[11px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100/80 dark:bg-slate-800/50 py-2 px-3 rounded-xl">
               <Printer className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-              <span>Ödeme alındığında Adisyo fişi otomatik olarak yazdırılır.</span>
+              <span>Ödeme alındığında adisyon fişi otomatik olarak yazdırılır.</span>
             </div>
 
             <button
@@ -3155,8 +3385,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   <AlertCircle className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-brand-600 dark:text-emerald-400 leading-tight">
-                    Reçetedeki Malzeme Stoğu Bitti!
+                  <h3 className="text-base font-black text-amber-700 dark:text-amber-400 leading-tight">
+                    Stok Yetersiz / Sıfır Uyarı
                   </h3>
                   <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mt-0.5">
                     {bomStockWarningModal.productName}
@@ -3174,32 +3404,51 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
             <div className="space-y-2">
               <span className="text-xs font-extrabold text-slate-500 dark:text-slate-400 uppercase block">
-                Stoğu Biten / Yetersiz Reçete Malzemeleri:
+                Stok Durumu ve İşlem Sonrası Kalan Stok:
               </span>
               <div className="space-y-2 max-h-48 overflow-y-auto">
-                {bomStockWarningModal.missingIngredients.map((ing, i) => (
+                {bomStockWarningModal.missingIngredients.map((ing, i) => {
+                  const projected = Number((ing.current_stock - ing.required_amount).toFixed(3));
+                  return (
                   <div
                     key={i}
-                    className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 flex items-center justify-between gap-2"
+                    className={`p-3 rounded-2xl border flex items-center justify-between gap-2 ${
+                      ing.current_stock === 0
+                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800/70'
+                        : ing.current_stock < 0
+                          ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800/70'
+                          : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/70'
+                    }`}
                   >
                     <div>
-                      <div className="font-black text-xs sm:text-sm text-brand-700 dark:text-emerald-300">
+                      <div className="font-black text-xs sm:text-sm text-slate-900 dark:text-white">
                         {ing.ingredient_name}
                       </div>
-                      <div className="text-[11px] font-semibold text-brand-600/80 dark:text-emerald-400/80">
-                        Sipariş İçin Gerekli: <strong className="font-mono">{ing.required_amount} {ing.unit}</strong>
+                      <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                        İstenen: <strong className="font-mono">{ing.required_amount} {ing.unit}</strong>
+                        {' • '}
+                        Yeni Stok: <strong className="font-mono text-rose-600 dark:text-rose-400">{projected} {ing.unit}</strong>
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <span className="inline-block px-2.5 py-1 rounded-xl bg-[#338d35] text-white font-mono font-black text-xs">
-                        Stok: {ing.current_stock} {ing.unit}
+                      <span className={`inline-block px-2.5 py-1 rounded-xl font-mono font-black text-xs ${
+                        ing.current_stock < 0
+                          ? 'bg-rose-600 text-white'
+                          : ing.current_stock === 0
+                            ? 'bg-amber-500 text-slate-950'
+                            : 'bg-emerald-600 text-white'
+                      }`}>
+                        Mevcut: {ing.current_stock} {ing.unit}
                       </span>
-                      <div className="text-[10px] font-extrabold text-brand-600 dark:text-emerald-400 mt-0.5">
-                        {ing.current_stock <= 0 ? 'STOK BİTTİ!' : 'YETERSİZ STOK!'}
+                      <div className={`text-[10px] font-extrabold mt-0.5 ${
+                        ing.current_stock <= 0 ? 'text-amber-700 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
+                      }`}>
+                        {ing.current_stock < 0 ? 'EKSİ STOK!' : ing.current_stock === 0 ? 'STOK SIFIR!' : 'YETERSİZ STOK!'}
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -3458,6 +3707,119 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 Vazgeç
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Süreli Masa (Saatlik Lounge / Bilardo / Okey Tarife) Modalı */}
+      {isTimerModalOpen && activeTable && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none font-sans">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 text-slate-900 dark:text-slate-100">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-black flex items-center gap-2">
+                <Clock className="w-4 h-4 text-emerald-500" />
+                <span>Süreli Masa Tarife Yönetimi</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsTimerModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {tableTimer?.isRunning ? (
+              <div className="space-y-3">
+                <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 space-y-1 text-center">
+                  <div className="text-xs font-bold text-slate-500">{tableTimer.tariffName}</div>
+                  <div className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400">
+                    {calculateTimerCharge(tableTimer, posNow).elapsedMinutes} Dakika
+                  </div>
+                  <div className="text-sm font-black">
+                    Biriken Ücret: ₺{calculateTimerCharge(tableTimer, posNow).amount.toFixed(2)} (Saatlik ₺{tableTimer.hourlyRate})
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.beep();
+                      clearTableTimer(activeTable.id);
+                      setTableTimer(null);
+                      setIsTimerModalOpen(false);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs cursor-pointer"
+                  >
+                    Sayacı Sıfırla
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.cashDrawer();
+                      const { elapsedMinutes, amount: charge } = calculateTimerCharge(tableTimer, posNow);
+                      const fallbackProdId = allOrderableProducts[0]?.id || 1;
+                      const timerItem: OrderItem = {
+                        product_id: fallbackProdId,
+                        product_name: `⏱️ ${tableTimer.tariffName} (${elapsedMinutes} dk)`,
+                        unit_price: charge,
+                        quantity: 1,
+                        total_price: charge,
+                        selected_modifiers: [],
+                        negative_modifiers: [],
+                        kitchen_note: `${elapsedMinutes} dk saatlik tarife`,
+                        course_stage: 1,
+                        is_hold: false,
+                        added_by: currentUser?.name || 'Sistem',
+                      };
+                      setCartItems((prev) => [...prev, timerItem]);
+                      clearTableTimer(activeTable.id);
+                      setTableTimer(null);
+                      setIsTimerModalOpen(false);
+                      showToast(`Süreli masa ücreti (₺${charge.toFixed(2)}) adisyona eklendi.`, 'success');
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs cursor-pointer"
+                  >
+                    Durdur &amp; Adisyona Ekle
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">Tarife Adı</label>
+                  <input
+                    type="text"
+                    value={timerTariffName}
+                    onChange={(e) => setTimerTariffName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">Saatlik Ücret (₺)</label>
+                  <input
+                    type="number"
+                    min="10"
+                    value={timerHourlyRate}
+                    onChange={(e) => setTimerHourlyRate(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-sm font-black font-mono"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.beep();
+                    const started = startTableTimer(activeTable.id, timerHourlyRate, timerTariffName);
+                    setTableTimer(started);
+                    setIsTimerModalOpen(false);
+                    showToast(`${activeTable.name} için süreli masa sayacı başlatıldı.`, 'success');
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-black text-xs cursor-pointer"
+                >
+                  Süreli Masa Sayacını Başlat
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

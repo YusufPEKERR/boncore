@@ -89,8 +89,7 @@ export const RightsManagement: React.FC<RightsManagementProps> = ({ currentUser 
     { key: 'kitchen', label: 'Mutfak' },
     { key: 'courier', label: 'Kurye' },
     { key: 'cashier', label: 'Kasa' },
-    { key: 'manager', label: 'Müdür' },
-    { key: 'call_center', label: 'Çağrı Merkezi' }
+    { key: 'manager', label: 'Müdür' }
   ];
 
   const handleToggle = (permId: string, roleKey: string) => {
@@ -415,7 +414,7 @@ export const RightsManagement: React.FC<RightsManagementProps> = ({ currentUser 
               {Object.entries(groupedActions).map(([groupTitle, perms]) => (
                 <div key={groupTitle} className="space-y-2">
                   <div className="grid grid-cols-12 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-extrabold text-slate-700 dark:text-slate-300">
-                    <div className="col-span-6 font-black uppercase text-slate-900 dark:text-white">{groupTitle}</div>
+                    <div className="col-span-7 font-black uppercase text-slate-900 dark:text-white">{groupTitle}</div>
                     {roles.map(r => (
                       <div key={r.key} className="col-span-1 text-center text-[11px] truncate">
                         {r.label}
@@ -428,7 +427,7 @@ export const RightsManagement: React.FC<RightsManagementProps> = ({ currentUser 
                       const isManagerOnlyRow = p.id === 'def_permissions_manage';
                       return (
                         <div key={p.id} className="grid grid-cols-12 py-3 px-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition items-center text-xs">
-                          <div className="col-span-6 pr-4">
+                          <div className="col-span-7 pr-4">
                             <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                               <HelpCircle className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                               <span>{p.title}</span>
@@ -471,7 +470,7 @@ export const RightsManagement: React.FC<RightsManagementProps> = ({ currentUser 
             <div className="min-w-[680px] space-y-2">
               {/* Header with Role Columns + Quick Column Toggle */}
               <div className="grid grid-cols-12 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-extrabold text-slate-700 dark:text-slate-300 items-center">
-                <div className="col-span-6 font-black uppercase text-slate-900 dark:text-white flex items-center gap-2">
+                <div className="col-span-7 font-black uppercase text-slate-900 dark:text-white flex items-center gap-2">
                   <LayoutGrid className="w-4 h-4 text-[#338d35]" />
                   <span>SEKMELER (UYGULAMA MENÜLERİ VE EKRANLAR)</span>
                 </div>
@@ -506,7 +505,7 @@ export const RightsManagement: React.FC<RightsManagementProps> = ({ currentUser 
 
               {/* Locked Manager-Only Row for "Yetki / İzin Ekranı" */}
               <div className="grid grid-cols-12 py-3 px-3 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-900/50 rounded-xl items-center text-xs">
-                <div className="col-span-6 pr-4">
+                <div className="col-span-7 pr-4">
                   <div className="font-black text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
                     <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                     <span>Yetki / İzin Ekranı Sekmesi (Sadece Yönetici)</span>
@@ -531,7 +530,7 @@ export const RightsManagement: React.FC<RightsManagementProps> = ({ currentUser 
               <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
                 {filteredTabs.map((p) => (
                   <div key={p.id} className="grid grid-cols-12 py-3 px-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition items-center text-xs">
-                    <div className="col-span-6 pr-4">
+                    <div className="col-span-7 pr-4">
                       <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                         <HelpCircle className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                         <span>{p.title}</span>

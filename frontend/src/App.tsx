@@ -1,5 +1,5 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { Grid, FileText, ChefHat, Wallet, Menu, Shield, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { Grid, FileText, ChefHat, Wallet, Menu, Shield, Loader2, AlertTriangle } from 'lucide-react';
 import { Header } from './components/layout/Header';
 import { AdisyoSidebar } from './components/layout/AdisyoSidebar';
 import { FloorView } from './components/tables/FloorView';
@@ -11,8 +11,6 @@ import { TabErrorBoundary } from './components/common/TabErrorBoundary';
 const AdisyoDashboard = lazy(() => import('./components/dashboard/AdisyoDashboard').then(m => ({ default: m.AdisyoDashboard })));
 const AdisyoSettings = lazy(() => import('./components/settings/AdisyoSettings').then(m => ({ default: m.AdisyoSettings })));
 const AdisyoProfile = lazy(() => import('./components/profile/AdisyoProfile').then(m => ({ default: m.AdisyoProfile })));
-const QrallPosModal = lazy(() => import('./components/qr/QrallPosModal').then(m => ({ default: m.QrallPosModal })));
-const OkcIntegrationModal = lazy(() => import('./components/fiscal/OkcIntegrationModal').then(m => ({ default: m.OkcIntegrationModal })));
 const PinModal = lazy(() => import('./components/layout/PinModal').then(m => ({ default: m.PinModal })));
 const KdsScreen = lazy(() => import('./components/kds/KdsScreen').then(m => ({ default: m.KdsScreen })));
 const KitchenGroupsDefinitions = lazy(() => import('./components/kds/KitchenGroupsDefinitions').then(m => ({ default: m.KitchenGroupsDefinitions })));
@@ -38,20 +36,17 @@ const RestaurantStatistics = lazy(() => import('./components/reports/RestaurantS
 const ClosedBillsReport = lazy(() => import('./components/reports/ClosedBillsReport').then(m => ({ default: m.ClosedBillsReport })));
 const ProductSalesReport = lazy(() => import('./components/reports/ProductSalesReport').then(m => ({ default: m.ProductSalesReport })));
 const DayEndReport = lazy(() => import('./components/reports/DayEndReport').then(m => ({ default: m.DayEndReport })));
-const AppStore = lazy(() => import('./components/appstore/AppStore').then(m => ({ default: m.AppStore })));
 const MenuIntegrationOperations = lazy(() => import('./components/integrations/MenuIntegrationOperations').then(m => ({ default: m.MenuIntegrationOperations })));
 const CustomersLoyaltyView = lazy(() => import('./components/modules/CustomersLoyaltyView').then(m => ({ default: m.CustomersLoyaltyView })));
 const ReservationsView = lazy(() => import('./components/modules/ReservationsView').then(m => ({ default: m.ReservationsView })));
 const CostProfitWizardView = lazy(() => import('./components/modules/CostProfitWizardView').then(m => ({ default: m.CostProfitWizardView })));
-const HotelFolioView = lazy(() => import('./components/modules/HotelFolioView').then(m => ({ default: m.HotelFolioView })));
-const KioskCfdView = lazy(() => import('./components/modules/KioskCfdView').then(m => ({ default: m.KioskCfdView })));
 const LandingPage = lazy(() => import('./components/landing/LandingPage').then(m => ({ default: m.LandingPage })));
 const MasterAdminLayout = lazy(() => import('./components/master_admin/MasterAdminLayout').then(m => ({ default: m.MasterAdminLayout })));
 const MasterLoginView = lazy(() => import('./components/master_admin/MasterLoginView').then(m => ({ default: m.MasterLoginView })));
 
 // Ultra-Lightweight Suspense Fallback
 const TabLoadingFallback: React.FC = () => (
-  <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 select-none">
+  <div className="flex-1 min-h-[240px] flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 select-none">
     <div className="flex items-center gap-3 bg-white dark:bg-slate-900 px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md">
       <Loader2 className="w-5 h-5 text-emerald-600 animate-spin" />
       <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Yükleniyor...</span>
@@ -67,17 +62,30 @@ import { useTheme } from './context/ThemeContext';
 import { syncOfflineQueue } from './services/offlineDb';
 import { useRolePermissions, broadcastPermissionsUpdate, mergeWithInitialPermissions } from './services/permissions';
 import { fetchLiveTenantFeatures, saveLocalFeatures, normalizeFeaturesPayload, isTabLicensed } from './services/licensedFeatures';
+import { hydrateAllFeatureStores } from './services/competitorFeatures';
 import { sendNativeNotification, requestNotificationPermission } from './services/nativeNotifications';
+import { parseQrRouteFromUrl, QrRouteMatch } from './utils/qrCodeGenerator';
+
+export function getQrCustomerRoute(): QrRouteMatch | null {
+  if (typeof window === 'undefined') return null;
+  return parseQrRouteFromUrl(window.location.search, window.location.pathname, window.location.hash);
+}
+
+export function getQrCustomerTableId(): number | null {
+  return getQrCustomerRoute()?.tableId ?? null;
+}
 
 export const App: React.FC = () => {
   // Global Theme Hook (Dark / Light)
   const { theme, toggleTheme } = useTheme();
+  const [qrCustomerRoute, setQrCustomerRoute] = useState<QrRouteMatch | null>(() => getQrCustomerRoute());
+  const qrCustomerTableId = qrCustomerRoute?.tableId ?? null;
 
   const VALID_TABS = [
     'dashboard', 'tables', 'pos', 'kds', 'kitchen_groups', 'product_definition', 'table_definition',
-    'integration_menu', 'users', 'rights', 'restaurant_statistics', 'closed_bills_report', 'product_sales_report', 'day_end_report', 'app_store',
+    'integration_menu', 'users', 'rights', 'restaurant_statistics', 'closed_bills_report', 'product_sales_report', 'day_end_report',
     'settings', 'profile', 'cashier', 'delivery', 'inventory', 'qr', 'audit',
-    'customers', 'reservations', 'cost_profit', 'hotel', 'kiosk'
+    'customers', 'reservations', 'cost_profit'
   ];
 
   // Helper to get initial tab from URL hash or localStorage
@@ -108,6 +116,9 @@ export const App: React.FC = () => {
   });
 
   const getInitialViewMode = (): ViewMode => {
+    if (getQrCustomerRoute() !== null) {
+      return 'landing';
+    }
     const hash = window.location.hash.replace('#', '').trim();
     if (hash === 'master_admin' || hash === 'master' || hash === 'admin' || hash === 'masteradmin' || hash === 'superadmin') {
       const masterToken = localStorage.getItem('boncore_master_token');
@@ -206,8 +217,6 @@ export const App: React.FC = () => {
     return (localStorage.getItem('boncore_floor_section') as 'tables' | 'orders') || 'tables';
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
-  const [isQrallModalOpen, setIsQrallModalOpen] = useState<boolean>(false);
-  const [isOkcModalOpen, setIsOkcModalOpen] = useState<boolean>(false);
 
   // Sync activeTab to localStorage and URL hash (only when in POS app mode)
   useEffect(() => {
@@ -223,6 +232,7 @@ export const App: React.FC = () => {
   // Listen to browser back/forward or hash changes
   useEffect(() => {
     const handleHashChange = () => {
+      setQrCustomerRoute(getQrCustomerRoute());
       const hash = window.location.hash.replace('#', '').trim();
       if (hash === 'master_admin' || hash === 'master' || hash === 'admin' || hash === 'masteradmin' || hash === 'superadmin') {
         const masterToken = localStorage.getItem('boncore_master_token');
@@ -274,7 +284,11 @@ export const App: React.FC = () => {
       }
     };
     window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    window.addEventListener('popstate', handleHashChange);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('popstate', handleHashChange);
+    };
   }, [activeTab, isAuthenticated]);
 
   // App Master Data
@@ -299,6 +313,24 @@ export const App: React.FC = () => {
   // Kitchen Ready Alerts
   const [kitchenAlerts, setKitchenAlerts] = useState<KitchenReadyAlertItem[]>([]);
   const [isKitchenAlertsOpen, setIsKitchenAlertsOpen] = useState<boolean>(false);
+
+  // Out-of-stock Negative Stock Approval Alerts (for Waiter & Cashier)
+  const [stockApprovalAlerts, setStockApprovalAlerts] = useState<any[]>([]);
+  const [approvingStockItemId, setApprovingStockItemId] = useState<number | null>(null);
+  const [rejectingStockItemId, setRejectingStockItemId] = useState<number | null>(null);
+  const wsAreasDebounceRef = useRef<number | null>(null);
+  const wsCategoriesDebounceRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (wsAreasDebounceRef.current !== null) {
+        window.clearTimeout(wsAreasDebounceRef.current);
+      }
+      if (wsCategoriesDebounceRef.current !== null) {
+        window.clearTimeout(wsCategoriesDebounceRef.current);
+      }
+    };
+  }, []);
 
   // Live Toast Notifications
   const [toasts, setToasts] = useState<{ id: number; message: string; type?: string }[]>([]);
@@ -357,6 +389,26 @@ export const App: React.FC = () => {
     }
   };
 
+  const scheduleLoadAreas = () => {
+    if (wsAreasDebounceRef.current !== null) {
+      window.clearTimeout(wsAreasDebounceRef.current);
+    }
+    wsAreasDebounceRef.current = window.setTimeout(() => {
+      wsAreasDebounceRef.current = null;
+      loadAreas();
+    }, 350);
+  };
+
+  const scheduleLoadCategories = () => {
+    if (wsCategoriesDebounceRef.current !== null) {
+      window.clearTimeout(wsCategoriesDebounceRef.current);
+    }
+    wsCategoriesDebounceRef.current = window.setTimeout(() => {
+      wsCategoriesDebounceRef.current = null;
+      loadCategories();
+    }, 350);
+  };
+
   // Auto-request native web notification permissions when authenticated
   useEffect(() => {
     if (isAuthenticated) {
@@ -374,7 +426,7 @@ export const App: React.FC = () => {
         tag: `waiter-call-${data.table_id || Date.now()}`,
         requireInteraction: true
       });
-      loadAreas();
+      scheduleLoadAreas();
     } else if (type === 'KITCHEN_ORDER_READY_ALERT') {
       sound.kitchenBell();
       try {
@@ -404,7 +456,7 @@ export const App: React.FC = () => {
         body: data.message || `${data.table_name || 'Masa'} siparişi servise hazır! ${data.items_summary ? `(${data.items_summary})` : ''}`,
         tag: `kitchen-ready-${data.order_id || Date.now()}`
       });
-      loadAreas();
+      scheduleLoadAreas();
     } else if (type === 'ONLINE_ORDER_INCOMING') {
       addToast(`🛵 ${(data.platform || 'ONLINE').toUpperCase()}: Yeni Sipariş (₺${data.total})`, 'info');
       sendNativeNotification({
@@ -412,9 +464,30 @@ export const App: React.FC = () => {
         body: `Tutar: ₺${data.total || 0} - Hazırlanmak üzere mutfağa iletildi.`,
         tag: `online-order-${data.order_id || Date.now()}`
       });
-      loadAreas();
+      scheduleLoadAreas();
+    } else if (type === 'OUT_OF_STOCK_ORDER_ALERT') {
+      sound.warning();
+      const itemsSummary = Array.isArray(data?.items)
+        ? data.items.map((it: any) => `${it.product_name} (${it.quantity}x)`).join(', ')
+        : data?.product_name || 'Ürün';
+      const alertText =
+        data?.message ||
+        `⚠️ ${data?.table_name || 'Masa'} ${itemsSummary} istedi ama stok yok! Devam edilsin mi?`;
+      addToast(alertText, 'warning');
+      sendNativeNotification({
+        title: `⚠️ Stok Yok Onayı: ${data?.table_name || 'Masa'}`,
+        body: alertText,
+        tag: `stock-alert-${data?.order_id || Date.now()}`,
+        requireInteraction: true,
+      });
+      loadStockApprovals();
+      scheduleLoadAreas();
+    } else if (type === 'STOCK_APPROVAL_RESOLVED') {
+      loadStockApprovals();
+      scheduleLoadAreas();
+      scheduleLoadCategories();
     } else if (type === 'MENU_UPDATED') {
-      loadCategories();
+      scheduleLoadCategories();
     } else if (type === 'SETTINGS_UPDATED') {
       if (data && data.restaurant_name) {
         setRestaurantTitle(String(data.restaurant_name));
@@ -426,14 +499,14 @@ export const App: React.FC = () => {
       if (data && data.order_id) {
         setKitchenAlerts(prev => prev.filter(a => a.order_id !== data.order_id));
       }
-      loadAreas();
-      loadCategories();
+      scheduleLoadAreas();
+      scheduleLoadCategories();
     } else if (type === 'ORDER_CREATED' || type === 'ORDER_UPDATED' || type === 'AREAS_UPDATED' || type === 'TABLE_MOVED' || type === 'TABLE_MERGED' || type === 'TABLE_STATUS_CHANGED') {
       if (data && data.table_id) {
         setKitchenAlerts(prev => prev.filter(a => a.table_id !== data.table_id));
       }
-      loadAreas();
-      loadCategories();
+      scheduleLoadAreas();
+      scheduleLoadCategories();
     } else if (type === 'ANNOUNCEMENT_BROADCAST') {
       if (data) {
         sound.kitchenBell();
@@ -530,16 +603,15 @@ export const App: React.FC = () => {
     loadStaffUsers();
     loadActiveAnnouncements();
     fetchLiveTenantFeatures();
+    hydrateAllFeatureStores().catch(() => {});
   }, [isAuthenticated]);
 
   const loadInitialData = async () => {
     setLoadingAreas(true);
     try {
       const areasData = await api.getAreas();
-      if (areasData && Array.isArray(areasData) && areasData.length > 0) {
+      if (Array.isArray(areasData)) {
         setAreas(areasData);
-      } else {
-        throw new Error('Empty areas returned');
       }
     } catch (e) {
       console.warn('Initial areas load error, retrying in 1.5s...', e);
@@ -560,6 +632,7 @@ export const App: React.FC = () => {
     }
 
     await loadCategories();
+    await loadStockApprovals();
 
     try {
       const settingsData = await api.getSettings();
@@ -571,6 +644,55 @@ export const App: React.FC = () => {
     }
   };
 
+  const loadStockApprovals = async () => {
+    try {
+      const approvals = await api.getStockApprovals();
+      setStockApprovalAlerts(Array.isArray(approvals) ? approvals : []);
+    } catch {
+      // Ignore polling error
+    }
+  };
+
+  const handleApproveStockFromAlert = async (alertItem: any) => {
+    if (!alertItem?.item_id) return;
+    sound.beep();
+    setApprovingStockItemId(alertItem.item_id);
+    try {
+      await api.approveOutOfStockItem(alertItem.item_id, currentUser?.name || 'Garson');
+      sound.kitchenBell();
+      setStockApprovalAlerts(prev => prev.filter(a => a.item_id !== alertItem.item_id));
+      addToast(`✅ ${alertItem.product_name} için eksi stok onaylandı, sipariş mutfağa iletildi!`, 'success');
+      await Promise.all([loadStockApprovals(), loadAreas(), loadCategories()]);
+    } catch (err: any) {
+      sound.warning();
+      addToast(err?.message || 'Stok onaylanamadı.', 'error');
+    } finally {
+      setApprovingStockItemId(null);
+    }
+  };
+
+  const handleRejectStockFromAlert = async (alertItem: any) => {
+    if (!alertItem?.item_id) return;
+    sound.beep();
+    setRejectingStockItemId(alertItem.item_id);
+    try {
+      await api.voidItem(
+        alertItem.item_id,
+        'OUT_OF_STOCK',
+        'Stok yetersizliği nedeniyle iptal edildi',
+        currentUser?.name || 'Garson'
+      );
+      setStockApprovalAlerts(prev => prev.filter(a => a.item_id !== alertItem.item_id));
+      addToast(`❌ ${alertItem.product_name} stok yetersizliği nedeniyle iptal edildi.`, 'info');
+      await Promise.all([loadStockApprovals(), loadAreas(), loadCategories()]);
+    } catch (err: any) {
+      sound.warning();
+      addToast(err?.message || 'Sipariş kalemi iptal edilemedi.', 'error');
+    } finally {
+      setRejectingStockItemId(null);
+    }
+  };
+
   const loadAreas = async () => {
     setLoadingAreas(true);
     try {
@@ -578,6 +700,7 @@ export const App: React.FC = () => {
       if (areasData && Array.isArray(areasData)) {
         setAreas(areasData);
       }
+      await loadStockApprovals();
     } catch (e) {
       console.warn('Failed to refresh areas', e);
     } finally {
@@ -719,6 +842,7 @@ export const App: React.FC = () => {
 
     loadInitialData();
     loadStaffUsers();
+    hydrateAllFeatureStores().catch(() => {});
     const restSuffix = restaurant?.name ? ` (${restaurant.name})` : '';
     addToast(`Hoş geldiniz, ${user.name}!${restSuffix}`, 'success');
   };
@@ -797,16 +921,42 @@ export const App: React.FC = () => {
     addToast('Master Admin oturumu sonlandırıldı.', 'info');
   };
 
-  const handleQuickDemoLogin = async () => {
-    try {
-      sound.cashDrawer();
-      const res = await api.login('admin', '123456', true);
-      handleLoginSuccess(res.user, res.access_token);
-    } catch {
+  const handleQuickDemoLogin = () => {
+    sound.beep();
+    if (isAuthenticated) {
+      setViewMode('app');
+      window.location.hash = activeTab || 'tables';
+    } else {
       setViewMode('login');
       window.location.hash = 'login';
+      addToast('Canlı demo için lütfen giriş yapın veya ücretsiz demo talep edin.', 'info');
     }
   };
+
+  // 0. Public Customer Table QR Ordering Mode (Direct access on ?restoran=...&bolge=...&masa=... or ?qr_table=<id>)
+  if (qrCustomerRoute !== null) {
+    return (
+      <Suspense fallback={<TabLoadingFallback />}>
+        <QrMenuSimulator
+          areas={areas}
+          onBuzzerSent={() => {
+            if (isAuthenticated) {
+              loadAreas();
+            }
+          }}
+          customerOnlyMode={true}
+          initialTableId={qrCustomerTableId ?? undefined}
+          initialAreaSlug={qrCustomerRoute.bolge}
+          initialTableSlug={qrCustomerRoute.masa}
+          initialRestaurantSlug={qrCustomerRoute.restoran}
+          restaurantName={
+            (typeof localStorage !== 'undefined' ? localStorage.getItem('boncore_active_restaurant_name') : null) ||
+            undefined
+          }
+        />
+      </Suspense>
+    );
+  }
 
   // 1. SaaS Master Admin Views (Platform Süper Yönetici Paneli)
   if (viewMode === 'master_admin') {
@@ -874,7 +1024,7 @@ export const App: React.FC = () => {
   }
 
   // 3. Login Screen (Giriş Yap Sayfası)
-  const hasAuthToken = localStorage.getItem('boncore_auth') === 'true' || Boolean(localStorage.getItem('boncore_token'));
+  const hasAuthToken = localStorage.getItem('boncore_auth') === 'true' && Boolean(localStorage.getItem('boncore_token'));
   if (viewMode === 'login' || (!isAuthenticated && !hasAuthToken)) {
     return (
       <AdisyoLogin
@@ -891,7 +1041,7 @@ export const App: React.FC = () => {
   const openTablesCount = allTables.filter(t => t && (t.status === 'occupied' || t.status === 'bill_printed' || t.status === 'bill_requested' || t.status === 'waiter_call' || (t.active_order && (t.active_order.grand_total || 0) > 0))).length;
 
   return (
-    <div className="h-[100dvh] w-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans transition-colors duration-200">
+    <div className="h-screen h-[100dvh] w-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans transition-colors duration-200 safari9-app-shell">
       {/* Top Header (BonCore POS v2.0 Bar) */}
       <Header
         activeTab={activeTab}
@@ -920,14 +1070,52 @@ export const App: React.FC = () => {
         setActiveTab={setActiveTab}
         currentUser={currentUser}
         restaurantTitle={restaurantTitle}
-        onOpenQrallModal={() => setIsQrallModalOpen(true)}
-        onOpenOkcModal={() => setIsOkcModalOpen(true)}
         onLogout={handleLogout}
         onOpenLanding={handleGoToLanding}
       />
 
       {/* Main View Area */}
-      <main className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden relative min-h-0 w-full overscroll-contain">
+      <main className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden relative min-h-0 w-full overscroll-contain safari9-main-fill">
+        {stockApprovalAlerts.length > 0 && (
+          <div className="bg-amber-50 dark:bg-amber-950/80 border-b border-amber-300 dark:border-amber-700 px-3 sm:px-5 py-2.5 flex flex-col gap-2 z-30 shrink-0 shadow-sm">
+            {stockApprovalAlerts.map((sa) => (
+              <div
+                key={sa.item_id}
+                className="flex flex-wrap items-center justify-between gap-2 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 rounded-xl px-3 py-2 shadow-xs"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 animate-pulse" />
+                  <div className="text-xs font-extrabold text-slate-900 dark:text-white leading-snug">
+                    <span className="text-rose-700 dark:text-rose-300">
+                      {sa.table_name} • {sa.product_name} ({Number(sa.quantity || 1)}x) istedi ama stok yok! Devam edilsin mi?
+                    </span>
+                    <span className="ml-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                      (Onaylanırsa stok eksiye düşer)
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={approvingStockItemId === sa.item_id || rejectingStockItemId === sa.item_id}
+                    onClick={() => handleApproveStockFromAlert(sa)}
+                    className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-black text-xs shadow-sm transition cursor-pointer shrink-0"
+                  >
+                    {approvingStockItemId === sa.item_id ? 'Onaylanıyor...' : 'Onayla'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={approvingStockItemId === sa.item_id || rejectingStockItemId === sa.item_id}
+                    onClick={() => handleRejectStockFromAlert(sa)}
+                    className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-xs shadow-sm transition cursor-pointer shrink-0"
+                  >
+                    {rejectingStockItemId === sa.item_id ? 'İptal Ediliyor...' : 'Reddet / İptal Et'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         <TabErrorBoundary activeTab={activeTab} onResetTab={() => setActiveTab('tables')}>
         {!canTab(activeTab) ? (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-slate-50 dark:bg-slate-950 select-none">
@@ -963,6 +1151,7 @@ export const App: React.FC = () => {
         {activeTab === 'dashboard' && (
           <AdisyoDashboard
             areas={areas}
+            currentUser={currentUser}
             onNavigateToTables={() => setActiveTab('tables')}
             onNavigateTab={(tab) => setActiveTab(tab)}
           />
@@ -1071,9 +1260,7 @@ export const App: React.FC = () => {
 
         {activeTab === 'product_sales_report' && <ProductSalesReport />}
 
-        {activeTab === 'day_end_report' && <DayEndReport />}
-
-        {activeTab === 'app_store' && <AppStore onNavigateTab={setActiveTab} />}
+        {activeTab === 'day_end_report' && <DayEndReport currentUser={currentUser} />}
 
         {activeTab === 'settings' && (
           <AdisyoSettings
@@ -1098,6 +1285,7 @@ export const App: React.FC = () => {
           <QrMenuSimulator
             areas={areas}
             onBuzzerSent={() => loadAreas()}
+            restaurantName={restaurantTitle}
           />
         )}
 
@@ -1108,10 +1296,6 @@ export const App: React.FC = () => {
         {activeTab === 'reservations' && <ReservationsView />}
 
         {activeTab === 'cost_profit' && <CostProfitWizardView />}
-
-        {activeTab === 'hotel' && <HotelFolioView />}
-
-        {activeTab === 'kiosk' && <KioskCfdView categories={categories} />}
         </Suspense>
         )}
         </TabErrorBoundary>
@@ -1222,18 +1406,6 @@ export const App: React.FC = () => {
           addToast(`Giriş yapıldı: ${user.name}`, 'success');
         }}
         onLogout={handleLogout}
-      />
-
-      <QrallPosModal
-        isOpen={isQrallModalOpen}
-        onClose={() => setIsQrallModalOpen(false)}
-        onSuccessToast={(msg) => addToast(msg, 'success')}
-      />
-
-      <OkcIntegrationModal
-        isOpen={isOkcModalOpen}
-        onClose={() => setIsOkcModalOpen(false)}
-        onSuccessToast={(msg) => addToast(msg, 'success')}
       />
 
       {activeCheckoutOrderId && (

@@ -8,6 +8,16 @@ import {
 import { Category, Product, Ingredient, RecipeItem, ProductRecipe } from '../../types';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
+import {
+  ALLERGEN_OPTIONS,
+  COMPETITOR_EVENT,
+  DIETARY_OPTIONS,
+  EMPTY_PRODUCT_META,
+  ProductExtraMeta,
+  getAllProductExtraMeta,
+  getProductExtraMeta,
+  saveProductExtraMeta,
+} from '../../services/competitorFeatures';
 
 interface ProductDefinitionsProps {
   categories: Category[];
@@ -43,6 +53,14 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
   const [prodShowInPos, setProdShowInPos] = useState<boolean>(true);
   const [prodAllowNegStock, setProdAllowNegStock] = useState<boolean>(false);
   const [prodDescription, setProdDescription] = useState<string>('');
+  const [extraMeta, setExtraMeta] = useState<ProductExtraMeta>({ ...EMPTY_PRODUCT_META });
+  const [allExtraMetaMap, setAllExtraMetaMap] = useState<Record<number, ProductExtraMeta>>(() => getAllProductExtraMeta());
+
+  useEffect(() => {
+    const syncMeta = () => setAllExtraMetaMap(getAllProductExtraMeta());
+    window.addEventListener(COMPETITOR_EVENT, syncMeta);
+    return () => window.removeEventListener(COMPETITOR_EVENT, syncMeta);
+  }, []);
 
   // Recipe (BOM) Editor Fields
   const [recipeItems, setRecipeItems] = useState<RecipeItem[]>([]);
@@ -109,6 +127,37 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     setTimeout(() => setToast(null), 3500);
   };
 
+  const normalizeRecipeItems = (raw: any[]): RecipeItem[] => {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((r: any, idx: number) => {
+      const ingId = Number(r.ingredient_id ?? 0);
+      const ingObj = allIngredients.find(i => i.id === ingId);
+      const amt = Number(r.amount ?? 0);
+      const unitCost = Number(ingObj?.cost_per_unit ?? r.cost_per_unit ?? 0);
+      const computedCost = Number((amt * unitCost).toFixed(2));
+      const rawCost = r.cost ?? r.line_cost;
+      const cost =
+        rawCost !== undefined && rawCost !== null && !Number.isNaN(Number(rawCost))
+          ? Number(Number(rawCost).toFixed(2))
+          : computedCost;
+      return {
+        id: Number(r.id ?? r.recipe_id ?? (ingId || idx + 1)),
+        ingredient_id: ingId,
+        ingredient_name: String(r.ingredient_name ?? ingObj?.name ?? 'Hammadde').trim(),
+        amount: amt,
+        unit: String(r.unit ?? ingObj?.unit ?? 'gr'),
+        current_stock:
+          r.current_stock !== undefined && r.current_stock !== null
+            ? Number(r.current_stock)
+            : ingObj
+              ? Number(ingObj.current_stock)
+              : undefined,
+        waste_percentage: Number(r.waste_percentage ?? 0),
+        cost,
+      };
+    });
+  };
+
   // Open direct site view for a product
   const handleSelectProduct = async (p: Product) => {
     sound.beep();
@@ -129,23 +178,40 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     setProdShowInPos(p.show_in_pos ?? true);
     setProdAllowNegStock(p.allow_negative_stock ?? false);
     setProdDescription(p.description || '');
+    setExtraMeta(getProductExtraMeta(p.id));
 
     // Reset Add Ingredient Form
     setSelectedIngId('');
     setNewIngAmount('');
     setNewIngWaste(0);
 
+    // Pre-populate immediately from product card if available, then refresh from API
+    if (Array.isArray(p.recipe_items) && p.recipe_items.length > 0) {
+      setRecipeItems(normalizeRecipeItems(p.recipe_items));
+    } else {
+      setRecipeItems([]);
+    }
+
     // Load Recipe for this product
     setLoadingRecipe(true);
     try {
-      const recData = await api.getProductRecipe(p.id);
-      if (recData && Array.isArray(recData.recipes)) {
-        setRecipeItems(recData.recipes);
+      const recData: any = await api.getProductRecipe(p.id);
+      const rawRecipes = Array.isArray(recData?.recipes)
+        ? recData.recipes
+        : Array.isArray(recData?.items)
+          ? recData.items
+          : Array.isArray(recData)
+            ? recData
+            : Array.isArray(p.recipe_items)
+              ? p.recipe_items
+              : [];
+      setRecipeItems(normalizeRecipeItems(rawRecipes));
+    } catch (err) {
+      if (Array.isArray(p.recipe_items) && p.recipe_items.length > 0) {
+        setRecipeItems(normalizeRecipeItems(p.recipe_items));
       } else {
         setRecipeItems([]);
       }
-    } catch (err) {
-      setRecipeItems([]);
     } finally {
       setLoadingRecipe(false);
     }
@@ -171,6 +237,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     setProdShowInPos(true);
     setProdAllowNegStock(false);
     setProdDescription('');
+    setExtraMeta({ ...EMPTY_PRODUCT_META });
     setRecipeItems([]);
     setSelectedIngId('');
     setNewIngAmount('');
@@ -199,13 +266,14 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     const lineCost = Number((amt * (ingObj.cost_per_unit || 0)).toFixed(2));
 
     // Check if ingredient already in list
+    const wastePct = Math.max(0, Number(newIngWaste) || 0);
     const existingIdx = recipeItems.findIndex(r => r.ingredient_id === ingObj.id);
     if (existingIdx > -1) {
       setRecipeItems(prev => prev.map((item, idx) => {
         if (idx === existingIdx) {
           const updatedAmt = Number((item.amount + amt).toFixed(3));
           const updatedCost = Number((updatedAmt * (ingObj.cost_per_unit || 0)).toFixed(2));
-          return { ...item, amount: updatedAmt, waste_percentage: 0, cost: updatedCost };
+          return { ...item, amount: updatedAmt, waste_percentage: wastePct, cost: updatedCost };
         }
         return item;
       }));
@@ -216,7 +284,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
         ingredient_name: ingObj.name,
         amount: amt,
         unit: ingObj.unit || 'gr',
-        waste_percentage: 0,
+        waste_percentage: wastePct,
         cost: lineCost
       };
       setRecipeItems(prev => [...prev, newItem]);
@@ -239,13 +307,14 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
     setRecipeItems(prev => prev.map((item, idx) => {
       if (idx === index) {
         const amt = field === 'amount' ? Math.max(0, value) : item.amount;
+        const waste = field === 'waste_percentage' ? Math.max(0, value) : (item.waste_percentage || 0);
         const ingObj = allIngredients.find(i => i.id === item.ingredient_id);
         const costPerUnit = ingObj?.cost_per_unit || 0;
         const lineCost = Number((amt * costPerUnit).toFixed(2));
         return {
           ...item,
           amount: amt,
-          waste_percentage: 0,
+          waste_percentage: waste,
           cost: lineCost
         };
       }
@@ -285,6 +354,10 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
   // Save Product Details & Recipe to Backend
   const handleSaveProductAndRecipe = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loadingRecipe) {
+      showToast('Reçete verisi yükleniyor, lütfen kısa süre bekleyiniz.', 'error');
+      return;
+    }
     if (!prodName.trim()) {
       showToast('Lütfen ürün adını giriniz.', 'error');
       return;
@@ -300,6 +373,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
           category_id: Number(prodCategoryId),
           name: prodName.trim(),
           base_price: Number(prodPrice),
+          vat_rate: Number(prodVatRate),
           stock_quantity: Number(prodStock),
           unit: prodUnit,
           station: prodStation,
@@ -317,6 +391,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
           name: prodName.trim(),
           category_id: Number(prodCategoryId),
           base_price: Number(prodPrice),
+          vat_rate: Number(prodVatRate),
           stock_quantity: Number(prodStock),
           unit: prodUnit,
           station: prodStation,
@@ -337,6 +412,8 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
           waste_percentage: Number(r.waste_percentage || 0)
         }));
         await api.updateProductRecipe(targetProductId, itemsToSave);
+      saveProductExtraMeta(targetProductId, extraMeta);
+      setAllExtraMetaMap(getAllProductExtraMeta());
       }
 
       showToast(`"${prodName}" ürün bilgileri ve reçetesi başarıyla kaydedildi.`, 'success');
@@ -658,7 +735,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
         <div className={`absolute top-4 right-4 z-50 p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-2xl transition-all animate-slideDown ${
           toast.type === 'success' 
             ? 'bg-emerald-600/95 text-white border border-emerald-500' 
-            : 'bg-brand-600/95 text-white border border-brand-500'
+            : 'bg-rose-600/95 text-white border border-rose-500'
         }`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
           <span>{toast.message}</span>
@@ -1019,7 +1096,11 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                       {recipeItems.length > 0 ? 'Stok (Stok / Malzeme)' : 'Stok'}
                     </span>
                     <span className={`text-sm sm:text-base font-black font-mono ${
-                      Number((calculatedBomStock !== null ? calculatedBomStock : prodStock) || 0) > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-brand-600'
+                      Number((calculatedBomStock !== null ? calculatedBomStock : prodStock) || 0) > 0
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : Number((calculatedBomStock !== null ? calculatedBomStock : prodStock) || 0) === 0
+                          ? 'text-amber-600 dark:text-amber-400'
+                          : 'text-rose-600 dark:text-rose-400'
                     }`}>
                       {Number((calculatedBomStock !== null ? calculatedBomStock : prodStock) || 0).toLocaleString('tr-TR')} {prodUnit || 'Adet'}
                     </span>
@@ -1094,7 +1175,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                               </div>
                             </td>
                             <td className="py-2.5 px-2 text-right font-mono font-bold text-blue-600 dark:text-blue-400">
-                              ₺{item.cost.toFixed(2)}
+                              ₺{Number(item.cost || 0).toFixed(2)}
                             </td>
                             <td className="py-2.5 px-2 text-center">
                               <button
@@ -1199,7 +1280,7 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
                   <button
                     type="button"
                     onClick={handleSaveProductAndRecipe}
-                    disabled={saving}
+                    disabled={saving || loadingRecipe}
                     className="px-6 py-2.5 rounded-xl bg-[#338d35] hover:bg-[#28702a] text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
                   >
                     <Save className="w-4 h-4" />
@@ -1497,15 +1578,25 @@ export const ProductDefinitions: React.FC<ProductDefinitionsProps> = ({
 
                   {/* Card Bottom: Price (Left) + Real Stock (Right) */}
                   <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100 dark:border-slate-800/80">
-                    <span className="font-mono font-black text-slate-900 dark:text-white">
-                      ₺{p.base_price.toFixed(2)}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono font-black text-slate-900 dark:text-white">
+                        ₺{p.base_price.toFixed(2)}
+                      </span>
+                      {p.has_recipe && p.recipe_items && p.recipe_items.length > 0 ? (
+                        <span
+                          className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-black"
+                          title={p.recipe_items.map(ri => `${ri.ingredient_name}: ${ri.amount} ${ri.unit}`).join(', ')}
+                        >
+                          BOM: {p.recipe_items.length} Kalem
+                        </span>
+                      ) : null}
+                    </div>
                     <span
                       className={`text-[11px] font-bold font-mono ${
-                        p.allow_negative_stock && (p.stock_quantity ?? 0) < 0
+                        (p.stock_quantity ?? 0) < 0
                           ? 'text-rose-600 dark:text-rose-400 font-black'
-                          : (p.stock_quantity ?? 0) <= 0
-                            ? 'text-brand-600'
+                          : (p.stock_quantity ?? 0) === 0
+                            ? 'text-amber-600 dark:text-amber-400 font-black'
                             : 'text-emerald-600 dark:text-emerald-400'
                       }`}
                     >

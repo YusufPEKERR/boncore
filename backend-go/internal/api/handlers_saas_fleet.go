@@ -102,11 +102,12 @@ func RegisterSaaSFleetRoutes(masterGroup fiber.Router, rootApi fiber.Router, svc
 		var todayOrdersCount int64 = 0
 
 		if tdb, tErr := svc.DBManager.GetTenantDB(tenantCode); tErr == nil && tdb != nil {
-			// Query today's payments
+			dayStartUTC, dayEndUTC := service.TRTodayBounds()
+			// Query today's payments (Turkey timezone UTC+03:00)
 			var revResult struct {
 				Total float64
 			}
-			tdb.Raw("SELECT COALESCE(SUM(amount), 0.0) as total FROM payments WHERE DATE(created_at) = CURRENT_DATE").Scan(&revResult)
+			tdb.Raw("SELECT COALESCE(SUM(amount), 0.0) as total FROM payments WHERE created_at >= ? AND created_at < ?", dayStartUTC, dayEndUTC).Scan(&revResult)
 			liveRevenue = revResult.Total
 
 			// Query active orders
@@ -114,8 +115,8 @@ func RegisterSaaSFleetRoutes(masterGroup fiber.Router, rootApi fiber.Router, svc
 				Where("status IN (?, ?, ?, ?)", "open", "active", "new", "preparing").
 				Count(&activeOrdersCount)
 
-			// Query today's total orders
-			tdb.Raw("SELECT COUNT(*) FROM orders WHERE DATE(created_at) = CURRENT_DATE").Scan(&todayOrdersCount)
+			// Query today's total orders (Turkey timezone UTC+03:00)
+			tdb.Raw("SELECT COUNT(*) FROM orders WHERE created_at >= ? AND created_at < ?", dayStartUTC, dayEndUTC).Scan(&todayOrdersCount)
 
 			// Query occupied tables
 			tdb.Model(&models.Table{}).
@@ -258,10 +259,11 @@ func RegisterSaaSFleetRoutes(masterGroup fiber.Router, rootApi fiber.Router, svc
 				todayOrders = m.TodayOrdersCount
 			} else {
 				if tdb, tErr := svc.DBManager.GetTenantDB(t.Code); tErr == nil && tdb != nil {
+					dayStartUTC, dayEndUTC := service.TRTodayBounds()
 					var revResult struct {
 						Total float64
 					}
-					tdb.Raw("SELECT COALESCE(SUM(amount), 0.0) as total FROM payments WHERE DATE(created_at) = CURRENT_DATE").Scan(&revResult)
+					tdb.Raw("SELECT COALESCE(SUM(amount), 0.0) as total FROM payments WHERE created_at >= ? AND created_at < ?", dayStartUTC, dayEndUTC).Scan(&revResult)
 					liveRev = revResult.Total
 
 					var aOrders int64
@@ -273,7 +275,7 @@ func RegisterSaaSFleetRoutes(masterGroup fiber.Router, rootApi fiber.Router, svc
 					activeTables = int(aTables)
 
 					var tOrders int64
-					tdb.Raw("SELECT COUNT(*) FROM orders WHERE DATE(created_at) = CURRENT_DATE").Scan(&tOrders)
+					tdb.Raw("SELECT COUNT(*) FROM orders WHERE created_at >= ? AND created_at < ?", dayStartUTC, dayEndUTC).Scan(&tOrders)
 					todayOrders = int(tOrders)
 				}
 			}

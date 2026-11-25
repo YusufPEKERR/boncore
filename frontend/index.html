@@ -26,6 +26,32 @@
   <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased select-none overflow-x-hidden min-h-screen w-full">
     <div id="root" class="min-h-screen w-full"></div>
     <script>
+      (function () {
+        var rootEl = document.getElementById('root');
+        function showBootError(msg) {
+          if (!rootEl || rootEl.childNodes.length > 0) return;
+          rootEl.innerHTML =
+            '<div style="padding:24px;font-family:-apple-system,sans-serif;max-width:520px;margin:40px auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;color:#0f172a;">' +
+            '<h2 style="margin:0 0 8px;font-size:18px;color:#dc2626;">BonCore POS Baslatilamadi</h2>' +
+            '<p style="margin:0 0 12px;font-size:13px;color:#475569;">Tarayici uyumluluk veya yukleme hatasi olustu:</p>' +
+            '<pre style="white-space:pre-wrap;word-break:break-word;background:#f8fafc;padding:10px;border-radius:8px;font-size:12px;color:#334155;">' +
+            String(msg || 'Bilinmeyen hata').replace(/[&<>]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]; }) +
+            '</pre>' +
+            '<button onclick="location.reload()" style="margin-top:12px;padding:10px 18px;border:0;border-radius:10px;background:#338d35;color:#fff;font-weight:700;cursor:pointer;">Yeniden Dene</button>' +
+            '</div>';
+        }
+        window.__boncoreShowBootError = showBootError;
+        window.addEventListener('error', function (ev) {
+          if (ev && ev.message) showBootError(ev.message);
+        });
+        window.addEventListener('unhandledrejection', function (ev) {
+          var reason = ev && ev.reason;
+          var msg = (reason && (reason.stack || reason.message)) || reason;
+          if (msg) showBootError(msg);
+        });
+      })();
+    </script>
+    <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function() {
           navigator.serviceWorker.register('/sw.js', { scope: '/' })

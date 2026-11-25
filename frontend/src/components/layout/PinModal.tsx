@@ -80,26 +80,7 @@ export const PinModal: React.FC<PinModalProps> = ({
   };
 
   const verifyPin = async (pinToVerify: string) => {
-    // 1. Check currently selected staff user
-    if (selectedStaff && (selectedStaff.pin_code === pinToVerify || (!selectedStaff.pin_code && pinToVerify === '1234'))) {
-      sound.beep();
-      onLoginSuccess(selectedStaff);
-      onClose();
-      setPin('');
-      return;
-    }
-
-    // 2. Check if entered PIN matches any other active staff
-    const matchingStaff = staff.find(s => s.pin_code === pinToVerify && s.is_active);
-    if (matchingStaff) {
-      sound.beep();
-      onLoginSuccess(matchingStaff);
-      onClose();
-      setPin('');
-      return;
-    }
-
-    // 3. Fallback: query backend login-pin endpoint
+    setLoading(true);
     try {
       const user = await api.loginByPin(pinToVerify);
       if (user) {
@@ -110,7 +91,9 @@ export const PinModal: React.FC<PinModalProps> = ({
         return;
       }
     } catch {
-      // Backend also rejected PIN
+      // Backend rejected PIN
+    } finally {
+      setLoading(false);
     }
 
     sound.warning();

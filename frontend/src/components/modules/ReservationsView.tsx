@@ -131,7 +131,10 @@ export const ReservationsView: React.FC = () => {
     }
   };
 
-  const handleDelete = async (resId: string) => {
+  const handleDelete = async (resId: string, guestName?: string) => {
+    if (!window.confirm(`"${guestName || 'Bu misafir'}" rezervasyonunu silmek istediğinize emin misiniz?`)) {
+      return;
+    }
     try {
       sound.beep();
       await api.deleteReservation(resId);
@@ -154,7 +157,7 @@ export const ReservationsView: React.FC = () => {
               Masa Rezervasyon & Misafir Planlama
             </h1>
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-indigo-600 text-white uppercase">
-              Adisyo Rezervasyon
+              BonCore Rezervasyon
             </span>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -244,11 +247,19 @@ export const ReservationsView: React.FC = () => {
                     ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
                     : res.status === 'seated'
                     ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                    : res.status === 'cancelled'
-                    ? 'bg-emerald-100 text-brand-700 dark:bg-emerald-950 dark:text-emerald-300'
+                    : res.status === 'cancelled' || (res.status as string) === 'no_show'
+                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300'
                     : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                 }`}>
-                  {res.status === 'confirmed' ? 'Onaylı' : res.status === 'seated' ? 'Masada' : res.status === 'cancelled' ? 'İptal' : 'Tamamlandı'}
+                  {res.status === 'confirmed'
+                    ? 'Onaylı'
+                    : res.status === 'seated'
+                    ? 'Masada'
+                    : res.status === 'cancelled'
+                    ? 'İptal'
+                    : (res.status as string) === 'no_show'
+                    ? 'Gelmedi'
+                    : 'Tamamlandı'}
                 </span>
               </div>
 
@@ -297,15 +308,15 @@ export const ReservationsView: React.FC = () => {
                 {res.status !== 'cancelled' && (
                   <button
                     onClick={() => handleStatusChange(res.id, 'cancelled')}
-                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-emerald-50 dark:bg-slate-800 text-slate-600 hover:text-brand-600 font-bold transition cursor-pointer"
+                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/50 text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 font-bold transition cursor-pointer"
                   >
                     İptal Et
                   </button>
                 )}
               </div>
               <button
-                onClick={() => handleDelete(res.id)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-brand-600 transition cursor-pointer"
+                onClick={() => handleDelete(res.id, res.guest_name)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 transition cursor-pointer"
                 title="Sil"
               >
                 <Trash2 className="w-4 h-4" />

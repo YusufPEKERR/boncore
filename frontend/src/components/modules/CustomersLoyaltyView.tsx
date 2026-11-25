@@ -45,7 +45,7 @@ export const CustomersLoyaltyView: React.FC = () => {
     phone: '',
     email: '',
     tier: 'Standart',
-    points: 100,
+    points: 0,
     balance: 0,
     notes: ''
   });
@@ -114,7 +114,7 @@ export const CustomersLoyaltyView: React.FC = () => {
       sound.cashDrawer();
       await api.createCustomer(newCustomer);
       setIsAddModalOpen(false);
-      setNewCustomer({ name: '', phone: '', email: '', tier: 'Standart', points: 100, balance: 0, notes: '' });
+      setNewCustomer({ name: '', phone: '', email: '', tier: 'Standart', points: 0, balance: 0, notes: '' });
       await loadData();
       showToast('Yeni müşteri ve sadakat kartı başarıyla oluşturuldu!');
     } catch (err) {
@@ -145,7 +145,10 @@ export const CustomersLoyaltyView: React.FC = () => {
     }
   };
 
-  const handleDeleteCustomer = async (id: string) => {
+  const handleDeleteCustomer = async (id: string, name?: string) => {
+    if (!window.confirm(`"${name || 'Bu müşteri'}" kaydını silmek istediğinize emin misiniz?`)) {
+      return;
+    }
     try {
       sound.beep();
       await api.deleteCustomer(id);
@@ -188,7 +191,7 @@ export const CustomersLoyaltyView: React.FC = () => {
               Müşteri Sadakat (CRM), Cari & Kampanya Yönetimi
             </h1>
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-brand-600 text-white uppercase">
-              Adisyo Pro CRM
+              BonCore CRM
             </span>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -245,12 +248,12 @@ export const CustomersLoyaltyView: React.FC = () => {
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
           <div>
             <div className="text-[11px] font-bold text-slate-400 uppercase">Açık Veresiye (Cari Alacak)</div>
-            <div className="text-2xl font-black text-brand-600 dark:text-emerald-400 mt-1">
+            <div className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1">
               ₺{Number(summary?.total_credit_receivable || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
             </div>
-            <div className="text-[11px] text-brand-500 font-semibold mt-0.5">Tahsilat Bekleyen Bakiye</div>
+            <div className="text-[11px] text-rose-500 dark:text-rose-400 font-semibold mt-0.5">Tahsilat Bekleyen Bakiye</div>
           </div>
-          <div className="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-brand-600 flex items-center justify-center">
+          <div className="w-11 h-11 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center">
             <Wallet className="w-5 h-5" />
           </div>
         </div>
@@ -416,7 +419,7 @@ export const CustomersLoyaltyView: React.FC = () => {
                     <td className="py-3.5 px-4">
                       <span className={`font-black text-sm ${
                         Number(c.balance || 0) < 0
-                          ? 'text-brand-600 dark:text-emerald-400'
+                          ? 'text-rose-600 dark:text-rose-400'
                           : Number(c.balance || 0) > 0
                           ? 'text-emerald-600 dark:text-emerald-400'
                           : 'text-slate-500'
@@ -424,7 +427,7 @@ export const CustomersLoyaltyView: React.FC = () => {
                         ₺{Number(c.balance || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
                       </span>
                       {Number(c.balance || 0) < 0 && (
-                        <div className="text-[10px] text-brand-500 font-bold">Borçlu (Veresiye)</div>
+                        <div className="text-[10px] text-rose-600 dark:text-rose-400 font-bold">Borçlu (Veresiye)</div>
                       )}
                     </td>
                     <td className="py-3.5 px-4">
@@ -445,8 +448,8 @@ export const CustomersLoyaltyView: React.FC = () => {
                         Cari / Puan İşlemi
                       </button>
                       <button
-                        onClick={() => handleDeleteCustomer(c.id)}
-                        className="p-1.5 rounded-xl text-slate-400 hover:text-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                        onClick={() => handleDeleteCustomer(c.id, c.name)}
+                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
                         title="Sil"
                       >
                         <Trash2 className="w-4 h-4 inline" />
@@ -579,7 +582,7 @@ export const CustomersLoyaltyView: React.FC = () => {
                   type="button"
                   onClick={() => setTxType('add_debt')}
                   className={`p-2.5 rounded-xl font-bold border text-center cursor-pointer ${
-                    txType === 'add_debt' ? 'bg-brand-600 text-white border-brand-600' : 'border-slate-200 dark:border-slate-700'
+                    txType === 'add_debt' ? 'bg-rose-600 text-white border-rose-600' : 'border-slate-200 dark:border-slate-700'
                   }`}
                 >
                   Veresiye Borç Yaz (-)

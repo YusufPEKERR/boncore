@@ -195,7 +195,7 @@ CREATE INDEX IF NOT EXISTS idx_payments_order_id ON payments (order_id);
 CREATE TABLE IF NOT EXISTS cash_registers (
     id SERIAL PRIMARY KEY,
     status VARCHAR(30) DEFAULT 'open',
-    opening_float DOUBLE PRECISION DEFAULT 500.0,
+    opening_float DOUBLE PRECISION DEFAULT 0.0,
     total_cash DOUBLE PRECISION DEFAULT 0.0,
     total_card DOUBLE PRECISION DEFAULT 0.0,
     total_sodexo DOUBLE PRECISION DEFAULT 0.0,

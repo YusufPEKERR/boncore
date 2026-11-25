@@ -50,19 +50,74 @@ const formatPaymentLabel = (raw?: string): string => {
   return val || 'Nakit';
 };
 
+const escapeHtml = (val: unknown): string =>
+  String(val ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const mapHeaderSizePx = (size?: string): string => {
+  if (size === 'xlarge') return '17px';
+  if (size === 'medium') return '13px';
+  return '15px';
+};
+
+const mapBodySizePx = (size?: string): string => {
+  if (size === 'large') return '12.5px';
+  if (size === 'small') return '10px';
+  return '11px';
+};
+
+const mapSubSizePx = (size?: string): string => {
+  if (size === 'normal') return '10.5px';
+  if (size === 'xs') return '8.5px';
+  return '9.5px';
+};
+
+const mapFontWeightCss = (weight?: string, fallback: string = '400'): string => {
+  if (weight === 'black') return '900';
+  if (weight === 'extrabold') return '800';
+  if (weight === 'bold') return '700';
+  if (weight === 'semibold') return '600';
+  if (weight === 'normal') return '400';
+  return fallback;
+};
+
+const computeVatBreakdown = (doc: any, grandTotalNum: number) => {
+  const summary = doc?.vat_summary;
+  const hasExplicitSummary = Boolean(
+    summary && (summary.vat_1 !== undefined || summary.vat_10 !== undefined || summary.vat_20 !== undefined)
+  );
+  const vat1 = Number(summary?.vat_1?.tax ?? 0);
+  const vat10 = Number(
+    summary?.vat_10?.tax !== undefined
+      ? summary.vat_10.tax
+      : hasExplicitSummary
+        ? 0
+        : (grandTotalNum * 10) / 110
+  );
+  const vat20 = Number(summary?.vat_20?.tax ?? 0);
+  const totalTax = Number((vat1 + vat10 + vat20).toFixed(2));
+  return { vat1, vat10, vat20, totalTax };
+};
+
 const buildThermalRawText = (
   doc: any,
   headerTitle: string,
   formattedDate: string,
   formattedTime: string,
-  vat10Tax: number,
+  vatBreakdown: { vat1: number; vat10: number; vat20: number; totalTax: number },
   footerMsg: string,
   footerSub: string,
-  customWidth?: number
+  customWidth?: number,
+  design?: any
 ): string => {
   let W = customWidth || 42;
   if (W < 28 || W > 56) W = 42;
-  const line = '-'.repeat(W);
+  const dividerChar = design?.divider_style === 'dotted' ? '.' : '-';
+  const line = dividerChar.repeat(W);
   const padLR = (left: string, right: string) => {
     const space = Math.max(1, W - left.length - right.length);
     return left + ' '.repeat(space) + right;
@@ -75,10 +130,46 @@ const buildThermalRawText = (
 
   const lines: string[] = [];
   lines.push('='.repeat(W));
+  if (design?.show_logo) {
+    lines.push(centerText('[ BONCORE ]'));
+  }
   lines.push(centerText(headerTitle));
+  if (design?.header_sub) {
+    lines.push(centerText(String(design.header_sub)));
+  }
+  if (design?.show_vkn && doc.vkn) {
+    lines.push(centerText(`VKN: ${doc.vkn}`));
+  }
+  if (design?.show_address_phone !== false) {
+    if (doc.address) lines.push(centerText(String(doc.address)));
+    if (doc.phone) lines.push(centerText(`Tel: ${doc.phone}`));
+  }
+  if (design?.show_e_adisyon_title) {
+    lines.push(centerText(String(design.e_adisyon_title_text || 'E-ADİSYON FİŞİ')));
+  }
   lines.push('='.repeat(W));
-  lines.push(padLR(`Masa: ${doc.table_name || 'Masa'}`, `Tarih: ${formattedDate}`));
-  lines.push(padLR(`Garson: ${doc.waiter_name || '-'}`, `Saat: ${formattedTime}`));
+  if (design?.show_order_no !== false && doc.doc_no) {
+    lines.push(`Fiş No: ${doc.doc_no}`);
+  }
+  const showTable = design?.show_table_name !== false;
+  const showDate = design?.show_date_time !== false;
+  if (showTable || showDate) {
+    lines.push(
+      padLR(
+        showTable ? `Masa: ${doc.table_name || 'Masa'}` : '',
+        showDate ? `Tarih: ${formattedDate}` : ''
+      )
+    );
+  }
+  const showWaiter = design?.show_waiter_name !== false;
+  if (showWaiter || showDate) {
+    lines.push(
+      padLR(
+        showWaiter ? `Garson: ${doc.waiter_name || '-'}` : '',
+        showDate ? `Saat: ${formattedTime}` : ''
+      )
+    );
+  }
   lines.push(`Kasiyer: ${doc.cashier_name || 'Kasiyer'}`);
   lines.push(line);
 
@@ -135,11 +226,16 @@ const buildThermalRawText = (
   if (Number(doc.treat || 0) > 0) {
     lines.push(padLR('İkram:', `-₺${Number(doc.treat).toFixed(2)}`));
   }
-  lines.push(padLR('KDV (%10 Dahil):', `₺${vat10Tax.toFixed(2)}`));
+  if (design?.show_vat_breakdown !== false) {
+    if (vatBreakdown.vat1 > 0) lines.push(padLR('KDV (%1 Dahil):', `₺${vatBreakdown.vat1.toFixed(2)}`));
+    if (vatBreakdown.vat10 > 0) lines.push(padLR('KDV (%10 Dahil):', `₺${vatBreakdown.vat10.toFixed(2)}`));
+    if (vatBreakdown.vat20 > 0) lines.push(padLR('KDV (%20 Dahil):', `₺${vatBreakdown.vat20.toFixed(2)}`));
+    lines.push(padLR('Toplam KDV:', `₺${vatBreakdown.totalTax.toFixed(2)}`));
+  }
   lines.push(line);
   lines.push(padLR('GENEL TOPLAM:', `₺${Number(doc.grand_total || 0).toFixed(2)}`));
 
-  if (Array.isArray(doc.payments) && doc.payments.length > 0) {
+  if (design?.show_payment_details !== false && Array.isArray(doc.payments) && doc.payments.length > 0) {
     lines.push(line);
     doc.payments.forEach((p: any) => {
       const pLbl = formatPaymentLabel(p.label || p.method);
@@ -147,7 +243,18 @@ const buildThermalRawText = (
     });
   }
 
+  if (design?.show_qr_code && doc.qr_code_content) {
+    lines.push(line);
+    lines.push(centerText('E-ADİSYON GİB QR KODU'));
+    lines.push(String(doc.qr_code_content));
+  }
+
   lines.push(line);
+  if (design?.custom_note) lines.push(centerText(String(design.custom_note)));
+  if (design?.wifi_name) {
+    lines.push(centerText(`WiFi: ${design.wifi_name}${design.wifi_password ? ` • Şifre: ${design.wifi_password}` : ''}`));
+  }
+  if (design?.instagram) lines.push(centerText(`Instagram: ${design.instagram}`));
   if (footerMsg) lines.push(centerText(footerMsg));
   if (footerSub) lines.push(centerText(footerSub));
   lines.push('\n\n\n');
@@ -181,29 +288,15 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
   const docHeader = doc.company_title && doc.company_title !== 'BONCORE RESTORAN' && doc.company_title !== 'BONCORE RESTORAN & LOUNGE'
     ? doc.company_title
     : '';
-  const headerTitle = (customHeader || activeRestName || docHeader || 'FATİH ÇİFTLİĞİ').toLocaleUpperCase('tr-TR');
+  const headerTitle = (customHeader || activeRestName || docHeader || 'BONCORE POS').toLocaleUpperCase('tr-TR');
 
   const formattedDate = formatReceiptDate(doc.date);
   const formattedTime = formatReceiptTime(doc.time);
   const grandTotalNum = Number(doc.grand_total || 0);
-  const vat10Tax = Number(
-    doc.vat_summary?.vat_10?.tax !== undefined
-      ? doc.vat_summary.vat_10.tax
-      : (grandTotalNum * 10) / 110
-  );
+  const vatBreakdown = computeVatBreakdown(doc, grandTotalNum);
 
   const footerMsg = design?.footer_message || 'TEŞEKKÜR EDERİZ • AFİYET OLSUN!';
   const footerSub = design?.footer_sub || 'Mali değeri yoktur, bilgi fişidir.';
-
-  const rawText = buildThermalRawText(
-    doc,
-    headerTitle,
-    formattedDate,
-    formattedTime,
-    vat10Tax,
-    footerMsg,
-    footerSub
-  );
 
   // 1. Kasa bilgisayarında kayıtlı FİZİKSEL termal yazıcılar varsa her yazıcının kendi genişliğine göre formatlayıp yazdır
   const selectedPrinters = (targetPrinters && targetPrinters.length > 0)
@@ -215,17 +308,17 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
   if (physicalPrinters.length > 0) {
     let anySuccess = false;
     for (const prKey of physicalPrinters) {
-      // Her yazıcının kayıtlı genişliğine bak
       const printerLineWidth = localHardware.getPrinterLineWidth(prKey);
       const rawTextForPrinter = buildThermalRawText(
         doc,
         headerTitle,
         formattedDate,
         formattedTime,
-        vat10Tax,
+        vatBreakdown,
         footerMsg,
         footerSub,
-        printerLineWidth
+        printerLineWidth,
+        design
       );
       try {
         const res = await localHardware.printReceipt({
@@ -264,6 +357,15 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
     const configuredPaperWidth = localHardware.getPrinterPaperWidth(defaultPrKey);
     const paperWidth = design?.paper_width || configuredPaperWidth || '80mm';
     const bodyWidth = paperWidth === '58mm' ? '50mm' : '74mm';
+    const headerFontPx = mapHeaderSizePx(design?.header_size);
+    const headerWeightCss = mapFontWeightCss(design?.header_weight, '800');
+    const bodyFontPx = mapBodySizePx(design?.body_size);
+    const bodyWeightCss = mapFontWeightCss(design?.body_weight, '600');
+    const subFontPx = mapSubSizePx(design?.sub_size);
+    const subWeightCss = mapFontWeightCss(design?.sub_weight, '600');
+    const totalWeightCss = mapFontWeightCss(design?.total_weight, '900');
+    const dividerStyleCss = design?.divider_style === 'dashed' || design?.divider_style === 'dotted' ? design.divider_style : 'solid';
+    const dividerThicknessPx = Math.max(1, Math.min(4, Number(design?.divider_thickness ?? 2)));
 
     const itemsRows = (doc.items || [])
       .map((it: any) => {
@@ -273,32 +375,43 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
         return `
         <div class="item-block">
           <div class="item-row">
-            <span class="col-name">${it.product_name}</span>
-            <span class="col-qty">${qtyDisplay}</span>
+            <span class="col-name">${escapeHtml(it.product_name)}</span>
+            <span class="col-qty">${escapeHtml(qtyDisplay)}</span>
             <span class="col-unit">${Number(it.unit_price || 0).toFixed(2)}</span>
             <span class="col-total">${Number(it.total_price || 0).toFixed(2)}</span>
           </div>
-          ${variant ? `<div class="item-variant">(${variant})</div>` : ''}
+          ${variant ? `<div class="item-variant">(${escapeHtml(variant)})</div>` : ''}
         </div>`;
       })
       .join('');
 
-    const paymentsRows = (doc.payments || [])
-      .map((p: any) => {
-        const pLbl = formatPaymentLabel(p.label || p.method);
-        return `
+    const paymentsRows = design?.show_payment_details === false
+      ? ''
+      : (doc.payments || [])
+          .map((p: any) => {
+            const pLbl = formatPaymentLabel(p.label || p.method);
+            return `
         <div class="row pay-row">
-          <span>✓ ÖDEME (${pLbl}):</span>
+          <span>✓ ÖDEME (${escapeHtml(pLbl)}):</span>
           <span>₺${Number(p.amount || 0).toFixed(2)}</span>
         </div>`;
-      })
-      .join('');
+          })
+          .join('');
+
+    const showAddressPhone = design?.show_address_phone !== false;
+    const vatRowsHtml = design?.show_vat_breakdown === false
+      ? ''
+      : `
+        ${vatBreakdown.vat1 > 0 ? `<div class="row vat-row"><span>KDV (%1 Dahil):</span><span>₺${vatBreakdown.vat1.toFixed(2)}</span></div>` : ''}
+        ${vatBreakdown.vat10 > 0 ? `<div class="row vat-row"><span>KDV (%10 Dahil):</span><span>₺${vatBreakdown.vat10.toFixed(2)}</span></div>` : ''}
+        ${vatBreakdown.vat20 > 0 ? `<div class="row vat-row"><span>KDV (%20 Dahil):</span><span>₺${vatBreakdown.vat20.toFixed(2)}</span></div>` : ''}
+        <div class="row vat-row"><span>Toplam KDV:</span><span>₺${vatBreakdown.totalTax.toFixed(2)}</span></div>`;
 
     const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Adisyo Fişi - ${doc.doc_no || ''}</title>
+  <title>BonCore Adisyon Fişi - ${escapeHtml(doc.doc_no || '')}</title>
   <style>
     @page { size: ${paperWidth} auto; margin: 3mm; }
     * { box-sizing: border-box; }
@@ -309,24 +422,52 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
       padding: 8px 6px;
       color: #0f172a;
       background: #ffffff;
-      font-size: 12px;
+      font-size: ${bodyFontPx};
+      font-weight: ${bodyWeightCss};
       line-height: 1.45;
     }
     .center { text-align: center; }
+    .receipt-logo {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border: 2px solid #0f172a;
+      border-radius: 6px;
+      font-weight: 900;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
     .receipt-header {
-      font-size: 17px;
-      font-weight: 800;
+      font-size: ${headerFontPx};
+      font-weight: ${headerWeightCss};
       letter-spacing: 0.04em;
       text-transform: uppercase;
-      margin-bottom: 8px;
+      margin-bottom: 2px;
+    }
+    .header-sub {
+      font-size: ${subFontPx};
+      font-weight: ${subWeightCss};
+      color: #475569;
+      margin-bottom: 3px;
+    }
+    .e-adisyon-badge {
+      display: inline-block;
+      border: 1px solid #0f172a;
+      padding: 1px 6px;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      margin-top: 3px;
     }
     .divider {
-      border-top: 2px solid #0f172a;
+      border-top: ${dividerThicknessPx}px ${dividerStyleCss} #0f172a;
       margin: 8px 0;
     }
     .meta-section {
-      font-size: 11px;
-      font-weight: 600;
+      font-size: ${subFontPx};
+      font-weight: ${subWeightCss};
     }
     .row {
       display: flex;
@@ -337,7 +478,7 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
     .table-header {
       display: flex;
       justify-content: space-between;
-      font-size: 11px;
+      font-size: ${subFontPx};
       font-weight: 700;
       border-bottom: 1px solid #cbd5e1;
       padding-bottom: 4px;
@@ -353,64 +494,89 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
     .item-row {
       display: flex;
       justify-content: space-between;
-      font-size: 12px;
-      font-weight: 600;
+      font-size: ${bodyFontPx};
+      font-weight: ${bodyWeightCss};
     }
     .item-variant {
-      font-size: 10.5px;
+      font-size: ${subFontPx};
       color: #64748b;
       padding-left: 6px;
       margin-top: 1px;
     }
     .subtotals {
-      font-size: 11px;
-      font-weight: 600;
+      font-size: ${subFontPx};
+      font-weight: ${subWeightCss};
     }
     .vat-row {
-      color: #64748b;
+      color: #475569;
     }
     .receipt-total {
       display: flex;
       justify-content: space-between;
       align-items: baseline;
       font-size: 15px;
-      font-weight: 900;
+      font-weight: ${totalWeightCss};
       padding: 2px 0;
     }
     .pay-row {
-      font-size: 11px;
+      font-size: ${subFontPx};
       font-weight: 700;
       margin: 3px 0;
     }
+    .qr-box {
+      margin-top: 6px;
+      padding: 4px;
+      border: 1px dashed #94a3b8;
+      font-size: 8px;
+      word-break: break-all;
+      color: #334155;
+    }
+    .extra-note {
+      font-size: ${subFontPx};
+      font-weight: ${subWeightCss};
+      color: #334155;
+      margin-top: 3px;
+    }
     .footer-msg {
-      font-size: 11px;
+      font-size: ${subFontPx};
       font-weight: 800;
       letter-spacing: 0.03em;
       text-transform: uppercase;
       margin-top: 4px;
     }
     .footer-sub {
-      font-size: 10.5px;
-      font-weight: 600;
+      font-size: ${subFontPx};
+      font-weight: ${subWeightCss};
       color: #64748b;
       margin-top: 2px;
     }
   </style>
 </head>
 <body>
-  <div class="center receipt-header">${headerTitle}</div>
+  <div class="center">
+    ${design?.show_logo ? '<div class="receipt-logo">B</div>' : ''}
+    <div class="receipt-header">${escapeHtml(headerTitle)}</div>
+    ${design?.header_sub ? `<div class="header-sub">${escapeHtml(design.header_sub)}</div>` : ''}
+    ${design?.show_vkn && doc.vkn ? `<div class="header-sub">VKN: ${escapeHtml(doc.vkn)}</div>` : ''}
+    ${showAddressPhone && doc.address ? `<div class="header-sub">${escapeHtml(doc.address)}</div>` : ''}
+    ${showAddressPhone && doc.phone ? `<div class="header-sub">Tel: ${escapeHtml(doc.phone)}</div>` : ''}
+    ${design?.show_e_adisyon_title ? `<div class="e-adisyon-badge">${escapeHtml(design.e_adisyon_title_text || 'E-ADİSYON FİŞİ')}</div>` : ''}
+  </div>
   <div class="divider"></div>
   <div class="meta-section">
+    ${design?.show_order_no !== false && doc.doc_no ? `<div class="row"><span>Fiş No: ${escapeHtml(doc.doc_no)}</span><span></span></div>` : ''}
+    ${(design?.show_table_name !== false || design?.show_date_time !== false) ? `
     <div class="row">
-      <span>Masa: ${doc.table_name || 'Masa'}</span>
-      <span>Tarih: ${formattedDate}</span>
-    </div>
+      <span>${design?.show_table_name !== false ? `Masa: ${escapeHtml(doc.table_name || 'Masa')}` : ''}</span>
+      <span>${design?.show_date_time !== false ? `Tarih: ${escapeHtml(formattedDate)}` : ''}</span>
+    </div>` : ''}
+    ${(design?.show_waiter_name !== false || design?.show_date_time !== false) ? `
     <div class="row">
-      <span>Garson: ${doc.waiter_name || '-'}</span>
-      <span>Saat: ${formattedTime}</span>
-    </div>
+      <span>${design?.show_waiter_name !== false ? `Garson: ${escapeHtml(doc.waiter_name || '-')}` : ''}</span>
+      <span>${design?.show_date_time !== false ? `Saat: ${escapeHtml(formattedTime)}` : ''}</span>
+    </div>` : ''}
     <div class="row">
-      <span>Kasiyer: ${doc.cashier_name || 'Kasiyer'}</span>
+      <span>Kasiyer: ${escapeHtml(doc.cashier_name || 'Kasiyer')}</span>
       <span></span>
     </div>
   </div>
@@ -431,7 +597,7 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
     ${Number(doc.service_charge || 0) > 0 ? `<div class="row"><span>Servis Bedeli:</span><b>₺${Number(doc.service_charge).toFixed(2)}</b></div>` : ''}
     ${Number(doc.discount || 0) > 0 ? `<div class="row"><span>İndirim:</span><b>-₺${Number(doc.discount).toFixed(2)}</b></div>` : ''}
     ${Number(doc.treat || 0) > 0 ? `<div class="row"><span>İkram:</span><b>-₺${Number(doc.treat).toFixed(2)}</b></div>` : ''}
-    <div class="row vat-row"><span>KDV (%10 Dahil):</span><span>₺${vat10Tax.toFixed(2)}</span></div>
+    ${vatRowsHtml}
   </div>
   <div class="divider"></div>
   <div class="receipt-total">
@@ -439,9 +605,13 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
     <span>₺${grandTotalNum.toFixed(2)}</span>
   </div>
   ${paymentsRows ? `<div class="divider"></div><div>${paymentsRows}</div>` : ''}
+  ${design?.show_qr_code && doc.qr_code_content ? `<div class="center qr-box"><strong>GİB E-ADİSYON QR</strong><br/>${escapeHtml(doc.qr_code_content)}</div>` : ''}
   <div class="divider"></div>
-  <div class="center footer-msg">${footerMsg}</div>
-  ${footerSub ? `<div class="center footer-sub">${footerSub}</div>` : ''}
+  ${design?.custom_note ? `<div class="center extra-note">${escapeHtml(design.custom_note)}</div>` : ''}
+  ${design?.wifi_name ? `<div class="center extra-note">WiFi: ${escapeHtml(design.wifi_name)}${design.wifi_password ? ` • Şifre: ${escapeHtml(design.wifi_password)}` : ''}</div>` : ''}
+  ${design?.instagram ? `<div class="center extra-note">Instagram: ${escapeHtml(design.instagram)}</div>` : ''}
+  <div class="center footer-msg">${escapeHtml(footerMsg)}</div>
+  ${footerSub ? `<div class="center footer-sub">${escapeHtml(footerSub)}</div>` : ''}
 </body>
 </html>`;
 
@@ -478,7 +648,7 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
     try {
       const [doc, slip] = await Promise.all([
         api.getEAdisyon(id),
-        api.getEscposReceipt(id)
+        api.getEscposReceipt(id, true)
       ]);
       setFiscalDoc(doc);
       setEscposText(slip.slip_text);
@@ -491,14 +661,22 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
 
   if (!isOpen || !fiscalDoc) return null;
 
-  const handleDownloadXml = () => {
+  const handleDownloadXml = async () => {
     sound.beep();
-    window.open(`/api/fiscal/e-adisyon/${orderId}/xml`, '_blank');
+    try {
+      await api.downloadAuthenticatedFile(`/api/fiscal/e-adisyon/${orderId}/xml`, `e-adisyon-${orderId}.xml`);
+    } catch (e) {
+      console.warn('XML download failed', e);
+    }
   };
 
-  const handleDownloadPdf = () => {
+  const handleDownloadPdf = async () => {
     sound.beep();
-    window.open(`/api/fiscal/e-adisyon/${orderId}/pdf`, '_blank');
+    try {
+      await api.downloadAuthenticatedFile(`/api/fiscal/e-adisyon/${orderId}/pdf`, `e-adisyon-${orderId}.pdf`, true);
+    } catch (e) {
+      console.warn('PDF download failed', e);
+    }
   };
 
   return (
@@ -549,7 +727,13 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
               <div className="border-b-2 border-slate-900 pb-3 flex items-start justify-between">
                 <div>
                   <div className="font-black text-sm uppercase tracking-wider">{fiscalDoc.company_title}</div>
-                  <div className="text-[10px] text-slate-600">VKN: {fiscalDoc.vkn} • Kadıköy / İSTANBUL</div>
+                  <div className="text-[10px] text-slate-600">
+                    {[
+                      fiscalDoc.vkn ? `VKN: ${fiscalDoc.vkn}` : '',
+                      fiscalDoc.address || '',
+                      fiscalDoc.phone ? `Tel: ${fiscalDoc.phone}` : ''
+                    ].filter(Boolean).join(' • ') || 'VKN: -'}
+                  </div>
                   <div className="text-[10px] text-slate-600">GİB E-Adisyon Belge No: {fiscalDoc.doc_no}</div>
                 </div>
                 <div className="text-right">
@@ -592,7 +776,16 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
                 {Number(fiscalDoc.kuver || 0) > 0 && <div>Kuver Bedeli: <span className="font-mono font-bold">₺{Number(fiscalDoc.kuver || 0).toFixed(2)}</span></div>}
                 {Number(fiscalDoc.service_charge || 0) > 0 && <div>Servis Bedeli: <span className="font-mono font-bold">₺{Number(fiscalDoc.service_charge || 0).toFixed(2)}</span></div>}
                 {Number(fiscalDoc.discount || 0) > 0 && <div className="text-brand-600">İndirim: <span className="font-mono font-bold">-₺{Number(fiscalDoc.discount || 0).toFixed(2)}</span></div>}
-                <div>Hesaplanan KDV (%10): <span className="font-mono">₺{Number(fiscalDoc.vat_summary?.vat_10?.tax || fiscalDoc.vat_summary?.vat_10 || 0).toFixed(2)}</span></div>
+                {Number(fiscalDoc.vat_summary?.vat_1?.tax || 0) > 0 && (
+                  <div>KDV (%1): <span className="font-mono">₺{Number(fiscalDoc.vat_summary.vat_1.tax).toFixed(2)}</span></div>
+                )}
+                {Number(fiscalDoc.vat_summary?.vat_10?.tax || fiscalDoc.vat_summary?.vat_10 || 0) > 0 && (
+                  <div>KDV (%10): <span className="font-mono">₺{Number(fiscalDoc.vat_summary?.vat_10?.tax || fiscalDoc.vat_summary?.vat_10 || 0).toFixed(2)}</span></div>
+                )}
+                {Number(fiscalDoc.vat_summary?.vat_20?.tax || 0) > 0 && (
+                  <div>KDV (%20): <span className="font-mono">₺{Number(fiscalDoc.vat_summary.vat_20.tax).toFixed(2)}</span></div>
+                )}
+                <div>Toplam KDV: <span className="font-mono">₺{computeVatBreakdown(fiscalDoc, Number(fiscalDoc.grand_total || 0)).totalTax.toFixed(2)}</span></div>
                 <div className="text-base font-black text-slate-950 pt-1 border-t">
                   GENEL TOPLAM: <span className="font-mono">₺{Number(fiscalDoc.grand_total || 0).toFixed(2)}</span>
                 </div>

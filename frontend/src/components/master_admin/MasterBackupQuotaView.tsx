@@ -5,6 +5,7 @@ import {
   Image as ImageIcon, FileCheck, Search, X, AlertCircle
 } from 'lucide-react';
 import { sound } from '../../services/sound';
+import { api } from '../../services/api';
 
 export interface StorageSummaryTenant {
   code: string;
@@ -70,6 +71,7 @@ export const MasterBackupQuotaView: React.FC<MasterBackupQuotaViewProps> = ({ te
   const [restoreBackupTarget, setRestoreBackupTarget] = useState<TenantBackupRecord | null>(null);
   const [isRestoring, setIsRestoring] = useState<boolean>(false);
   const [restoreConfirmText, setRestoreConfirmText] = useState<string>('');
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchStorageSummary();
@@ -149,6 +151,23 @@ export const MasterBackupQuotaView: React.FC<MasterBackupQuotaViewProps> = ({ te
     sound.warning();
     setRestoreBackupTarget(backup);
     setRestoreConfirmText('');
+  };
+
+  const handleDownloadBackup = async (backup: TenantBackupRecord) => {
+    sound.beep();
+    setDownloadingId(backup.id);
+    try {
+      await api.downloadAuthenticatedFile(
+        '/api/master/backups/' + backup.id + '/download',
+        backup.backup_name,
+        false,
+        localStorage.getItem('boncore_master_token') || undefined
+      );
+    } catch (err: any) {
+      alert(err?.message || 'Yedek dosyası indirilemedi.');
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   const handleExecuteRestore = async () => {
@@ -389,16 +408,17 @@ export const MasterBackupQuotaView: React.FC<MasterBackupQuotaViewProps> = ({ te
                           </span>
                         </td>
                         <td className="p-3.5 pr-5 text-right space-x-2">
-                          {/* Download Link */}
-                          <a
-                            href={`/api/master/backups/${b.id}/download`}
-                            download
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs border border-slate-700 cursor-pointer transition"
+                          {/* Authenticated Download Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadBackup(b)}
+                            disabled={downloadingId === b.id}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs border border-slate-700 cursor-pointer transition disabled:opacity-50"
                             title="Yedek dosyasını bilgisayara indir"
                           >
                             <Download className="w-3.5 h-3.5 text-cyan-400" />
-                            <span>İndir</span>
-                          </a>
+                            <span>{downloadingId === b.id ? 'İndiriliyor...' : 'İndir'}</span>
+                          </button>
 
                           {/* Restore Button */}
                           <button

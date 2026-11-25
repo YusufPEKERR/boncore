@@ -3,12 +3,15 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	cryptorand "crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
+	"io"
 	"log"
 	"math"
 	"math/rand"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -49,6 +52,227 @@ func saveJSONSettingVal(db *gorm.DB, key string, val interface{}) {
 			Key:   key,
 			Value: strVal,
 		})
+	}
+}
+
+func loadSettingString(db *gorm.DB, key, fallback string) string {
+	if db == nil {
+		return fallback
+	}
+	var row models.RestaurantSetting
+	if err := db.Where("key = ?", key).First(&row).Error; err == nil && strings.TrimSpace(row.Value) != "" {
+		var s string
+		if json.Unmarshal([]byte(row.Value), &s) == nil {
+			if strings.TrimSpace(s) != "" {
+				return strings.TrimSpace(s)
+			}
+			return fallback
+		}
+		var m map[string]interface{}
+		if json.Unmarshal([]byte(row.Value), &m) == nil {
+			if v, ok := m["v"]; ok {
+				sv := strings.TrimSpace(fmt.Sprintf("%v", v))
+				if sv != "" && sv != "<nil>" {
+					return sv
+				}
+			}
+		}
+		clean := strings.Trim(strings.TrimSpace(row.Value), `"`)
+		if clean != "" {
+			return clean
+		}
+	}
+	return fallback
+}
+
+func loadSettingFloat(db *gorm.DB, key string, fallback float64) float64 {
+	if db == nil {
+		return fallback
+	}
+	var row models.RestaurantSetting
+	if err := db.Where("key = ?", key).First(&row).Error; err == nil && strings.TrimSpace(row.Value) != "" {
+		var f float64
+		if json.Unmarshal([]byte(row.Value), &f) == nil {
+			return f
+		}
+		if f, err := strconv.ParseFloat(strings.Trim(strings.TrimSpace(row.Value), `"`), 64); err == nil {
+			return f
+		}
+	}
+	return fallback
+}
+
+func loadSettingBool(db *gorm.DB, key string, fallback bool) bool {
+	if db == nil {
+		return fallback
+	}
+	var row models.RestaurantSetting
+	if err := db.Where("key = ?", key).First(&row).Error; err == nil && strings.TrimSpace(row.Value) != "" {
+		var b bool
+		if json.Unmarshal([]byte(row.Value), &b) == nil {
+			return b
+		}
+		clean := strings.ToLower(strings.Trim(strings.TrimSpace(row.Value), `"`))
+		if clean == "true" || clean == "1" {
+			return true
+		}
+		if clean == "false" || clean == "0" {
+			return false
+		}
+	}
+	return fallback
+}
+
+func generateRandomTokenSuffix() string {
+	b := make([]byte, 2)
+	if _, err := cryptorand.Read(b); err == nil {
+		return strings.ToUpper(hex.EncodeToString(b))
+	}
+	return fmt.Sprintf("%04d", time.Now().UnixNano()%10000)
+}
+
+func generateRandomTempPassword(length int) string {
+	const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+	b := make([]byte, length)
+	_, _ = cryptorand.Read(b)
+	var sb strings.Builder
+	for i := 0; i < length; i++ {
+		sb.WriteByte(chars[int(b[i])%len(chars)])
+	}
+	return sb.String()
+}
+
+func resolveFiscalCompanyInfo(db *gorm.DB, svc *service.Services, tenantCode string) service.FiscalCompanyInfo {
+	var tenant models.RestaurantTenant
+	if svc != nil && svc.DBManager != nil && svc.DBManager.MasterGorm != nil {
+		_ = svc.DBManager.MasterGorm.Where("code = ?", tenantCode).First(&tenant).Error
+	}
+	info := service.FiscalCompanyInfo{
+		Title: tenant.Name,
+		Phone: "",
+	}
+	if tenant.TaxOffice != nil {
+		info.TaxOffice = *tenant.TaxOffice
+	}
+	if tenant.TaxNumber != nil {
+		info.TaxNumber = *tenant.TaxNumber
+	}
+	if tenant.Address != nil {
+		info.Address = *tenant.Address
+	}
+	if tenant.Phone != nil {
+		info.Phone = *tenant.Phone
+	}
+	if rName := loadSettingString(db, "restaurant_name", ""); rName != "" {
+		info.Title = rName
+	} else if sName := loadSettingString(db, "store_name", ""); sName != "" {
+		info.Title = sName
+	}
+	if to := loadSettingString(db, "tax_office", ""); to != "" {
+		info.TaxOffice = to
+	}
+	if tn := loadSettingString(db, "tax_number", ""); tn != "" {
+		info.TaxNumber = tn
+	}
+	if ph := loadSettingString(db, "phone", ""); ph != "" {
+		info.Phone = ph
+	}
+	city := loadSettingString(db, "city", "")
+	district := loadSettingString(db, "district", "")
+	street := loadSettingString(db, "street", "")
+	if street != "" || district != "" || city != "" {
+		parts := []string{}
+		if street != "" {
+			parts = append(parts, street)
+		}
+		locPart := strings.TrimSpace(strings.Trim(district+" / "+city, " /"))
+		if locPart != "" {
+			parts = append(parts, locPart)
+		}
+		info.Address = strings.Join(parts, " ")
+	} else if addr := loadSettingString(db, "address", ""); addr != "" {
+		info.Address = addr
+	}
+	return info
+}
+
+// buildProductRecipeSummary builds the unified ProductRecipe BOM response used across recipe endpoints.
+func buildProductRecipeSummary(p models.Product, pRecipes []models.Recipe, ingMap map[int]models.Ingredient) fiber.Map {
+	bomItems := make([]fiber.Map, 0, len(pRecipes))
+	totalRecipeCost := 0.0
+	minProducible := 999999
+
+	for _, r := range pRecipes {
+		ing, ok := ingMap[r.IngredientID]
+		if !ok {
+			continue
+		}
+		ingName := strings.TrimSpace(ing.Name)
+		if ingName == "" {
+			ingName = "Hammadde"
+		}
+		unitStr := strings.TrimSpace(ing.Unit)
+		if unitStr == "" {
+			unitStr = "gr"
+		}
+		ingStock := service.Round3(ing.CurrentStock)
+		effAmount := r.Amount * (1.0 + math.Max(0.0, r.WastePercentage)/100.0)
+		lineCost := round2(effAmount * ing.CostPerUnit)
+		totalRecipeCost += lineCost
+		canMake := 999999
+		if effAmount > 0 {
+			canMake = int(math.Max(0, math.Floor(ingStock/effAmount)))
+		}
+		if canMake < minProducible {
+			minProducible = canMake
+		}
+		bomItems = append(bomItems, fiber.Map{
+			"id":               r.ID,
+			"recipe_id":        r.ID,
+			"product_id":       r.ProductID,
+			"ingredient_id":    ing.ID,
+			"ingredient_name":  ingName,
+			"amount":           r.Amount,
+			"unit":             unitStr,
+			"waste_percentage": r.WastePercentage,
+			"cost_per_unit":    ing.CostPerUnit,
+			"cost":             lineCost,
+			"line_cost":        lineCost,
+			"current_stock":    ingStock,
+			"can_produce":      canMake,
+		})
+	}
+
+	var calculatedStock interface{} = nil
+	produciblePortions := 100
+	if len(bomItems) > 0 {
+		if minProducible == 999999 {
+			produciblePortions = 0
+		} else {
+			produciblePortions = minProducible
+		}
+		calculatedStock = float64(produciblePortions)
+	}
+
+	profitMargin := 0.0
+	if p.BasePrice > 0 {
+		profitMargin = round2(((p.BasePrice - totalRecipeCost) / p.BasePrice) * 100)
+	}
+
+	return fiber.Map{
+		"product_id":          p.ID,
+		"product_name":        p.Name,
+		"base_price":          p.BasePrice,
+		"unit":                "adet",
+		"has_recipe":          len(bomItems) > 0,
+		"estimated_cost":      round2(totalRecipeCost),
+		"recipe_cost":         round2(totalRecipeCost),
+		"profit":              round2(p.BasePrice - totalRecipeCost),
+		"profit_margin":       profitMargin,
+		"calculated_stock":    calculatedStock,
+		"producible_portions": produciblePortions,
+		"recipes":             bomItems,
+		"items":               bomItems,
 	}
 }
 
@@ -335,78 +559,21 @@ func RegisterInventoryRoutes(group fiber.Router, svc *service.Services) {
 		var products []models.Product
 		db.Order("name asc").Find(&products)
 		var recipes []models.Recipe
-		db.Find(&recipes)
+		db.Order("id asc").Find(&recipes)
 		var ingredients []models.Ingredient
 		db.Find(&ingredients)
 		ingMap := map[int]models.Ingredient{}
 		for _, ing := range ingredients {
 			ingMap[ing.ID] = ing
 		}
+		recipesByProd := map[int][]models.Recipe{}
+		for _, r := range recipes {
+			recipesByProd[r.ProductID] = append(recipesByProd[r.ProductID], r)
+		}
 
 		res := make([]fiber.Map, 0, len(products))
 		for _, p := range products {
-			pRecipes := make([]models.Recipe, 0)
-			for _, r := range recipes {
-				if r.ProductID == p.ID {
-					pRecipes = append(pRecipes, r)
-				}
-			}
-			bomItems := make([]fiber.Map, 0, len(pRecipes))
-			totalRecipeCost := 0.0
-			minProducible := 999999
-
-			for _, r := range pRecipes {
-				ing, ok := ingMap[r.IngredientID]
-				if !ok {
-					continue
-				}
-				lineCost := round2(r.Amount * ing.CostPerUnit)
-				totalRecipeCost += lineCost
-				canMake := 999999
-				if r.Amount > 0 {
-					canMake = int(math.Max(0, math.Floor(ing.CurrentStock/r.Amount)))
-				}
-				if canMake < minProducible {
-					minProducible = canMake
-				}
-				bomItems = append(bomItems, fiber.Map{
-					"recipe_id":       r.ID,
-					"ingredient_id":   ing.ID,
-					"ingredient_name": ing.Name,
-					"amount":          r.Amount,
-					"unit":            ing.Unit,
-					"cost_per_unit":   ing.CostPerUnit,
-					"line_cost":       lineCost,
-					"current_stock":   ing.CurrentStock,
-					"can_produce":     canMake,
-				})
-			}
-
-			produciblePortions := 100
-			if len(bomItems) > 0 {
-				if minProducible == 999999 {
-					produciblePortions = 0
-				} else {
-					produciblePortions = minProducible
-				}
-			}
-			profitMargin := 0.0
-			if p.BasePrice > 0 {
-				profitMargin = round2(((p.BasePrice - totalRecipeCost) / p.BasePrice) * 100)
-			}
-
-			res = append(res, fiber.Map{
-				"product_id":          p.ID,
-				"product_name":        p.Name,
-				"base_price":          p.BasePrice,
-				"unit":                "adet",
-				"has_recipe":          len(bomItems) > 0,
-				"recipe_cost":         round2(totalRecipeCost),
-				"profit":              round2(p.BasePrice - totalRecipeCost),
-				"profit_margin":       profitMargin,
-				"producible_portions": produciblePortions,
-				"items":               bomItems,
-			})
+			res = append(res, buildProductRecipeSummary(p, recipesByProd[p.ID], ingMap))
 		}
 		return c.JSON(res)
 	})
@@ -417,33 +584,29 @@ func RegisterInventoryRoutes(group fiber.Router, svc *service.Services) {
 			return err
 		}
 		prodID, _ := strconv.Atoi(c.Params("product_id"))
-		var recipes []models.Recipe
-		db.Where("product_id = ?", prodID).Find(&recipes)
-		res := make([]fiber.Map, 0, len(recipes))
-		for _, r := range recipes {
-			var ing models.Ingredient
-			db.First(&ing, r.IngredientID)
-			ingName := ing.Name
-			if ingName == "" {
-				ingName = "Malzeme"
-			}
-			res = append(res, fiber.Map{
-				"id":              r.ID,
-				"product_id":      r.ProductID,
-				"ingredient_id":   r.IngredientID,
-				"ingredient_name": ingName,
-				"unit":            ing.Unit,
-				"amount":          r.Amount,
-				"cost_per_unit":   ing.CostPerUnit,
-				"line_cost":       round2(r.Amount * ing.CostPerUnit),
-				"current_stock":   ing.CurrentStock,
-			})
+		var prod models.Product
+		if err := db.First(&prod, prodID).Error; err != nil {
+			return fiber.NewError(fiber.StatusNotFound, "Ürün bulunamadı.")
 		}
-		return c.JSON(res)
+		var recipes []models.Recipe
+		db.Where("product_id = ?", prodID).Order("id asc").Find(&recipes)
+		ingMap := map[int]models.Ingredient{}
+		if len(recipes) > 0 {
+			ingIDs := make([]int, 0, len(recipes))
+			for _, r := range recipes {
+				ingIDs = append(ingIDs, r.IngredientID)
+			}
+			var ingredients []models.Ingredient
+			db.Where("id IN ?", ingIDs).Find(&ingredients)
+			for _, ing := range ingredients {
+				ingMap[ing.ID] = ing
+			}
+		}
+		return c.JSON(buildProductRecipeSummary(prod, recipes, ingMap))
 	})
 
 	group.Put("/recipes/:product_id", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
@@ -454,32 +617,81 @@ func RegisterInventoryRoutes(group fiber.Router, svc *service.Services) {
 		}
 		var payload struct {
 			Items []struct {
-				IngredientID int     `json:"ingredient_id"`
-				Amount       float64 `json:"amount"`
+				IngredientID    int     `json:"ingredient_id"`
+				Amount          float64 `json:"amount"`
+				WastePercentage float64 `json:"waste_percentage"`
 			} `json:"items"`
+			Recipes []struct {
+				IngredientID    int     `json:"ingredient_id"`
+				Amount          float64 `json:"amount"`
+				WastePercentage float64 `json:"waste_percentage"`
+			} `json:"recipes"`
 		}
 		if err := c.BodyParser(&payload); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz reçete verisi.")
 		}
+		itemsIn := payload.Items
+		if len(itemsIn) == 0 && len(payload.Recipes) > 0 {
+			itemsIn = payload.Recipes
+		}
 
 		err = db.Transaction(func(tx *gorm.DB) error {
 			tx.Where("product_id = ?", prodID).Delete(&models.Recipe{})
-			for _, it := range payload.Items {
-				if it.Amount <= 0 {
+			var ratios []int
+			for _, it := range itemsIn {
+				if it.IngredientID <= 0 || it.Amount <= 0 {
 					continue
 				}
 				tx.Create(&models.Recipe{
-					ProductID:    prodID,
-					IngredientID: it.IngredientID,
-					Amount:       it.Amount,
+					ProductID:       prodID,
+					IngredientID:    it.IngredientID,
+					Amount:          it.Amount,
+					WastePercentage: it.WastePercentage,
 				})
+				var ing models.Ingredient
+				if tx.First(&ing, it.IngredientID).Error == nil {
+					avail := math.Max(0.0, service.Round3(ing.CurrentStock))
+					ratios = append(ratios, int(math.Floor(avail/it.Amount)))
+				}
+			}
+			if len(ratios) > 0 && strings.TrimSpace(prod.Name) != "" {
+				minRatio := ratios[0]
+				for _, v := range ratios[1:] {
+					if v < minRatio {
+						minRatio = v
+					}
+				}
+				var directIng models.Ingredient
+				if ingID, found := service.FindIngredientIDByName(tx, prod.Name); found && tx.First(&directIng, ingID).Error == nil {
+					directIng.CurrentStock = float64(minRatio)
+					tx.Save(&directIng)
+				}
 			}
 			return nil
 		})
 		if err != nil {
 			return err
 		}
-		return c.JSON(fiber.Map{"status": "ok", "product_id": prodID, "recipe_count": len(payload.Items)})
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "MENU_UPDATED", fiber.Map{"product_id": prodID})
+
+		var savedRecipes []models.Recipe
+		db.Where("product_id = ?", prodID).Order("id asc").Find(&savedRecipes)
+		ingMap := map[int]models.Ingredient{}
+		if len(savedRecipes) > 0 {
+			ingIDs := make([]int, 0, len(savedRecipes))
+			for _, r := range savedRecipes {
+				ingIDs = append(ingIDs, r.IngredientID)
+			}
+			var ingredients []models.Ingredient
+			db.Where("id IN ?", ingIDs).Find(&ingredients)
+			for _, ing := range ingredients {
+				ingMap[ing.ID] = ing
+			}
+		}
+		summary := buildProductRecipeSummary(prod, savedRecipes, ingMap)
+		summary["status"] = "ok"
+		summary["recipe_count"] = len(savedRecipes)
+		return c.JSON(summary)
 	})
 
 	group.Post("/transfer", func(c *fiber.Ctx) error {
@@ -492,27 +704,92 @@ func RegisterInventoryRoutes(group fiber.Router, svc *service.Services) {
 			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz transfer verisi.")
 		}
 		payload.NormalizeAliases()
+		if payload.Amount <= 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "Transfer miktarı 0'dan büyük olmalıdır.")
+		}
 
-		var ing models.Ingredient
-		if err := db.First(&ing, payload.IngredientID).Error; err != nil {
-			return fiber.NewError(fiber.StatusNotFound, "Malzeme bulunamadı")
+		var movID int
+		txErr := db.Transaction(func(tx *gorm.DB) error {
+			var srcIng models.Ingredient
+			if err := repository.WithRowLock(tx).First(&srcIng, payload.IngredientID).Error; err != nil {
+				return fiber.NewError(fiber.StatusNotFound, "Malzeme bulunamadı")
+			}
+			srcWh := payload.SourceWarehouseID
+			if srcWh == 0 {
+				srcWh = srcIng.WarehouseID
+			}
+			dstWh := payload.TargetWarehouseID
+			if dstWh == 0 {
+				return fiber.NewError(fiber.StatusBadRequest, "Hedef depo seçilmelidir.")
+			}
+			if srcWh == dstWh {
+				return fiber.NewError(fiber.StatusBadRequest, "Kaynak ve hedef depo aynı olamaz.")
+			}
+			if payload.Amount > srcIng.CurrentStock+1e-6 {
+				return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("Yetersiz stok! Mevcut stok: %.3f %s", srcIng.CurrentStock, srcIng.Unit))
+			}
+
+			srcIng.CurrentStock = service.Round3(srcIng.CurrentStock - payload.Amount)
+			if err := tx.Save(&srcIng).Error; err != nil {
+				return err
+			}
+
+			var dstIng models.Ingredient
+			foundDst := false
+			var dstCandidates []models.Ingredient
+			tx.Where("warehouse_id = ?", dstWh).Find(&dstCandidates)
+			normSrc := service.NormalizeStockName(srcIng.Name)
+			for i := range dstCandidates {
+				if service.NormalizeStockName(dstCandidates[i].Name) == normSrc {
+					dstIng = dstCandidates[i]
+					foundDst = true
+					break
+				}
+			}
+			if foundDst {
+				dstIng.CurrentStock = service.Round3(dstIng.CurrentStock + payload.Amount)
+				if err := tx.Save(&dstIng).Error; err != nil {
+					return err
+				}
+			} else {
+				newDst := models.Ingredient{
+					ProductCode:   srcIng.ProductCode,
+					CategoryName:  srcIng.CategoryName,
+					Name:          srcIng.Name,
+					KitchenGroup:  srcIng.KitchenGroup,
+					RevenueCenter: srcIng.RevenueCenter,
+					Unit:          srcIng.Unit,
+					CostPerUnit:   srcIng.CostPerUnit,
+					CurrentStock:  service.Round3(payload.Amount),
+					MinStockAlert: srcIng.MinStockAlert,
+					WarehouseID:   dstWh,
+				}
+				if err := tx.Create(&newDst).Error; err != nil {
+					return err
+				}
+			}
+
+			mov := models.StockMovement{
+				IngredientID:      srcIng.ID,
+				SourceWarehouseID: &srcWh,
+				TargetWarehouseID: &dstWh,
+				MovementType:      "transfer",
+				Amount:            service.Round3(payload.Amount),
+				Unit:              srcIng.Unit,
+				CostPrice:         srcIng.CostPerUnit,
+				Notes:             payload.Notes,
+				CreatedBy:         payload.CreatedBy,
+			}
+			if err := tx.Create(&mov).Error; err != nil {
+				return err
+			}
+			movID = mov.ID
+			return nil
+		})
+		if txErr != nil {
+			return txErr
 		}
-		srcWh := payload.SourceWarehouseID
-		dstWh := payload.TargetWarehouseID
-		mov := models.StockMovement{
-			IngredientID:      ing.ID,
-			SourceWarehouseID: &srcWh,
-			TargetWarehouseID: &dstWh,
-			MovementType:      "transfer",
-			Amount:            payload.Amount,
-			Unit:              ing.Unit,
-			Notes:             payload.Notes,
-			CreatedBy:         payload.CreatedBy,
-		}
-		ing.WarehouseID = dstWh
-		db.Save(&ing)
-		db.Create(&mov)
-		return c.JSON(fiber.Map{"status": "success", "movement_id": mov.ID})
+		return c.JSON(fiber.Map{"status": "success", "movement_id": movID})
 	})
 
 	group.Post("/purchase-invoice", func(c *fiber.Ctx) error {
@@ -532,18 +809,25 @@ func RegisterInventoryRoutes(group fiber.Router, svc *service.Services) {
 
 		err = db.Transaction(func(tx *gorm.DB) error {
 			for _, item := range payload.Items {
+				if item.Quantity <= 0 {
+					return fiber.NewError(fiber.StatusBadRequest, "Fatura kalem miktarı 0'dan büyük olmalıdır.")
+				}
+				uPrice := item.ResolvedUnitPrice()
+				if uPrice < 0 {
+					return fiber.NewError(fiber.StatusBadRequest, "Fatura birim fiyatı negatif olamaz.")
+				}
 				var ing models.Ingredient
 				if err := repository.WithRowLock(tx).First(&ing, item.IngredientID).Error; err != nil {
 					continue
 				}
-				uPrice := item.ResolvedUnitPrice()
-				oldTotalVal := ing.CurrentStock * ing.CostPerUnit
+				effectivePrevStock := math.Max(0.0, ing.CurrentStock)
+				oldTotalVal := effectivePrevStock * ing.CostPerUnit
 				newVal := item.Quantity * uPrice
-				newStock := ing.CurrentStock + item.Quantity
-				if newStock > 0 && uPrice > 0 {
-					ing.CostPerUnit = round2((oldTotalVal + newVal) / newStock)
+				denom := effectivePrevStock + item.Quantity
+				if denom > 0 && uPrice >= 0 {
+					ing.CostPerUnit = round2((oldTotalVal + newVal) / denom)
 				}
-				ing.CurrentStock = round2(newStock)
+				ing.CurrentStock = service.Round3(ing.CurrentStock + item.Quantity)
 				tx.Save(&ing)
 
 				targetWh := item.TargetWarehouseID
@@ -584,6 +868,43 @@ func RegisterInventoryRoutes(group fiber.Router, svc *service.Services) {
 // 9. DELIVERY, COURIER & AGGREGATOR ROUTER (/api/delivery)
 // ============================================================================
 
+func normalizeDeliveryPaymentType(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "cash", "kapida_nakit", "nakit_kapida", "nakit":
+		return "kapida_nakit"
+	case "credit_card", "kapida_kart", "pos_kapida", "kart_kapida", "card":
+		return "kapida_kart"
+	case "sodexo", "sodexo_kapida", "kapida_sodexo", "multinet", "ticket":
+		return "sodexo_kapida"
+	case "online", "online_paid", "online_odendi", "online_card":
+		return "online_paid"
+	default:
+		if strings.TrimSpace(raw) == "" {
+			return "kapida_nakit"
+		}
+		return strings.ToLower(strings.TrimSpace(raw))
+	}
+}
+
+func resolveDeliveryCourierStatusUI(dbStatus string, courierID *int) string {
+	st := strings.ToLower(strings.TrimSpace(dbStatus))
+	switch st {
+	case "reconciled":
+		return "reconciled"
+	case "delivered":
+		return "delivered"
+	case "on_way", "on_the_way":
+		return "on_the_way"
+	case "assigned":
+		return "assigned"
+	default:
+		if courierID != nil && *courierID > 0 {
+			return "assigned"
+		}
+		return "unassigned"
+	}
+}
+
 func RegisterDeliveryRoutes(group fiber.Router, svc *service.Services) {
 	group.Get("/couriers", func(c *fiber.Ctx) error {
 		db, _, err := getTenantDB(c, svc)
@@ -593,7 +914,7 @@ func RegisterDeliveryRoutes(group fiber.Router, svc *service.Services) {
 		var couriers []models.Courier
 		db.Find(&couriers)
 		var activeDeliveries []models.DeliveryOrder
-		db.Where("courier_status IN ?", []string{"assigned", "on_way", "delivered"}).Find(&activeDeliveries)
+		db.Where("courier_status IN ?", []string{"assigned", "on_way", "on_the_way", "delivered"}).Find(&activeDeliveries)
 
 		res := make([]fiber.Map, 0, len(couriers))
 		for _, cr := range couriers {
@@ -602,16 +923,21 @@ func RegisterDeliveryRoutes(group fiber.Router, svc *service.Services) {
 			expectedCard := 0.0
 			for _, d := range activeDeliveries {
 				if d.CourierID != nil && *d.CourierID == cr.ID {
-					if d.CourierStatus == "assigned" || d.CourierStatus == "on_way" {
+					if d.CourierStatus == "assigned" || d.CourierStatus == "on_way" || d.CourierStatus == "on_the_way" {
 						activePkgs++
 					}
 					if d.CourierStatus != "reconciled" {
 						var ord models.Order
-						if err := db.First(&ord, d.OrderID).Error; err == nil {
-							if d.PaymentType == "cash" || d.PaymentType == "kapida_nakit" {
-								expectedCash += ord.GrandTotal
-							} else if d.PaymentType == "credit_card" || d.PaymentType == "kapida_kart" {
-								expectedCard += ord.GrandTotal
+						if err := db.First(&ord, d.OrderID).Error; err == nil && ord.Status != "paid" && ord.Status != "cancelled" {
+							due := ord.RemainingTotal
+							if due <= 0 && ord.PaidTotal == 0 {
+								due = ord.GrandTotal
+							}
+							normPay := normalizeDeliveryPaymentType(d.PaymentType)
+							if normPay == "kapida_nakit" {
+								expectedCash += due
+							} else if normPay == "kapida_kart" {
+								expectedCard += due
 							}
 						}
 					}
@@ -631,6 +957,8 @@ func RegisterDeliveryRoutes(group fiber.Router, svc *service.Services) {
 				"active_packages":         activePkgs,
 				"unreconciled_cash":       round2(expectedCash),
 				"unreconciled_card":       round2(expectedCard),
+				"cash_collected":          round2(expectedCash),
+				"card_slips_collected":    round2(expectedCard),
 				"cash_float_on_hand":      round2(expectedCash),
 				"card_slips_expected":     round2(expectedCard),
 				"active_deliveries_count": activePkgs,
@@ -685,6 +1013,8 @@ func RegisterDeliveryRoutes(group fiber.Router, svc *service.Services) {
 			if !ord.CreatedAt.IsZero() {
 				createdStr = ord.CreatedAt.Format(time.RFC3339)
 			}
+			uiCourierStatus := resolveDeliveryCourierStatusUI(d.CourierStatus, d.CourierID)
+			normPay := normalizeDeliveryPaymentType(d.PaymentType)
 
 			res = append(res, fiber.Map{
 				"id":                d.ID,
@@ -699,10 +1029,11 @@ func RegisterDeliveryRoutes(group fiber.Router, svc *service.Services) {
 				"delivery_address":  d.DeliveryAddress,
 				"courier_id":        d.CourierID,
 				"courier_name":      courierName,
+				"courier_status":    uiCourierStatus,
 				"delivery_status":   d.CourierStatus,
 				"status":            d.CourierStatus,
-				"payment_method":    d.PaymentType,
-				"payment_type":      d.PaymentType,
+				"payment_method":    normPay,
+				"payment_type":      normPay,
 				"grand_total":       ord.GrandTotal,
 				"total_amount":      ord.GrandTotal,
 				"is_reconciled":     d.CourierStatus == "reconciled",
@@ -718,39 +1049,35 @@ func RegisterDeliveryRoutes(group fiber.Router, svc *service.Services) {
 		if err != nil {
 			return err
 		}
-		phone := c.Query("phone")
-		mockCustomers := []fiber.Map{
-			{
-				"phone":             "0532 441 88 92",
-				"name":              "Ahmet Yılmaz (VIP Müşteri)",
-				"customer_name":     "Ahmet Yılmaz (VIP Müşteri)",
-				"address":           "Moda Caddesi No:44 D:6 Kadıköy / İstanbul",
-				"past_orders_count": 18,
-				"favorite_items":    []string{"BonCore Truffle Smash", "Trüflü Parmak Patates", "Cola Zero"},
-				"last_order_note":   "Zile basmayın, bebek uyuyor. Kapıda POS cihazı istiyor.",
-			},
-			{
-				"phone":             "0544 812 09 11",
-				"name":              "Zeynep Kaya",
-				"customer_name":     "Zeynep Kaya",
-				"address":           "Bağdat Cad. Suadiye Mah. Plaj Yolu Sok. No:12 D:9",
-				"past_orders_count": 7,
-				"favorite_items":    []string{"Margherita Burrata (Taş Fırın)", "San Sebastian Cheesecake"},
-				"last_order_note":   "Ekstra acı sos ve ketçap eklensin.",
-			},
+		phone := strings.TrimSpace(c.Query("phone"))
+		chosen := fiber.Map{
+			"found":             false,
+			"phone":             phone,
+			"name":              "",
+			"customer_name":     "",
+			"address":           "",
+			"past_orders_count": 0,
+			"favorite_items":    []string{},
+			"last_order_note":   "",
 		}
-		chosen := mockCustomers[rand.Intn(len(mockCustomers))]
 		if phone != "" {
-			var prev models.DeliveryOrder
-			if err := db.Where("customer_phone LIKE ?", "%"+phone+"%").Order("id desc").First(&prev).Error; err == nil {
+			var prevs []models.DeliveryOrder
+			db.Where("customer_phone LIKE ?", "%"+phone+"%").Order("id desc").Limit(20).Find(&prevs)
+			if len(prevs) > 0 {
+				latest := prevs[0]
+				favNote := ""
+				if latest.Notes != nil {
+					favNote = *latest.Notes
+				}
 				chosen = fiber.Map{
-					"phone":             prev.CustomerPhone,
-					"name":              prev.CustomerName,
-					"customer_name":     prev.CustomerName,
-					"address":           prev.DeliveryAddress,
-					"past_orders_count": 5,
-					"favorite_items":    []string{"BonCore Truffle Smash", "Ev Yapımı Reyhanlı Limonata"},
-					"last_order_note":   "Sıcak gelsin lütfen.",
+					"found":             true,
+					"phone":             latest.CustomerPhone,
+					"name":              latest.CustomerName,
+					"customer_name":     latest.CustomerName,
+					"address":           latest.DeliveryAddress,
+					"past_orders_count": len(prevs),
+					"favorite_items":    []string{},
+					"last_order_note":   favNote,
 				}
 			}
 		}
@@ -786,12 +1113,13 @@ func RegisterDeliveryRoutes(group fiber.Router, svc *service.Services) {
 			"delivery_order_id": dOrder.ID,
 			"courier_name":      courier.Name,
 			"status":            "on_way",
+			"courier_status":    "on_the_way",
 		})
-		return c.JSON(fiber.Map{"status": "ok", "courier": courier.Name})
+		return c.JSON(fiber.Map{"status": "ok", "courier": courier.Name, "courier_status": "on_the_way"})
 	})
 
 	group.Post("/complete-delivery/:delivery_order_id", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
@@ -804,11 +1132,15 @@ func RegisterDeliveryRoutes(group fiber.Router, svc *service.Services) {
 		now := time.Now().UTC()
 		dOrder.DeliveredAt = &now
 		db.Save(&dOrder)
-		return c.JSON(fiber.Map{"status": "ok", "delivery_status": "delivered"})
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "ORDER_UPDATED", fiber.Map{
+			"delivery_order_id": dOrder.ID,
+			"delivery_status":   "delivered",
+		})
+		return c.JSON(fiber.Map{"status": "ok", "delivery_status": "delivered", "courier_status": "delivered"})
 	})
 
 	group.Post("/courier-mutabakat", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
@@ -816,36 +1148,68 @@ func RegisterDeliveryRoutes(group fiber.Router, svc *service.Services) {
 		if err := c.BodyParser(&payload); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz mutabakat verisi.")
 		}
+		if err := requirePermission(c, svc, db, payload.CashierName, []string{"order_take_payment", "courier_ops"}, true, "Kurye mutabakatı kapatma yetkiniz bulunmamaktadır."); err != nil {
+			return err
+		}
 		if payload.CashierName == "" {
 			payload.CashierName = "Kasiyer"
 		}
-		var deliveries []models.DeliveryOrder
-		db.Where("courier_id = ? AND courier_status != ?", payload.CourierID, "reconciled").Find(&deliveries)
 		reconciledCount := 0
 		now := time.Now().UTC()
-		for i := range deliveries {
-			deliveries[i].CourierStatus = "reconciled"
-			var ord models.Order
-			if err := db.First(&ord, deliveries[i].OrderID).Error; err == nil && ord.Status != "paid" {
-				ord.Status = "paid"
-				ord.PaidTotal = ord.GrandTotal
-				ord.RemainingTotal = 0.0
-				ord.ClosedAt = &now
-				method := "cash"
-				if deliveries[i].PaymentType == "credit_card" || deliveries[i].PaymentType == "kapida_kart" {
-					method = "credit_card"
-				}
-				db.Create(&models.Payment{
-					OrderID:       ord.ID,
-					PaymentMethod: method,
-					Amount:        ord.GrandTotal,
-					CashierName:   fmt.Sprintf("Kurye Mutabakat (%s)", payload.CashierName),
-				})
-				db.Save(&ord)
+		txErr := db.Transaction(func(tx *gorm.DB) error {
+			var deliveries []models.DeliveryOrder
+			// Reconcile delivered (and any unassigned/completed) packages strictly once per delivery order
+			tx.Where("courier_id = ? AND courier_status = ?", payload.CourierID, "delivered").Find(&deliveries)
+			if len(deliveries) == 0 {
+				// Fallback if dispatcher closes courier straight from on_way without clicking intermediate step
+				tx.Where("courier_id = ? AND courier_status IN ?", payload.CourierID, []string{"on_way", "on_the_way", "assigned"}).Find(&deliveries)
 			}
-			db.Save(&deliveries[i])
-			reconciledCount++
+			for i := range deliveries {
+				deliveries[i].CourierStatus = "reconciled"
+				if deliveries[i].DeliveredAt == nil {
+					deliveries[i].DeliveredAt = &now
+				}
+				normPay := normalizeDeliveryPaymentType(deliveries[i].PaymentType)
+				var ord models.Order
+				if err := repository.WithRowLock(tx).First(&ord, deliveries[i].OrderID).Error; err == nil {
+					if ord.Status != "paid" && ord.Status != "cancelled" && normPay != "online_paid" {
+						due := round2(ord.GrandTotal - ord.PaidTotal)
+						if due > 0.005 {
+							method := "cash"
+							switch normPay {
+							case "kapida_kart":
+								method = "credit_card"
+							case "sodexo_kapida":
+								method = "sodexo"
+							}
+							tx.Create(&models.Payment{
+								OrderID:       ord.ID,
+								PaymentMethod: method,
+								Amount:        due,
+								CashierName:   fmt.Sprintf("Kurye Mutabakat (%s)", payload.CashierName),
+							})
+							ord.PaidTotal = round2(ord.PaidTotal + due)
+						}
+						ord.Status = "paid"
+						ord.RemainingTotal = 0.0
+						ord.ClosedAt = &now
+						tx.Save(&ord)
+					} else if normPay == "online_paid" && ord.Status != "paid" && ord.PaidTotal >= ord.GrandTotal-0.01 {
+						ord.Status = "paid"
+						ord.RemainingTotal = 0.0
+						ord.ClosedAt = &now
+						tx.Save(&ord)
+					}
+				}
+				tx.Save(&deliveries[i])
+				reconciledCount++
+			}
+			return nil
+		})
+		if txErr != nil {
+			return txErr
 		}
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "ORDER_PAID", fiber.Map{"courier_id": payload.CourierID, "reconciled": reconciledCount})
 		return c.JSON(fiber.Map{
 			"status":              "ok",
 			"reconciled_packages": reconciledCount,
@@ -871,13 +1235,13 @@ func RegisterDeliveryRoutes(group fiber.Router, svc *service.Services) {
 		}
 
 		now := time.Now().UTC()
-		var count int64
-		db.Model(&models.Order{}).Count(&count)
 		prefix := strings.ToUpper(platform)
 		if len(prefix) > 3 {
 			prefix = prefix[:3]
 		}
-		orderNo := fmt.Sprintf("ONL-%s-%04d", prefix, count+1)
+		orderNo := fmt.Sprintf("ONL-%s-%s-%s", prefix, now.In(service.TurkeyLoc()).Format("060102150405"), generateRandomTokenSuffix())
+
+		normPay := normalizeDeliveryPaymentType(payload.PaymentType)
 
 		order := models.Order{
 			OrderNo:    orderNo,
@@ -922,11 +1286,11 @@ func RegisterDeliveryRoutes(group fiber.Router, svc *service.Services) {
 				qty = 1
 			}
 			uPrice := itemIn.UnitPrice
-			if uPrice == 0 {
+			if uPrice <= 0 {
 				uPrice = prod.BasePrice
 			}
 			lineTotal := round2(uPrice * qty)
-			if itemIn.TotalPrice != nil {
+			if itemIn.TotalPrice != nil && *itemIn.TotalPrice > 0 {
 				lineTotal = round2(*itemIn.TotalPrice)
 			}
 			subtotal += lineTotal
@@ -964,12 +1328,14 @@ func RegisterDeliveryRoutes(group fiber.Router, svc *service.Services) {
 		order.Subtotal = round2(subtotal)
 		order.GrandTotal = round2(subtotal)
 		order.RemainingTotal = round2(subtotal)
-		if payload.PaymentType == "online_paid" {
+		if normPay == "online_paid" {
 			order.PaidTotal = order.GrandTotal
 			order.RemainingTotal = 0.0
+			order.Status = "paid"
+			order.ClosedAt = &now
 			db.Create(&models.Payment{
 				OrderID:       order.ID,
-				PaymentMethod: "credit_card",
+				PaymentMethod: "online",
 				Amount:        order.GrandTotal,
 				CashierName:   fmt.Sprintf("%s Online Ödeme", strings.ToUpper(platform)),
 			})
@@ -985,7 +1351,7 @@ func RegisterDeliveryRoutes(group fiber.Router, svc *service.Services) {
 			CustomerPhone:   payload.CustomerPhone,
 			DeliveryAddress: payload.DeliveryAddress,
 			CourierStatus:   "preparing",
-			PaymentType:     payload.PaymentType,
+			PaymentType:     normPay,
 			Notes:           payload.Notes,
 		}
 		db.Create(&dOrder)
@@ -1032,7 +1398,7 @@ func loadOrderForFiscal(db *gorm.DB, orderID int) (*models.Order, []models.Payme
 
 func RegisterFiscalRoutes(group fiber.Router, svc *service.Services) {
 	group.Get("/e-adisyon/:order_id", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
@@ -1041,12 +1407,20 @@ func RegisterFiscalRoutes(group fiber.Router, svc *service.Services) {
 		if err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Adisyon bulunamadı")
 		}
-		res := service.GenerateEAdisyon(order, payments, "Kasiyer")
+		cashierName := "Kasiyer"
+		if len(payments) > 0 && strings.TrimSpace(payments[0].CashierName) != "" {
+			cashierName = payments[0].CashierName
+		} else if order.CashierName != nil && strings.TrimSpace(*order.CashierName) != "" {
+			cashierName = *order.CashierName
+		}
+		info := resolveFiscalCompanyInfo(db, svc, tenantCode)
+		vatMap := service.BuildProductVATMap(db)
+		res := service.GenerateEAdisyonWithInfo(order, payments, cashierName, info, vatMap)
 		return c.JSON(res)
 	})
 
 	group.Get("/e-adisyon/:order_id/xml", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
@@ -1055,26 +1429,28 @@ func RegisterFiscalRoutes(group fiber.Router, svc *service.Services) {
 		if err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Adisyon bulunamadı")
 		}
-		res := service.GenerateEAdisyon(order, payments, "Kasiyer")
+		info := resolveFiscalCompanyInfo(db, svc, tenantCode)
+		vatMap := service.BuildProductVATMap(db)
+		res := service.GenerateEAdisyonWithInfo(order, payments, "Kasiyer", info, vatMap)
 		c.Set("Content-Type", "application/xml; charset=utf-8")
 		c.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="e-adisyon-%v.xml"`, res["ettn"]))
 		return c.SendString(fmt.Sprintf("%v", res["xml_content"]))
 	})
 
 	group.Get("/e-adisyon/:order_id/pdf", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
 		orderID, _ := strconv.Atoi(c.Params("order_id"))
-		order, payments, err := loadOrderForFiscal(db, orderID)
+		order, _, err := loadOrderForFiscal(db, orderID)
 		if err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Adisyon bulunamadı")
 		}
-		res := service.GenerateEAdisyon(order, payments, "Kasiyer")
+		info := resolveFiscalCompanyInfo(db, svc, tenantCode)
+		slipText := service.GenerateEscposThermalSlipWithInfo(order, info)
 		c.Set("Content-Type", "text/html; charset=utf-8")
-		htmlStr := fmt.Sprintf("<html><body><pre>%s</pre></body></html>", service.GenerateEscposThermalSlip(order))
-		_ = res
+		htmlStr := fmt.Sprintf(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Adisyon #%s</title><style>body{font-family:monospace;padding:16px;background:#fff;color:#111}pre{white-space:pre-wrap;font-size:13px}@media print{button{display:none}}</style></head><body><button onclick="window.print()" style="margin-bottom:12px;padding:6px 14px;cursor:pointer">Yazdır / PDF Kaydet</button><pre>%s</pre></body></html>`, html.EscapeString(order.OrderNo), html.EscapeString(slipText))
 		return c.SendString(htmlStr)
 	})
 
@@ -1084,6 +1460,7 @@ func RegisterFiscalRoutes(group fiber.Router, svc *service.Services) {
 			return err
 		}
 		orderID, _ := strconv.Atoi(c.Params("order_id"))
+		isPreview := strings.EqualFold(strings.TrimSpace(c.Query("preview")), "true")
 		operatorName := c.Query("operator_name")
 		if operatorName == "" {
 			var b struct {
@@ -1097,15 +1474,17 @@ func RegisterFiscalRoutes(group fiber.Router, svc *service.Services) {
 			}
 		}
 
-		if err := requirePermission(c, svc, db, operatorName, []string{"order_print_bill", "order_manual_print", "order_fast_pay", "order_take_payment"}, true, "Adisyon fişi yazdırma yetkiniz bulunmamaktadır."); err != nil {
-			return err
+		if !isPreview {
+			if err := requirePermission(c, svc, db, operatorName, []string{"order_print_bill", "order_manual_print", "order_fast_pay", "order_take_payment"}, true, "Adisyon fişi yazdırma yetkiniz bulunmamaktadır."); err != nil {
+				return err
+			}
 		}
 
 		order, _, err := loadOrderForFiscal(db, orderID)
 		if err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Adisyon bulunamadı")
 		}
-		if order.TableID != nil && order.Status == "open" {
+		if !isPreview && order.TableID != nil && order.Status == "open" {
 			var tbl models.Table
 			if err := db.First(&tbl, *order.TableID).Error; err == nil && tbl.Status != "empty" {
 				tbl.Status = "bill_printed"
@@ -1117,7 +1496,8 @@ func RegisterFiscalRoutes(group fiber.Router, svc *service.Services) {
 			}
 		}
 
-		slipText := service.GenerateEscposThermalSlip(order)
+		info := resolveFiscalCompanyInfo(db, svc, tenantCode)
+		slipText := service.GenerateEscposThermalSlipWithInfo(order, info)
 		return c.JSON(fiber.Map{
 			"order_id":     order.ID,
 			"order_no":     order.OrderNo,
@@ -1189,29 +1569,30 @@ func RegisterAuditRoutes(group fiber.Router, svc *service.Services) {
 // ============================================================================
 
 var defaultSettingsMap = map[string]interface{}{
-	"store_name":                 "BonCore Artisan Brasserie",
-	"store_branch":               "Kadıköy Moda Şubesi",
-	"tax_office":                 "Kadıköy VD",
-	"tax_number":                 "4820913384",
-	"mersis_no":                  "0482091338400018",
-	"address":                    "Caferağa Mah. Moda Cad. No:112 Kadıköy/İstanbul",
-	"phone":                      "0216 345 00 00",
+	"store_name":                 "BonCore POS",
+	"restaurant_name":            "BonCore POS",
+	"store_branch":               "Merkez",
+	"tax_office":                 "",
+	"tax_number":                 "",
+	"mersis_no":                  "",
+	"address":                    "",
+	"phone":                      "",
 	"currency":                   "TRY",
 	"kuver_DefaultPrice":         45.0,
 	"service_charge_percent":     0.0,
 	"auto_print_receipt":         true,
 	"auto_kick_drawer_on_cash":   true,
-	"printer_cashier_ip":         "192.168.1.200:9100",
-	"printer_kitchen_ip":         "192.168.1.201:9100",
-	"printer_bar_ip":             "192.168.1.202:9100",
-	"receipt_header":             "BonCore Brasserie & Roastery",
-	"receipt_footer":             "Bizi tercih ettiğiniz için teşekkür ederiz!\nWi-Fi: BonCore_Guest / Şifre: afiyetolsun",
+	"printer_cashier_ip":         "",
+	"printer_kitchen_ip":         "",
+	"printer_bar_ip":             "",
+	"receipt_header":             "",
+	"receipt_footer":             "Bizi tercih ettiğiniz için teşekkür ederiz!",
 	"gib_integrator":             "Foriba / Sovos e-Adisyon",
 	"gib_test_mode":              true,
 	"caller_id_com_port":         "COM3",
-	"yemeksepeti_webhook_active": true,
-	"getir_webhook_active":       true,
-	"trendyol_webhook_active":    true,
+	"yemeksepeti_webhook_active": false,
+	"getir_webhook_active":       false,
+	"trendyol_webhook_active":    false,
 	"sound_alerts":               true,
 	"auto_z_report_enabled":      false,
 	"auto_z_report_time":         "04:00",
@@ -1227,13 +1608,21 @@ func loadKitchenGroupsFromSettings(db *gorm.DB) []map[string]interface{} {
 		}
 	}
 	defaults := []map[string]interface{}{
-		{"id": 1, "name": "Sıcak Mutfak & Izgara", "code": "kitchen", "icon": "Flame", "color": "#ef4444", "printer_ip": "192.168.1.201:9100", "order_index": 1, "is_active": true},
-		{"id": 2, "name": "Fırın & Pizza İstasyonu", "code": "oven", "icon": "Pizza", "color": "#f97316", "printer_ip": "192.168.1.201:9100", "order_index": 2, "is_active": true},
-		{"id": 3, "name": "Bar & Kahve İstasyonu", "code": "bar", "icon": "Wine", "color": "#6366f1", "printer_ip": "192.168.1.202:9100", "order_index": 3, "is_active": true},
-		{"id": 4, "name": "Tatlı & Pastane Reyonu", "code": "pastry", "icon": "CakeSlice", "color": "#ec4899", "printer_ip": "192.168.1.203:9100", "order_index": 4, "is_active": true},
+		{"id": 1, "name": "Sıcak Mutfak & Izgara", "code": "kitchen", "description": "Ana yemek, ızgara ve sıcak hazırlama istasyonu", "icon": "flame", "color": "red", "printer_ip": "", "printer_name": "", "target_prep_minutes": 15, "sound_alert": true, "auto_print": true, "order_index": 1, "is_active": true},
+		{"id": 2, "name": "Fırın & Pizza İstasyonu", "code": "oven", "description": "Taş fırın, pizza, pide ve lahmacun", "icon": "pizza", "color": "amber", "printer_ip": "", "printer_name": "", "target_prep_minutes": 15, "sound_alert": true, "auto_print": true, "order_index": 2, "is_active": true},
+		{"id": 3, "name": "Bar & Kahve İstasyonu", "code": "bar", "description": "Soğuk & sıcak içecek, kokteyl ve barista barı", "icon": "wine", "color": "indigo", "printer_ip": "", "printer_name": "", "target_prep_minutes": 8, "sound_alert": true, "auto_print": true, "order_index": 3, "is_active": true},
+		{"id": 4, "name": "Tatlı & Pastane Reyonu", "code": "pastry", "description": "Pasta, sütlü tatlılar ve fırıncılık ürünleri", "icon": "cake", "color": "purple", "printer_ip": "", "printer_name": "", "target_prep_minutes": 10, "sound_alert": true, "auto_print": false, "order_index": 4, "is_active": true},
 	}
 	saveJSONSettingVal(db, "kitchen_groups_config", defaults)
 	return defaults
+}
+
+var allowedFeatureStoreKeys = map[string]bool{
+	"happy_hours":       true,
+	"product_meta":      true,
+	"table_timers":      true,
+	"staff_shifts":      true,
+	"tip_distributions": true,
 }
 
 func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
@@ -1241,14 +1630,14 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 		now := time.Now().UTC()
 		return c.JSON(fiber.Map{
 			"iso":       now.Format(time.RFC3339),
-			"date":      now.Format("02.01.2006"),
-			"time":      now.Format("15:04:05"),
+			"date":      now.In(service.TurkeyLoc()).Format("02.01.2006"),
+			"time":      now.In(service.TurkeyLoc()).Format("15:04:05"),
 			"timestamp": float64(now.UnixNano()) / 1e9,
 		})
 	})
 
 	group.Get("/", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
@@ -1257,6 +1646,14 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 		merged := map[string]interface{}{}
 		for k, v := range defaultSettingsMap {
 			merged[k] = v
+		}
+		// Seed neutral tenant identity from Master DB if present
+		if svc != nil && svc.DBManager != nil && svc.DBManager.MasterGorm != nil {
+			var t models.RestaurantTenant
+			if svc.DBManager.MasterGorm.Where("code = ?", tenantCode).First(&t).Error == nil && strings.TrimSpace(t.Name) != "" {
+				merged["store_name"] = t.Name
+				merged["restaurant_name"] = t.Name
+			}
 		}
 		for _, r := range rows {
 			var parsed interface{}
@@ -1272,12 +1669,21 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 				merged[r.Key] = r.Value
 			}
 		}
+		// Keep restaurant_name and store_name synchronized
+		if rn, ok := merged["restaurant_name"].(string); ok && strings.TrimSpace(rn) != "" {
+			merged["store_name"] = rn
+		} else if sn, ok := merged["store_name"].(string); ok && strings.TrimSpace(sn) != "" {
+			merged["restaurant_name"] = sn
+		}
 		return c.JSON(merged)
 	})
 
 	group.Put("/", func(c *fiber.Ctx) error {
 		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
+			return err
+		}
+		if err := requirePermission(c, svc, db, "", []string{"def_general_settings", "def_permissions_manage"}, true, "Ayarları değiştirme yetkiniz bulunmamaktadır."); err != nil {
 			return err
 		}
 		var rawBody map[string]interface{}
@@ -1291,16 +1697,20 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 		}
 
 		if _, hasRolePerms := settingsMap["role_permissions"]; hasRolePerms {
-			callerRole := strings.ToLower(strings.TrimSpace(c.Get("X-User-Role")))
-			if callerRole == "" {
-				if claims := middleware.GetUserClaims(c); claims != nil {
-					callerRole = strings.ToLower(strings.TrimSpace(claims.Role))
-				}
+			claims := middleware.GetUserClaims(c)
+			if claims == nil {
+				return fiber.NewError(fiber.StatusUnauthorized, "Rol ve yetkileri değiştirmek için yönetici oturumu gereklidir.")
 			}
-			normRole := svc.Permissions.NormalizeRoleKey(callerRole)
-			if callerRole != "" && normRole != "manager" && callerRole != "master_admin" && callerRole != "admin" {
+			normRole := svc.Permissions.NormalizeRoleKey(claims.Role)
+			if normRole != "manager" && claims.Role != "master_admin" && claims.Role != "superadmin" {
 				return fiber.NewError(fiber.StatusForbidden, "Rol ve sekme yetkilerini yalnızca Yönetici değiştirebilir.")
 			}
+		}
+
+		if rn, ok := settingsMap["restaurant_name"].(string); ok && strings.TrimSpace(rn) != "" {
+			settingsMap["store_name"] = rn
+		} else if sn, ok := settingsMap["store_name"].(string); ok && strings.TrimSpace(sn) != "" {
+			settingsMap["restaurant_name"] = sn
 		}
 
 		for k, v := range settingsMap {
@@ -1312,8 +1722,58 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 				"role_permissions": rp,
 			})
 		}
+		svc.WSHub.BroadcastAll(tenantCode, "SETTINGS_UPDATED", fiber.Map{
+			"restaurant_name": settingsMap["restaurant_name"],
+			"store_name":      settingsMap["store_name"],
+		})
 
 		return c.JSON(fiber.Map{"status": "ok", "updated_keys": len(settingsMap)})
+	})
+
+	group.Get("/feature-store/:key", func(c *fiber.Ctx) error {
+		db, _, err := getTenantDB(c, svc)
+		if err != nil {
+			return err
+		}
+		key := strings.TrimSpace(c.Params("key"))
+		if !allowedFeatureStoreKeys[key] {
+			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz özellik anahtarı.")
+		}
+		var row models.RestaurantSetting
+		if err := db.Where("key = ?", "feature_store_"+key).First(&row).Error; err != nil || strings.TrimSpace(row.Value) == "" {
+			return c.JSON(fiber.Map{"key": key, "has_value": false, "value": nil})
+		}
+		var parsed interface{}
+		if json.Unmarshal([]byte(row.Value), &parsed) != nil {
+			return c.JSON(fiber.Map{"key": key, "has_value": false, "value": nil})
+		}
+		return c.JSON(fiber.Map{"key": key, "has_value": true, "value": parsed})
+	})
+
+	group.Put("/feature-store/:key", func(c *fiber.Ctx) error {
+		db, tenantCode, err := getTenantDB(c, svc)
+		if err != nil {
+			return err
+		}
+		if claims := middleware.GetUserClaims(c); claims == nil {
+			return fiber.NewError(fiber.StatusUnauthorized, "Oturum doğrulaması gereklidir.")
+		}
+		key := strings.TrimSpace(c.Params("key"))
+		if !allowedFeatureStoreKeys[key] {
+			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz özellik anahtarı.")
+		}
+		var body struct {
+			Value interface{} `json:"value"`
+		}
+		if err := c.BodyParser(&body); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz veri biçimi.")
+		}
+		saveJSONSettingVal(db, "feature_store_"+key, body.Value)
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "FEATURE_STORE_UPDATED", fiber.Map{
+			"key":   key,
+			"value": body.Value,
+		})
+		return c.JSON(fiber.Map{"status": "ok", "key": key})
 	})
 
 	group.Get("/kitchen-groups", func(c *fiber.Ctx) error {
@@ -1322,10 +1782,19 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 			return err
 		}
 		groups := loadKitchenGroupsFromSettings(db)
+		sort.SliceStable(groups, func(i, j int) bool {
+			oi, _ := strconv.Atoi(fmt.Sprintf("%v", groups[i]["order_index"]))
+			oj, _ := strconv.Atoi(fmt.Sprintf("%v", groups[j]["order_index"]))
+			return oi < oj
+		})
 		var categories []models.Category
 		db.Find(&categories)
 		var products []models.Product
 		db.Find(&products)
+		var activeItems []models.OrderItem
+		db.Joins("JOIN orders ON orders.id = order_items.order_id").
+			Where("orders.status IN ? AND order_items.is_voided = ? AND order_items.status IN ?", []string{"open", "bill_requested"}, false, []string{"preparing", "pending", "hold", "stock_confirm"}).
+			Find(&activeItems)
 
 		res := make([]fiber.Map, 0, len(groups))
 		for _, g := range groups {
@@ -1338,101 +1807,202 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 			}
 			prodCount := 0
 			for _, p := range products {
-				if p.Station == code {
+				st := p.Station
+				if st == "" {
+					st = "kitchen"
+				}
+				if st == code {
 					prodCount++
 				}
 			}
+			activeKdsCount := 0
+			for _, it := range activeItems {
+				st := it.Station
+				if st == "" {
+					st = "kitchen"
+				}
+				if st == code {
+					activeKdsCount++
+				}
+			}
+			printerName := fmt.Sprintf("%v", g["printer_name"])
+			if printerName == "" || printerName == "<nil>" {
+				printerName = fmt.Sprintf("%v", g["printer_ip"])
+				if printerName == "<nil>" {
+					printerName = ""
+				}
+			}
+			desc := ""
+			if g["description"] != nil {
+				desc = fmt.Sprintf("%v", g["description"])
+			}
+			prepMins := 15
+			if pm, err := strconv.Atoi(fmt.Sprintf("%v", g["target_prep_minutes"])); err == nil && pm > 0 {
+				prepMins = pm
+			}
+			soundAlert := true
+			if sa, ok := g["sound_alert"].(bool); ok {
+				soundAlert = sa
+			}
+			autoPrint := true
+			if ap, ok := g["auto_print"].(bool); ok {
+				autoPrint = ap
+			}
 			res = append(res, fiber.Map{
-				"id":             g["id"],
-				"name":           g["name"],
-				"code":           code,
-				"icon":           g["icon"],
-				"color":          g["color"],
-				"printer_ip":     g["printer_ip"],
-				"order_index":    g["order_index"],
-				"is_active":      g["is_active"],
-				"categories":     catNames,
-				"products_count": prodCount,
+				"id":                  g["id"],
+				"name":                g["name"],
+				"code":                code,
+				"description":         desc,
+				"icon":                g["icon"],
+				"color":               g["color"],
+				"printer_ip":          g["printer_ip"],
+				"printer_name":        printerName,
+				"target_prep_minutes": prepMins,
+				"sound_alert":         soundAlert,
+				"auto_print":          autoPrint,
+				"order_index":         g["order_index"],
+				"display_order":       g["order_index"],
+				"is_active":           g["is_active"],
+				"categories":          catNames,
+				"products_count":      prodCount,
+				"product_count":       prodCount,
+				"active_kds_count":    activeKdsCount,
 			})
 		}
 		return c.JSON(res)
 	})
 
 	group.Post("/kitchen-groups", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
 		var payload struct {
-			Name      string `json:"name"`
-			Code      string `json:"code"`
-			Icon      string `json:"icon"`
-			Color     string `json:"color"`
-			PrinterIP string `json:"printer_ip"`
-			IsActive  *bool  `json:"is_active"`
+			ID                string `json:"id"`
+			Name              string `json:"name"`
+			Code              string `json:"code"`
+			Description       string `json:"description"`
+			Icon              string `json:"icon"`
+			Color             string `json:"color"`
+			PrinterIP         string `json:"printer_ip"`
+			PrinterName       string `json:"printer_name"`
+			TargetPrepMinutes int    `json:"target_prep_minutes"`
+			SoundAlert        *bool  `json:"sound_alert"`
+			AutoPrint         *bool  `json:"auto_print"`
+			IsActive          *bool  `json:"is_active"`
 		}
 		if err := c.BodyParser(&payload); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz mutfak grubu verisi.")
 		}
+		rawCode := strings.TrimSpace(payload.Code)
+		if rawCode == "" {
+			rawCode = strings.TrimSpace(payload.ID)
+		}
+		if rawCode == "" {
+			rawCode = strings.TrimSpace(payload.Name)
+		}
 		re := regexp.MustCompile(`[^a-z0-9_]+`)
-		slug := strings.Trim(re.ReplaceAllString(strings.ToLower(strings.TrimSpace(payload.Code)), "_"), "_")
+		slug := strings.Trim(re.ReplaceAllString(strings.ToLower(rawCode), "_"), "_")
 		if slug == "" {
 			slug = fmt.Sprintf("station_%d", time.Now().Unix()%10000)
 		}
 		groups := loadKitchenGroupsFromSettings(db)
+		maxID := 0
+		for _, g := range groups {
+			if strings.EqualFold(fmt.Sprintf("%v", g["code"]), slug) {
+				slug = fmt.Sprintf("%s_%d", slug, len(groups)+1)
+			}
+			if idNum, err := strconv.Atoi(fmt.Sprintf("%v", g["id"])); err == nil && idNum > maxID {
+				maxID = idNum
+			}
+		}
 		icon := payload.Icon
 		if icon == "" {
-			icon = "ChefHat"
+			icon = "chef"
 		}
 		color := payload.Color
 		if color == "" {
-			color = "#f97316"
+			color = "red"
+		}
+		printerVal := strings.TrimSpace(payload.PrinterName)
+		if printerVal == "" {
+			printerVal = strings.TrimSpace(payload.PrinterIP)
+		}
+		prepMins := payload.TargetPrepMinutes
+		if prepMins <= 0 {
+			prepMins = 15
+		}
+		soundAlert := true
+		if payload.SoundAlert != nil {
+			soundAlert = *payload.SoundAlert
+		}
+		autoPrint := true
+		if payload.AutoPrint != nil {
+			autoPrint = *payload.AutoPrint
 		}
 		isActive := true
 		if payload.IsActive != nil {
 			isActive = *payload.IsActive
 		}
-		newID := len(groups) + 10
+		newID := maxID + 1
 		grp := map[string]interface{}{
-			"id":          newID,
-			"name":        strings.TrimSpace(payload.Name),
-			"code":        slug,
-			"icon":        icon,
-			"color":       color,
-			"printer_ip":  strings.TrimSpace(payload.PrinterIP),
-			"order_index": len(groups) + 1,
-			"is_active":   isActive,
+			"id":                  newID,
+			"name":                strings.TrimSpace(payload.Name),
+			"code":                slug,
+			"description":         strings.TrimSpace(payload.Description),
+			"icon":                icon,
+			"color":               color,
+			"printer_ip":          printerVal,
+			"printer_name":        printerVal,
+			"target_prep_minutes": prepMins,
+			"sound_alert":         soundAlert,
+			"auto_print":          autoPrint,
+			"order_index":         len(groups) + 1,
+			"is_active":           isActive,
 		}
 		groups = append(groups, grp)
 		saveJSONSettingVal(db, "kitchen_groups_config", groups)
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "KITCHEN_GROUPS_UPDATED", fiber.Map{"code": slug})
 		return c.JSON(fiber.Map{"status": "ok", "id": newID, "code": slug})
 	})
 
 	group.Put("/kitchen-groups-reorder", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
 		var payload struct {
-			GroupIDs []int `json:"group_ids"`
+			GroupIDs   []interface{} `json:"group_ids"`
+			OrderedIDs []interface{} `json:"ordered_ids"`
 		}
 		if err := c.BodyParser(&payload); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz sıralama verisi.")
 		}
+		rawOrder := payload.GroupIDs
+		if len(rawOrder) == 0 {
+			rawOrder = payload.OrderedIDs
+		}
 		groups := loadKitchenGroupsFromSettings(db)
-		for idx, gid := range payload.GroupIDs {
+		for idx, gidVal := range rawOrder {
+			key := strings.TrimSpace(fmt.Sprintf("%v", gidVal))
 			for i := range groups {
-				if fmt.Sprintf("%v", groups[i]["id"]) == strconv.Itoa(gid) {
+				if fmt.Sprintf("%v", groups[i]["id"]) == key || strings.EqualFold(fmt.Sprintf("%v", groups[i]["code"]), key) {
 					groups[i]["order_index"] = idx + 1
 				}
 			}
 		}
+		sort.SliceStable(groups, func(i, j int) bool {
+			oi, _ := strconv.Atoi(fmt.Sprintf("%v", groups[i]["order_index"]))
+			oj, _ := strconv.Atoi(fmt.Sprintf("%v", groups[j]["order_index"]))
+			return oi < oj
+		})
 		saveJSONSettingVal(db, "kitchen_groups_config", groups)
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "KITCHEN_GROUPS_UPDATED", fiber.Map{"reordered": true})
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
 	group.Put("/kitchen-groups/:group_id", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
@@ -1441,7 +2011,7 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 		var payload map[string]interface{}
 		_ = c.BodyParser(&payload)
 		for i := range groups {
-			if fmt.Sprintf("%v", groups[i]["id"]) == gidStr {
+			if fmt.Sprintf("%v", groups[i]["id"]) == gidStr || strings.EqualFold(fmt.Sprintf("%v", groups[i]["code"]), gidStr) {
 				oldCode := fmt.Sprintf("%v", groups[i]["code"])
 				if name, ok := payload["name"].(string); ok {
 					groups[i]["name"] = strings.TrimSpace(name)
@@ -1455,12 +2025,18 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 						db.Model(&models.Product{}).Where("station = ?", oldCode).Update("station", newSlug)
 					}
 				}
-				for _, k := range []string{"icon", "color", "printer_ip", "is_active"} {
+				for _, k := range []string{"description", "icon", "color", "printer_ip", "printer_name", "target_prep_minutes", "sound_alert", "auto_print", "is_active"} {
 					if v, ok := payload[k]; ok {
 						groups[i][k] = v
 					}
 				}
+				if pn, ok := payload["printer_name"]; ok {
+					groups[i]["printer_ip"] = pn
+				} else if pi, ok := payload["printer_ip"]; ok {
+					groups[i]["printer_name"] = pi
+				}
 				saveJSONSettingVal(db, "kitchen_groups_config", groups)
+				_ = svc.Broadcaster.BroadcastAll(tenantCode, "KITCHEN_GROUPS_UPDATED", fiber.Map{"code": groups[i]["code"]})
 				return c.JSON(fiber.Map{"status": "ok", "id": groups[i]["id"], "code": groups[i]["code"]})
 			}
 		}
@@ -1468,7 +2044,7 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Delete("/kitchen-groups/:group_id", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
@@ -1476,7 +2052,7 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 		groups := loadKitchenGroupsFromSettings(db)
 		filtered := make([]map[string]interface{}, 0)
 		for _, g := range groups {
-			if fmt.Sprintf("%v", g["id"]) == gidStr {
+			if fmt.Sprintf("%v", g["id"]) == gidStr || strings.EqualFold(fmt.Sprintf("%v", g["code"]), gidStr) {
 				code := fmt.Sprintf("%v", g["code"])
 				db.Model(&models.Category{}).Where("target_station = ?", code).Update("target_station", "kitchen")
 				db.Model(&models.Product{}).Where("station = ?", code).Update("station", "kitchen")
@@ -1485,11 +2061,12 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 			}
 		}
 		saveJSONSettingVal(db, "kitchen_groups_config", filtered)
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "KITCHEN_GROUPS_UPDATED", fiber.Map{"deleted": gidStr})
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
 	group.Post("/kitchen-groups/:group_id/assign-categories", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
@@ -1497,7 +2074,7 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 		groups := loadKitchenGroupsFromSettings(db)
 		var targetCode string
 		for _, g := range groups {
-			if fmt.Sprintf("%v", g["id"]) == gidStr {
+			if fmt.Sprintf("%v", g["id"]) == gidStr || strings.EqualFold(fmt.Sprintf("%v", g["code"]), gidStr) {
 				targetCode = fmt.Sprintf("%v", g["code"])
 				break
 			}
@@ -1506,13 +2083,26 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 			return fiber.NewError(fiber.StatusNotFound, "Mutfak grubu bulunamadı")
 		}
 		var payload struct {
-			CategoryIDs      []int `json:"category_ids"`
-			SyncProductsAlso *bool `json:"sync_products_also"`
+			CategoryIDs         []int `json:"category_ids"`
+			ProductIDs          []int `json:"product_ids"`
+			UnassignCategoryIDs []int `json:"unassign_category_ids"`
+			SyncProductsAlso    *bool `json:"sync_products_also"`
 		}
 		_ = c.BodyParser(&payload)
 		syncProds := true
 		if payload.SyncProductsAlso != nil {
 			syncProds = *payload.SyncProductsAlso
+		}
+		if len(payload.UnassignCategoryIDs) > 0 {
+			fallbackCode := "kitchen"
+			for _, g := range groups {
+				if gc := fmt.Sprintf("%v", g["code"]); gc != "" && gc != targetCode {
+					fallbackCode = gc
+					break
+				}
+			}
+			db.Model(&models.Category{}).Where("id IN ? AND target_station = ?", payload.UnassignCategoryIDs, targetCode).Update("target_station", fallbackCode)
+			db.Model(&models.Product{}).Where("category_id IN ? AND station = ?", payload.UnassignCategoryIDs, targetCode).Update("station", fallbackCode)
 		}
 		if len(payload.CategoryIDs) > 0 {
 			db.Model(&models.Category{}).Where("id IN ?", payload.CategoryIDs).Update("target_station", targetCode)
@@ -1520,6 +2110,13 @@ func RegisterSettingsRoutes(group fiber.Router, svc *service.Services) {
 				db.Model(&models.Product{}).Where("category_id IN ?", payload.CategoryIDs).Update("station", targetCode)
 			}
 		}
+		if payload.ProductIDs != nil {
+			if len(payload.ProductIDs) > 0 {
+				db.Model(&models.Product{}).Where("id IN ?", payload.ProductIDs).Update("station", targetCode)
+			}
+		}
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "KITCHEN_GROUPS_UPDATED", fiber.Map{"code": targetCode})
+		_ = svc.Broadcaster.BroadcastAll(tenantCode, "MENU_UPDATED", fiber.Map{"station_code": targetCode})
 		return c.JSON(fiber.Map{"status": "ok", "station_code": targetCode})
 	})
 }
@@ -1536,11 +2133,32 @@ type terminalLiveInfo struct {
 	LastDBSync float64
 }
 
+type bridgeResultEntry struct {
+	TenantCode string
+	Payload    map[string]interface{}
+	StoredAt   float64
+}
+
 var (
-	scaleMu          sync.RWMutex
-	terminalsStateMu sync.Mutex
-	terminalLiveSeen = make(map[string]terminalLiveInfo)
-	scaleConfigState = map[string]interface{}{
+	scaleMu                  sync.RWMutex
+	terminalsStateMu         sync.Mutex
+	terminalLiveSeen         = make(map[string]terminalLiveInfo)
+	tenantScaleConfigStates  = make(map[string]map[string]interface{})
+	tenantAgentRuntimeStates = make(map[string]map[string]interface{})
+	bridgeMu                 sync.Mutex
+	pendingBridgeCommands    = make(map[string]map[string]interface{})
+	completedBridgeResults   = make(map[string]bridgeResultEntry)
+)
+
+func getOrInitTenantScaleConfigLocked(tenantCode string) map[string]interface{} {
+	tc := strings.TrimSpace(tenantCode)
+	if tc == "" {
+		tc = "default"
+	}
+	if cfg, ok := tenantScaleConfigStates[tc]; ok {
+		return cfg
+	}
+	cfg := map[string]interface{}{
 		"brand":             "DIGI",
 		"connection_type":   "TCP/IP",
 		"ip_address":        "192.168.1.150",
@@ -1559,7 +2177,19 @@ var (
 		"is_connected":      true,
 		"last_sync":         "Az önce",
 	}
-	agentRuntimeState = map[string]interface{}{
+	tenantScaleConfigStates[tc] = cfg
+	return cfg
+}
+
+func getOrInitTenantAgentRuntimeLocked(tenantCode string) map[string]interface{} {
+	tc := strings.TrimSpace(tenantCode)
+	if tc == "" {
+		tc = "default"
+	}
+	if rt, ok := tenantAgentRuntimeStates[tc]; ok {
+		return rt
+	}
+	rt := map[string]interface{}{
 		"online":             false,
 		"last_heartbeat_ts":  0.0,
 		"agent_version":      nil,
@@ -1572,10 +2202,17 @@ var (
 		"last_error":         nil,
 		"pending_print_jobs": []fiber.Map{},
 	}
-	bridgeMu               sync.Mutex
-	pendingBridgeCommands  = make(map[string]map[string]interface{})
-	completedBridgeResults = make(map[string]map[string]interface{})
-)
+	tenantAgentRuntimeStates[tc] = rt
+	return rt
+}
+
+func pruneCompletedBridgeResultsLocked(nowTs float64) {
+	for reqID, entry := range completedBridgeResults {
+		if (nowTs - entry.StoredAt) > 120.0 {
+			delete(completedBridgeResults, reqID)
+		}
+	}
+}
 
 func isVirtualPrinter(p string) bool {
 	low := strings.ToLower(p)
@@ -1628,11 +2265,13 @@ func loadTerminalsList(db *gorm.DB) []map[string]interface{} {
 			return res
 		}
 	}
-	// Fallback: seed from existing backend/app/terminals.json if available
+	// Fallback: seed from relative backend/app/terminals.json if available
+	exePath, _ := os.Executable()
+	exeDir := filepath.Dir(exePath)
 	candidates := []string{
 		filepath.Join("..", "backend", "app", "terminals.json"),
 		filepath.Join("backend", "app", "terminals.json"),
-		`C:\Users\Administrator\Documents\BonCore\backend\app\terminals.json`,
+		filepath.Join(exeDir, "..", "backend", "app", "terminals.json"),
 	}
 	for _, cPath := range candidates {
 		if data, err := os.ReadFile(cPath); err == nil && len(data) > 0 {
@@ -1733,10 +2372,13 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			serverBase = fmt.Sprintf("%s://%s", fwdProto, fwdHost)
 		}
 
+		exePath, _ := os.Executable()
+		exeDir := filepath.Dir(exePath)
 		candidates := []string{
 			filepath.Join("hardware_agent"),
 			filepath.Join("..", "hardware_agent"),
-			`C:\Users\Administrator\Documents\BonCore\hardware_agent`,
+			filepath.Join(exeDir, "hardware_agent"),
+			filepath.Join(exeDir, "..", "hardware_agent"),
 		}
 		var agentDir string
 		for _, dir := range candidates {
@@ -1835,11 +2477,13 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Get("/setup", func(c *fiber.Ctx) error {
+		exePath, _ := os.Executable()
+		exeDir := filepath.Dir(exePath)
 		candidates := []string{
 			filepath.Join("hardware_agent", "BonCoreDonanimKoprusuSetup.exe"),
 			filepath.Join("..", "hardware_agent", "BonCoreDonanimKoprusuSetup.exe"),
 			filepath.Join("hardware_agent", "dist", "BonCoreDonanimKoprusuSetup.exe"),
-			`C:\Users\Administrator\Documents\BonCore\hardware_agent\BonCoreDonanimKoprusuSetup.exe`,
+			filepath.Join(exeDir, "..", "hardware_agent", "BonCoreDonanimKoprusuSetup.exe"),
 		}
 		for _, p := range candidates {
 			if _, err := os.Stat(p); err == nil {
@@ -1852,10 +2496,12 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Get("/raw-exe", func(c *fiber.Ctx) error {
+		exePath, _ := os.Executable()
+		exeDir := filepath.Dir(exePath)
 		candidates := []string{
 			filepath.Join("hardware_agent", "BonCoreAgent.exe"),
 			filepath.Join("..", "hardware_agent", "BonCoreAgent.exe"),
-			`C:\Users\Administrator\Documents\BonCore\hardware_agent\BonCoreAgent.exe`,
+			filepath.Join(exeDir, "..", "hardware_agent", "BonCoreAgent.exe"),
 		}
 		for _, p := range candidates {
 			if _, err := os.Stat(p); err == nil {
@@ -2149,25 +2795,26 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 
 		nowTs := float64(time.Now().Unix())
 		scaleMu.Lock()
-		agentRuntimeState["online"] = true
-		agentRuntimeState["last_heartbeat_ts"] = nowTs
-		agentRuntimeState["agent_version"] = version
-		agentRuntimeState["hostname"] = tname
-		agentRuntimeState["local_ip"] = localIP
-		agentRuntimeState["terminal_id"] = tid
-		agentRuntimeState["active_com_ports"] = payload.ActiveComPorts
-		agentRuntimeState["live_stable"] = payload.LiveStable
-		agentRuntimeState["last_error"] = payload.LastError
+		rt := getOrInitTenantAgentRuntimeLocked(tenantCode)
+		rt["online"] = true
+		rt["last_heartbeat_ts"] = nowTs
+		rt["agent_version"] = version
+		rt["hostname"] = tname
+		rt["local_ip"] = localIP
+		rt["terminal_id"] = tid
+		rt["active_com_ports"] = payload.ActiveComPorts
+		rt["live_stable"] = payload.LiveStable
+		rt["last_error"] = payload.LastError
 		if payload.LiveWeightGram != nil {
 			g := *payload.LiveWeightGram
-			agentRuntimeState["live_weight_gram"] = g
-			agentRuntimeState["live_weight_kg"] = math.Round((float64(g)/1000.0)*1000) / 1000
+			rt["live_weight_gram"] = g
+			rt["live_weight_kg"] = math.Round((float64(g)/1000.0)*1000) / 1000
 		} else if payload.LastWeight > 0 {
-			agentRuntimeState["live_weight_kg"] = payload.LastWeight
-			agentRuntimeState["live_weight_gram"] = int(payload.LastWeight * 1000)
+			rt["live_weight_kg"] = payload.LastWeight
+			rt["live_weight_gram"] = int(payload.LastWeight * 1000)
 		}
-		jobs, _ := agentRuntimeState["pending_print_jobs"].([]fiber.Map)
-		agentRuntimeState["pending_print_jobs"] = []fiber.Map{}
+		jobs, _ := rt["pending_print_jobs"].([]fiber.Map)
+		rt["pending_print_jobs"] = []fiber.Map{}
 		scaleMu.Unlock()
 
 		terminalsStateMu.Lock()
@@ -2300,21 +2947,23 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Get("/agent/status", func(c *fiber.Ctx) error {
+		tenantCode := middleware.GetTenantCode(c)
 		nowTs := float64(time.Now().Unix())
 		requestedTID := strings.TrimSpace(c.Query("terminal_id"))
 
 		scaleMu.RLock()
-		rtLastTs, _ := agentRuntimeState["last_heartbeat_ts"].(float64)
-		rtVersion := agentRuntimeState["agent_version"]
-		rtHostname := agentRuntimeState["hostname"]
-		rtLocalIP := agentRuntimeState["local_ip"]
-		rtTerminalID := agentRuntimeState["terminal_id"]
-		rtActiveCom := agentRuntimeState["active_com_ports"]
-		rtLiveKg := agentRuntimeState["live_weight_kg"]
-		rtLiveGram := agentRuntimeState["live_weight_gram"]
-		rtLiveStable := agentRuntimeState["live_stable"]
-		rtLastError := agentRuntimeState["last_error"]
-		rtOsInfo := agentRuntimeState["os_info"]
+		rt := getOrInitTenantAgentRuntimeLocked(tenantCode)
+		rtLastTs, _ := rt["last_heartbeat_ts"].(float64)
+		rtVersion := rt["agent_version"]
+		rtHostname := rt["hostname"]
+		rtLocalIP := rt["local_ip"]
+		rtTerminalID := rt["terminal_id"]
+		rtActiveCom := rt["active_com_ports"]
+		rtLiveKg := rt["live_weight_kg"]
+		rtLiveGram := rt["live_weight_gram"]
+		rtLiveStable := rt["live_stable"]
+		rtLastError := rt["last_error"]
+		rtOsInfo := rt["os_info"]
 		scaleMu.RUnlock()
 
 		var bestTerm map[string]interface{}
@@ -2426,9 +3075,10 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			touchTerminalLiveSeen(tenantCode, terminalID, "", nowTs, false)
 			terminalsStateMu.Unlock()
 			scaleMu.Lock()
-			if rtTs, _ := agentRuntimeState["last_heartbeat_ts"].(float64); nowTs > rtTs {
-				agentRuntimeState["last_heartbeat_ts"] = nowTs
-				agentRuntimeState["online"] = true
+			rt := getOrInitTenantAgentRuntimeLocked(tenantCode)
+			if rtTs, _ := rt["last_heartbeat_ts"].(float64); nowTs > rtTs {
+				rt["last_heartbeat_ts"] = nowTs
+				rt["online"] = true
 			}
 			scaleMu.Unlock()
 		}
@@ -2460,6 +3110,10 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			// Drop commands older than 25 seconds
 			if (nowTs - cmdTs) > 25.0 {
 				delete(pendingBridgeCommands, reqID)
+				continue
+			}
+
+			if cmdTenant, _ := cmd["tenant_code"].(string); cmdTenant != "" && cmdTenant != tenantCode {
 				continue
 			}
 
@@ -2565,38 +3219,47 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Post("/agent/report", func(c *fiber.Ctx) error {
+		tenantCode := middleware.GetTenantCode(c)
 		var payload map[string]interface{}
 		_ = c.BodyParser(&payload)
+		nowTs := float64(time.Now().Unix())
 
 		reqID := fmt.Sprintf("%v", payload["req_id"])
 		log.Printf("[BRIDGE REPORT] Received report for %s: success=%v, err=%v, msg=%v, weight=%v", reqID, payload["success"], payload["error"], payload["message"], payload["weight"])
 		if reqID != "" && reqID != "<nil>" {
 			bridgeMu.Lock()
-			completedBridgeResults[reqID] = payload
+			completedBridgeResults[reqID] = bridgeResultEntry{
+				TenantCode: tenantCode,
+				Payload:    payload,
+				StoredAt:   nowTs,
+			}
+			pruneCompletedBridgeResultsLocked(nowTs)
 			bridgeMu.Unlock()
 		}
 
 		scaleMu.Lock()
-		agentRuntimeState["last_report"] = payload
-		agentRuntimeState["last_report_ts"] = float64(time.Now().Unix())
+		rt := getOrInitTenantAgentRuntimeLocked(tenantCode)
+		rt["last_report"] = payload
+		rt["last_report_ts"] = nowTs
 		scaleMu.Unlock()
 
 		return c.JSON(fiber.Map{"status": "received", "success": true})
 	})
 
 	group.Get("/config", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
 		scaleMu.Lock()
+		cfg := getOrInitTenantScaleConfigLocked(tenantCode)
 		if m, ok := loadJSONSettingMap(db, "scale_hardware_config"); ok {
 			for k, v := range m {
-				scaleConfigState[k] = v
+				cfg[k] = v
 			}
 		}
 		cfgCopy := map[string]interface{}{}
-		for k, v := range scaleConfigState {
+		for k, v := range cfg {
 			cfgCopy[k] = v
 		}
 		scaleMu.Unlock()
@@ -2604,7 +3267,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Post("/config", func(c *fiber.Ctx) error {
-		db, _, err := getTenantDB(c, svc)
+		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
@@ -2613,12 +3276,13 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz terazi ayar verisi.")
 		}
 		scaleMu.Lock()
+		cfg := getOrInitTenantScaleConfigLocked(tenantCode)
 		for k, v := range payload {
-			scaleConfigState[k] = v
+			cfg[k] = v
 		}
-		scaleConfigState["last_sync"] = "Şimdi güncellendi"
+		cfg["last_sync"] = "Şimdi güncellendi"
 		cfgCopy := map[string]interface{}{}
-		for k, v := range scaleConfigState {
+		for k, v := range cfg {
 			cfgCopy[k] = v
 		}
 		scaleMu.Unlock()
@@ -2628,19 +3292,22 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Post("/test", func(c *fiber.Ctx) error {
+		tenantCode := middleware.GetTenantCode(c)
 		scaleMu.Lock()
-		lastTs, _ := agentRuntimeState["last_heartbeat_ts"].(float64)
+		cfg := getOrInitTenantScaleConfigLocked(tenantCode)
+		rt := getOrInitTenantAgentRuntimeLocked(tenantCode)
+		lastTs, _ := rt["last_heartbeat_ts"].(float64)
 		agentOnline := lastTs > 0 && (float64(time.Now().Unix())-lastTs) < agentOnlineTimeoutSec
-		brand := scaleConfigState["brand"]
-		connType := scaleConfigState["connection_type"]
-		ipAddr := scaleConfigState["ip_address"]
-		port := scaleConfigState["port"]
-		comPort := scaleConfigState["com_port"]
-		baudRate := scaleConfigState["baud_rate"]
-		scaleConfigState["is_connected"] = true
-		scaleConfigState["last_sync"] = "Test Başarılı"
-		liveKg, _ := agentRuntimeState["live_weight_kg"].(float64)
-		hostname := agentRuntimeState["hostname"]
+		brand := cfg["brand"]
+		connType := cfg["connection_type"]
+		ipAddr := cfg["ip_address"]
+		port := cfg["port"]
+		comPort := cfg["com_port"]
+		baudRate := cfg["baud_rate"]
+		cfg["is_connected"] = true
+		cfg["last_sync"] = "Test Başarılı"
+		liveKg, _ := rt["live_weight_kg"].(float64)
+		hostname := rt["hostname"]
 		scaleMu.Unlock()
 
 		var endpoint string
@@ -2801,6 +3468,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		reqID := fmt.Sprintf("print_%d", time.Now().UnixNano())
 		bridgeMu.Lock()
 		pendingBridgeCommands[reqID] = map[string]interface{}{
+			"tenant_code": tenantCode,
 			"terminal_id": targetTID,
 			"action":      "print_receipt",
 			"printers":    cleanPrinters,
@@ -2815,12 +3483,17 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 		for i := 0; i < 60; i++ {
 			time.Sleep(100 * time.Millisecond)
 			bridgeMu.Lock()
-			if res, ok := completedBridgeResults[reqID]; ok {
-				finalResult = res
+			if entry, ok := completedBridgeResults[reqID]; ok && (entry.TenantCode == "" || entry.TenantCode == tenantCode) {
+				finalResult = entry.Payload
 				delete(completedBridgeResults, reqID)
 				bridgeMu.Unlock()
 				break
 			}
+			bridgeMu.Unlock()
+		}
+		if finalResult == nil {
+			bridgeMu.Lock()
+			delete(pendingBridgeCommands, reqID)
 			bridgeMu.Unlock()
 		}
 
@@ -2950,6 +3623,7 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			reqID := fmt.Sprintf("scale_%d", time.Now().UnixNano())
 			bridgeMu.Lock()
 			pendingBridgeCommands[reqID] = map[string]interface{}{
+				"tenant_code": tenantCode,
 				"terminal_id": tID,
 				"action":      "read_weight",
 				"ip":          targetIP,
@@ -2963,13 +3637,17 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			for i := 0; i < 30; i++ {
 				time.Sleep(100 * time.Millisecond)
 				bridgeMu.Lock()
-				if res, ok := completedBridgeResults[reqID]; ok {
+				if entry, ok := completedBridgeResults[reqID]; ok && (entry.TenantCode == "" || entry.TenantCode == tenantCode) {
+					res := entry.Payload
 					delete(completedBridgeResults, reqID)
 					bridgeMu.Unlock()
 					return c.JSON(res)
 				}
 				bridgeMu.Unlock()
 			}
+			bridgeMu.Lock()
+			delete(pendingBridgeCommands, reqID)
+			bridgeMu.Unlock()
 
 			// If last_weight exists and is fresh
 			if lastW, ok := targetTerm["last_weight"].(float64); ok && lastW > 0 {
@@ -2997,19 +3675,22 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Get("/read", func(c *fiber.Ctx) error {
+		tenantCode := middleware.GetTenantCode(c)
 		scaleMu.RLock()
+		cfg := getOrInitTenantScaleConfigLocked(tenantCode)
+		rt := getOrInitTenantAgentRuntimeLocked(tenantCode)
 		tareGram := 0
-		if tg, ok := scaleConfigState["tare_gram"].(int); ok {
+		if tg, ok := cfg["tare_gram"].(int); ok {
 			tareGram = tg
-		} else if tgf, ok := scaleConfigState["tare_gram"].(float64); ok {
+		} else if tgf, ok := cfg["tare_gram"].(float64); ok {
 			tareGram = int(tgf)
 		}
-		brand := scaleConfigState["brand"]
-		connType := scaleConfigState["connection_type"]
-		lastTs, _ := agentRuntimeState["last_heartbeat_ts"].(float64)
+		brand := cfg["brand"]
+		connType := cfg["connection_type"]
+		lastTs, _ := rt["last_heartbeat_ts"].(float64)
 		agentOnline := lastTs > 0 && (float64(time.Now().Unix())-lastTs) < agentOnlineTimeoutSec
-		liveGram, _ := agentRuntimeState["live_weight_gram"].(int)
-		liveStable, _ := agentRuntimeState["live_stable"].(bool)
+		liveGram, _ := rt["live_weight_gram"].(int)
+		liveStable, _ := rt["live_stable"].(bool)
 		scaleMu.RUnlock()
 
 		if agentOnline && liveGram > 0 {
@@ -3074,29 +3755,10 @@ func getTenantModulesStore(db *gorm.DB, tenantCode string) map[string]interface{
 	}
 
 	store := map[string]interface{}{
-		"customers": []map[string]interface{}{
-			{"id": "cust_1", "name": "Ahmet Yılmaz", "phone": "0532 411 22 33", "email": "ahmet.yilmaz@sirket.com", "tier": "VIP", "points": 1480.0, "balance": -1250.0, "open_account_balance": 1250.0, "credit_limit": 5000.0, "total_spent": 18450.0, "visit_count": 24, "last_visit": "2026-10-28 19:40", "notes": "Pencere kenarı masa tercih eder, şekersiz Türk kahvesi ikramı."},
-			{"id": "cust_2", "name": "Zeynep Kaya (Kaya Mimarlık)", "phone": "0544 892 10 20", "email": "zeynep@kayamimarlik.com", "tier": "Kurumsal", "points": 2920.0, "balance": -3400.0, "open_account_balance": 3400.0, "credit_limit": 10000.0, "total_spent": 46200.0, "visit_count": 42, "last_visit": "2026-10-29 11:20", "notes": "Kurumsal öğle yemeği aboneliği, ay sonu fatura kesilir."},
-			{"id": "cust_3", "name": "Mehmet Demir", "phone": "0505 677 88 99", "email": "mehmetdemir@gmail.com", "tier": "Gold", "points": 650.0, "balance": 0.0, "open_account_balance": 0.0, "credit_limit": 3000.0, "total_spent": 8120.0, "visit_count": 12, "last_visit": "2026-10-25 21:00", "notes": "Acısız tercih eder."},
-			{"id": "cust_4", "name": "Elif Demir", "phone": "0530 112 45 67", "email": "elif.demir@gmail.com", "tier": "Silver", "points": 310.0, "balance": -450.0, "open_account_balance": 450.0, "credit_limit": 3000.0, "total_spent": 4200.0, "visit_count": 6, "last_visit": "2026-10-26 14:15", "notes": "Tatlı tutkunu."},
-		},
-		"campaigns": []map[string]interface{}{
-			{"id": "camp_1", "title": "%5 Para Puan Kazanımı", "name": "%5 Para Puan Kazanımı", "type": "points_cashback", "rule": "Tüm masa ve paket siparişlerinde geçerli", "reward": "Adisyon tutarının %5'i kadar harcanabilir Para Puan", "is_active": true, "active": true, "usage_count": 142},
-			{"id": "camp_2", "title": "10 Siparişe 1 Tatlı / Kahve Hediye", "name": "10 Siparişe 1 Tatlı / Kahve Hediye", "type": "visit_reward", "rule": "10. ziyaretini tamamlayan sadakat üyelerine", "reward": "Seçili tatlı veya kahve ücretsiz ikram edilir", "is_active": true, "active": true, "usage_count": 38},
-			{"id": "camp_3", "title": "VIP & Kurumsal %10 Otomatik İndirim", "name": "VIP & Kurumsal %10 Otomatik İndirim", "type": "tier_discount", "rule": "VIP ve Kurumsal Cari kart sahiplerine", "reward": "Adisyonda otomatik %10 sadakat indirimi", "is_active": true, "active": true, "usage_count": 64},
-			{"id": "camp_4", "title": "Happy Hour (15:00 - 18:00) %15 İndirim", "name": "Happy Hour (%15 İndirim)", "type": "happy_hour", "rule": "Hafta içi 15:00 - 18:00 arası içecek ve tatlılarda", "reward": "%15 Anında Sepet İndirimi", "is_active": false, "active": false, "usage_count": 19},
-		},
-		"reservations": []map[string]interface{}{
-			{"id": 1, "guest_name": "Murat Boz & Ekibi", "phone": "0532 900 11 22", "guests": 6, "time": "20:00", "table_name": "Bahçe-2", "deposit_paid": 1500.0, "notes": "Cam kenarı, doğum günü pastası", "status": "confirmed"},
-			{"id": 2, "guest_name": "Selin Şekerci", "phone": "0542 311 44 55", "guests": 2, "time": "19:30", "table_name": "Salon-4", "deposit_paid": 0.0, "notes": "Vegan menü tercihi", "status": "seated"},
-			{"id": 3, "guest_name": "Borusan Otomotiv Yemeği", "phone": "0212 444 88 99", "guests": 10, "time": "21:00", "table_name": "Teras-1", "deposit_paid": 3000.0, "notes": "Kurumsal fatura kesilecek", "status": "confirmed"},
-		},
-		"hotel_folios": []map[string]interface{}{
-			{"room_no": "101", "guest_name": "Mr. & Mrs. Anderson", "vip": "VIP", "package": "Ultra All-Inclusive", "checkin": "12.04", "checkout": "18.04", "balance": 1450.0, "pms": "Opera PMS"},
-			{"room_no": "204", "guest_name": "Kerem Aktürkoğlu", "vip": "Suit", "package": "Oda + Kahvaltı (BB)", "checkin": "14.04", "checkout": "16.04", "balance": 3280.0, "pms": "ElektraWeb"},
-			{"room_no": "308", "guest_name": "Elena Rostova", "vip": "Standart", "package": "Yarım Pansiyon (HB)", "checkin": "11.04", "checkout": "19.04", "balance": 780.0, "pms": "Opera PMS"},
-			{"room_no": "402", "guest_name": "Dr. Selim Aydın", "vip": "King Suit", "package": "Oda + Kahvaltı (BB)", "checkin": "13.04", "checkout": "15.04", "balance": 0.0, "pms": "Sedna PMS"},
-		},
+		"customers":    []map[string]interface{}{},
+		"campaigns":    []map[string]interface{}{},
+		"reservations": []map[string]interface{}{},
+		"hotel_folios": []map[string]interface{}{},
 	}
 	tenantModulesCache[tenantCode] = store
 	return store
@@ -3361,7 +4023,7 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 		}
 		store := getTenantModulesStore(db, tenantCode)
 		rawList := toMapSlice(store["reservations"])
-		var enriched []map[string]interface{}
+		enriched := make([]map[string]interface{}, 0, len(rawList))
 		confirmedCount := 0
 		seatedCount := 0
 		expectedGuests := 0
@@ -3377,7 +4039,6 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 			if gCount <= 0 {
 				gCount = 2
 			}
-			expectedGuests += gCount
 
 			dep := 0.0
 			if d, ok := r["deposit"].(float64); ok {
@@ -3387,6 +4048,9 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 			}
 
 			st := fmt.Sprintf("%v", r["status"])
+			if st != "cancelled" && st != "completed" {
+				expectedGuests += gCount
+			}
 			if st == "confirmed" {
 				confirmedCount++
 			} else if st == "seated" {
@@ -3395,7 +4059,7 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 
 			dt := fmt.Sprintf("%v", r["date"])
 			if dt == "" || dt == "<nil>" {
-				dt = time.Now().Format("2006-01-02")
+				dt = time.Now().In(service.TurkeyLoc()).Format("2006-01-02")
 			}
 
 			enriched = append(enriched, map[string]interface{}{
@@ -3547,8 +4211,14 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 		}
 		var paidOrders []models.Order
 		db.Where("status = ?", "paid").Find(&paidOrders)
+		paidOrderIDs := make([]int, 0, len(paidOrders))
+		for _, o := range paidOrders {
+			paidOrderIDs = append(paidOrderIDs, o.ID)
+		}
 		var items []models.OrderItem
-		db.Where("is_voided = ?", false).Find(&items)
+		if len(paidOrderIDs) > 0 {
+			db.Where("order_id IN ? AND is_voided = ? AND is_treat = ?", paidOrderIDs, false, false).Find(&items)
+		}
 
 		analysis := make([]fiber.Map, 0, len(products))
 		totalRecipeCostAll := 0.0
@@ -3560,7 +4230,8 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 			for _, r := range recipes {
 				if r.ProductID == p.ID {
 					if ing, ok := ingMap[r.IngredientID]; ok {
-						cVal := round2(r.Amount * ing.CostPerUnit)
+						effAmount := r.Amount * (1.0 + r.WastePercentage/100.0)
+						cVal := round2(effAmount * ing.CostPerUnit)
 						recipeCost += cVal
 						bomDetails = append(bomDetails, fiber.Map{
 							"ingredient": ing.Name,
@@ -3571,13 +4242,13 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 					}
 				}
 			}
-			if recipeCost == 0 {
-				recipeCost = round2(p.BasePrice * 0.32)
-			}
+			hasRecipe := len(bomDetails) > 0
 			soldQty := 0.0
+			soldRev := 0.0
 			for _, it := range items {
 				if it.ProductID == p.ID {
 					soldQty += it.Quantity
+					soldRev += it.TotalPrice
 				}
 			}
 			unitProfit := round2(p.BasePrice - recipeCost)
@@ -3585,7 +4256,7 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 			if p.BasePrice > 0 {
 				marginPct = round2((unitProfit / p.BasePrice) * 100)
 			}
-			totalRev := round2(soldQty * p.BasePrice)
+			totalRev := round2(soldRev)
 			totalCst := round2(soldQty * recipeCost)
 			totalRevenueAll += totalRev
 			totalRecipeCostAll += totalCst
@@ -3603,6 +4274,7 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 				"station":        p.Station,
 				"sale_price":     p.BasePrice,
 				"bom_cost":       round2(recipeCost),
+				"has_recipe":     hasRecipe,
 				"unit_profit":    unitProfit,
 				"margin_percent": marginPct,
 				"sold_qty":       soldQty,
@@ -3612,7 +4284,7 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 			})
 		}
 
-		foodCostPct := 31.4
+		foodCostPct := 0.0
 		if totalRevenueAll > 0 {
 			foodCostPct = round2((totalRecipeCostAll / totalRevenueAll) * 100)
 		}
@@ -3662,7 +4334,7 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 		}
 		store := getTenantModulesStore(db, tenantCode)
 		folios := toMapSlice(store["hotel_folios"])
-		var enriched []map[string]interface{}
+		enriched := make([]map[string]interface{}, 0, len(folios))
 		totalBal := 0.0
 		occupiedCount := 0
 		for _, f := range folios {
@@ -3690,14 +4362,7 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 			}
 			charges, _ := f["charges"].([]interface{})
 			if charges == nil {
-				charges = []interface{}{
-					map[string]interface{}{
-						"id":     "ch_1",
-						"date":   "Bugün 13:45",
-						"desc":   "Restoran Harcaması",
-						"amount": 450.0,
-					},
-				}
+				charges = []interface{}{}
 			}
 			pkg := fmt.Sprintf("%v", f["package"])
 			if pkg == "" || pkg == "<nil>" {
@@ -3722,7 +4387,7 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 				"total_rooms":         len(folios),
 				"occupied_rooms":      occupiedCount,
 				"total_folio_balance": round2(totalBal),
-				"today_charges":       1850.0,
+				"today_charges":       0.0,
 			},
 		})
 	})
@@ -3808,7 +4473,7 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 		var count int64
 		db.Model(&models.Order{}).Count(&count)
 		queueNo := int((count % 90) + 10)
-		orderNo := fmt.Sprintf("KSK-%d", queueNo)
+		orderNo := fmt.Sprintf("KSK-%s-%s", time.Now().In(service.TurkeyLoc()).Format("060102150405"), generateRandomTokenSuffix())
 		noteStr := fmt.Sprintf("Self-Servis Kiosk (%s) - Sıra #%d", payload.CustomerName, queueNo)
 		order := models.Order{
 			OrderNo:    orderNo,
@@ -3890,8 +4555,14 @@ func RegisterModulesRoutes(group fiber.Router, svc *service.Services) {
 // ============================================================================
 
 func requireMasterAdmin(c *fiber.Ctx, svc *service.Services) error {
-	// Full backward compatibility with Python backend:
-	// Allow access to Master Admin management without blocking on token validation errors.
+	claims := middleware.GetUserClaims(c)
+	if claims == nil {
+		return fiber.NewError(fiber.StatusUnauthorized, "Master Admin oturumu gereklidir.")
+	}
+	r := strings.ToLower(strings.TrimSpace(claims.Role))
+	if r != "master_admin" && r != "superadmin" {
+		return fiber.NewError(fiber.StatusForbidden, "Bu işlem için Master Admin yetkisi gereklidir.")
+	}
 	return nil
 }
 
@@ -3943,10 +4614,7 @@ func RegisterMasterRoutes(group fiber.Router, svc *service.Services) {
 		cleanUser := strings.ToLower(strings.TrimSpace(payload.Username))
 		cleanPwd := strings.TrimSpace(payload.Password)
 
-		validUsers := map[string]bool{"master": true, "superadmin": true, "owner": true, "boncore": true, "root": true, "admin": true}
-		validPwds := map[string]bool{"masteradmin2026": true, "boncore2026master": true, "123456": true}
-
-		if validUsers[cleanUser] && validPwds[cleanPwd] {
+		if (cleanUser == "master" || cleanUser == "superadmin") && cleanPwd != "" && cleanPwd == svc.Config.MasterAdminPassword {
 			token, exp := middleware.CreateAccessToken(svc.Config, 999999, "master_admin", true, "master", nil)
 			return c.JSON(fiber.Map{
 				"access_token": token,
@@ -4029,6 +4697,9 @@ func RegisterMasterRoutes(group fiber.Router, svc *service.Services) {
 			Name           string  `json:"name"`
 			DisplayName    string  `json:"display_name"`
 			OwnerName      string  `json:"owner_name"`
+			ContactName    string  `json:"contact_name"`
+			AuthorizedName string  `json:"authorized_name"`
+			AdminName      string  `json:"admin_name"`
 			OwnerEmail     string  `json:"owner_email"`
 			Email          string  `json:"email"`
 			OwnerPhone     string  `json:"owner_phone"`
@@ -4051,8 +4722,6 @@ func RegisterMasterRoutes(group fiber.Router, svc *service.Services) {
 		payload.Plan = "PRO"
 		payload.MonthlyFee = 2490.0
 		payload.AdminUsername = "admin"
-		payload.AdminPassword = "admin123"
-		payload.AdminPin = "1234"
 		payload.SeedSampleMenu = true
 		if err := c.BodyParser(&payload); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz işletme verisi.")
@@ -4060,6 +4729,25 @@ func RegisterMasterRoutes(group fiber.Router, svc *service.Services) {
 
 		if payload.Name == "" && payload.DisplayName != "" {
 			payload.Name = payload.DisplayName
+		}
+		if strings.TrimSpace(payload.OwnerName) == "" {
+			if strings.TrimSpace(payload.ContactName) != "" {
+				payload.OwnerName = payload.ContactName
+			} else if strings.TrimSpace(payload.AuthorizedName) != "" {
+				payload.OwnerName = payload.AuthorizedName
+			} else if strings.TrimSpace(payload.AdminName) != "" {
+				payload.OwnerName = payload.AdminName
+			}
+		}
+		payload.OwnerName = strings.TrimSpace(payload.OwnerName)
+		if strings.TrimSpace(payload.AdminUsername) == "" {
+			payload.AdminUsername = "admin"
+		}
+		if strings.TrimSpace(payload.AdminPassword) == "" {
+			payload.AdminPassword = generateRandomTempPassword(10)
+		}
+		if strings.TrimSpace(payload.AdminPin) == "" {
+			payload.AdminPin = generateRandomTempPassword(4)
 		}
 		if payload.OwnerEmail == "" && payload.Email != "" {
 			payload.OwnerEmail = payload.Email
@@ -4150,33 +4838,81 @@ func RegisterMasterRoutes(group fiber.Router, svc *service.Services) {
 			return fiber.NewError(fiber.StatusNotFound, "İşletme bulunamadı.")
 		}
 		var payload struct {
-			Code         *string  `json:"code"`
-			Name         *string  `json:"name"`
-			DisplayName  *string  `json:"display_name"`
-			OwnerName    *string  `json:"owner_name"`
-			OwnerEmail   *string  `json:"owner_email"`
-			Email        *string  `json:"email"`
-			OwnerPhone   *string  `json:"owner_phone"`
-			Phone        *string  `json:"phone"`
-			City         *string  `json:"city"`
-			Address      *string  `json:"address"`
-			TaxOffice    *string  `json:"tax_office"`
-			TaxNumber    *string  `json:"tax_number"`
-			Plan         *string  `json:"plan"`
-			MonthlyFee   *float64 `json:"monthly_fee"`
-			MonthlyPrice *float64 `json:"monthly_price"`
-			Status       *string  `json:"status"`
-			CustomNotes  *string  `json:"custom_notes"`
-			Notes        *string  `json:"notes"`
+			Code           *string  `json:"code"`
+			Name           *string  `json:"name"`
+			DisplayName    *string  `json:"display_name"`
+			OwnerName      *string  `json:"owner_name"`
+			ContactName    *string  `json:"contact_name"`
+			AuthorizedName *string  `json:"authorized_name"`
+			AdminName      *string  `json:"admin_name"`
+			OwnerEmail     *string  `json:"owner_email"`
+			Email          *string  `json:"email"`
+			OwnerPhone     *string  `json:"owner_phone"`
+			Phone          *string  `json:"phone"`
+			City           *string  `json:"city"`
+			Address        *string  `json:"address"`
+			TaxOffice      *string  `json:"tax_office"`
+			TaxNumber      *string  `json:"tax_number"`
+			Plan           *string  `json:"plan"`
+			MonthlyFee     *float64 `json:"monthly_fee"`
+			MonthlyPrice   *float64 `json:"monthly_price"`
+			Status         *string  `json:"status"`
+			CustomNotes    *string  `json:"custom_notes"`
+			Notes          *string  `json:"notes"`
 		}
 		_ = c.BodyParser(&payload)
+		if payload.Code != nil {
+			newCode := repository.CleanTenantCode(*payload.Code, "")
+			if len(newCode) < 2 {
+				return fiber.NewError(fiber.StatusBadRequest, "İşletme giriş kodu en az 2 karakter olmalıdır.")
+			}
+			if newCode != tenant.Code {
+				var dup models.RestaurantTenant
+				if err := mdb.Where("code = ? AND id != ?", newCode, tenant.ID).First(&dup).Error; err == nil {
+					return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("'%s' işletme kodu zaten kullanımda.", newCode))
+				}
+				oldCode := tenant.Code
+				_ = svc.DBManager.RenameTenantCode(oldCode, newCode)
+				tenant.Code = newCode
+				mdb.Model(&models.TenantInvoice{}).Where("tenant_code = ?", oldCode).Update("tenant_code", newCode)
+				mdb.Model(&models.TenantStorageQuota{}).Where("tenant_code = ?", oldCode).Update("tenant_code", newCode)
+				mdb.Model(&models.TenantLiveMetric{}).Where("tenant_code = ?", oldCode).Update("tenant_code", newCode)
+				mdb.Model(&models.FleetHeartbeat{}).Where("tenant_code = ?", oldCode).Update("tenant_code", newCode)
+				mdb.Model(&models.SupportTicket{}).Where("tenant_code = ?", oldCode).Update("tenant_code", newCode)
+				mdb.Model(&models.TenantBackup{}).Where("tenant_code = ?", oldCode).Update("tenant_code", newCode)
+				mdb.Model(&models.AnnouncementReceipt{}).Where("tenant_code = ?", oldCode).Update("tenant_code", newCode)
+				mdb.Model(&models.FranchiseBrand{}).Where("primary_tenant_code = ?", oldCode).Update("primary_tenant_code", newCode)
+			}
+		}
 		if payload.Name != nil {
 			tenant.Name = *payload.Name
 		} else if payload.DisplayName != nil {
 			tenant.Name = *payload.DisplayName
 		}
-		if payload.OwnerName != nil {
-			tenant.OwnerName = payload.OwnerName
+		ownerPtr := payload.OwnerName
+		if ownerPtr == nil {
+			if payload.ContactName != nil {
+				ownerPtr = payload.ContactName
+			} else if payload.AuthorizedName != nil {
+				ownerPtr = payload.AuthorizedName
+			} else if payload.AdminName != nil {
+				ownerPtr = payload.AdminName
+			}
+		}
+		if ownerPtr != nil {
+			trimmedOwner := strings.TrimSpace(*ownerPtr)
+			tenant.OwnerName = &trimmedOwner
+			if trimmedOwner != "" {
+				if tdb, err := svc.DBManager.GetTenantDB(tenant.Code); err == nil && tdb != nil {
+					var mgr models.StaffUser
+					if err := tdb.Where("role = ?", "manager").Order("id asc").First(&mgr).Error; err == nil {
+						if mgr.Name == "" || strings.HasSuffix(mgr.Name, "Yönetici") || mgr.Name == "Yönetici" || mgr.Name == "Admin" {
+							mgr.Name = trimmedOwner
+							tdb.Save(&mgr)
+						}
+					}
+				}
+			}
 		}
 		if payload.OwnerEmail != nil {
 			tenant.Email = payload.OwnerEmail
@@ -4299,20 +5035,27 @@ func RegisterMasterRoutes(group fiber.Router, svc *service.Services) {
 			PinCode  string `json:"pin_code"`
 		}
 		payload.Role = "manager"
-		payload.PinCode = "1234"
 		_ = c.BodyParser(&payload)
 		uname := strings.ToLower(strings.TrimSpace(payload.Username))
-		pwdHash := middleware.HashPassword(payload.Password)
+		rawPwd := strings.TrimSpace(payload.Password)
+		if rawPwd == "" {
+			rawPwd = generateRandomTempPassword(10)
+		}
+		rawPin := strings.TrimSpace(payload.PinCode)
+		if rawPin == "" {
+			rawPin = generateRandomTempPassword(4)
+		}
+		pwdHash := middleware.HashPassword(rawPwd)
 		newUser := models.StaffUser{
 			Name:         strings.TrimSpace(payload.Name),
 			Username:     &uname,
 			PasswordHash: pwdHash,
 			Role:         payload.Role,
-			PinCode:      payload.PinCode,
+			PinCode:      rawPin,
 			IsActive:     true,
 		}
 		tdb.Create(&newUser)
-		return c.JSON(fiber.Map{"status": "ok", "id": newUser.ID, "username": newUser.Username})
+		return c.JSON(fiber.Map{"status": "ok", "id": newUser.ID, "username": newUser.Username, "temporary_password": rawPwd, "pin_code": rawPin})
 	})
 
 	group.Put("/tenants/:tenant_id/users/:user_id/password", func(c *fiber.Ctx) error {
@@ -4503,15 +5246,17 @@ func RegisterMasterRoutes(group fiber.Router, svc *service.Services) {
 		lead.Status = "converted"
 		mdb.Save(&lead)
 
+		adminPwd := generateRandomTempPassword(10)
+		adminPin := generateRandomTempPassword(4)
 		if tdb, err := svc.DBManager.GetTenantDB(code); err == nil && tdb != nil {
 			uname := "admin"
-			pwdHash := middleware.HashPassword("admin123")
+			pwdHash := middleware.HashPassword(adminPwd)
 			tdb.Create(&models.StaffUser{
 				Name:         lead.FullName,
 				Username:     &uname,
 				PasswordHash: pwdHash,
 				Role:         "manager",
-				PinCode:      "1234",
+				PinCode:      adminPin,
 				IsActive:     true,
 			})
 		}
@@ -4522,8 +5267,8 @@ func RegisterMasterRoutes(group fiber.Router, svc *service.Services) {
 			"credentials": fiber.Map{
 				"restaurant_code": code,
 				"admin_username":  "admin",
-				"admin_password":  "admin123",
-				"admin_pin":       "1234",
+				"admin_password":  adminPwd,
+				"admin_pin":       adminPin,
 			},
 		})
 	})

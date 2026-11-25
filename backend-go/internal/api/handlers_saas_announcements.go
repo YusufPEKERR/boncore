@@ -398,12 +398,23 @@ func RegisterSaaSAnnouncementRoutes(masterGroup fiber.Router, rootApi fiber.Rout
 			Order("id desc").
 			Find(&announcements)
 
+		// Exclude announcements already dismissed by this tenant
+		var receipts []models.AnnouncementReceipt
+		mdb.Where("tenant_code = ?", tenantCode).Find(&receipts)
+		dismissedSet := make(map[int]bool, len(receipts))
+		for _, r := range receipts {
+			dismissedSet[r.AnnouncementID] = true
+		}
+
 		// Filter matching target
 		var tenant models.RestaurantTenant
 		hasTenant := mdb.Where("code = ?", tenantCode).First(&tenant).Error == nil
 
 		matched := make([]models.BroadcastAnnouncement, 0, len(announcements))
 		for _, a := range announcements {
+			if dismissedSet[a.ID] {
+				continue
+			}
 			if a.TargetType == "all" {
 				matched = append(matched, a)
 				continue

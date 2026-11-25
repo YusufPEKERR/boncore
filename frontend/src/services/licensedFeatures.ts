@@ -26,11 +26,18 @@ export const DEFAULT_TENANT_FEATURES: TenantFeatures = {
   cost_profit: true,
 };
 
-const STORAGE_KEY = 'boncore_licensed_features';
+function getStorageKey(): string {
+  try {
+    const rc = (localStorage.getItem('boncore_restaurant_code') || 'default').trim().toLowerCase() || 'default';
+    return `boncore_licensed_features_${rc}`;
+  } catch {
+    return 'boncore_licensed_features_default';
+  }
+}
 
 export function loadLocalFeatures(): TenantFeatures {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(getStorageKey());
     if (raw) {
       const parsed = JSON.parse(raw);
       return { ...DEFAULT_TENANT_FEATURES, ...parsed };
@@ -45,7 +52,7 @@ export function saveLocalFeatures(features: Partial<TenantFeatures>): TenantFeat
   const current = loadLocalFeatures();
   const updated: TenantFeatures = { ...current, ...features };
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    localStorage.setItem(getStorageKey(), JSON.stringify(updated));
   } catch {}
   window.dispatchEvent(new CustomEvent('boncore_features_updated', { detail: updated }));
   return updated;

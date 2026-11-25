@@ -12,6 +12,7 @@ import { useWebSocket } from '../../services/websocket';
 
 export interface KitchenGroupItem {
   id: string;
+  code?: string;
   name: string;
   description: string;
   icon: string;
@@ -43,7 +44,7 @@ const ICON_OPTIONS = [
 ];
 
 const COLOR_OPTIONS = [
-  { id: 'red', label: 'Kırmızı', bg: 'bg-brand-600', soft: 'bg-emerald-50 dark:bg-emerald-950/40 text-brand-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900' },
+  { id: 'red', label: 'Kırmızı', bg: 'bg-rose-600', soft: 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900' },
   { id: 'amber', label: 'Turuncu / Kehribar', bg: 'bg-amber-500', soft: 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-900' },
   { id: 'blue', label: 'Mavi', bg: 'bg-blue-600', soft: 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-900' },
   { id: 'purple', label: 'Mor', bg: 'bg-purple-600', soft: 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-900' },
@@ -348,6 +349,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
     sound.beep();
     try {
       await api.assignCategoriesToKitchenGroup(assignModalGroup.id, {
+        category_ids: selectedCategoryIds,
         product_ids: selectedProductIds,
       });
       showToast(`"${assignModalGroup.name}" bölümü ürün bağlantıları güncellendi (${selectedProductIds.length} ürün bağlı).`, 'success');
@@ -370,7 +372,7 @@ export const KitchenGroupsDefinitions: React.FC<KitchenGroupsDefinitionsProps> =
       {/* Toast Notification */}
       {toast && (
         <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-extrabold animate-slideDown ${
-          toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-brand-600 text-white'
+          toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
         }`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
           <span>{toast.message}</span>

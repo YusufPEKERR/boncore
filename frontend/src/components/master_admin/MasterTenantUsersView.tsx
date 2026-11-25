@@ -26,20 +26,21 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
 
   // Password / PIN Change Modal
   const [changingUser, setChangingUser] = useState<any | null>(null);
-  const [newPassword, setNewPassword] = useState<string>('123456');
-  const [newPin, setNewPin] = useState<string>('1234');
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [newPin, setNewPin] = useState<string>('');
   const [saveLoading, setSaveLoading] = useState<boolean>(false);
 
   // Tenant Username Change Modal
   const [isChangingTenantCode, setIsChangingTenantCode] = useState<boolean>(false);
   const [newTenantCode, setNewTenantCode] = useState<string>('');
   const [newTenantDisplayName, setNewTenantDisplayName] = useState<string>('');
+  const [newTenantOwnerName, setNewTenantOwnerName] = useState<string>('');
 
   // New User Modal
   const [isNewUserModalOpen, setIsNewUserModalOpen] = useState<boolean>(false);
   const [newUserName, setNewUserName] = useState<string>('');
   const [newUserUsername, setNewUserUsername] = useState<string>('');
-  const [newUserPassword, setNewUserPassword] = useState<string>('123456');
+  const [newUserPassword, setNewUserPassword] = useState<string>('');
   const [newUserRole, setNewUserRole] = useState<string>('waiter');
   const [newUserPin, setNewUserPin] = useState<string>('');
 
@@ -68,12 +69,18 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
     }
   };
 
+  const sanitizeCodeInput = (text: string) => {
+    const tr: Record<string, string> = { 'ç': 'c', 'ğ': 'g', 'ı': 'i', 'ö': 'o', 'ş': 's', 'ü': 'u', 'Ç': 'c', 'Ğ': 'g', 'İ': 'i', 'I': 'i', 'Ö': 'o', 'Ş': 's', 'Ü': 'u', ' ': '-' };
+    return text.split('').map(char => tr[char] ?? char).join('').toLowerCase().replace(/[^a-z0-9\-_]/g, '');
+  };
+
   const handleSaveTenantCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTenantCode.trim()) {
       alert('Lütfen geçerli bir kullanıcı adı girin.');
       return;
     }
+    const prevCode = selectedTenant?.code;
     sound.beep();
     setSaveLoading(true);
     try {
@@ -82,7 +89,8 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           code: newTenantCode.trim().toLowerCase(),
-          display_name: newTenantDisplayName.trim() || undefined
+          display_name: newTenantDisplayName.trim() || undefined,
+          owner_name: newTenantOwnerName.trim()
         })
       });
       if (!res.ok) {
@@ -90,14 +98,21 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
         throw new Error(err.detail || 'Kullanıcı adı güncellenemedi.');
       }
       const data = await res.json();
-      const updatedCode = data.tenant?.code || newTenantCode.trim().toLowerCase();
+      const updatedCode = data.code || data.tenant?.code || newTenantCode.trim().toLowerCase();
       const updatedDisplayName = data.display_name || newTenantDisplayName.trim();
+      const updatedOwnerName = data.owner_name ?? data.tenant?.owner_name ?? newTenantOwnerName.trim();
       if (selectedTenant) {
         selectedTenant.code = updatedCode;
         if (updatedDisplayName) selectedTenant.display_name = updatedDisplayName;
+        selectedTenant.owner_name = updatedOwnerName;
       }
+      try {
+        if (updatedCode && prevCode && localStorage.getItem('boncore_restaurant_code') === prevCode) {
+          localStorage.setItem('boncore_restaurant_code', updatedCode);
+        }
+      } catch {}
       sound.cashDrawer();
-      alert(`✅ Restoran bilgileri ve POS ekran başlığı ("${updatedDisplayName || updatedCode}") başarıyla güncellendi!`);
+      alert(`✅ Restoran bilgileri (@${updatedCode}) ve POS ekran başlığı ("${updatedDisplayName || updatedCode}") başarıyla güncellendi!`);
       setIsChangingTenantCode(false);
       onRefresh?.();
     } catch (err: any) {
@@ -111,13 +126,19 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
   const handleOpenPasswordModal = (user: any) => {
     sound.beep();
     setChangingUser(user);
-    setNewPassword('123456');
-    setNewPin(user.pin_code || '1234');
+    setNewPassword('');
+    setNewPin(user.pin_code || '');
   };
 
   const handleSavePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!changingUser) return;
+    const trimmedPass = newPassword.trim();
+    const trimmedPin = newPin.trim();
+    if (!trimmedPass && !trimmedPin) {
+      alert('Lütfen yeni şifre veya yeni PIN giriniz.');
+      return;
+    }
 
     sound.cashDrawer();
     setSaveLoading(true);
@@ -127,17 +148,21 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          new_password: newPassword.trim(),
-          new_pin: newPin.trim()
+          new_password: trimmedPass || undefined,
+          new_pin: trimmedPin || undefined
         })
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || 'Şifre güncellenemedi.');
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || err.error || err.message || 'Şifre güncellenemedi.');
       }
 
-      alert(`✅ ${changingUser.name} kullanıcısının şifresi başarıyla "${newPassword}" olarak güncellendi!`);
+      alert(
+        trimmedPass
+          ? `✅ ${changingUser.name} kullanıcısının şifre / PIN bilgileri güncellendi!`
+          : `✅ ${changingUser.name} kullanıcısının PIN kodu güncellendi!`
+      );
       setChangingUser(null);
       loadTenantUsers(currentTenantId);
     } catch (err: any) {
@@ -163,21 +188,30 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
         body: JSON.stringify({
           name: newUserName.trim(),
           username: newUserUsername.trim(),
-          password: newUserPassword.trim(),
+          password: newUserPassword.trim() || undefined,
           role: newUserRole,
           pin_code: newUserPin.trim() || undefined
         })
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || 'Kullanıcı oluşturulamadı.');
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || err.error || err.message || 'Kullanıcı oluşturulamadı.');
       }
 
-      alert('Kullanıcı başarıyla oluşturuldu!');
+      const data = await res.json().catch(() => ({}));
+      const tempPass = data?.temporary_password;
+      const genPin = data?.pin_code;
+      if (tempPass || genPin) {
+        alert(`Kullanıcı başarıyla oluşturuldu!\n\n👤 Kullanıcı Adı: ${data?.username || newUserUsername.trim()}\n🔑 Şifre: ${tempPass || '-'}\n🔢 PIN: ${genPin || '-'}`);
+      } else {
+        alert('Kullanıcı başarıyla oluşturuldu!');
+      }
       setIsNewUserModalOpen(false);
       setNewUserName('');
       setNewUserUsername('');
+      setNewUserPassword('');
+      setNewUserPin('');
       loadTenantUsers(currentTenantId);
     } catch (err: any) {
       alert(err.message || 'Hata oluştu.');
@@ -200,12 +234,12 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
         </div>
 
         {/* Tenant Selector Dropdown */}
-        <div className="flex items-center gap-3 w-full lg:w-auto">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-3 w-full lg:w-auto">
           <label className="text-xs font-bold text-slate-400 shrink-0">Restoran Seç:</label>
           <select
             value={currentTenantId}
             onChange={(e) => onSelectTenant(Number(e.target.value))}
-            className="flex-1 lg:w-72 px-3.5 py-2 rounded-xl bg-slate-850 border border-slate-700 text-white font-bold text-xs focus:outline-none focus:border-emerald-500 shadow-xs"
+            className="min-w-0 flex-1 lg:w-72 px-3.5 py-2 rounded-xl bg-slate-850 border border-slate-700 text-white font-bold text-xs focus:outline-none focus:border-emerald-500 shadow-xs"
           >
             {tenants.map((t) => (
               <option key={t.id} value={t.id}>
@@ -246,6 +280,7 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
                     sound.beep();
                     setNewTenantCode(selectedTenant.code || '');
                     setNewTenantDisplayName(selectedTenant.display_name || selectedTenant.name || '');
+                    setNewTenantOwnerName(selectedTenant.owner_name || '');
                     setIsChangingTenantCode(true);
                   }}
                   className="px-2 py-0.5 rounded-lg bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white text-[11px] font-black transition cursor-pointer border border-emerald-500/40"
@@ -376,24 +411,11 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
                   <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
-                    required
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Yeni parola yazın"
+                    placeholder="Yeni güçlü parola yazın"
                     className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono text-sm focus:outline-none focus:border-emerald-500 font-bold"
                   />
-                </div>
-                <div className="flex gap-2 mt-1.5">
-                  {['123456', 'restoran2026', 'admin123'].map((sample) => (
-                    <button
-                      key={sample}
-                      type="button"
-                      onClick={() => setNewPassword(sample)}
-                      className="px-2 py-0.5 rounded-md bg-slate-800 text-[10px] text-slate-400 hover:text-white"
-                    >
-                      {sample}
-                    </button>
-                  ))}
                 </div>
               </div>
 
@@ -404,7 +426,7 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
                   maxLength={6}
                   value={newPin}
                   onChange={(e) => setNewPin(e.target.value)}
-                  placeholder="Örn: 1234"
+                  placeholder="4-6 haneli PIN (opsiyonel)"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono text-sm focus:outline-none focus:border-emerald-500 font-bold"
                 />
               </div>
@@ -495,6 +517,7 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
                     type="text"
                     value={newUserPassword}
                     onChange={(e) => setNewUserPassword(e.target.value)}
+                    placeholder="Boşsa otomatik üretilir"
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono"
                   />
                 </div>
@@ -562,7 +585,7 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
                     type="text"
                     required
                     value={newTenantCode}
-                    onChange={(e) => setNewTenantCode(e.target.value.toLowerCase().replace(/[^a-z0-9\-_]/g, ''))}
+                    onChange={(e) => setNewTenantCode(sanitizeCodeInput(e.target.value))}
                     placeholder="ornek-restoran"
                     className="w-full pl-8 pr-4 py-2.5 rounded-xl bg-slate-800 border border-emerald-500/50 text-emerald-300 font-mono font-bold focus:border-emerald-400 focus:outline-none text-sm"
                   />
@@ -589,6 +612,17 @@ export const MasterTenantUsersView: React.FC<MasterTenantUsersViewProps> = ({
                 <p className="text-[11px] text-slate-400 font-medium">
                   POS ekranının sol üst köşesinde (<strong>BonCore POS</strong> logosunun hemen altında) görünen başlık.
                 </p>
+              </div>
+
+              <div>
+                <label className="block mb-1 text-slate-300">Yetkili Adı Soyadı (İşletme Yetkilisi)</label>
+                <input
+                  type="text"
+                  value={newTenantOwnerName}
+                  onChange={(e) => setNewTenantOwnerName(e.target.value)}
+                  placeholder="Örn: Mehmet Yılmaz"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold text-xs focus:border-emerald-400 focus:outline-none"
+                />
               </div>
 
               <div className="flex justify-end gap-2.5 pt-2">

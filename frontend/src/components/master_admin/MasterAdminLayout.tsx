@@ -58,6 +58,7 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
 
   // Cross-view selection state
   const [selectedTenantIdForUsers, setSelectedTenantIdForUsers] = useState<number | null>(null);
+  const [openAddTenantModal, setOpenAddTenantModal] = useState<boolean>(false);
 
   useEffect(() => {
     loadAllMasterData();
@@ -163,25 +164,25 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
     <div className={`master-admin-root ${theme === 'light' ? 'saas-white-theme bg-slate-50 text-slate-900' : 'bg-slate-950 text-slate-100'} min-h-screen flex flex-col font-sans select-none transition-colors duration-200`}>
       
       {/* Top Master Navbar */}
-      <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-40 shadow-xs">
-        <div className="flex items-center gap-3">
+      <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-40 shadow-xs overflow-hidden max-w-full">
+        <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="lg:hidden p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            className="lg:hidden p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0"
           >
             {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
 
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 font-black">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 font-black shrink-0">
               <ShieldCheck className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-black text-slate-900 dark:text-white text-sm sm:text-base tracking-tight">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-black text-slate-900 dark:text-white text-xs sm:text-base tracking-tight truncate">
                   BonCore <span className="text-emerald-600 dark:text-emerald-400">Master Admin</span>
                 </span>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
+                <span className="hidden sm:inline-block text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800 shrink-0">
                   SaaS Backoffice
                 </span>
               </div>
@@ -193,11 +194,11 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
         </div>
 
         {/* Right Action Buttons */}
-        <div className="flex items-center gap-2 sm:gap-2.5">
+        <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
           {/* Theme Switcher Button */}
           <button
             onClick={() => { sound.beep(); toggleTheme(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 text-xs font-bold transition cursor-pointer shadow-2xs"
+            className="flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 text-xs font-bold transition cursor-pointer shadow-2xs"
             title={theme === 'dark' ? 'Beyaz Temaya Geç' : 'Koyu Temaya Geç'}
           >
             {theme === 'dark' ? (
@@ -215,7 +216,7 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
 
           <button
             onClick={() => { sound.beep(); onGoToLanding(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white text-xs font-bold transition cursor-pointer shadow-2xs"
+            className="flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white text-xs font-bold transition cursor-pointer shadow-2xs"
             title="Tanıtım Web Sitesine Git"
           >
             <Globe className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -224,7 +225,7 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
 
           <button
             onClick={() => { sound.beep(); onGoToPos(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/40 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 text-xs font-bold transition cursor-pointer shadow-2xs"
+            className="flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-xl border border-emerald-500/40 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 text-xs font-bold transition cursor-pointer shadow-2xs"
             title="Restoran POS Paneline Geç"
           >
             <Utensils className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -311,13 +312,21 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
         )}
 
         {/* Right Main Content Area with Smooth Scrolling & Bottom Margin */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-32 min-h-0">
+        <main className="flex-1 min-w-0 overflow-y-auto p-3 sm:p-6 lg:p-8 pb-32 min-h-0">
           {activeTab === 'dashboard' && (
             <MasterDashboardView
               stats={stats}
               leads={leads}
               tenants={tenants}
-              onNavigateTab={(tab) => { sound.beep(); setActiveTab(tab as any); }}
+              onNavigateTab={(tab) => {
+                sound.beep();
+                if (tab === 'tenants-add') {
+                  setOpenAddTenantModal(true);
+                  setActiveTab('tenants');
+                } else {
+                  setActiveTab(tab as any);
+                }
+              }}
               onRefresh={loadAllMasterData}
             />
           )}
@@ -332,6 +341,8 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
               onRefresh={loadAllMasterData}
               onSelectTenantUsers={handleSelectTenantUsers}
               onImpersonateTenant={handleImpersonateTenant}
+              openAddModalOnMount={openAddTenantModal}
+              onAddModalOpened={() => setOpenAddTenantModal(false)}
             />
           )}
 

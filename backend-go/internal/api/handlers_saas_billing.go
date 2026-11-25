@@ -148,7 +148,15 @@ func RegisterSaaSBillingRoutes(group fiber.Router, svc *service.Services) {
 
 		mdb := svc.DBManager.MasterGorm
 		var cfg models.VPOSConfig
-		_ = mdb.Where("gateway_provider = ?", provider).First(&cfg)
+		err := mdb.Where("gateway_provider = ?", provider).First(&cfg).Error
+		if err != nil || cfg.ID == 0 || (strings.TrimSpace(cfg.MerchantID) == "" && strings.TrimSpace(cfg.APIKey) == "") {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"success":  false,
+				"provider": provider,
+				"status":   "NOT_CONFIGURED",
+				"message":  fmt.Sprintf("%s için üye işyeri numarası (Merchant ID) veya API anahtarı henüz yapılandırılmamış.", strings.ToUpper(provider)),
+			})
+		}
 
 		modeStr := "Sandbox / Test"
 		if cfg.IsProduction {
@@ -159,9 +167,8 @@ func RegisterSaaSBillingRoutes(group fiber.Router, svc *service.Services) {
 			"success":      true,
 			"provider":     provider,
 			"mode":         modeStr,
-			"ping_ms":      42,
-			"status":       "CONNECTED",
-			"message":      fmt.Sprintf("%s sanal POS ağ geçidi bağlantısı başarılı (%s modu).", strings.ToUpper(provider), modeStr),
+			"status":       "CONFIGURED",
+			"message":      fmt.Sprintf("%s sanal POS yapılandırması doğrulandı (%s modu).", strings.ToUpper(provider), modeStr),
 			"validated_at": time.Now(),
 		})
 	})

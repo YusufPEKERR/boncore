@@ -399,7 +399,7 @@ func (Payment) TableName() string { return "payments" }
 type CashRegister struct {
 	ID             int        `gorm:"primaryKey;autoIncrement" json:"id"`
 	Status         string     `gorm:"size:30;default:open;index" json:"status"`
-	OpeningFloat   float64    `gorm:"default:500.0" json:"opening_float"`
+	OpeningFloat   float64    `gorm:"default:0.0" json:"opening_float"`
 	TotalCash      float64    `gorm:"default:0.0" json:"total_cash"`
 	TotalCard      float64    `gorm:"default:0.0" json:"total_card"`
 	TotalSodexo    float64    `gorm:"default:0.0" json:"total_sodexo"`

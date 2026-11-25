@@ -27,6 +27,7 @@ ENV/
 *.bak
 backend/boncore.db
 backend/data/
+backend-go/internal/backend/
 backend-go/internal/backend/data/
 **/data/backups/
 backend/static/uploads/
@@ -65,4 +66,5 @@ Thumbs.db
 *.exe
 cloudflared.exe
 backend/.auth_secret
+**/.auth_secret
 

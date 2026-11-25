@@ -37,7 +37,7 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({
     setLoading(true);
 
     try {
-      await fetch('/api/master/leads', {
+      const res = await fetch('/api/master/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -49,8 +49,21 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({
           notes: 'Web sitesi 14 gün ücretsiz deneme talebi'
         })
       });
+      if (!res.ok) {
+        let errText = 'Demo talebi gönderilemedi. Lütfen tekrar deneyin.';
+        try {
+          const errJson = await res.json();
+          if (errJson?.error) errText = String(errJson.error);
+        } catch {}
+        setFormError(errText);
+        setLoading(false);
+        return;
+      }
     } catch (err) {
-      console.warn('Backend lead post warning:', err);
+      console.warn('Backend lead post failed:', err);
+      setFormError('Sunucuya bağlanılamadı. Lütfen bağlantınızı kontrol edip tekrar deneyin.');
+      setLoading(false);
+      return;
     }
 
     // Also persist in local storage

@@ -149,7 +149,14 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
   };
 
   // --- Table Reordering Actions ---
+  const isFilteringTables = searchQuery.trim().length > 0;
+
   const handleMoveTable = async (tableIndex: number, direction: 'prev' | 'next') => {
+    if (isFilteringTables) {
+      sound.warning();
+      showToast('Arama filtresi aktifken masa sırası değiştirilemez.', 'error');
+      return;
+    }
     const targetIndex = direction === 'prev' ? tableIndex - 1 : tableIndex + 1;
     const tablesList = currentArea?.tables || [];
     if (targetIndex < 0 || targetIndex >= tablesList.length) return;
@@ -175,14 +182,21 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
     e.dataTransfer.setData('text/plain', `table:${table.id}`);
   };
 
-  const handleTableDrop = async (e: React.DragEvent, targetIndex: number) => {
+  const handleTableDrop = async (e: React.DragEvent, targetTable: Table) => {
     e.preventDefault();
-    if (draggedTableIndex === null || draggedTableIndex === targetIndex) return;
+    if (isFilteringTables) {
+      setDraggedTableIndex(null);
+      setDraggedTableItem(null);
+      return;
+    }
+    const tablesList = [...(currentArea?.tables || [])];
+    const fromIndex = draggedTableItem ? tablesList.findIndex(t => t.id === draggedTableItem.id) : draggedTableIndex;
+    const toIndex = tablesList.findIndex(t => t.id === targetTable.id);
+    if (fromIndex === null || fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
 
     sound.beep();
-    const tablesList = [...(currentArea?.tables || [])];
-    const [moved] = tablesList.splice(draggedTableIndex, 1);
-    tablesList.splice(targetIndex, 0, moved);
+    const [moved] = tablesList.splice(fromIndex, 1);
+    tablesList.splice(toIndex, 0, moved);
     setDraggedTableIndex(null);
     setDraggedTableItem(null);
 
@@ -291,7 +305,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
         await api.updateTable(editingTable.id, {
           area_id: tableAreaSelect,
           name: tableNameInput,
-          seats: 0,
+          seats: editingTable.seats ?? 4,
           shape: tableShapeInput
         });
         showToast('Masa bilgileri güncellendi.', 'success');
@@ -299,7 +313,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
         await api.createTable({
           area_id: tableAreaSelect,
           name: tableNameInput,
-          seats: 0,
+          seats: 4,
           shape: tableShapeInput,
           order_index: (currentArea?.tables?.length || 0)
         });
@@ -439,7 +453,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
         <div className={`absolute top-4 right-4 z-50 p-4 rounded-2xl flex items-center gap-3 text-sm font-bold shadow-2xl transition-all animate-slideDown ${
           toast.type === 'success' 
             ? 'bg-emerald-600/95 text-white border border-emerald-500' 
-            : 'bg-brand-600/95 text-white border border-brand-500'
+            : 'bg-rose-600/95 text-white border border-rose-500'
         }`}>
           {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
           <span>{toast.message}</span>
@@ -506,7 +520,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
                   <button
                     onClick={(e) => { e.stopPropagation(); handleMoveArea(idx, 'up'); }}
                     disabled={idx === 0}
-                    className="p-1 text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-20 rounded hover:bg-slate-300/40 dark:hover:bg-slate-700/50"
+                    className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-20 rounded hover:bg-slate-300/40 dark:hover:bg-slate-700/50"
                     title="Yukarı Taşı"
                   >
                     <ChevronUp className="w-3.5 h-3.5" />
@@ -514,7 +528,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
                   <button
                     onClick={(e) => { e.stopPropagation(); handleMoveArea(idx, 'down'); }}
                     disabled={idx === areas.length - 1}
-                    className="p-1 text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-20 rounded hover:bg-slate-300/40 dark:hover:bg-slate-700/50"
+                    className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-20 rounded hover:bg-slate-300/40 dark:hover:bg-slate-700/50"
                     title="Aşağı Taşı"
                   >
                     <ChevronDown className="w-3.5 h-3.5" />
@@ -524,14 +538,14 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
 
                   <button
                     onClick={(e) => handleOpenEditArea(area, e)}
-                    className="p-1 text-slate-400 hover:text-blue-600 rounded hover:bg-blue-50 dark:hover:bg-blue-950/40"
+                    className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-400 hover:text-blue-600 rounded hover:bg-blue-50 dark:hover:bg-blue-950/40"
                     title="Bölge Adını Düzenle"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={(e) => handleDeleteArea(area, e)}
-                    className="p-1 text-slate-400 hover:text-brand-600 rounded hover:bg-red-50 dark:hover:bg-red-950/40"
+                    className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-400 hover:text-brand-600 rounded hover:bg-red-50 dark:hover:bg-red-950/40"
                     title="Bölge Sil"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -639,15 +653,15 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
             {displayedTables.map((t, idx) => (
               <div
                 key={t.id}
-                draggable
+                draggable={!isFilteringTables}
                 onDragStart={(e) => handleTableDragStart(e, t, idx)}
                 onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => handleTableDrop(e, idx)}
+                onDrop={(e) => handleTableDrop(e, t)}
                 className="h-40 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-3.5 flex flex-col justify-between shadow-sm hover:shadow-md transition relative group"
               >
                 {/* Card Top: Drag Handle, Shape, and Table Shift Arrows */}
                 <div className="flex items-center justify-between text-xs text-slate-400">
-                  <div className="flex items-center gap-1.5 cursor-grab text-slate-300 dark:text-slate-600 hover:text-slate-500" title="Sürükleyip Sırala">
+                  <div className="flex items-center gap-1.5 cursor-grab text-slate-300 dark:text-slate-600 hover:text-slate-500" title={isFilteringTables ? 'Arama sırasında sıralama kilitli' : 'Sürükleyip Sırala'}>
                     <GripVertical className="w-3.5 h-3.5" />
                     <span className="text-[10px] font-bold text-slate-400 font-mono">#{idx + 1}</span>
                   </div>
@@ -656,16 +670,16 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
                   <div className="flex items-center gap-0.5">
                     <button
                       onClick={() => handleMoveTable(idx, 'prev')}
-                      disabled={idx === 0}
-                      className="p-1 text-slate-400 hover:text-slate-800 dark:hover:text-white disabled:opacity-20 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                      disabled={isFilteringTables || idx === 0}
+                      className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-400 hover:text-slate-800 dark:hover:text-white disabled:opacity-20 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
                       title="Sola / Öne Al"
                     >
                       <ChevronLeft className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => handleMoveTable(idx, 'next')}
-                      disabled={idx === (currentArea?.tables?.length || 0) - 1}
-                      className="p-1 text-slate-400 hover:text-slate-800 dark:hover:text-white disabled:opacity-20 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                      disabled={isFilteringTables || idx === (currentArea?.tables?.length || 0) - 1}
+                      className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-400 hover:text-slate-800 dark:hover:text-white disabled:opacity-20 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
                       title="Sağa / Arkaya Al"
                     >
                       <ChevronRight className="w-3.5 h-3.5" />

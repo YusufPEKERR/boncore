@@ -405,6 +405,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
                   const isReserved = table.status === 'reserved';
                   const hasBuzzer = !!table.waiter_call_reason || table.status === 'waiter_call';
                   const hasReadyFood = !!table.has_ready_items || !!table.active_order?.has_ready_items;
+                  const isPrepaid = !!table.active_order && (!!table.active_order.is_prepaid || (Number(table.active_order.paid_total || 0) > 0 && Number(table.active_order.remaining_total ?? 1) <= 0.01));
                   const isMenuOpen = activeActionTableId === table.id;
 
                   const isSourceTable = !!(tableToMove && table.id === tableToMove.id);
@@ -470,10 +471,20 @@ export const FloorView: React.FC<FloorViewProps> = ({
                                 <span>YAZDIRILDI</span>
                               </span>
                             )}
+                            {isPrepaid && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-emerald-600 text-white font-black text-[9px] flex items-center gap-1 shadow-sm tracking-wide">
+                                ✓ Ön Ödeme Alındı
+                              </span>
+                            )}
+                            {table.waiter_call_reason && table.waiter_call_reason.toLowerCase().includes('stok yok') && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-rose-600 text-white font-black text-[9px] flex items-center gap-1 shadow-sm tracking-wide animate-pulse">
+                                ⚠️ Stok Yok Onayı
+                              </span>
+                            )}
                           </div>
                           {isOccupied && (
                             <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider block mt-0.5">
-                              {table.waiter_name || 'MEHMETABİ'}
+                              {table.waiter_name || 'Garson'}
                             </span>
                           )}
                         </div>
@@ -539,9 +550,15 @@ export const FloorView: React.FC<FloorViewProps> = ({
                                 <span className="text-slate-400 font-normal mx-0.5">/</span>
                                 <span className="text-emerald-600 dark:text-emerald-400">₺{Number(table.active_order.paid_total || 0).toFixed(2)}</span>
                               </div>
-                              <span className="text-[10px] font-extrabold text-brand-600 dark:text-emerald-400 font-mono mt-0.5">
-                                Kalan: ₺{Number(table.active_order.remaining_total !== undefined ? table.active_order.remaining_total : (table.active_order.grand_total || 0) - (table.active_order.paid_total || 0)).toFixed(2)}
-                              </span>
+                              {isPrepaid ? (
+                                <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                                  ✓ Ön Ödeme Alındı
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-extrabold text-brand-600 dark:text-emerald-400 font-mono mt-0.5">
+                                  Kalan: ₺{Number(table.active_order.remaining_total !== undefined ? table.active_order.remaining_total : (table.active_order.grand_total || 0) - (table.active_order.paid_total || 0)).toFixed(2)}
+                                </span>
+                              )}
                             </div>
                           ) : (
                             <div className="text-xl font-black text-slate-950 dark:text-white font-mono tracking-tight">
@@ -603,6 +620,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
                 const isReserved = table.status === 'reserved';
                 const hasBuzzer = !!table.waiter_call_reason || table.status === 'waiter_call';
                 const hasReadyFood = !!table.has_ready_items || !!table.active_order?.has_ready_items;
+                const isPrepaid = !!table.active_order && (!!table.active_order.is_prepaid || (Number(table.active_order.paid_total || 0) > 0 && Number(table.active_order.remaining_total ?? 1) <= 0.01));
                 const isRound = table.shape === 'round';
                 const posX = table.x || 50;
                 const posY = table.y || 50;
@@ -680,8 +698,15 @@ export const FloorView: React.FC<FloorViewProps> = ({
 
                     <div className="text-center my-auto">
                       {isOccupied && table.active_order ? (
-                        <div className="text-xs sm:text-sm font-black font-mono">
-                          ₺{Number(table.active_order.grand_total || 0).toFixed(2)}
+                        <div>
+                          <div className="text-xs sm:text-sm font-black font-mono">
+                            ₺{Number(table.active_order.grand_total || 0).toFixed(2)}
+                          </div>
+                          {isPrepaid && (
+                            <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[8px] font-black">
+                              ✓ Ön Ödeme Alındı
+                            </span>
+                          )}
                         </div>
                       ) : isReserved ? (
                         <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400">Rezerve</span>
@@ -767,6 +792,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
               const hasBuzzer = !!table.waiter_call_reason || table.status === 'waiter_call';
               const hasReadyFood = !!table.has_ready_items || !!table.active_order?.has_ready_items;
               const activeOrder = table.active_order;
+              const isPrepaid = !!activeOrder && (!!activeOrder.is_prepaid || (Number(activeOrder.paid_total || 0) > 0 && Number(activeOrder.remaining_total ?? 1) <= 0.01));
               const hasPartialPay = (activeOrder?.paid_total || 0) > 0;
               const isMenuOpen = activeActionTableId === table.id;
 
@@ -786,14 +812,8 @@ export const FloorView: React.FC<FloorViewProps> = ({
                       : 'border-l-emerald-500 border-slate-200/90 dark:border-slate-800 hover:border-emerald-300'
                   }`}
                 >
-                  {/* Left Column: Table Info, Area Badge, Waiter & Order No */}
+                  {/* Left Column: Table Info, Area Badge, Waiter */}
                   <div className="flex items-start gap-3 flex-1 min-w-0">
-                    {/* Big Table Badge */}
-                    <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex flex-col items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700">
-                      <span className="text-[10px] text-slate-400 font-extrabold uppercase leading-none">MASA</span>
-                      <span className="text-base font-black text-slate-900 dark:text-white leading-none mt-0.5">{table.name.replace(/^Masa\s*/i, '')}</span>
-                    </div>
-
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="font-black text-base text-slate-900 dark:text-white tracking-tight">
@@ -814,6 +834,12 @@ export const FloorView: React.FC<FloorViewProps> = ({
                           </span>
                         )}
 
+                        {isPrepaid && (
+                          <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-emerald-600 text-white flex items-center gap-1 shadow-sm border border-emerald-500">
+                            ✓ Ön Ödeme Alındı
+                          </span>
+                        )}
+
                         {hasBuzzer ? (
                           <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 animate-pulse flex items-center gap-1 border border-purple-300">
                             🔔 {table.waiter_call_reason || 'Garson Çağrısı'}
@@ -827,18 +853,13 @@ export const FloorView: React.FC<FloorViewProps> = ({
                           <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 flex items-center gap-1 border border-blue-300">
                             💳 Hesap İstendi
                           </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 flex items-center gap-1 border border-emerald-300">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-                            Açık Adisyon
-                          </span>
-                        )}
+                        ) : null}
                       </div>
 
-                      {/* Sub row: Live Timer + Waiter Name + Order Info */}
+                      {/* Sub row: Live Timer + Waiter Name */}
                       <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mt-1.5 flex-wrap">
                         {/* Live Timer */}
-                        <div className="flex items-center gap-1 font-mono font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md">
+                        <div className="flex items-center gap-1 font-mono font-bold text-slate-700 dark:text-slate-200">
                           <Clock className="w-3 h-3 text-emerald-600 shrink-0" />
                           <span>{getTableElapsedFormatted(activeOrder?.created_at || table.opened_at)}</span>
                         </div>
@@ -846,17 +867,8 @@ export const FloorView: React.FC<FloorViewProps> = ({
                         {/* Waiter Name */}
                         <div className="flex items-center gap-1">
                           <User className="w-3 h-3 text-slate-400" />
-                          <span>Garson: <strong className="text-slate-800 dark:text-slate-200 font-semibold">{table.waiter_name || activeOrder?.waiter_name || 'MEHMETABİ'}</strong></span>
+                          <span>Garson: <strong className="text-slate-800 dark:text-slate-200 font-semibold">{table.waiter_name || activeOrder?.waiter_name || 'Garson'}</strong></span>
                         </div>
-
-                        {/* Order Number & Items */}
-                        {activeOrder && (
-                          <div className="flex items-center gap-1 text-[11px] text-slate-400">
-                            <span>#{activeOrder.order_no || activeOrder.id}</span>
-                            <span>•</span>
-                            <span className="font-semibold">{activeOrder.items_count || 0} Kalem Ürün</span>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -872,9 +884,15 @@ export const FloorView: React.FC<FloorViewProps> = ({
                               <span className="text-slate-400 font-normal mx-1">/</span>
                               <span className="text-emerald-600 dark:text-emerald-400">₺{Number(activeOrder.paid_total || 0).toFixed(2)}</span>
                             </div>
-                            <div className="text-[11px] font-extrabold text-brand-600 dark:text-emerald-400 font-mono">
-                              Kalan: ₺{Number(activeOrder.remaining_total !== undefined ? activeOrder.remaining_total : (activeOrder.grand_total || 0) - (activeOrder.paid_total || 0)).toFixed(2)}
-                            </div>
+                            {isPrepaid ? (
+                              <div className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">
+                                ✓ Ön Ödeme Alındı
+                              </div>
+                            ) : (
+                              <div className="text-[11px] font-extrabold text-brand-600 dark:text-emerald-400 font-mono">
+                                Kalan: ₺{Number(activeOrder.remaining_total !== undefined ? activeOrder.remaining_total : (activeOrder.grand_total || 0) - (activeOrder.paid_total || 0)).toFixed(2)}
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="text-lg sm:text-xl font-black font-mono text-slate-950 dark:text-white">

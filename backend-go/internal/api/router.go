@@ -79,6 +79,11 @@ func RegisterRoutes(app *fiber.App, svc *service.Services) {
 
 	// 14. Advanced Modules: CRM, Reservations, Cost/Profit, Hotel, Kiosk (/api/modules)
 	modulesGroup := apiGroup.Group("/modules")
+	modulesGroup.Use("/customers", middleware.RequireFeature("loyalty", svc))
+	modulesGroup.Use("/campaigns", middleware.RequireFeature("loyalty", svc))
+	modulesGroup.Use("/reservations", middleware.RequireFeature("reservations", svc))
+	modulesGroup.Use("/cost-profit", middleware.RequireFeature("cost_profit", svc))
+	modulesGroup.Use("/costs", middleware.RequireFeature("cost_profit", svc))
 	RegisterModulesRoutes(modulesGroup, svc)
 	RegisterTenantModuleStatusRoute(modulesGroup, svc)
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"html"
 	"math"
 	"sort"
 	"strings"
@@ -116,6 +117,57 @@ func CalculateBOMStock(prodName string, recipes []models.Recipe) (float64, []map
 	return calcStock, recipeItems, missingIngredients
 }
 
+// GetProductAvailableStock returns whether the product has stock tracking (BOM recipe,
+// direct ingredient card, or allow_negative_stock), its current available stock (allowing
+// negative values when AllowNegStock is enabled), whether it uses a BOM recipe, and missing ingredients.
+func GetProductAvailableStock(tx *gorm.DB, prod models.Product) (bool, float64, bool, []map[string]interface{}) {
+	if len(prod.Recipes) == 0 && tx != nil && prod.ID > 0 {
+		_ = tx.Preload("Ingredient").Where("product_id = ?", prod.ID).Find(&prod.Recipes).Error
+	}
+
+	calcStock, recipeItems, missing := CalculateBOMStock(prod.Name, prod.Recipes)
+	if len(recipeItems) > 0 {
+		availStock := calcStock
+		if len(prod.Recipes) == 1 && prod.Recipes[0].Ingredient != nil && prod.Recipes[0].Amount > 0 && prod.Recipes[0].Ingredient.CurrentStock < 0 {
+			availStock = Round3(prod.Recipes[0].Ingredient.CurrentStock / prod.Recipes[0].Amount)
+		} else if calcStock <= 0 {
+			var minRatio *float64
+			cleanProdName := strings.ToLower(strings.TrimSpace(prod.Name))
+			for _, r := range prod.Recipes {
+				if r.Ingredient == nil || r.Amount <= 0 {
+					continue
+				}
+				ingName := strings.ToLower(strings.TrimSpace(r.Ingredient.Name))
+				if ingName == cleanProdName && r.Amount == 1.0 && len(prod.Recipes) == 1 {
+					continue
+				}
+				ratio := Round3(r.Ingredient.CurrentStock / r.Amount)
+				if minRatio == nil || ratio < *minRatio {
+					v := ratio
+					minRatio = &v
+				}
+			}
+			if minRatio != nil && *minRatio < 0 {
+				availStock = *minRatio
+			}
+		}
+		return true, availStock, true, missing
+	}
+
+	if tx != nil && strings.TrimSpace(prod.Name) != "" {
+		if ingID, found := FindIngredientIDByName(tx, prod.Name); found {
+			var directIng models.Ingredient
+			if tx.First(&directIng, ingID).Error == nil {
+				return true, Round3(directIng.CurrentStock), false, nil
+			}
+		} else if prod.AllowNegStock {
+			return true, 0.0, false, nil
+		}
+	}
+
+	return false, -1.0, false, nil
+}
+
 // ValidateBOMStockForItems validates that all BOM recipe ingredients have sufficient stock before order creation,
 // returning a 400 Bad Request Fiber error with the exact message expected by the frontend if any ingredient is out of stock.
 func ValidateBOMStockForItems(tx *gorm.DB, items []models.OrderItemInput) error {
@@ -214,13 +266,12 @@ func DeductOrderIngredients(tx *gorm.DB, productID int, quantity float64, orderN
 			ingID, found := FindIngredientIDByName(tx, prod.Name)
 			if found && repository.WithRowLock(tx).First(&directIng, ingID).Error == nil {
 				deductAmt := quantity
-				var newStock float64
-				if prod.AllowNegStock {
-					newStock = Round3(directIng.CurrentStock - deductAmt)
-				} else {
-					newStock = Round3(math.Max(0.0, directIng.CurrentStock-deductAmt))
-				}
+				newStock := Round3(directIng.CurrentStock - deductAmt)
 				tx.Model(&directIng).Update("current_stock", newStock)
+				if newStock < 0 && prod.ID > 0 && !prod.AllowNegStock {
+					tx.Model(&models.Product{}).Where("id = ?", prod.ID).Update("allow_neg_stock", true)
+					prod.AllowNegStock = true
+				}
 
 				whID := warehouseID
 				note := fmt.Sprintf("Sipariş Doğrudan Satış Düşümü: %gx", quantity)
@@ -270,23 +321,24 @@ func DeductOrderIngredients(tx *gorm.DB, productID int, quantity float64, orderN
 	})
 
 	var minRatio *int
+	usedIngIDs := make(map[int]bool, len(recipes))
 	for _, recipe := range recipes {
 		var ingredient models.Ingredient
 		if err := repository.WithRowLock(tx).First(&ingredient, recipe.IngredientID).Error; err != nil {
 			continue
 		}
+		usedIngIDs[ingredient.ID] = true
 
 		baseAmount := recipe.Amount * quantity
 		fireMultiplier := 1.0 + (recipe.WastePercentage / 100.0)
 		totalDeduct := Round3(baseAmount * fireMultiplier)
 
-		var newStock float64
-		if hasProd && prod.AllowNegStock {
-			newStock = Round3(ingredient.CurrentStock - totalDeduct)
-		} else {
-			newStock = Round3(math.Max(0.0, ingredient.CurrentStock-totalDeduct))
-		}
+		newStock := Round3(ingredient.CurrentStock - totalDeduct)
 		tx.Model(&ingredient).Update("current_stock", newStock)
+		if newStock < 0 && hasProd && prod.ID > 0 && !prod.AllowNegStock {
+			tx.Model(&models.Product{}).Where("id = ?", prod.ID).Update("allow_neg_stock", true)
+			prod.AllowNegStock = true
+		}
 
 		if recipe.Amount > 0 {
 			r := int(math.Floor(newStock / recipe.Amount))
@@ -314,7 +366,7 @@ func DeductOrderIngredients(tx *gorm.DB, productID int, quantity float64, orderN
 
 	if minRatio != nil && hasProd && strings.TrimSpace(prod.Name) != "" {
 		var prodIng models.Ingredient
-		if ingID, found := FindIngredientIDByName(tx, prod.Name); found && repository.WithRowLock(tx).First(&prodIng, ingID).Error == nil {
+		if ingID, found := FindIngredientIDByName(tx, prod.Name); found && !usedIngIDs[ingID] && repository.WithRowLock(tx).First(&prodIng, ingID).Error == nil {
 			tx.Model(&prodIng).Update("current_stock", float64(*minRatio))
 		}
 	}
@@ -374,11 +426,13 @@ func RestoreOrderIngredients(tx *gorm.DB, productID int, quantity float64, order
 	})
 
 	var minRatio *int
+	usedIngIDs := make(map[int]bool, len(recipes))
 	for _, recipe := range recipes {
 		var ingredient models.Ingredient
 		if err := repository.WithRowLock(tx).First(&ingredient, recipe.IngredientID).Error; err != nil {
 			continue
 		}
+		usedIngIDs[ingredient.ID] = true
 
 		baseAmount := recipe.Amount * quantity
 		fireMultiplier := 1.0 + (recipe.WastePercentage / 100.0)
@@ -413,7 +467,7 @@ func RestoreOrderIngredients(tx *gorm.DB, productID int, quantity float64, order
 
 	if minRatio != nil && hasProd && strings.TrimSpace(prod.Name) != "" {
 		var prodIng models.Ingredient
-		if ingID, found := FindIngredientIDByName(tx, prod.Name); found && repository.WithRowLock(tx).First(&prodIng, ingID).Error == nil {
+		if ingID, found := FindIngredientIDByName(tx, prod.Name); found && !usedIngIDs[ingID] && repository.WithRowLock(tx).First(&prodIng, ingID).Error == nil {
 			tx.Model(&prodIng).Update("current_stock", float64(*minRatio))
 		}
 	}
@@ -421,19 +475,55 @@ func RestoreOrderIngredients(tx *gorm.DB, productID int, quantity float64, order
 	return nil
 }
 
-// GenerateEAdisyon generates the GİB E-Adisyon document matching `FiscalService.generate_e_adisyon` in Python.
+func truncateRunes(s string, maxLen int) string {
+	r := []rune(strings.TrimSpace(s))
+	if len(r) <= maxLen {
+		return string(r)
+	}
+	if maxLen <= 1 {
+		return string(r[:maxLen])
+	}
+	return string(r[:maxLen-1]) + "."
+}
+
+func padRightRunes(s string, width int) string {
+	r := []rune(s)
+	if len(r) >= width {
+		return string(r[:width])
+	}
+	return s + strings.Repeat(" ", width-len(r))
+}
+
+// GenerateEAdisyon preserves the legacy signature and delegates to GenerateEAdisyonWithInfo.
 func GenerateEAdisyon(order *models.Order, payments []models.Payment, cashierName string) map[string]interface{} {
+	return GenerateEAdisyonWithInfo(order, payments, cashierName, FiscalCompanyInfo{}, nil)
+}
+
+// GenerateEAdisyonWithInfo generates the GİB E-Adisyon document with real tenant identity & per-product VAT rates.
+func GenerateEAdisyonWithInfo(order *models.Order, payments []models.Payment, cashierName string, info FiscalCompanyInfo, prodVatMap map[int]float64) map[string]interface{} {
 	if cashierName == "" {
 		cashierName = "Kasiyer"
 	}
-	now := time.Now()
-	docDate := now.Format("2006-01-02")
-	docTime := now.Format("15:04:05")
-	docNo := fmt.Sprintf("EAD%s%06d", now.Format("20060102"), order.ID)
-	ettn := fmt.Sprintf("e0a1b2c3-%s-%04d-9f00-%012d", now.Format("0102"), order.ID%10000, now.UnixNano()%1000000000000)
+	companyTitle := strings.TrimSpace(info.Title)
+	if companyTitle == "" {
+		companyTitle = "BonCore POS İşletmesi"
+	}
+	vkn := strings.TrimSpace(info.TaxNumber)
+	if vkn == "" {
+		vkn = "-"
+	}
 
-	vat10Base := 0.0
-	vat10Tax := 0.0
+	nowTR := time.Now().In(TurkeyLoc())
+	docDate := nowTR.Format("2006-01-02")
+	docTime := nowTR.Format("15:04:05")
+	docNo := fmt.Sprintf("EAD%s%06d", nowTR.Format("20060102"), order.ID)
+	ettn := fmt.Sprintf("e0a1b2c3-%s-%04d-9f00-%012d", nowTR.Format("0102"), order.ID%10000, nowTR.UnixNano()%1000000000000)
+
+	discRatio := 0.0
+	if order.Subtotal > 0 && order.DiscountAmount > 0 {
+		discRatio = order.DiscountAmount / order.Subtotal
+	}
+	vb := CalculateVATBreakdown(order.Items, prodVatMap, discRatio)
 
 	itemsList := make([]map[string]interface{}, 0, len(order.Items))
 	for _, it := range order.Items {
@@ -441,10 +531,11 @@ func GenerateEAdisyon(order *models.Order, payments []models.Payment, cashierNam
 			continue
 		}
 		vatRate := 10.0
-		baseAmt := it.TotalPrice / (1.0 + vatRate/100.0)
-		taxAmt := it.TotalPrice - baseAmt
-		vat10Base = Round2(vat10Base + baseAmt)
-		vat10Tax = Round2(vat10Tax + taxAmt)
+		if prodVatMap != nil {
+			if r, ok := prodVatMap[it.ProductID]; ok && r >= 0 {
+				vatRate = r
+			}
+		}
 
 		variant := ""
 		if it.VariantName != nil {
@@ -461,6 +552,7 @@ func GenerateEAdisyon(order *models.Order, payments []models.Payment, cashierNam
 			"unit_price":   it.UnitPrice,
 			"total_price":  it.TotalPrice,
 			"vat_rate":     vatRate,
+			"is_treat":     it.IsTreat,
 			"notes":        note,
 		})
 	}
@@ -470,14 +562,16 @@ func GenerateEAdisyon(order *models.Order, payments []models.Payment, cashierNam
 		tableName = order.Table.Name
 	}
 
-	gibQR := fmt.Sprintf("VKN:1234567890|ETTN:%s|TUTAR:%.2f|TARIH:%s %s|SERI:%s", ettn, order.GrandTotal, docDate, docTime, docNo)
+	gibQR := fmt.Sprintf("VKN:%s|ETTN:%s|TUTAR:%.2f|TARIH:%s %s|SERI:%s", vkn, ettn, order.GrandTotal, docDate, docTime, docNo)
 
 	var xmlBuilder strings.Builder
 	xmlBuilder.WriteString(fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <E-Adisyon xmlns="urn:gib:gov:tr:eAdisyon" ETTN="%s" BelgeNo="%s">
     <GIB_Bilgileri>
-        <VKN_TCKN>1234567890</VKN_TCKN>
-        <Unvan>BONCORE RESTORAN VE GIDA TIC. A.S.</Unvan>
+        <VKN_TCKN>%s</VKN_TCKN>
+        <Unvan>%s</Unvan>
+        <VergiDairesi>%s</VergiDairesi>
+        <Adres>%s</Adres>
         <Tarih>%s</Tarih>
         <Saat>%s</Saat>
     </GIB_Bilgileri>
@@ -487,17 +581,17 @@ func GenerateEAdisyon(order *models.Order, payments []models.Payment, cashierNam
         <Kasiyer>%s</Kasiyer>
     </MasaBilgisi>
     <Kalemler>
-`, ettn, docNo, docDate, docTime, tableName, order.WaiterName, cashierName))
+`, html.EscapeString(ettn), html.EscapeString(docNo), html.EscapeString(vkn), html.EscapeString(companyTitle), html.EscapeString(info.TaxOffice), html.EscapeString(info.Address), docDate, docTime, html.EscapeString(tableName), html.EscapeString(order.WaiterName), html.EscapeString(cashierName)))
 
 	for _, it := range itemsList {
 		xmlBuilder.WriteString(fmt.Sprintf(`        <Kalem>
-            <UrunAdi>%v</UrunAdi>
+            <UrunAdi>%s</UrunAdi>
             <Miktar>%v</Miktar>
             <BirimFiyat>%.2f</BirimFiyat>
             <Toplam>%.2f</Toplam>
             <KDVOrani>%v</KDVOrani>
         </Kalem>
-`, it["product_name"], it["quantity"], it["unit_price"], it["total_price"], it["vat_rate"]))
+`, html.EscapeString(fmt.Sprintf("%v", it["product_name"])), it["quantity"], it["unit_price"], it["total_price"], it["vat_rate"]))
 	}
 
 	xmlBuilder.WriteString(fmt.Sprintf(`    </Kalemler>
@@ -506,11 +600,14 @@ func GenerateEAdisyon(order *models.Order, payments []models.Payment, cashierNam
         <Indirim>%.2f</Indirim>
         <Ikram>%.2f</Ikram>
         <Kuver>%.2f</Kuver>
+        <KDV1>%.2f</KDV1>
         <KDV10>%.2f</KDV10>
+        <KDV20>%.2f</KDV20>
+        <ToplamKDV>%.2f</ToplamKDV>
         <GenelToplam>%.2f</GenelToplam>
     </Toplamlar>
     <Karekod>%s</Karekod>
-</E-Adisyon>`, order.Subtotal, order.DiscountAmount, order.TreatAmount, order.KuverTotal, vat10Tax, order.GrandTotal, gibQR))
+</E-Adisyon>`, order.Subtotal, order.DiscountAmount, order.TreatAmount, order.KuverTotal, vb.Vat1Tax, vb.Vat10Tax, vb.Vat20Tax, vb.TotalTax, order.GrandTotal, html.EscapeString(gibQR)))
 
 	methodMap := map[string]string{
 		"cash":         "NAKİT",
@@ -539,10 +636,14 @@ func GenerateEAdisyon(order *models.Order, payments []models.Payment, cashierNam
 	return map[string]interface{}{
 		"ettn":           ettn,
 		"doc_no":         docNo,
+		"order_no":       order.OrderNo,
 		"date":           docDate,
 		"time":           docTime,
-		"company_title":  "BONCORE RESTORAN & LOUNGE",
-		"vkn":            "1234567890",
+		"company_title":  companyTitle,
+		"vkn":            vkn,
+		"tax_office":     info.TaxOffice,
+		"address":        info.Address,
+		"phone":          info.Phone,
 		"table_name":     tableName,
 		"waiter_name":    order.WaiterName,
 		"cashier_name":   cashierName,
@@ -552,57 +653,76 @@ func GenerateEAdisyon(order *models.Order, payments []models.Payment, cashierNam
 		"treat":          order.TreatAmount,
 		"kuver":          order.KuverTotal,
 		"service_charge": order.ServiceCharge,
+		"tax_total":      vb.TotalTax,
 		"grand_total":    order.GrandTotal,
 		"payments":       paymentList,
 		"vat_summary": map[string]interface{}{
-			"vat_1":  map[string]interface{}{"rate": 1, "base": 0.0, "tax": 0.0},
-			"vat_10": map[string]interface{}{"rate": 10, "base": vat10Base, "tax": vat10Tax},
-			"vat_20": map[string]interface{}{"rate": 20, "base": 0.0, "tax": 0.0},
+			"vat_1":  map[string]interface{}{"rate": 1, "base": vb.Vat1Base, "tax": vb.Vat1Tax},
+			"vat_10": map[string]interface{}{"rate": 10, "base": vb.Vat10Base, "tax": vb.Vat10Tax},
+			"vat_20": map[string]interface{}{"rate": 20, "base": vb.Vat20Base, "tax": vb.Vat20Tax},
 		},
 		"qr_code_content": gibQR,
 		"xml_content":     xmlBuilder.String(),
 	}
 }
 
-// GenerateEscposThermalSlip generates the 80mm thermal slip string matching `FiscalService.generate_escpos_thermal_slip`.
+// GenerateEscposThermalSlip preserves the legacy signature and delegates to GenerateEscposThermalSlipWithInfo.
 func GenerateEscposThermalSlip(order *models.Order) string {
+	return GenerateEscposThermalSlipWithInfo(order, FiscalCompanyInfo{})
+}
+
+// GenerateEscposThermalSlipWithInfo generates a UTF-8 rune-safe 80mm thermal slip using tenant business info.
+func GenerateEscposThermalSlipWithInfo(order *models.Order, info FiscalCompanyInfo) string {
 	tableName := "Paket"
 	if order.Table != nil && order.Table.Name != "" {
 		tableName = order.Table.Name
+	}
+	title := strings.TrimSpace(info.Title)
+	if title == "" {
+		title = "BonCore POS İşletmesi"
 	}
 	var lines []string
 	sepBold := strings.Repeat("━", 42)
 	sepThin := strings.Repeat("─", 42)
 
 	lines = append(lines, sepBold)
-	lines = append(lines, "     BONCORE RESTAURANT & LOUNGE")
-	lines = append(lines, "     GIB E-ADISYON / BILGI FISI")
+	lines = append(lines, "  "+truncateRunes(title, 38))
+	if strings.TrimSpace(info.Address) != "" {
+		lines = append(lines, "  "+truncateRunes(info.Address, 38))
+	}
+	if strings.TrimSpace(info.Phone) != "" {
+		lines = append(lines, "  Tel: "+truncateRunes(info.Phone, 32))
+	}
+	if strings.TrimSpace(info.TaxNumber) != "" {
+		lines = append(lines, "  VKN: "+info.TaxNumber)
+	}
+	lines = append(lines, "  GİB E-ADİSYON / BİLGİ FİŞİ")
 	lines = append(lines, sepBold)
 	lines = append(lines, fmt.Sprintf("Masa: %s    Garson: %s", tableName, order.WaiterName))
-	lines = append(lines, fmt.Sprintf("Tarih: %s", time.Now().Format("02.01.2006 15:04:05")))
+	lines = append(lines, fmt.Sprintf("Tarih: %s", time.Now().In(TurkeyLoc()).Format("02.01.2006 15:04:05")))
 	lines = append(lines, fmt.Sprintf("Sipariş No: %s", order.OrderNo))
 	lines = append(lines, sepThin)
-	lines = append(lines, fmt.Sprintf("%-22s%4s%8s%8s", "URUN", "AD", "FIYAT", "TUTAR"))
+	lines = append(lines, fmt.Sprintf("%-22s%4s%8s%8s", "ÜRÜN", "AD", "FİYAT", "TUTAR"))
 	lines = append(lines, sepThin)
 
 	for _, it := range order.Items {
 		if it.IsVoided {
 			continue
 		}
-		name := it.ProductName
-		if len(name) > 20 {
-			name = name[:20]
-		}
-		lines = append(lines, fmt.Sprintf("%-22s%4g%8.2f%8.2f", name, it.Quantity, it.UnitPrice, it.TotalPrice))
+		name := padRightRunes(truncateRunes(it.ProductName, 21), 22)
+		lines = append(lines, fmt.Sprintf("%s%4g%8.2f%8.2f", name, it.Quantity, it.UnitPrice, it.TotalPrice))
 	}
 
 	lines = append(lines, sepThin)
 	lines = append(lines, fmt.Sprintf("%-28s%11.2f TL", "Ara Toplam:", order.Subtotal))
 	if order.DiscountAmount > 0 {
-		lines = append(lines, fmt.Sprintf("%-28s%11.2f TL", "Indirim:", -order.DiscountAmount))
+		lines = append(lines, fmt.Sprintf("%-28s%11.2f TL", "İndirim:", -order.DiscountAmount))
 	}
 	if order.TreatAmount > 0 {
-		lines = append(lines, fmt.Sprintf("%-28s%11.2f TL", "Ikram:", -order.TreatAmount))
+		lines = append(lines, fmt.Sprintf("%-28s%11.2f TL", "İkram:", -order.TreatAmount))
+	}
+	if order.KuverTotal > 0 {
+		lines = append(lines, fmt.Sprintf("%-28s%11.2f TL", "Kuver Ücreti:", order.KuverTotal))
 	}
 	if order.ServiceCharge > 0 {
 		lines = append(lines, fmt.Sprintf("%-28s%11.2f TL", "Servis Bedeli:", order.ServiceCharge))
@@ -610,8 +730,8 @@ func GenerateEscposThermalSlip(order *models.Order) string {
 	lines = append(lines, sepBold)
 	lines = append(lines, fmt.Sprintf("%-26s%13.2f TL", "GENEL TOPLAM:", order.GrandTotal))
 	lines = append(lines, sepBold)
-	lines = append(lines, "     MALI DEGERI YOKTUR - BILGI FISIDIR")
-	lines = append(lines, "           AFIYET OLSUN!")
+	lines = append(lines, "     MALİ DEĞERİ YOKTUR - BİLGİ FİŞİDİR")
+	lines = append(lines, "           AFİYET OLSUN!")
 	lines = append(lines, sepBold)
 
 	return strings.Join(lines, "\n")

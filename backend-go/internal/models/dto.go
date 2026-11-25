@@ -287,6 +287,7 @@ type CreateOrderRequest struct {
 type AddItemsRequest struct {
 	Items      []OrderItemInput `json:"items"`
 	WaiterName string           `json:"waiter_name"`
+	Notes      *string          `json:"notes"`
 }
 
 type HoldFireToggleRequest struct {

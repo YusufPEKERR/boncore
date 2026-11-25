@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -23,6 +25,7 @@ type Config struct {
 	RememberTTLSeconds  int64
 	DefaultKuverPrice   float64
 	ManagerOverridePIN  string
+	MasterAdminPassword string
 	DefaultTenantCode   string
 	DBMaxConns          int32
 	DBMinConns          int32
@@ -41,24 +44,25 @@ func Load() *Config {
 	secret := loadOrGenerateSecret(cwd)
 
 	return &Config{
-		AppName:            getEnv("APP_NAME", "BonCore POS & Restoran Yönetim Sistemi"),
-		AppVersion:         getEnv("APP_VERSION", "2.0.0"),
-		APIV1Prefix:        getEnv("API_V1_STR", "/api"),
-		Host:               getEnv("HOST", "0.0.0.0"),
-		Port:               getEnv("PORT", "8000"),
-		DatabaseURL:        getEnv("DATABASE_URL", "postgres://boncore:boncore@localhost:5432/boncore?sslmode=disable"),
-		MasterDatabaseURL:  getEnv("MASTER_DATABASE_URL", "postgres://boncore:boncore@localhost:5432/boncore_master?sslmode=disable"),
-		SQLiteDataDir:      getEnv("SQLITE_DATA_DIR", backendDataDir),
-		RedisURL:           getEnv("REDIS_URL", "redis://localhost:6379/0"),
-		SecretKey:          secret,
-		TokenTTLSeconds:    getEnvInt64("BONCORE_TOKEN_TTL", 12*60*60),
-		RememberTTLSeconds: 7 * 24 * 60 * 60,
-		DefaultKuverPrice:  getEnvFloat("DEFAULT_KUVER_PRICE", 35.0),
-		ManagerOverridePIN: getEnv("MANAGER_OVERRIDE_PIN", "9999"),
-		DefaultTenantCode:  getEnv("DEFAULT_TENANT_CODE", "fatihciftligi"),
-		DBMaxConns:         int32(getEnvInt64("DB_MAX_CONNS", 50)),
-		DBMinConns:         int32(getEnvInt64("DB_MIN_CONNS", 10)),
-		PgBouncerMode:      getEnvBool("PGBOUNCER_MODE", true),
+		AppName:             getEnv("APP_NAME", "BonCore POS & Restoran Yönetim Sistemi"),
+		AppVersion:          getEnv("APP_VERSION", "2.0.0"),
+		APIV1Prefix:         getEnv("API_V1_STR", "/api"),
+		Host:                getEnv("HOST", "0.0.0.0"),
+		Port:                getEnv("PORT", "8000"),
+		DatabaseURL:         getEnv("DATABASE_URL", "postgres://boncore:boncore@localhost:5432/boncore?sslmode=disable"),
+		MasterDatabaseURL:   getEnv("MASTER_DATABASE_URL", "postgres://boncore:boncore@localhost:5432/boncore_master?sslmode=disable"),
+		SQLiteDataDir:       getEnv("SQLITE_DATA_DIR", backendDataDir),
+		RedisURL:            getEnv("REDIS_URL", "redis://localhost:6379/0"),
+		SecretKey:           secret,
+		TokenTTLSeconds:     getEnvInt64("BONCORE_TOKEN_TTL", 12*60*60),
+		RememberTTLSeconds:  7 * 24 * 60 * 60,
+		DefaultKuverPrice:   getEnvFloat("DEFAULT_KUVER_PRICE", 35.0),
+		ManagerOverridePIN:  getEnv("MANAGER_OVERRIDE_PIN", ""),
+		MasterAdminPassword: getEnv("BONCORE_MASTER_PASSWORD", "boncore2026master"),
+		DefaultTenantCode:   getEnv("DEFAULT_TENANT_CODE", "fatihciftligi"),
+		DBMaxConns:          int32(getEnvInt64("DB_MAX_CONNS", 50)),
+		DBMinConns:          int32(getEnvInt64("DB_MIN_CONNS", 10)),
+		PgBouncerMode:       getEnvBool("PGBOUNCER_MODE", true),
 	}
 }
 
@@ -79,7 +83,21 @@ func loadOrGenerateSecret(cwd string) []byte {
 			}
 		}
 	}
-	return []byte("boncore-pos-default-hmac-secret-key-2026")
+	// Generate a cryptographically random secret and persist it to .auth_secret
+	// so tokens remain valid across server restarts without hardcoded secret keys.
+	randBytes := make([]byte, 32)
+	if _, err := rand.Read(randBytes); err == nil {
+		genSecret := hex.EncodeToString(randBytes)
+		persistPath := filepath.Join(cwd, ".auth_secret")
+		if _, statErr := os.Stat(filepath.Join(cwd, "..", "backend")); statErr == nil {
+			persistPath = filepath.Join(cwd, "..", "backend", ".auth_secret")
+		}
+		if wErr := os.WriteFile(persistPath, []byte(genSecret), 0600); wErr == nil {
+			return []byte(genSecret)
+		}
+		return []byte(genSecret)
+	}
+	return []byte("boncore-ephemeral-secret-unavailable")
 }
 
 func getEnv(key, fallback string) string {

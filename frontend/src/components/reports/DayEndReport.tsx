@@ -9,6 +9,7 @@ import { api } from '../../services/api';
 import { sound } from '../../services/sound';
 import { useWebSocket } from '../../services/websocket';
 import { printThermalSlipById } from '../../utils/printReceipt';
+import { StaffUser } from '../../types';
 
 interface PaymentMethodSummary {
   name: string;
@@ -84,7 +85,11 @@ interface DayEndData {
   [key: string]: any;
 }
 
-export const DayEndReport: React.FC = () => {
+interface DayEndReportProps {
+  currentUser?: StaffUser | null;
+}
+
+export const DayEndReport: React.FC<DayEndReportProps> = ({ currentUser }) => {
   const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState<boolean>(true);
   const [report, setReport] = useState<DayEndData | null>(null);
@@ -92,8 +97,8 @@ export const DayEndReport: React.FC = () => {
 
   // Modals
   const [isCloseRegisterModalOpen, setIsCloseRegisterModalOpen] = useState<boolean>(false);
-  const [managerPin, setManagerPin] = useState<string>('9999');
-  const [managerName, setManagerName] = useState<string>('Müdür / Yönetici');
+  const [managerPin, setManagerPin] = useState<string>('');
+  const [managerName, setManagerName] = useState<string>(currentUser?.name || 'Müdür / Yönetici');
   const [closeRegisterLoading, setCloseRegisterLoading] = useState<boolean>(false);
 
   const [isThermalReceiptOpen, setIsThermalReceiptOpen] = useState<boolean>(false);
@@ -138,17 +143,36 @@ export const DayEndReport: React.FC = () => {
 
   const handleCloseRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (managerPin !== '9999' && managerPin !== '1234') {
-      sound.warning();
-      alert('Geçersiz yönetici PIN kodu! (Varsayılan: 9999)');
-      return;
+    const isCurrentManager = String(currentUser?.role || '').toLowerCase() === 'manager';
+    let verifiedManagerName = managerName.trim() || currentUser?.name || 'Yönetici';
+
+    if (!isCurrentManager) {
+      if (!managerPin.trim()) {
+        sound.warning();
+        alert('Lütfen yönetici PIN kodunu giriniz!');
+        return;
+      }
+      try {
+        const verified = await api.verifyManagerPin(managerPin.trim());
+        if (!verified || !verified.valid) {
+          sound.warning();
+          alert('Bu işlem için Yönetici (Müdür) yetkisine sahip bir PIN kodu gereklidir!');
+          return;
+        }
+        verifiedManagerName = verified.user?.name || verified.name || verifiedManagerName;
+      } catch (pinErr: any) {
+        sound.warning();
+        alert(pinErr?.message || 'Geçersiz yönetici PIN kodu!');
+        return;
+      }
     }
 
     setCloseRegisterLoading(true);
     try {
-      const res = await api.closeDayEndRegister(managerName || 'Yönetici');
+      const res = await api.closeDayEndRegister(verifiedManagerName);
       sound.cashDrawer();
       setIsCloseRegisterModalOpen(false);
+      setManagerPin('');
       setToastMessage(`Gün sonu başarıyla kapatıldı! Z No: ${res.z_report_no || 'Z-RAPORU'}`);
       await loadReport(selectedDate);
       setTimeout(() => setToastMessage(null), 4000);
@@ -157,9 +181,10 @@ export const DayEndReport: React.FC = () => {
         const force = confirm(`${err.message}\n\nAçık kalan adisyonları yönetici onayıyla kapatıp Z-Raporunu almak istiyor musunuz?`);
         if (force) {
           try {
-            const res = await api.closeDayEndRegister(managerName || 'Yönetici', true);
+            const res = await api.closeDayEndRegister(verifiedManagerName, true);
             sound.cashDrawer();
             setIsCloseRegisterModalOpen(false);
+            setManagerPin('');
             setToastMessage(`Açık adisyonlar kapatıldı ve Z-Raporu başarıyla alındı! Z No: ${res.z_report_no || 'Z-RAPORU'}`);
             await loadReport(selectedDate);
             setTimeout(() => setToastMessage(null), 4000);
@@ -250,7 +275,10 @@ export const DayEndReport: React.FC = () => {
             <input
               type="date"
               value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
+              onChange={e => {
+                setSelectedRegisterId(null);
+                setSelectedDate(e.target.value);
+              }}
               className="bg-transparent font-bold outline-none cursor-pointer"
             />
           </div>
@@ -893,19 +921,21 @@ export const DayEndReport: React.FC = () => {
                 />
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                  Yönetici PIN Kodu:
-                </label>
-                <input
-                  type="password"
-                  value={managerPin}
-                  onChange={e => setManagerPin(e.target.value)}
-                  placeholder="PIN giriniz (9999)"
-                  required
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-center tracking-widest text-lg font-bold outline-none focus:ring-2 focus:ring-brand-500"
-                />
-              </div>
+              {String(currentUser?.role || '').toLowerCase() !== 'manager' && (
+                <div>
+                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Yönetici PIN Kodu:
+                  </label>
+                  <input
+                    type="password"
+                    value={managerPin}
+                    onChange={e => setManagerPin(e.target.value)}
+                    placeholder="Yönetici PIN kodu"
+                    required
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-center tracking-widest text-lg font-bold outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
+              )}
 
               <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-[11px] text-amber-800 dark:text-amber-300">
                 Kasadaki beklenen nakit devir tutarı: <strong>₺{Number(report?.cash_flow?.expected_drawer_cash ?? report?.cash_in_drawer ?? 0).toFixed(2)}</strong>
@@ -945,9 +975,11 @@ export const DayEndReport: React.FC = () => {
 
             <div id="thermal-z-slip-modal" className="printable-thermal-receipt space-y-1">
               <div className="text-center space-y-1">
-                <div className="font-black text-sm">BONCORE POS • FATİH ÇİFTLİĞİ</div>
-                <div>MERKEZ ŞUBE - POS KASA 01</div>
-                <div>VERGİ DAİRESİ: KADIKÖY / VNO: 1234567890</div>
+                <div className="font-black text-sm">BONCORE POS • {(localStorage.getItem('boncore_active_restaurant_name') || localStorage.getItem('boncore_restaurant_name') || 'RESTORAN').toLocaleUpperCase('tr-TR')}</div>
+                <div>KASA NO: #{report?.register_id || 1}</div>
+                {localStorage.getItem('boncore_tax_number') && (
+                  <div>VKN/TCKN: {localStorage.getItem('boncore_tax_number')}</div>
+                )}
                 <div className="py-1">------------------------------------------</div>
                 <div className="font-black text-xs">MALİ GÜN SONU Z RAPORU</div>
                 <div>RAPOR NO: {report?.z_report_no}</div>

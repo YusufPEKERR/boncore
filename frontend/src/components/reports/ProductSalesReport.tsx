@@ -18,6 +18,7 @@ interface ProductSalesItem {
   unit: string;
   image_url?: string | null;
   vat_rate: number;
+  has_recipe?: boolean;
   total_quantity: number;
   total_turnover: number;
   avg_price: number;
@@ -43,6 +44,12 @@ export const ProductSalesReport: React.FC = () => {
   const [endDate, setEndDate] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<number | 'ALL'>('ALL');
   const [selectedStation, setSelectedStation] = useState<string>('all');
+  const [kitchenGroups, setKitchenGroups] = useState<{ id: string; name: string }[]>([
+    { id: 'kitchen', name: 'Mutfak' },
+    { id: 'bar', name: 'Bar' },
+    { id: 'grill', name: 'Izgara' },
+    { id: 'pastry', name: 'Tatlı' }
+  ]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortBy, setSortBy] = useState<'turnover' | 'quantity' | 'name' | 'share'>('turnover');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -61,6 +68,26 @@ export const ProductSalesReport: React.FC = () => {
   } | null>(null);
 
   const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    api.getKitchenGroups()
+      .then((groups) => {
+        if (!active || !Array.isArray(groups) || groups.length === 0) return;
+        const normalized = groups
+          .filter((g: any) => g && g.is_active !== false)
+          .map((g: any) => ({
+            id: String(g.id || g.code || g.name || '').trim(),
+            name: String(g.name || g.id || '').trim()
+          }))
+          .filter((g) => g.id && g.name);
+        if (normalized.length > 0) {
+          setKitchenGroups(normalized);
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
@@ -84,6 +111,7 @@ export const ProductSalesReport: React.FC = () => {
           unit: p.unit || 'Adet',
           image_url: p.image_url || null,
           vat_rate: p.vat_rate || 10,
+          has_recipe: Boolean(p.has_recipe),
           total_quantity: Number(p.total_quantity ?? p.quantity ?? 0),
           total_turnover: Number(p.total_turnover ?? p.revenue ?? 0),
           avg_price: Number(p.avg_price ?? p.unit_price ?? 0),
@@ -194,6 +222,8 @@ export const ProductSalesReport: React.FC = () => {
   };
 
   const getStationLabel = (st: string) => {
+    const matched = kitchenGroups.find(g => g.id.toLowerCase() === (st || '').toLowerCase());
+    if (matched) return matched.name;
     switch (st?.toLowerCase()) {
       case 'kitchen': return 'Mutfak';
       case 'bar': return 'Bar';
@@ -364,10 +394,9 @@ export const ProductSalesReport: React.FC = () => {
               className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-semibold outline-none"
             >
               <option value="all">Tüm İstasyonlar</option>
-              <option value="kitchen">Mutfak</option>
-              <option value="bar">Bar</option>
-              <option value="grill">Izgara</option>
-              <option value="pastry">Tatlı</option>
+              {kitchenGroups.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
             </select>
           </div>
 
@@ -536,6 +565,7 @@ export const ProductSalesReport: React.FC = () => {
                 <th className="py-3 px-3 text-right">Birim Fiyat</th>
                 <th className="py-3 px-3 text-right">Satış Miktarı</th>
                 <th className="py-3 px-3 text-right">Toplam Ciro (₺)</th>
+                <th className="py-3 px-3 text-right">Maliyet / Kâr</th>
                 <th className="py-3 px-3 w-32">Ciro Payı</th>
                 <th className="py-3 px-3 text-center">Adisyon</th>
                 <th className="py-3 px-3 text-center">İkram</th>
@@ -544,14 +574,14 @@ export const ProductSalesReport: React.FC = () => {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-400">
+                  <td colSpan={11} className="py-12 text-center text-slate-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-brand-600" />
                     Satış verileri yükleniyor...
                   </td>
                 </tr>
               ) : filteredAndSortedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-400">
+                  <td colSpan={11} className="py-12 text-center text-slate-400">
                     Seçilen kriterlerde satılmış ürün kaydı bulunamadı.
                   </td>
                 </tr>
@@ -605,6 +635,30 @@ export const ProductSalesReport: React.FC = () => {
                     </td>
                     <td className="py-3 px-3 text-right font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
                       ₺{Number(item.total_turnover || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="py-3 px-3 text-right">
+                      {!item.has_recipe ? (
+                        <span className="inline-flex px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-bold text-[10px]">
+                          Reçete Yok
+                        </span>
+                      ) : (
+                        <div>
+                          <div className={`font-mono font-black text-xs ${
+                            item.profit < 0
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : item.profit_margin_percent < 35
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : item.profit_margin_percent < 55
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                          }`}>
+                            ₺{Number(item.profit || 0).toFixed(2)}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            %{Number(item.profit_margin_percent || 0).toFixed(1)} marj
+                          </div>
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-3">
                       <div className="space-y-1">

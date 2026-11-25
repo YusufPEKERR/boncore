@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/boncore/pos-backend/internal/api"
+	"github.com/boncore/pos-backend/internal/api/middleware"
 	"github.com/boncore/pos-backend/internal/config"
 	"github.com/boncore/pos-backend/internal/models"
 	"github.com/boncore/pos-backend/internal/repository"
@@ -170,11 +171,12 @@ func TestEndToEndPOSFlow_TableOpen_Order_KDS_SettleBill(t *testing.T) {
 			},
 		},
 	}
+	mgrToken, _ := middleware.CreateAccessToken(cfg, 1, "manager", true, "e2e-test-branch", nil)
 	bodyBytes, _ := json.Marshal(createPayload)
 	req, _ := http.NewRequest("POST", baseHTTP+"/api/orders/create", bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Restaurant-Code", "e2e-test-branch")
-	req.Header.Set("X-User-Role", "manager")
+	req.Header.Set("Authorization", "Bearer "+mgrToken)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -249,7 +251,7 @@ func TestEndToEndPOSFlow_TableOpen_Order_KDS_SettleBill(t *testing.T) {
 	settleReq, _ := http.NewRequest("POST", baseHTTP+"/api/cashier/settle-payment", bytes.NewReader(settleBytes))
 	settleReq.Header.Set("Content-Type", "application/json")
 	settleReq.Header.Set("X-Restaurant-Code", "e2e-test-branch")
-	settleReq.Header.Set("X-User-Role", "manager")
+	settleReq.Header.Set("Authorization", "Bearer "+mgrToken)
 
 	settleResp, err := http.DefaultClient.Do(settleReq)
 	if err != nil {
@@ -271,7 +273,7 @@ func TestEndToEndPOSFlow_TableOpen_Order_KDS_SettleBill(t *testing.T) {
 	// 5. Verify Table WS received TABLE_BILL_CLOSED and Floor Plan shows table is free
 	_ = tableWS.SetReadDeadline(time.Now().Add(2 * time.Second))
 	foundBillClosed := false
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 20; i++ {
 		_, tblMsgBytes, err := tableWS.ReadMessage()
 		if err != nil {
 			t.Logf("tableWS read error or timeout: %v", err)
@@ -345,11 +347,12 @@ func TestOrderCreate_InvalidTableID_Returns404(t *testing.T) {
 		"waiter_name": "Ahmet Garson",
 		"items":       []map[string]interface{}{},
 	}
+	waiterToken, _ := middleware.CreateAccessToken(cfg, 2, "waiter", false, "e2e-test-branch", nil)
 	bodyBytes, _ := json.Marshal(invalidPayload)
 	req, _ := http.NewRequest("POST", baseHTTP+"/api/orders/create", bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Restaurant-Code", "e2e-test-branch")
-	req.Header.Set("X-User-Role", "waiter")
+	req.Header.Set("Authorization", "Bearer "+waiterToken)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

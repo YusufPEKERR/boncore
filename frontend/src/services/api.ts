@@ -1,7 +1,38 @@
 import { Area, Category, Product, Order, StaffUser, Ingredient, ProductRecipe, Courier, DeliveryOrder, AuditLog } from '../types';
-import { offlineDb, saveAreasToOfflineCache, saveCategoriesToOfflineCache, clearOfflineCache, queueOfflineOrder, queueOfflinePayment } from './offlineDb';
+import { getCachedAreasFromOffline, getCachedCategoriesFromOffline, saveAreasToOfflineCache, saveCategoriesToOfflineCache, clearOfflineCache, queueOfflineOrder, queueOfflinePayment } from './offlineDb';
 
 const API_BASE = '/api';
+
+export function getResolvedRestaurantCode(): string | null {
+  try {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlCode = (params.get('restoran') || params.get('restaurant') || params.get('tenant') || '').trim();
+      if (urlCode) {
+        sessionStorage.setItem('boncore_qr_restaurant_code', urlCode);
+        return urlCode;
+      }
+      const cleanPath = (window.location.pathname || '').replace(/^\/+|\/+$/g, '');
+      if (cleanPath && !cleanPath.startsWith('api/') && !cleanPath.startsWith('assets/')) {
+        const segs = cleanPath.split('/').filter(Boolean);
+        if (segs.length === 3) {
+          const pathRestoran = decodeURIComponent(segs[0]).trim();
+          if (pathRestoran) {
+            sessionStorage.setItem('boncore_qr_restaurant_code', pathRestoran);
+            return pathRestoran;
+          }
+        }
+      }
+    }
+    const stored = localStorage.getItem('boncore_restaurant_code');
+    if (stored) return stored;
+    if (typeof sessionStorage !== 'undefined') {
+      const qrStored = sessionStorage.getItem('boncore_qr_restaurant_code');
+      if (qrStored) return qrStored;
+    }
+  } catch {}
+  return null;
+}
 
 // =========================================================================
 // Global Multi-Tenant Fetch Interceptor
@@ -32,7 +63,7 @@ if (typeof window !== 'undefined' && window.fetch) {
           if (token && !headers.has('Authorization')) {
             headers.set('Authorization', `Bearer ${token}`);
           }
-          const rCode = localStorage.getItem('boncore_restaurant_code');
+          const rCode = getResolvedRestaurantCode();
           if (rCode && !headers.has('X-Restaurant-Code')) {
             headers.set('X-Restaurant-Code', rCode);
           }
@@ -142,7 +173,7 @@ export function getAuthHeaders(includeJson: boolean = true): Record<string, stri
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    const rCode = localStorage.getItem('boncore_restaurant_code');
+    const rCode = getResolvedRestaurantCode();
     if (rCode) {
       headers['X-Restaurant-Code'] = rCode;
     }
@@ -163,6 +194,14 @@ export function showToast(message: string, type: 'info' | 'success' | 'warning' 
       detail: { message, type }
     }));
   }
+}
+
+async function ensureOkJson(res: Response, fallbackMsg: string): Promise<any> {
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.detail || data?.error || data?.message || fallbackMsg);
+  }
+  return data;
 }
 
 export const api = {
@@ -194,10 +233,24 @@ export const api = {
 
   async logout() {
     try {
-      localStorage.removeItem('boncore_token');
-      localStorage.removeItem('boncore_restaurant_code');
-      localStorage.removeItem('boncore_active_restaurant_name');
-      localStorage.removeItem('boncore_current_user');
+      const staticKeys = [
+        'boncore_token',
+        'boncore_auth',
+        'boncore_user',
+        'boncore_current_user',
+        'boncore_restaurant_code',
+        'boncore_active_restaurant_name',
+        'boncore_restaurant_name',
+        'boncore_receipt_design',
+        'boncore_licensed_features',
+      ];
+      staticKeys.forEach((k) => localStorage.removeItem(k));
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('boncore_licensed_features_')) {
+          localStorage.removeItem(k);
+        }
+      }
       document.cookie = 'boncore_restaurant_code=; path=/; max-age=0; SameSite=Lax';
       await clearOfflineCache();
     } catch {}
@@ -243,11 +296,20 @@ export const api = {
     return data;
   },
 
+  async verifyManagerPin(pinCode: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/auth/verify-manager-pin`, {
+      method: 'POST',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify({ pin_code: pinCode })
+    });
+    return ensureOkJson(res, 'Yönetici PIN doğrulaması başarısız.');
+  },
+
   async getStaffList(): Promise<StaffUser[]> {
     const res = await fetch(`${API_BASE}/auth/staff`, {
       headers: getAuthHeaders(false)
     });
-    return res.json();
+    return ensureOkJson(res, 'Personel listesi alınamadı.');
   },
 
   // Tables & Floor
@@ -260,7 +322,7 @@ export const api = {
       return data;
     } catch (err) {
       // Offline fallback
-      const cached = await offlineDb.cachedAreas.toArray();
+      const cached = await getCachedAreasFromOffline();
       if (cached.length > 0) return cached;
       throw err;
     }
@@ -272,7 +334,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(positions)
     });
-    return res.json();
+    return ensureOkJson(res, 'Masa yerleşimi kaydedilemedi.');
   },
 
   async moveTable(sourceId: number, targetId: number, operatorName: string): Promise<any> {
@@ -316,12 +378,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kuver_count: kuverCount, operator_name: operatorName })
     });
-    return res.json();
+    return ensureOkJson(res, 'Kuver güncellenemedi.');
   },
 
   async clearWaiterCall(tableId: number): Promise<any> {
     const res = await fetch(`${API_BASE}/tables/${tableId}/clear-call`, { method: 'POST' });
-    return res.json();
+    return ensureOkJson(res, 'Çağrı temizlenemedi.');
   },
 
   async triggerWaiterCall(tableId: number, reason: string = 'Garson Çağır'): Promise<any> {
@@ -330,7 +392,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason })
     });
-    return res.json();
+    return ensureOkJson(res, 'Garson çağrısı gönderilemedi.');
   },
 
   // Area & Table CRUD Operations
@@ -429,7 +491,7 @@ export const api = {
       await saveCategoriesToOfflineCache(data);
       return data;
     } catch (err) {
-      const cached = await offlineDb.cachedCategories.toArray();
+      const cached = await getCachedCategoriesFromOffline();
       if (cached.length > 0) return cached;
       throw err;
     }
@@ -437,7 +499,7 @@ export const api = {
 
   async searchProducts(q: string): Promise<Product[]> {
     const res = await fetch(`${API_BASE}/products/search?q=${encodeURIComponent(q)}`);
-    return res.json();
+    return ensureOkJson(res, 'Ürün araması başarısız.');
   },
 
   // Orders
@@ -454,11 +516,25 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error((await res.json()).detail || 'Sipariş oluşturulamadı.');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const httpErr: any = new Error(errData?.detail || errData?.error || errData?.message || 'Sipariş oluşturulamadı.');
+        httpErr.isHttpError = true;
+        throw httpErr;
+      }
       return res.json();
-    } catch (err) {
-      // Queue offline
-      await queueOfflineOrder(payload);
+    } catch (err: any) {
+      if (err?.isHttpError) {
+        throw err;
+      }
+      const isNetworkFailure =
+        (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        err instanceof TypeError ||
+        /network|fetch|timeout/i.test(String(err?.message || ''));
+      if (!isNetworkFailure) {
+        throw err;
+      }
+      await queueOfflineOrder({ ...payload, tenant_code: getResolvedRestaurantCode() });
       return { status: 'offline_queued', order_id: Date.now(), order_no: 'OFFLINE-' + Date.now() };
     }
   },
@@ -479,7 +555,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ order_item_ids: itemIds, action })
     });
-    return res.json();
+    return ensureOkJson(res, 'Bekletme / gönderme işlemi başarısız.');
   },
 
   async voidItem(itemId: number, reasonCode: string, reasonText: string, operatorName: string, managerPin?: string): Promise<any> {
@@ -535,7 +611,7 @@ export const api = {
         manager_pin: managerPin
       })
     });
-    return res.json();
+    return ensureOkJson(res, 'İndirim uygulanamadı.');
   },
 
   async applyItemDiscount(itemId: number, discountType: 'percentage' | 'fixed', value: number, reason?: string, operatorName?: string, managerPin?: string): Promise<any> {
@@ -612,7 +688,7 @@ export const api = {
         manager_pin: managerPin
       })
     });
-    return res.json();
+    return ensureOkJson(res, 'İkram uygulanamadı.');
   },
 
   async calculateSplitEqual(orderId: number, personCount: number): Promise<any> {
@@ -621,7 +697,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ order_id: orderId, person_count: personCount })
     });
-    return res.json();
+    return ensureOkJson(res, 'Alman usulü bölme hesaplanamadı.');
   },
 
   // Cashier & Payments
@@ -632,10 +708,25 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error((await res.json()).detail || 'Tahsilat başarısız.');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const httpErr: any = new Error(errData?.detail || errData?.error || errData?.message || 'Tahsilat başarısız.');
+        httpErr.isHttpError = true;
+        throw httpErr;
+      }
       return res.json();
-    } catch (err) {
-      await queueOfflinePayment(payload);
+    } catch (err: any) {
+      if (err?.isHttpError) {
+        throw err;
+      }
+      const isNetworkFailure =
+        (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        err instanceof TypeError ||
+        /network|fetch|timeout/i.test(String(err?.message || ''));
+      if (!isNetworkFailure) {
+        throw err;
+      }
+      await queueOfflinePayment({ ...payload, tenant_code: getResolvedRestaurantCode() });
       return { status: 'offline_queued', is_fully_paid: true, remaining_total: 0.0 };
     }
   },
@@ -653,7 +744,7 @@ export const api = {
 
   async getActiveRegister(): Promise<any> {
     const res = await fetch(`${API_BASE}/cashier/active-register`);
-    return res.json();
+    return ensureOkJson(res, 'Kasa durumu alınamadı.');
   },
 
   async createExpense(category: string, amount: number, type: 'out' | 'in', description: string, createdBy: string): Promise<any> {
@@ -662,12 +753,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ category, amount, expense_type: type, description, created_by: createdBy })
     });
-    return res.json();
+    return ensureOkJson(res, 'Kasa masraf kaydı oluşturulamadı.');
   },
 
   async getExpenses(): Promise<any[]> {
     const res = await fetch(`${API_BASE}/cashier/expenses`);
-    return res.json();
+    return ensureOkJson(res, 'Kasa masrafları alınamadı.');
   },
 
   async deleteExpense(id: number): Promise<any> {
@@ -680,7 +771,7 @@ export const api = {
 
   async getXReport(cashierName: string = 'Kasiyer'): Promise<any> {
     const res = await fetch(`${API_BASE}/cashier/x-report?cashier_name=${encodeURIComponent(cashierName)}`);
-    return res.json();
+    return ensureOkJson(res, 'X-Raporu alınamadı.');
   },
 
   async closeZReport(closedBy: string = 'Müdür', managerPin?: string, forceClose: boolean = false): Promise<any> {
@@ -731,18 +822,38 @@ export const api = {
 
   // KDS
   async getKdsOrders(station: string = 'all'): Promise<any[]> {
-    const res = await fetch(`${API_BASE}/kds/orders?station=${station}`);
-    return res.json();
+    const res = await fetch(`${API_BASE}/kds/orders?station=${encodeURIComponent(station)}`);
+    return ensureOkJson(res, 'Mutfak siparişleri alınamadı.');
   },
 
   async progressKdsItem(itemId: number, status: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/kds/item/${itemId}/progress?status=${status}`, { method: 'POST' });
-    return res.json();
+    const res = await fetch(`${API_BASE}/kds/item/${itemId}/progress?status=${encodeURIComponent(status)}`, { method: 'POST' });
+    return ensureOkJson(res, 'Mutfak kalem durumu güncellenemedi.');
   },
 
   async markKdsOrderReadyAll(orderId: number): Promise<any> {
     const res = await fetch(`${API_BASE}/kds/order/${orderId}/ready-all`, { method: 'POST' });
-    return res.json();
+    return ensureOkJson(res, 'Sipariş hazır olarak işaretlenemedi.');
+  },
+
+  async approveOutOfStockItem(itemId: number, approvedBy: string = 'Garson'): Promise<any> {
+    const res = await fetch(`${API_BASE}/kds/item/${itemId}/approve-stock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved_by: approvedBy }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.detail || data.error || data.message || 'Stok onayı işlemi başarısız.');
+    }
+    return data;
+  },
+
+  async getStockApprovals(): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/kds/stock-approvals`);
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => []);
+    return Array.isArray(data) ? data : [];
   },
 
   // Inventory & Recipes
@@ -750,7 +861,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/inventory/ingredients`, {
       headers: getAuthHeaders(false)
     });
-    const data = await res.json().catch(() => []);
+    const data = await ensureOkJson(res, 'Stok listesi alınamadı.');
     if (Array.isArray(data)) return data;
     if (data && Array.isArray(data.ingredients)) return data.ingredients;
     return [];
@@ -787,7 +898,7 @@ export const api = {
 
   async getRecipes(): Promise<ProductRecipe[]> {
     const res = await fetch(`${API_BASE}/inventory/recipes`);
-    return res.json();
+    return ensureOkJson(res, 'Reçeteler alınamadı.');
   },
 
   async getProductRecipe(productId: number): Promise<ProductRecipe> {
@@ -818,7 +929,7 @@ export const api = {
         notes
       })
     });
-    return res.json();
+    return ensureOkJson(res, 'Depolar arası transfer yapılamadı.');
   },
 
   async enterPurchaseInvoice(payload: any): Promise<any> {
@@ -827,23 +938,23 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    return res.json();
+    return ensureOkJson(res, 'Alım faturası işlenemedi.');
   },
 
   // Delivery & Couriers
   async getCouriers(): Promise<Courier[]> {
     const res = await fetch(`${API_BASE}/delivery/couriers`);
-    return res.json();
+    return ensureOkJson(res, 'Kurye listesi alınamadı.');
   },
 
   async getDeliveryOrders(): Promise<DeliveryOrder[]> {
     const res = await fetch(`${API_BASE}/delivery/orders`);
-    return res.json();
+    return ensureOkJson(res, 'Paket siparişler alınamadı.');
   },
 
   async simulateCallerId(phone: string = '05321234567'): Promise<any> {
-    const res = await fetch(`${API_BASE}/delivery/caller-id-simulate?phone=${phone}`);
-    return res.json();
+    const res = await fetch(`${API_BASE}/delivery/caller-id-simulate?phone=${encodeURIComponent(phone)}`);
+    return ensureOkJson(res, 'Arayan müşteri sorgulanamadı.');
   },
 
   async assignCourier(deliveryOrderId: number, courierId: number): Promise<any> {
@@ -852,7 +963,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ delivery_order_id: deliveryOrderId, courier_id: courierId })
     });
-    return res.json();
+    return ensureOkJson(res, 'Kurye ataması başarısız.');
   },
 
   async completeDelivery(deliveryOrderId: number): Promise<any> {
@@ -869,7 +980,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ courier_id: courierId, collected_cash: cash, collected_card: card })
     });
-    return res.json();
+    return ensureOkJson(res, 'Kurye mutabakatı tamamlanamadı.');
   },
 
   async ingestOnlineOrder(payload: any): Promise<any> {
@@ -878,33 +989,57 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    return res.json();
+    return ensureOkJson(res, 'Online sipariş aktarılamadı.');
   },
 
   // QR Menu
   async getQrMenu(tableId: number): Promise<any> {
     const res = await fetch(`${API_BASE}/qr/table/${tableId}/menu`);
-    return res.json();
+    return ensureOkJson(res, 'QR menü yüklenemedi.');
   },
 
-  async placeCustomerTableOrder(tableId: number, items: any[]): Promise<any> {
+  async getQrMenuSettings(): Promise<any> {
+    const res = await fetch(`${API_BASE}/qr/settings`);
+    return ensureOkJson(res, 'QR menü ayarları alınamadı.');
+  },
+
+  async updateQrMenuSettings(settings: { allow_table_payment?: boolean; allowed_category_ids?: number[] | null }): Promise<any> {
+    const res = await fetch(`${API_BASE}/qr/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    return ensureOkJson(res, 'QR menü ayarları kaydedilemedi.');
+  },
+
+  async placeCustomerTableOrder(tableId: number, items: any[], notes?: string): Promise<any> {
+    const trimmedNote = notes?.trim();
     const res = await fetch(`${API_BASE}/qr/table/${tableId}/order`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items, waiter_name: 'QR Müşteri' })
+      body: JSON.stringify({
+        items,
+        waiter_name: 'QR Müşteri',
+        ...(trimmedNote ? { notes: trimmedNote } : {}),
+      })
     });
-    return res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.detail || data.error || data.message || 'Sipariş gönderilemedi.');
+    }
+    return data;
   },
 
   // Fiscal & E-Adisyon
   async getEAdisyon(orderId: number): Promise<any> {
     const res = await fetch(`${API_BASE}/fiscal/e-adisyon/${orderId}`);
-    return res.json();
+    return ensureOkJson(res, 'E-Adisyon belgesi alınamadı.');
   },
 
-  async getEscposReceipt(orderId: number): Promise<any> {
-    const res = await fetch(`${API_BASE}/fiscal/receipt/${orderId}/escpos`);
-    return res.json();
+  async getEscposReceipt(orderId: number, preview: boolean = false): Promise<any> {
+    const qs = preview ? '?preview=true' : '';
+    const res = await fetch(`${API_BASE}/fiscal/receipt/${orderId}/escpos${qs}`);
+    return ensureOkJson(res, 'Termal fiş önizlemesi alınamadı.');
   },
 
   async printTableBill(orderId: number, operatorName?: string): Promise<any> {
@@ -912,14 +1047,53 @@ export const api = {
       ? `${API_BASE}/fiscal/receipt/${orderId}/escpos?operator_name=${encodeURIComponent(operatorName)}`
       : `${API_BASE}/fiscal/receipt/${orderId}/escpos`;
     const res = await fetch(url, { method: 'POST' });
-    return res.json();
+    return ensureOkJson(res, 'Hesap yazdırılamadı.');
+  },
+
+  async downloadAuthenticatedFile(url: string, filename?: string, openInTab: boolean = false, authTokenOverride?: string): Promise<void> {
+    const headers = getAuthHeaders(false);
+    if (authTokenOverride) {
+      headers['Authorization'] = `Bearer ${authTokenOverride}`;
+    }
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData?.detail || errData?.error || errData?.message || `Dosya indirilemedi (${res.status}).`);
+    }
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      if (openInTab) {
+        const win = window.open(objectUrl, '_blank', 'noopener,noreferrer');
+        if (!win) {
+          const a = document.createElement('a');
+          a.href = objectUrl;
+          a.download = filename || 'belge';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+      } else {
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = filename || 'dosya';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+      }
+    } catch (e) {
+      URL.revokeObjectURL(objectUrl);
+      throw e;
+    }
   },
 
   async clearBillPrinted(tableId: number): Promise<any> {
     const res = await fetch(`${API_BASE}/tables/${tableId}/clear-bill-printed`, {
       method: 'POST'
     });
-    return res.json();
+    return ensureOkJson(res, 'Yazdırıldı durumu temizlenemedi.');
   },
 
   // Audit Logs
@@ -929,7 +1103,7 @@ export const api = {
     if (search) q.append('search', search);
     const qs = q.toString() ? `?${q.toString()}` : '';
     const res = await fetch(`${API_BASE}/audit/logs${qs}`);
-    return res.json();
+    return ensureOkJson(res, 'Denetim kayıtları alınamadı.');
   },
 
   // Settings & Definitions API
@@ -942,29 +1116,31 @@ export const api = {
   async updateSettings(payload: any): Promise<any> {
     const res = await fetch(`${API_BASE}/settings/`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(true),
       body: JSON.stringify(payload)
     });
-    if (!res.ok) throw new Error('Ayarlar güncellenemedi.');
-    return res.json();
+    return ensureOkJson(res, 'Ayarlar güncellenemedi.');
+  },
+
+  async getFeatureStore(key: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/settings/feature-store/${encodeURIComponent(key)}`, {
+      headers: getAuthHeaders(false)
+    });
+    return ensureOkJson(res, 'Özellik ayarları okunamadı.');
+  },
+
+  async saveFeatureStore(key: string, data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/settings/feature-store/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify({ data })
+    });
+    return ensureOkJson(res, 'Özellik ayarları kaydedilemedi.');
   },
 
   // Staff User Management CRUD
   async loginByPin(pinCode: string): Promise<StaffUser> {
-    const res = await fetch(`${API_BASE}/auth/login-pin`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin_code: pinCode })
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Geçersiz PIN Kodu!');
-    }
-    const data = await res.json();
-    if (data.access_token) {
-      localStorage.setItem('boncore_token', data.access_token);
-    }
-    return data;
+    return this.loginWithPin(pinCode);
   },
 
   async createStaff(payload: any): Promise<any> {
@@ -1003,7 +1179,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    return res.json();
+    return ensureOkJson(res, 'Kategori oluşturulamadı.');
   },
 
   async updateCategory(catId: number, payload: any): Promise<any> {
@@ -1012,7 +1188,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    return res.json();
+    return ensureOkJson(res, 'Kategori güncellenemedi.');
   },
 
   async reorderCategories(categoryIds: number[]): Promise<any> {
@@ -1021,7 +1197,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ category_ids: categoryIds })
     });
-    return res.json();
+    return ensureOkJson(res, 'Kategori sıralaması güncellenemedi.');
   },
 
   async reorderProducts(productIds: number[]): Promise<any> {
@@ -1030,12 +1206,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ product_ids: productIds })
     });
-    return res.json();
+    return ensureOkJson(res, 'Ürün sıralaması güncellenemedi.');
   },
 
   async deleteCategory(catId: number): Promise<any> {
     const res = await fetch(`${API_BASE}/products/categories/${catId}`, { method: 'DELETE' });
-    return res.json();
+    return ensureOkJson(res, 'Kategori silinemedi.');
   },
 
   async createProduct(payload: any): Promise<any> {
@@ -1044,6 +1220,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Ürün oluşturulamadı.');
     return res.json();
   },
 
@@ -1053,18 +1230,20 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Ürün güncellenemedi.');
     return res.json();
   },
 
   async deleteProduct(prodId: number): Promise<any> {
     const res = await fetch(`${API_BASE}/products/items/${prodId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Ürün silinemedi.');
     return res.json();
   },
 
   // Analytics & Statistics API
   async getRestaurantStatistics(dateRange: string = 'all'): Promise<any> {
     const res = await fetch(`${API_BASE}/orders/analytics/statistics?date_range=${encodeURIComponent(dateRange)}`);
-    return res.json();
+    return ensureOkJson(res, 'İstatistikler alınamadı.');
   },
 
   // Closed Bills (Kapatılan Adisyonlar) Report & Reopen API
@@ -1082,7 +1261,7 @@ export const api = {
     if (params?.search) q.append('search', params.search);
     if (params?.paymentMethod) q.append('payment_method', params.paymentMethod);
     const res = await fetch(`${API_BASE}/orders/reports/closed-bills?${q.toString()}`);
-    return res.json();
+    return ensureOkJson(res, 'Kapanan adisyonlar raporu alınamadı.');
   },
 
   async reopenClosedOrder(orderId: number, operatorName: string = 'Yönetici', clearPayments: boolean = true): Promise<any> {
@@ -1115,7 +1294,7 @@ export const api = {
     if (params?.station) q.append('station', params.station);
     if (params?.search) q.append('search', params.search);
     const res = await fetch(`${API_BASE}/orders/reports/product-sales?${q.toString()}`);
-    return res.json();
+    return ensureOkJson(res, 'Ürün satış raporu alınamadı.');
   },
 
   // Day-End (Z) Report API
@@ -1128,12 +1307,12 @@ export const api = {
     }
     if (registerId) q.append('register_id', String(registerId));
     const res = await fetch(`${API_BASE}/cashier/reports/day-end?${q.toString()}`);
-    return res.json();
+    return ensureOkJson(res, 'Gün sonu raporu alınamadı.');
   },
 
   async getZReportHistory(): Promise<any> {
     const res = await fetch(`${API_BASE}/cashier/reports/z-history`);
-    return res.json();
+    return ensureOkJson(res, 'Z raporu geçmişi alınamadı.');
   },
 
   async closeDayEndRegister(closedBy: string = 'Yönetici', forceClose: boolean = false): Promise<any> {
@@ -1149,7 +1328,7 @@ export const api = {
     // Live System Time API
   async getServerTime(): Promise<any> {
     const res = await fetch(`${API_BASE}/settings/time`);
-    return res.json();
+    return ensureOkJson(res, 'Sunucu saati alınamadı.');
   },
 
   // CAS CL-3000 Ethernet Scale API
@@ -1157,7 +1336,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/scale/config`, {
       headers: getAuthHeaders(false)
     });
-    return res.json();
+    return ensureOkJson(res, 'Terazi ayarları alınamadı.');
   },
 
   async updateScaleConfig(payload: any): Promise<any> {
@@ -1166,7 +1345,7 @@ export const api = {
       headers: getAuthHeaders(true),
       body: JSON.stringify(payload)
     });
-    return res.json();
+    return ensureOkJson(res, 'Terazi ayarları kaydedilemedi.');
   },
 
   async testScaleConnection(payload: { ip_address: string; port: number; timeout?: number }): Promise<any> {
@@ -1175,7 +1354,7 @@ export const api = {
       headers: getAuthHeaders(true),
       body: JSON.stringify(payload)
     });
-    return res.json();
+    return ensureOkJson(res, 'Terazi bağlantısı test edilemedi.');
   },
 
   async getScaleWeight(ip?: string, port?: number, terminalId?: string): Promise<{
@@ -1196,7 +1375,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/scale/weight?${q.toString()}`, {
       headers: getAuthHeaders(false)
     });
-    return res.json();
+    return ensureOkJson(res, 'Terazi ağırlığı okunamadı.');
   },
 
   async getAgentStatus(terminalId?: string): Promise<{
@@ -1234,7 +1413,7 @@ export const api = {
     }>;
   }> {
     const res = await fetch(`${API_BASE}/scale/terminals`);
-    return res.json();
+    return ensureOkJson(res, 'Terminaller alınamadı.');
   },
 
   async updateTerminal(terminalId: string, payload: { name?: string; scale_ip?: string; scale_port?: number; is_default?: boolean; scale_enabled?: boolean }): Promise<any> {
@@ -1243,14 +1422,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    return res.json();
+    return ensureOkJson(res, 'Terminal güncellenemedi.');
   },
 
-    async deleteTerminal(terminalId: string): Promise<any> {
+  async deleteTerminal(terminalId: string): Promise<any> {
     const res = await fetch(`${API_BASE}/scale/terminals/${encodeURIComponent(terminalId)}`, {
       method: 'DELETE'
     });
-    return res.json();
+    return ensureOkJson(res, 'Terminal silinemedi.');
   },
 
   async printReceipt(payload: {
@@ -1273,7 +1452,11 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      return await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { success: false, error: data?.detail || data?.error || data?.message || 'Yazdırma isteği başarısız.' };
+      }
+      return data;
     } catch (e: any) {
       return { success: false, error: e.message || 'Yazdırma isteği gönderilemedi.' };
     }
@@ -1282,7 +1465,7 @@ export const api = {
   // --- ADISYO PRO MODULES API ---
   async getCustomersLoyalty(): Promise<any> {
     const res = await fetch(`${API_BASE}/modules/customers`);
-    return res.json();
+    return ensureOkJson(res, 'Müşteri verileri alınamadı.');
   },
 
   async createCustomer(payload: { name: string; phone: string; email?: string; tier?: string; points?: number; balance?: number; notes?: string }): Promise<any> {
@@ -1291,7 +1474,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    return res.json();
+    return ensureOkJson(res, 'Müşteri oluşturulamadı.');
   },
 
   async addCustomerTransaction(customerId: string, payload: { type: string; amount?: number; points?: number; note?: string }): Promise<any> {
@@ -1300,26 +1483,26 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    return res.json();
+    return ensureOkJson(res, 'Müşteri işlemi kaydedilemedi.');
   },
 
   async deleteCustomer(customerId: string): Promise<any> {
     const res = await fetch(`${API_BASE}/modules/customers/${encodeURIComponent(customerId)}`, {
       method: 'DELETE'
     });
-    return res.json();
+    return ensureOkJson(res, 'Müşteri silinemedi.');
   },
 
   async toggleCampaign(campaignId: string): Promise<any> {
     const res = await fetch(`${API_BASE}/modules/campaigns/${encodeURIComponent(campaignId)}/toggle`, {
       method: 'POST'
     });
-    return res.json();
+    return ensureOkJson(res, 'Kampanya durumu güncellenemedi.');
   },
 
   async getReservations(): Promise<any> {
     const res = await fetch(`${API_BASE}/modules/reservations`);
-    return res.json();
+    return ensureOkJson(res, 'Rezervasyonlar alınamadı.');
   },
 
   async createReservation(payload: { guest_name: string; phone: string; guests_count: number; date: string; time: string; table_name: string; notes?: string; deposit?: number }): Promise<any> {
@@ -1328,7 +1511,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    return res.json();
+    return ensureOkJson(res, 'Rezervasyon oluşturulamadı.');
   },
 
   async updateReservationStatus(resId: string, status: string): Promise<any> {
@@ -1337,49 +1520,19 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status })
     });
-    return res.json();
+    return ensureOkJson(res, 'Rezervasyon durumu güncellenemedi.');
   },
 
   async deleteReservation(resId: string): Promise<any> {
     const res = await fetch(`${API_BASE}/modules/reservations/${encodeURIComponent(resId)}`, {
       method: 'DELETE'
     });
-    return res.json();
+    return ensureOkJson(res, 'Rezervasyon silinemedi.');
   },
 
   async getCostProfitAnalysis(): Promise<any> {
     const res = await fetch(`${API_BASE}/modules/cost-profit`);
-    return res.json();
-  },
-
-  async getHotelFolios(): Promise<any> {
-    const res = await fetch(`${API_BASE}/modules/hotel`);
-    return res.json();
-  },
-
-  async addHotelCharge(payload: { room_no: string; amount: number; description?: string; order_id?: number }): Promise<any> {
-    const res = await fetch(`${API_BASE}/modules/hotel/charge`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    return res.json();
-  },
-
-  async settleHotelFolio(roomNo: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/modules/hotel/${encodeURIComponent(roomNo)}/settle`, {
-      method: 'POST'
-    });
-    return res.json();
-  },
-
-  async submitKioskOrder(payload: { customer_name: string; order_type: string; payment_method: string; items: Array<{ product_id: number; quantity: number; notes?: string }> }): Promise<any> {
-    const res = await fetch(`${API_BASE}/modules/kiosk-order`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    return res.json();
+    return ensureOkJson(res, 'Maliyet ve kârlılık analizi alınamadı.');
   },
 
   // Kitchen Groups (KDS Mutfak Grupları / İstasyon Yönetimi)
@@ -1441,7 +1594,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/settings/kitchen-groups-reorder`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ordered_ids: orderedIds })
+      body: JSON.stringify({ group_ids: orderedIds, ordered_ids: orderedIds })
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

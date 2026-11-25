@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -376,7 +377,15 @@ func (h *Hub) BroadcastAll(tenantCode string, eventType string, data interface{}
 	return h.BroadcastToChannel(tenantCode, "all", eventType, data)
 }
 
-// dispatchLocal performs lock-minimal, non-blocking sub-millisecond fan-out to local WebSocket clients.
+func wsTenantAllowed(clientTenant, envTenant string) bool {
+	if strings.TrimSpace(envTenant) == "" {
+		return true
+	}
+	return strings.TrimSpace(clientTenant) != "" && strings.EqualFold(strings.TrimSpace(clientTenant), strings.TrimSpace(envTenant))
+}
+
+// dispatchLocal performs lock-minimal, non-blocking sub-millisecond fan-out to local WebSocket clients,
+// strictly isolating messages by TenantCode (unless env.TenantCode is empty for global SaaS announcements).
 func (h *Hub) dispatchLocal(env PubSubEnvelope) {
 	h.mu.RLock()
 	var targets []*Client
@@ -385,31 +394,37 @@ func (h *Hub) dispatchLocal(env PubSubEnvelope) {
 		if tblMap, ok := h.tableChannels[env.TableID]; ok {
 			targets = make([]*Client, 0, len(tblMap))
 			for client := range tblMap {
-				targets = append(targets, client)
+				if wsTenantAllowed(client.tenantCode, env.TenantCode) {
+					targets = append(targets, client)
+				}
 			}
 		}
 	} else {
 		// When broadcasting to a specific channel (e.g. "kds"), deliver to that channel's clients.
-		// When broadcasting to "all", deliver to all clients.
+		// When broadcasting to "all", deliver to all clients belonging to the same tenant.
 		seen := make(map[*Client]struct{})
 		if env.Channel == "all" {
 			if allMap, ok := h.channels["all"]; ok {
 				for client := range allMap {
-					targets = append(targets, client)
-					seen[client] = struct{}{}
+					if wsTenantAllowed(client.tenantCode, env.TenantCode) {
+						targets = append(targets, client)
+						seen[client] = struct{}{}
+					}
 				}
 			}
 		} else {
 			if chMap, ok := h.channels[env.Channel]; ok {
 				for client := range chMap {
-					targets = append(targets, client)
-					seen[client] = struct{}{}
+					if wsTenantAllowed(client.tenantCode, env.TenantCode) {
+						targets = append(targets, client)
+						seen[client] = struct{}{}
+					}
 				}
 			}
 			// Also deliver to clients who explicitly connected to the global "all" channel (e.g. App.tsx, Dashboard)
 			if allMap, ok := h.channels["all"]; ok {
 				for client := range allMap {
-					if client.channel == "all" {
+					if client.channel == "all" && wsTenantAllowed(client.tenantCode, env.TenantCode) {
 						if _, already := seen[client]; !already {
 							targets = append(targets, client)
 							seen[client] = struct{}{}

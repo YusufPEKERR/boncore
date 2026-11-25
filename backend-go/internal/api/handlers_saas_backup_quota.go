@@ -41,11 +41,22 @@ func RegisterSaaSBackupQuotaRoutes(group fiber.Router, svc *service.Services) {
 		_ = tenantDB.Exec("PRAGMA wal_checkpoint(TRUNCATE);").Error
 
 		ts := time.Now().Format("20060102_150405")
-		backupFileName := fmt.Sprintf("%s_backup_%s.bak", tenant.Code, ts)
+		safeCode := strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+				return r
+			}
+			return '_'
+		}, tenant.Code)
+		backupFileName := fmt.Sprintf("%s_backup_%s.bak", safeCode, ts)
 		backupFilePath := filepath.Join(backupsDir, backupFileName)
+		absBackupsDir, _ := filepath.Abs(backupsDir)
+		absTarget, _ := filepath.Abs(backupFilePath)
+		if absBackupsDir != "" && !strings.HasPrefix(absTarget, absBackupsDir+string(filepath.Separator)) {
+			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz yedek dosya yolu.")
+		}
 
-		// 1. Attempt atomic SQLite VACUUM INTO
-		escapedBackupPath := strings.ReplaceAll(backupFilePath, "\\", "/")
+		// 1. Attempt atomic SQLite VACUUM INTO (escape single quotes safely)
+		escapedBackupPath := strings.ReplaceAll(strings.ReplaceAll(backupFilePath, "\\", "/"), "'", "''")
 		vacErr := tenantDB.Exec(fmt.Sprintf("VACUUM INTO '%s';", escapedBackupPath)).Error
 		if vacErr != nil {
 			// Fallback: Copy original tenant db file directly
@@ -223,12 +234,15 @@ func RegisterSaaSBackupQuotaRoutes(group fiber.Router, svc *service.Services) {
 			dbBytes += fi.Size()
 		}
 
-		// Calculate media size
+		// Calculate media size strictly for files belonging to this tenant
 		mediaDir := filepath.Join(svc.DBManager.GetSqliteBaseDir(), "static", "uploads")
 		var mediaBytes int64 = 0
 		_ = filepath.Walk(mediaDir, func(path string, info os.FileInfo, err error) error {
 			if err == nil && !info.IsDir() {
-				if strings.Contains(path, tenant.Code) {
+				baseName := filepath.Base(path)
+				if strings.HasPrefix(baseName, tenant.Code+"_") ||
+					strings.HasPrefix(baseName, "ticket_"+tenant.Code+"_") ||
+					strings.Contains(path, string(filepath.Separator)+tenant.Code+string(filepath.Separator)) {
 					mediaBytes += info.Size()
 				}
 			}

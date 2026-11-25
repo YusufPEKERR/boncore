@@ -12,12 +12,20 @@ export const AuditLogViewer: React.FC = () => {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [filterType, setFilterType] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 
   useEffect(() => {
-    loadLogs();
-  }, [filterType]);
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    loadLogs(debouncedSearch);
+  }, [filterType, debouncedSearch]);
 
   const loadLogs = async (customSearch?: string) => {
     setLoading(true);
@@ -88,10 +96,15 @@ export const AuditLogViewer: React.FC = () => {
           </span>
         );
       case 'APPLY_DISCOUNT':
+        return (
+          <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-lg text-[10px] font-bold">
+            ADİSYON İNDİRİMİ
+          </span>
+        );
       case 'APPLY_ITEM_DISCOUNT':
         return (
           <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-lg text-[10px] font-bold">
-            İNDİRİM
+            ÜRÜN İNDİRİMİ
           </span>
         );
       case 'APPLY_TREAT':
@@ -101,13 +114,21 @@ export const AuditLogViewer: React.FC = () => {
             İKRAM
           </span>
         );
+      case 'DELETE_PAYMENT':
+        return (
+          <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30 px-2.5 py-1 rounded-lg text-[10px] font-bold">
+            ÖDEME SİLME
+          </span>
+        );
       case 'TABLE_MOVE':
+      case 'TABLE_MOVED':
         return (
           <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-lg text-[10px] font-bold">
             MASA TAŞIMA
           </span>
         );
       case 'TABLE_MERGE':
+      case 'TABLE_MERGED':
         return (
           <span className="inline-flex items-center gap-1 bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/30 px-2.5 py-1 rounded-lg text-[10px] font-bold">
             MASA BİRLEŞTİRME
@@ -122,8 +143,14 @@ export const AuditLogViewer: React.FC = () => {
         );
       case 'CASH_EXPENSE':
         return (
-          <span className="inline-flex items-center gap-1 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border border-yellow-500/30 px-2.5 py-1 rounded-lg text-[10px] font-bold">
+          <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-lg text-[10px] font-bold">
             KASA MASRAFI
+          </span>
+        );
+      case 'DELETE_CASH_EXPENSE':
+        return (
+          <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30 px-2.5 py-1 rounded-lg text-[10px] font-bold">
+            MASRAF SİLME
           </span>
         );
       default:
@@ -228,7 +255,7 @@ export const AuditLogViewer: React.FC = () => {
           {searchQuery && (
             <button
               type="button"
-              onClick={() => { setSearchQuery(''); loadLogs(''); }}
+              onClick={() => { setSearchQuery(''); setDebouncedSearch(''); }}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
             >
               <X className="w-3.5 h-3.5" />
@@ -244,17 +271,19 @@ export const AuditLogViewer: React.FC = () => {
             className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs py-2 px-3 font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
           >
             <option value="">Tüm Hareketler</option>
-            <option value="TABLE_CLOSED">Masa Kapanışları & Tahsilat</option>
             <option value="TABLE_OPENED">Masa Açılışları</option>
-            <option value="CANCEL_ORDER">Sipariş & Masa İptalleri</option>
-            <option value="REOPEN_ORDER">Adisyon Tekrar Açma</option>
+            <option value="TABLE_CLOSED">Masa Kapanışları & Tahsilat</option>
             <option value="VOID_ITEM">Ürün İptalleri</option>
-            <option value="APPLY_DISCOUNT">İndirimler</option>
-            <option value="APPLY_TREAT">İkramlar</option>
-            <option value="TABLE_MOVE">Masa Taşımaları</option>
-            <option value="TABLE_MERGE">Masa Birleştirmeleri</option>
+            <option value="CANCEL_ORDER">Sipariş & Masa İptalleri</option>
+            <option value="APPLY_DISCOUNT">Adisyon İndirimleri</option>
+            <option value="APPLY_ITEM_DISCOUNT">Ürün İndirimleri</option>
+            <option value="TREAT_ITEMS">İkramlar</option>
+            <option value="REOPEN_ORDER">Adisyon Tekrar Açma</option>
+            <option value="DELETE_PAYMENT">Ödeme Silme</option>
             <option value="CASH_EXPENSE">Kasa Masrafları</option>
-            <option value="Z_REPORT_CLOSED">Z-Raporları</option>
+            <option value="DELETE_CASH_EXPENSE">Masraf Silme</option>
+            <option value="TABLE_MOVED">Masa Taşımaları</option>
+            <option value="TABLE_MERGED">Masa Birleştirmeleri</option>
           </select>
         </div>
       </div>
