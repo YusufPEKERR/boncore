@@ -38,7 +38,7 @@ from tkinter import ttk, messagebox
 import pystray
 from PIL import Image, ImageDraw, ImageTk
 
-AGENT_VERSION = "2.4.5"
+AGENT_VERSION = "2.5.0"
 APP_TITLE = "BonCore Donanım Köprüsü"
 IPC_PORT = 49231
 
@@ -1561,6 +1561,8 @@ class BonCoreHardwareDesktopApp:
                     self.tray_icon.title = f"{APP_TITLE} • Siteye Bağlı"
                 elif status == "connecting":
                     self.tray_icon.title = f"{APP_TITLE} • Bağlanmaya Çalışıyor..."
+                elif status == "unauthorized":
+                    self.tray_icon.title = f"{APP_TITLE} • Ajan API Anahtarı Gerekli (401)"
                 else:
                     self.tray_icon.title = f"{APP_TITLE} • Site Bağlantısı Yok"
             except Exception:
@@ -1582,6 +1584,13 @@ class BonCoreHardwareDesktopApp:
                         self.root.after(0, lambda: self.lbl_server_status.config(
                             text=f"🟡 Sunucuya Bağlanılıyor... ({server_url})",
                             fg="#d97706"
+                        ))
+                elif status == "unauthorized":
+                    self.root.after(0, lambda: self.badge_status.set_status("● API ANAHTARI GEREKLİ", status="danger"))
+                    if hasattr(self, "lbl_server_status") and self.lbl_server_status:
+                        self.root.after(0, lambda: self.lbl_server_status.config(
+                            text=f"🔒 Yetkilendirme Hatası (401): Ajan API Anahtarı eksik veya hatalı ({server_url})",
+                            fg="#dc2626"
                         ))
                 else:
                     self.root.after(0, lambda: self.badge_status.set_status("● BAĞLANTI YOK", status="danger"))
@@ -1620,6 +1629,12 @@ class BonCoreHardwareDesktopApp:
                 self.cfg["terminal_name"] = new_name
                 self.lbl_title.config(text=f"BonCore • {new_name}")
                 changed = True
+
+            if hasattr(self, "ent_agent_api_key"):
+                new_ak = self.ent_agent_api_key.get().strip()
+                if new_ak != self.cfg.get("agent_api_key", ""):
+                    self.cfg["agent_api_key"] = new_ak
+                    changed = True
 
             new_ip = self.ent_scale_ip.get().strip()
             if new_ip and new_ip != self.cfg.get("scale_default_ip"):
@@ -1847,6 +1862,16 @@ class BonCoreHardwareDesktopApp:
         btn_save_kasa = RoundedButton(f_kasa, "Güncelle", command=self.save_terminal_name, bg_color="#10b981", hover_color="#059669", fg_color="#ffffff", radius=10, pad_x=14, pad_y=6)
         btn_save_kasa.pack(side="right")
 
+        # Ajan API Anahtarı (X-Agent-Key)
+        f_ak = tk.Frame(c1, bg="#ffffff")
+        f_ak.pack(fill="x", pady=4)
+        tk.Label(f_ak, text="Ajan API Anahtarı:", font=("Segoe UI", 9, "bold"), fg="#475569", bg="#ffffff", width=14, anchor="w").pack(side="left")
+        self.ent_agent_api_key = RoundedEntry(f_ak, bg_color="#f8fafc", border_color="#cbd5e1", focus_color="#10b981", radius=10, width=220, height=36, font=("Consolas", 9, "bold"), fg_color="#0f172a")
+        self.ent_agent_api_key.insert(0, self.cfg.get("agent_api_key", ""))
+        self.ent_agent_api_key.pack(side="left", fill="x", expand=True, padx=(4, 10))
+        btn_save_ak = RoundedButton(f_ak, "Kaydet", command=self.save_agent_api_key, bg_color="#0284c7", hover_color="#0369a1", fg_color="#ffffff", radius=10, pad_x=14, pad_y=6)
+        btn_save_ak.pack(side="right")
+
         self.lbl_server_status = tk.Label(
             c1,
             text="Durum: Sunucuya bağlanılıyor...",
@@ -2046,7 +2071,7 @@ class BonCoreHardwareDesktopApp:
         btn_refresh.pack(side="right", padx=10)
 
         # Kutulardan çıkıldığında veya Enter'a basıldığında otomatik kaydet
-        for ent in [self.ent_server_url, self.ent_restaurant_code, self.ent_terminal_name, self.ent_scale_ip, self.ent_scale_port]:
+        for ent in [self.ent_server_url, self.ent_restaurant_code, self.ent_terminal_name, self.ent_agent_api_key, self.ent_scale_ip, self.ent_scale_port]:
             ent.bind_entry("<FocusOut>", lambda e: self.sync_entries_to_config(user_action=False))
             ent.bind_entry("<Return>", lambda e: self.sync_entries_to_config(user_action=True))
 
@@ -2077,6 +2102,21 @@ class BonCoreHardwareDesktopApp:
             self.lbl_title.config(text=f"BonCore • {new_name}")
             threading.Thread(target=self._push_immediate_heartbeat, daemon=True).start()
             messagebox.showinfo("Başarılı", f"Kasa adı kaydedildi: {new_name}")
+
+    def save_agent_api_key(self):
+        new_ak = self.ent_agent_api_key.get().strip()
+        self.cfg["agent_api_key"] = new_ak
+        self.cfg["user_customized"] = True
+        save_config(self.cfg)
+        with self._state_lock:
+            self.server_connected = False
+            self.server_fail_count = 0
+        self.set_site_status("connecting", force=True)
+        threading.Thread(target=self._push_immediate_heartbeat, daemon=True).start()
+        if new_ak:
+            messagebox.showinfo("Başarılı", "Ajan API Anahtarı kaydedildi ve sunucuya yeniden bağlanılıyor.")
+        else:
+            messagebox.showwarning("Uyarı", "Ajan API Anahtarı temizlendi. POS Ayarlar > Yazıcılar & Terazi ekranındaki anahtarı girin.")
 
     def save_scale_params(self):
         ip = self.ent_scale_ip.get().strip()
@@ -2325,6 +2365,16 @@ class BonCoreHardwareDesktopApp:
 
                 self._record_server_success()
                 time.sleep(3.5)
+            except requests.exceptions.HTTPError as http_err:
+                status_code = getattr(getattr(http_err, "response", None), "status_code", 0)
+                if status_code in (401, 403):
+                    with self._state_lock:
+                        self.server_connected = False
+                        self.server_success_count = 0
+                    self.set_site_status("unauthorized", force=True)
+                else:
+                    self._record_server_failure()
+                time.sleep(2.5)
             except Exception:
                 self._record_server_failure()
                 time.sleep(2.5)
@@ -2370,6 +2420,16 @@ class BonCoreHardwareDesktopApp:
                         ).start()
 
                 time.sleep(0.65)
+            except requests.exceptions.HTTPError as http_err:
+                status_code = getattr(getattr(http_err, "response", None), "status_code", 0)
+                if status_code in (401, 403):
+                    with self._state_lock:
+                        self.server_connected = False
+                        self.server_success_count = 0
+                    self.set_site_status("unauthorized", force=True)
+                else:
+                    self._record_server_failure()
+                time.sleep(2.0)
             except Exception:
                 self._record_server_failure()
                 time.sleep(2.0)
@@ -2379,7 +2439,7 @@ class BonCoreHardwareDesktopApp:
         try:
             sess = self._create_http_session()
             rc = self.cfg.get("restaurant_code", "").strip()
-            headers = {"X-Restaurant-Code": rc} if rc else {}
+            headers = self._build_agent_headers()
             req_id = poll_data["req_id"]
             action = poll_data.get("action", "read_weight")
             target_ip = poll_data.get("ip") or self.cfg.get("scale_default_ip", "192.168.1.150")

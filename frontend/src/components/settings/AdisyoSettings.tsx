@@ -4,7 +4,7 @@ import {
   Receipt, Plus, Trash2, Edit3, ShieldAlert, Sparkles, Building2, 
   Coins, HelpCircle, Utensils, Tag, CreditCard, Check, X, AlertCircle, 
   Scale, RefreshCw, Wifi, WifiOff, Activity, Laptop, Download, Monitor, Star, CheckSquare, Printer,
-  Smartphone, Upload, Zap, Clock
+  Smartphone, Upload, Zap, Clock, Copy, Key
 } from 'lucide-react';
 import { sound } from '../../services/sound';
 import { api } from '../../services/api';
@@ -115,11 +115,13 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   const [showVirtualPrintersByTerminal, setShowVirtualPrintersByTerminal] = useState<Record<string, boolean>>({});
   const [downloadingAgent, setDownloadingAgent] = useState<boolean>(false);
   const [downloadStatusText, setDownloadStatusText] = useState<string>('');
+  const [agentApiKey, setAgentApiKey] = useState<string>('');
+  const [agentKeyCopied, setAgentKeyCopied] = useState<boolean>(false);
 
-  const handleDownloadAgentZip = (customTerminalName?: string) => {
+  const handleDownloadAgentZip = async (customTerminalName?: string) => {
     if (downloadingAgent) return;
     setDownloadingAgent(true);
-    setDownloadStatusText('İndirme Başlatılıyor...');
+    setDownloadStatusText('ZIP Hazırlanıyor...');
     sound.beep();
     try {
       const restaurantCode = localStorage.getItem('boncore_restaurant_code') || 'default';
@@ -131,28 +133,15 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
       }
       const safeName = (termName || restaurantCode).replace(/[\\/:*?"<>|]/g, '_');
       const url = `/api/scale/download-agent?${params.toString()}`;
-
-      // Doğrudan browser linkiyle indirme:
-      // Blob/bellek yükü oluşturmaz, tarayıcının yerel indirme kuyruğuna doğrudan gönderir
-      // Chrome'daki "Sitede dosyaya ulaşılamadı" (ERR_FILE_NOT_FOUND) hatasını tamamen çözer
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `boncore-hardware-agent-${safeName}.zip`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      setDownloadStatusText('İndirme Başlatıldı!');
+      await api.downloadAuthenticatedFile(url, `boncore-hardware-agent-${safeName}.zip`);
+      setDownloadStatusText('İndirildi!');
       setTimeout(() => setDownloadStatusText(''), 3000);
-    } catch (err) {
-      console.warn('Download link fallback:', err);
-      const restaurantCode = localStorage.getItem('boncore_restaurant_code') || 'default';
-      const termName = customTerminalName?.trim() || '';
-      const fallbackUrl = `/api/scale/download-agent?restaurant_code=${encodeURIComponent(restaurantCode)}${termName ? `&terminal_name=${encodeURIComponent(termName)}` : ''}`;
-      window.location.href = fallbackUrl;
+    } catch (err: any) {
+      sound.warning();
+      setSaveError(err?.message || 'Ajan ZIP paketi indirilemedi.');
       setDownloadStatusText('');
     } finally {
-      setTimeout(() => setDownloadingAgent(false), 1500);
+      setTimeout(() => setDownloadingAgent(false), 1000);
     }
   };
 
@@ -453,6 +442,11 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
 
   useEffect(() => {
     if (activeSubTab === 'scale') {
+      api.getAgentKey()
+        .then((res) => {
+          if (res?.agent_api_key) setAgentApiKey(res.agent_api_key);
+        })
+        .catch(() => {});
       const refreshBridge = async () => {
         const status = await localHardware.checkAgentStatus();
         if (status.isOnline) {
@@ -1605,6 +1599,43 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                     title="Engelsiz ZIP Paketi"
                   >
                     {downloadingAgent ? (downloadStatusText || 'İndiriliyor...') : 'ZIP Paketi'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Ajan API Anahtarı (X-Agent-Key) Kartı */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <Key className="w-4 h-4" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-extrabold text-slate-900 dark:text-white">
+                      Ajan API Anahtarı (<span className="font-mono text-blue-600 dark:text-blue-400">X-Agent-Key</span>)
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
+                      Donanım Köprüsü v2.5.0 uygulamasındaki <strong>Ajan API Anahtarı</strong> alanına yapıştırın veya önceden yapılandırılmış <strong>ZIP Paketi</strong>ni indirin.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <code className="px-3 py-2 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200 select-all">
+                    {agentApiKey || 'Yükleniyor...'}
+                  </code>
+                  <button
+                    type="button"
+                    disabled={!agentApiKey}
+                    onClick={() => {
+                      if (!agentApiKey) return;
+                      sound.beep();
+                      navigator.clipboard?.writeText(agentApiKey).catch(() => {});
+                      setAgentKeyCopied(true);
+                      setTimeout(() => setAgentKeyCopied(false), 2500);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    {agentKeyCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{agentKeyCopied ? 'Kopyalandı' : 'Kopyala'}</span>
                   </button>
                 </div>
               </div>

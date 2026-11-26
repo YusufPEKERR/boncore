@@ -2399,6 +2399,18 @@ func resolveTerminalLastSeen(tenantCode string, t map[string]interface{}) float6
 }
 
 func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
+	group.Get("/agent/key", func(c *fiber.Ctx) error {
+		db, tenantCode, err := getTenantDB(c, svc)
+		if err != nil {
+			return err
+		}
+		agentAPIKey := ensureTenantAgentAPIKey(db)
+		return c.JSON(fiber.Map{
+			"agent_api_key":   agentAPIKey,
+			"restaurant_code": tenantCode,
+		})
+	})
+
 	group.Get("/download-agent", func(c *fiber.Ctx) error {
 		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
@@ -3287,12 +3299,12 @@ func RegisterScaleRoutes(group fiber.Router, svc *service.Services) {
 			}
 		}
 		return c.JSON(fiber.Map{
-			"latest_version": "2.4.5",
+			"latest_version": "2.5.0",
 			"release_date":   time.Now().Format("2006-01-02"),
 			"mandatory":      false,
 			"download_url":   "/api/scale/setup",
 			"sha256":         setupSHA,
-			"changelog":      "Yerel LAN IP algilama (VPN/sanal adaptor filtreleme), bloklamasiz heartbeat/poll baglantisi ve otomatik yeniden baglanma iyilestirildi.",
+			"changelog":      "Ajan API Anahtarı (X-Agent-Key) desteği, 401 yetkilendirme durumu bildirimi, LAN IP algılama ve otomatik yeniden bağlanma iyileştirildi.",
 		})
 	})
 

@@ -3,7 +3,7 @@
 ; =====================================================================
 
 #define MyAppName "BonCore Donanım Köprüsü"
-#define MyAppVersion "2.4.5"
+#define MyAppVersion "2.5.0"
 #define MyAppPublisher "BonCore POS"
 #define MyAppURL "https://boncore.com"
 #define MyAppExeName "BonCoreAgent.exe"
@@ -27,13 +27,13 @@ SetupIconFile=app_icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 ; PE VersionInfo & SmartScreen Güvenlik Bilgileri:
-VersionInfoVersion=2.4.5.0
+VersionInfoVersion=2.5.0.0
 VersionInfoCompany=BonCore POS
 VersionInfoDescription=BonCore Donanım Köprüsü Kurulum Sihirbazı
-VersionInfoTextVersion=2.4.5
+VersionInfoTextVersion=2.5.0
 VersionInfoCopyright=Copyright (C) 2026 BonCore POS
 VersionInfoProductName=BonCore Donanım Köprüsü
-VersionInfoProductVersion=2.4.5.0
+VersionInfoProductVersion=2.5.0.0
 VersionInfoOriginalFileName=BonCoreDonanimKoprusuSetup.exe
 
 ; HIZ OPTİMİZASYONLARI:

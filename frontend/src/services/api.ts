@@ -1399,6 +1399,13 @@ export const api = {
     return ensureOkJson(res, 'Terazi ayarları kaydedilemedi.');
   },
 
+  async getAgentKey(): Promise<{ agent_api_key: string; restaurant_code: string }> {
+    const res = await fetch(`${API_BASE}/scale/agent/key`, {
+      headers: getAuthHeaders(false)
+    });
+    return ensureOkJson(res, 'Ajan API anahtarı alınamadı.');
+  },
+
   async testScaleConnection(payload: { ip_address: string; port: number; timeout?: number }): Promise<any> {
     const res = await fetch(`${API_BASE}/scale/test`, {
       method: 'POST',
