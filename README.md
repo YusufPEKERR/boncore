@@ -1,116 +1,197 @@
-# 🍽️ BonCore POS v2.0 — Çok Şubeli (Multi-Tenant SaaS) Web & Mobil Restoran POS, KDS, Stok ve Yönetim Sistemi
+# BonCore POS v2.0 — Multi-Tenant SaaS Restoran POS, KDS, Stok ve Yönetim Sistemi
 
-> **Yeni Nesil, Multi-Tenant SaaS Mimarili, Offline-First Destekli, 0.1s Gecikmeli WebSocket Tabanlı, Dokunmatik Restoran POS, Mutfak Ekranı (KDS), Rol & Sekme Yetkilendirme Motoru, Stok/Reçete (BOM) ve GİB E-Adisyon Sistemi**
+**BonCore POS**, çoklu şube/işletme (**Multi-Tenant SaaS**) destekli, **Go Fiber** tabanlı yüksek performanslı backend API, **WebSocket** gerçek zamanlı senkronizasyon, **React 19 + TypeScript** dokunmatik arayüz, **Offline-First (IndexedDB / Dexie.js)** satış kuyruğu, **BOM reçete & depo stok yönetimi**, **E-Adisyon ön izleme / ESC-POS termal yazdırma** ve yerel **Donanım & Terazi Ajanı** bileşenlerinden oluşan uçtan uca restoran yönetim platformudur.
 
 ---
 
-## 🚀 Hızlı Başlangıç
+## Mimari & Teknoloji Yığını
 
-Sistemi tek bir komutla ayağa kaldırmak için:
+| Katman | Teknoloji | Görevi |
+|---|---|---|
+| **Backend API** | Go (Fiber v2) + GORM | REST API (`/api`), sunucu yetkili fiyatlama, KDV/tahsilat, Z-Raporu, RBAC ve Multi-Tenant iş kuralları (`backend-go/cmd/server`) |
+| **Veritabanı** | SQLite (WAL ACID) & PostgreSQL 16 (+ PgBouncer) | İzole kiracı veritabanları (`tenants/*.db` veya PostgreSQL) ve Master SaaS veritabanı (`master.db`) |
+| **Gerçek Zamanlı** | WebSocket (`internal/ws`) + Redis Pub/Sub (opsiyonel) | Tekil bağlantı havuzu, kısa ömürlü bilet (`ws-ticket`) ile POS, KDS ve masa ekranlarının anlık güncellenmesi |
+| **Frontend & PWA** | React 19 + TypeScript + Vite + Tailwind CSS | Dokunmatik POS, kroki/salon planı, Mutfak KDS, Kasa, Raporlar, SaaS Master Admin ve Eski Cihaz Legacy Bundle desteği |
+| **Offline-First** | Service Worker (`public/sw.js`) + Dexie.js | Çevrimdışı sipariş/tahsilat kuyruğu, `X-Idempotency-Key` ile mükerrer işlem önleme |
+| **Donanım Ajanı** | Python (`hardware_agent/`) | Yerel ESC/POS termal fiş yazıcıları, seri/Ethernet terazi (CAS vb.) ve ajan heartbeat köprüsü |
+
+---
+
+## Proje Dizin Yapısı
+
+```text
+BonCore/
+├── backend-go/
+│   ├── cmd/
+│   │   ├── server/                     # Ana Go Fiber HTTP + WebSocket sunucusu
+│   │   ├── migrate_master/             # Master veritabanı geçiş aracı
+│   │   └── migrate_timestamps/         # Naive yerel zaman damgalarını .bak yedeğiyle UTC'ye çeviren CLI
+│   ├── internal/
+│   │   ├── api/                        # HTTP handler'lar, WebSocket handler ve integration testleri
+│   │   │   └── middleware/             # JWT/Tenant auth, RBAC, rate limit ve idempotency middleware
+│   │   ├── config/                     # Ortam değişkenleri ve gizli anahtar yönetimi
+│   │   ├── models/                     # GORM varlıkları ve JSON DTO modelleri
+│   │   ├── repository/                 # SQLite/PostgreSQL havuz yönetimi ve PBKDF2 PIN hash yardımcıları
+│   │   ├── service/                    # KDV, Z-Raporu, BOM stok düşümü, zaman aralığı ve rol normalizasyonu
+│   │   └── ws/                         # Redis + In-Memory WebSocket hub
+│   ├── deploy/
+│   │   ├── nginx/nginx.conf            # HTTPS, WebSocket upgrade, X-Idempotency-Key ve no-store PWA kuralları
+│   │   └── caddy/Caddyfile             # HTTP/2-3 TLS ters vekil ve güvenlik başlıkları
+│   ├── migrations/
+│   │   └── 001_postgresql_schema_and_indexes.sql
+│   └── docker-compose.yml              # Go backend + PostgreSQL + PgBouncer + Redis kurulumu
+├── frontend/
+│   ├── public/sw.js                    # PWA Service Worker (güvenli navigasyon fallback)
+│   ├── src/
+│   │   ├── components/                 # POS, Kasa, KDS, Masalar, Raporlar, Stok, Ayarlar, Master Admin
+│   │   ├── services/                   # API istemcisi (401 oturum yönetimi), singleton WS, Dexie offlineDb, localHardware
+│   │   └── utils/                      # CSV formül koruma, TR tarih/para biçimleyici, ESC/POS termal yazdırma
+│   └── tests/                          # esbuild + node:test gerçek modül test paketi
+├── hardware_agent/                     # Yerel yazıcı & terazi köprü ajanı (config.json, Kurulum.bat)
+├── docker-compose.yml                  # Kök tam yığın Docker Compose tanımı
+├── start_all.py                        # Go backend + React/Vite tek komut başlatıcısı
+└── start.bat                           # Windows başlatıcı kısayolu
+```
+
+---
+
+## Hızlı Başlangıç
+
+### Tek Komutla Çalıştırma
 
 ```bash
 # Windows / Linux / macOS
 python start_all.py
 ```
-veya Windows üzerinde:
-```cmd
-start.bat
-```
 
-Geliştirme ortamında ayrı ayrı çalıştırmak için:
+Windows üzerinde doğrudan `start.bat` dosyasını da çalıştırabilirsiniz. Script `backend-go/boncore-pos-server.exe` yoksa derleyip Port `8000` üzerinde başlatır, ardından `frontend` uygulamasını derleyerek Port `80` üzerinde önizleme sunucusunu ayağa kaldırır.
+
+### Geliştirme Ortamında Ayrı Çalıştırma
+
 ```bash
-# Backend (FastAPI - Port 8000)
-uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000 --reload
+# 1. Go Backend (Port 8000)
+cd backend-go
+go run ./cmd/server
 
-# Frontend (React + Vite - Port 5173 / 80)
-npm --prefix frontend run dev
+# 2. Frontend Geliştirme Sunucusu (Port 80; /api ve /ws -> 127.0.0.1:8000 proxy)
+cd frontend
+npm run dev
 ```
 
-- **POS Web & SaaS Arayüzü**: [http://localhost:5173](http://localhost:5173) (veya Prod Port 80)
-- **FastAPI Backend & Swagger API**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **WebSocket Gerçek Zamanlı Kanal**: `ws://localhost:8000/ws/pos` & `ws://localhost:8000/ws/kds`
+Üretim önizlemesi (`vite preview`) için:
+
+```bash
+cd frontend
+npm run build
+npm run preview
+```
+
+- **Web Arayüzü**: `http://localhost` (veya geliştirme portu `80`)
+- **Backend Sağlık Kontrolü**: `http://127.0.0.1:8000/health`
+- **WebSocket Kanalı**: `ws://127.0.0.1:8000/ws/all` (kısa ömürlü `/api/auth/ws-ticket` bileti ile)
 
 ---
 
-## 🔑 Varsayılan Giriş Bilgileri & Hızlı PIN Kodları
+## Güvenlik & Kimlik Doğrulama Politikası
 
-### 1. İşletme & SaaS Paneli Girişi
-| Giriş Türü | Kullanıcı Adı | Şifre | Açıklama |
-|---|---|---|---|
-| **Restoran Yönetici Girişi** | `admin` | `123456` | Restoran tam yetkili müdür / yönetici hesabı |
-| **SaaS Master Admin Paneli** | `superadmin` | `boncore2026` | Tüm restoranları (tenant), lisansları ve kullanıcı adlarını yöneten süper yönetici paneli |
-
-### 2. POS Hızlı Personel PIN Kodları
-| PIN | Personel Adı | Rol | Varsayılan Yetki Kapsamı |
-|---|---|---|---|
-| **1111** | Ahmet Garson | `waiter` (Garson) | Sipariş Alma, Masa Taşıma/Birleştirme, Ürün Aktarma, Öde / Hızlı Öde (Yetkiye Bağlı) |
-| **2222** | Ayşe Kasiyer | `cashier` (Kasa) | Parçalı Tahsilat, Split Bill, İndirim/İkram, Masraf Girişi, Gün Sonu (Z) |
-| **3333** | Mehmet Şef | `kitchen` (Mutfak) | Mutfak KDS, Hazırlama Aşamaları, Reçete & Stok Görüntüleme |
-| **9999** | Kemal Müdür | `manager` (Yönetici) | Tüm İşlem Yetkileri, Sekme Görünürlük Yönetimi, İptal/İkram Override, Genel Ayarlar |
+- **Sabit Demo Şifreleri Kaldırıldı**: Üretim (`BONCORE_ENV=production`) ortamında sabit/varsayılan şifre veya PIN arkakapısı bulunmaz.
+- **Zorunlu Üretim Anahtarları**: `BONCORE_ENV=production` iken `BONCORE_SECRET_KEY` ve `BONCORE_MASTER_PASSWORD` ortam değişkenleri tanımlı değilse sunucu güvenli biçimde başlamayı reddeder.
+- **Geliştirme Modu Davranışı**: `BONCORE_ENV=development` (varsayılan) modunda `BONCORE_MASTER_PASSWORD` ayarlanmamışsa açılışta tek seferlik rastgele bir geçici Master Admin parolası üretilip konsol loguna yazılır; JWT imzalama anahtarı ise `.auth_secret` dosyasından okunur veya kriptografik olarak üretilip kaydedilir.
+- **Personel PIN Güvenliği**: Personel PIN kodları düz metin olarak saklanmaz; `PBKDF2-SHA256` (`pin_hash`) ve `HMAC-SHA256` arama özeti (`pin_lookup_hash`) ile doğrulanır, mevcut düz metin satırlar veritabanı açılışında otomatik olarak hashlenir.
+- **Çok Katmanlı Koruma**:
+  - `X-Restaurant-Code` ve JWT token talepleri arasında kiracı izolasyonu doğrulanır.
+  - RBAC yetki kontrolleri hem UI hem backend API seviyesinde (`HTTP 403`) uygulanır.
+  - Kimlik doğrulama ve kritik uç noktalarda hız sınırlaması (rate limiting), WebSocket bağlantılarında bilet doğrulaması ve sipariş/tahsilat/Z-raporu işlemlerinde `X-Idempotency-Key` koruması bulunur.
+  - CSV dışa aktarımları formül enjeksiyonuna karşı, fiş HTML çıktıları XSS'e karşı kaçış karakterleriyle temizlenir.
 
 ---
 
-## 🏗️ Mimari Katmanlar & Teknoloji Yığını
+## Ortam Değişkenleri
 
-| Katman | Teknoloji | Fonksiyonel Karşılığı |
+| Değişken | Varsayılan | Açıklama |
 |---|---|---|
-| **Frontend** | React 19 + TypeScript + Tailwind CSS | Dokunmatik POS ergonomisi, masaüstü ve mobil duyarlı (responsive) arayüz. |
-| **Multi-Tenant SaaS** | İzole Tenant DB + `X-Restaurant-Code` | Her restoran/şube için bağımsız SQLite/PostgreSQL veritabanı ve SaaS Master yönetim paneli. |
-| **Yetki Motoru (RBAC)** | Reaktif Rol & Sekme Yetkilendirme | **38 İşlem Yetkisi** + **25 Sekme Görünürlük Kuralı** (UI + Backend `HTTP 403` korumalı). |
-| **Offline-First** | PWA + IndexedDB (Dexie.js) | İnternet koptuğunda kesintisiz satış, bağlantı geldiğinde otomatik senkronizasyon. |
-| **Backend & API** | Python 3.12 (FastAPI) + WebSockets | Asenkron yüksek performans, KDS, masa planı ve kasalara **0.1 saniyede** anlık yayın. |
-| **ORM & Şema** | SQLAlchemy 2.0 (Async) + Pydantic v2 | Otomatik şema migrasyonu ve veri bütünlüğü sağlayan katı ORM katmanı. |
-| **Mobil Web POS** | Responsive Web + PWA | Tüm tablet ve akıllı telefonlarda Chrome/Safari üzerinden tam ekran mobil POS desteği. |
+| `BONCORE_ENV` | `development` | Çalışma ortamı (`development` veya `production`) |
+| `BONCORE_SECRET_KEY` | `.auth_secret` | JWT ve PIN lookup HMAC anahtarı (`production` için zorunlu) |
+| `BONCORE_MASTER_PASSWORD` | Rastgele dev parola | SaaS Master Admin giriş parolası (`production` için zorunlu) |
+| `HOST` / `PORT` | `0.0.0.0` / `8000` | Go Fiber dinleme adresi ve portu |
+| `SQLITE_DATA_DIR` | `../backend/data` | SQLite veritabanı ve yedek dizini |
+| `DATABASE_URL` | `""` | Opsiyonel tenant PostgreSQL bağlantı dizesi |
+| `MASTER_DATABASE_URL` | `""` | Opsiyonel Master SaaS PostgreSQL bağlantı dizesi |
+| `PGBOUNCER_MODE` | `true` | PgBouncer uyumlu basit sorgu protokolü modu |
+| `REDIS_URL` | `""` | Opsiyonel Redis Pub/Sub adresi (yoksa dahili bellek içi Hub kullanılır) |
+| `BONCORE_ALLOW_DEMO_SEED` | `false` | Yalnızca geliştirme amaçlı örnek veri üretimine izin verir |
+| `MANAGER_OVERRIDE_PIN` | `""` | İsteğe bağlı ortam tabanlı yönetici onay PIN'i |
+| `VITE_API_TARGET` | `http://127.0.0.1:8000` | Frontend Vite dev/preview proxy hedef adresi |
 
 ---
 
-## 📦 Temel Modüller & Özellik Matrisi
+## Temel Modüller & Finansal Bütünlük
 
-### 1. 🏢 SaaS Master Admin Paneli (Çoklu Restoran Yönetimi)
-- **Restoran (Tenant) Yönetimi**: Yeni restoran açma, paket/lisans tanımlama, restoran başlığı (`name`) ve yönetici kullanıcı adını (`owner_username`) anlık değiştirme.
-- **İzole Veri Mimarisi**: Her restoranın masaları, ürünleri, adisyonları, personelleri ve ayarları kendi veritabanında izole tutulur.
-- **Canlı Senkronizasyon**: SaaS panelinden yapılan restoran adı veya kullanıcı adı değişiklikleri tüm açık POS terminallerindeki üst bara ve yan menüye anında yansır.
-
-### 2. 🛡️ Gelişmiş Rol & Sekme Yetkilendirme Sistemi (`RightsManagement`)
-- **Sadece Yöneticiye Özel Yetki Ekranı**: *Yetki / İzin Ekranı* yalnızca **Müdür (`manager`)** rolünde gözükür ve sadece yönetici tarafından değiştirilebilir (`HTTP 403` Backend korumalı).
-- **İşlem Yetkileri Sekmesi (38 Yetki)**:
-  - Garson ve diğer rollerin **Genel Sipariş Alma**, **Öde (`ÖDE`)**, **Hızlı Öde (`HIZLI ÖDE`)**, **Sipariş / Ürün İptali**, **İndirim (Genel / Kalem / Sadece Ön Tanımlı)**, **İkram (Kalem / Tüm Adisyon)**, **Masa Taşıma & Birleştirme**, **Ürün Aktarma**, **Açık Hesaba Aktarma** ve **Bahşiş Ekleme** yetkilerini anlık açıp kapatma.
-- **Sekmeler Bölümü (25 Menü & Ekran Görünürlüğü)**:
-  - Garson, Mutfak, Kurye, Kasa ve Çağrı Merkezi rollerinin sol menüde ve alt barda hangi sekmeleri (*Ana Sayfa, Masalar, Mutfak KDS, Paket Servis, Kasa, Tanımlamalar, Stok, Raporlar, Uygulama Mağazası vb.*) görebileceğini tek tek belirleme.
-- **Çift Katmanlı Güvenlik**: Yetkisi kapatılan bir işlem hem arayüzde gizlenir hem de API seviyesinde (`X-User-Role` doğrulaması ile) engellenir.
-
-### 3. 🪑 Masa & Bölge Yönetimi (Salon Planı & Açık Siparişler)
-- **Bölge ve Masa Sıralama**: *Tanımlamalar -> Masa / Bölgeler* ekranından hem bölgelerin hem de masaların sırasını sürükle-bırak veya ok butonlarıyla kalıcı olarak değiştirme.
-- **Sabitlenmiş Sipariş Ekranı**: Sipariş ekranında masalar yanlışlıkla kaydırılamaz; masa konumları yalnızca tanımlama ekranından yönetilir.
-- **Masalar & Siparişler Görünümü**:
-  - Özellikle mobil ve tablet arayüzde **Masalar** sekmesinin yanında yer alan **Siparişler** sekmesi ile açık olan tüm masaları açılış süresine göre alt alta listeleme, geçen süreyi (`dk/saat`), garson adını ve adisyon tutarını canlı takip etme.
-- **Masa İşlemleri**: Masa Taşıma, Masa Birleştirme ve Kalem Bazlı Ürün Aktarımı.
-
-### 4. 🛒 Dokunmatik POS Terminali & Terazili (Kg/gr) Satış
-- **Hızlı Ürün Girişi**: Kategori filtreleme, A-Z / Z-A sıralama, anlık arama ve ürün kartı üzerinden `+ / -` miktar kontrolü.
-- **Kg / Gramajlı Ürün Desteği**: Kasap, şarküteri ve balık restoranları için `Kg` veya `Gram` cinsinden hassas tartım girişi, hazır gramaj butonları (`250 gr`, `500 gr`, `1 Kg`, `1.5 Kg`) ve otomatik fiyat hesaplama.
-- **Varyant & Modifikatörler**: Porsiyon seçimi, pişme derecesi, ekstra malzemeler, eksi malzemeler ve mutfak notu.
-- **Reçete (BOM) Stok Koruması**: Reçetesindeki hammaddesi biten ürünlerin satışını otomatik engelleyen ve eksik malzemeyi bildiren akıllı stok kilidi.
-
-### 5. 💳 Tahsilat, Parçalı Ödeme & Kasa Yönetimi
-- **Hızlı Öde & Gelişmiş Tahsilat**: POS ekranından tek tıkla Nakit / Kredi Kartı ile **Hızlı Öde** veya detaylı tahsilat ekranı (**Öde**).
-- **Parçalı Öde & 1/n Hesap Bölme**: Adisyondaki ürünleri seçerek kalem bazlı ödeme alma, Alman usulü `1/n` kişi başı bölme ve ara tahsilat geçmişi (tahsilat iptali destekli).
-- **Eksik Tutar Koruması**: Kalan bakiye sıfırlanmadan masanın yanlışlıkla kapatılmasını önleyen finansal koruma.
-- **Kasa & Gün Sonu (Z)**: Kasa açılış avansı, gün içi gelir/gider ve masraf kayıtları, X-Raporu ve Gün Sonu Z-Raporu.
-
-### 6. 👨‍🍳 Mutfak KDS & İstasyon Yönetimi
-- **Özelleştirilebilir Mutfak Grupları**: *Mutfak, Izgara, Bar, Tatlı* gibi istasyonları tanımlama, hedef hazırlama süresi ve yazıcı eşleştirme.
-- **Gerçek Zamanlı KDS**: Yeni sipariş geldiğinde veya ürün iptal edildiğinde sesli/görsel bildirim, kalem bazlı veya tüm fişi "Hazır" işaretleme.
-
-### 7. 📊 Raporlar, GİB E-Adisyon & Denetim İzi (Audit Log)
-- **Canlı Raporlama**: Restaurant İstatistikleri, Kapatılan Adisyonlar (geri açma ve ödeme tipi değiştirme destekli), Ürün Satış Raporu ve Maliyet & Kar Sihirbazı.
-- **GİB E-Adisyon & Denetim İzi**: Resmi formatta E-Adisyon fişi, iptal/ikram/indirim ve masa taşıma işlemlerinin operatör ve zaman damgalı denetim kayıtları.
+- **Multi-Tenant SaaS Master Paneli**: Kiracı oluşturma, modül lisanslama, fatura/gecikme takibi (ödenmemiş vadesi geçmiş fatura kaldığı sürece salt-okunur kilit koruması), destek biletleri, franchise şube özeti ve menü klonlama, destek amaçlı scoped tenant impersonation.
+- **RBAC Yetki Motoru**: Rol bazlı işlem yetkileri ve sekme görünürlük kuralları (`chef` / `şef` → `kitchen` normalizasyonu dahil).
+- **Masa Planı & POS Terminali**: Dokunmatik kroki düzenleme (Pointer Events + sınır koruması), masa taşıma/birleştirme, tartılı (`Kg`/`gr`) satış, varyant ve ekstra malzeme seçimleri, süreli masa tarifesi ve izole canlı masa sayacı (`ElapsedTimer`).
+- **Sunucu Yetkili Fiyatlama & Tahsilat**: Sipariş oluşturma ve kalem eklemede varyant/ekstra fiyatları sunucuda hesaplanır; parçalı ödeme, `1/n` bölme, nakit para üstü (`change_amount`), sıfır bakiyede kapanış ve bahşiş ayrıştırması desteklenir.
+- **Vardiya Kilidi & Z-Raporu**: Kapalı vardiyaya ait adisyonlarda iptal, ikram, indirim ve ödeme/masraf silme işlemleri (`HTTP 409`) engellenir; Z-raporu ön ödemeli açık siparişleri korur ve yalnızca aktif kiracılarda otomatik Z-raporu zamanlayıcısı çalışır.
+- **Stok, Reçete (BOM) & Depo**: Fire oranlı ve çoklu kalem kümülatif stok kontrolü, depolar arası transfer, alım faturası ile `WarehouseStock` senkronizasyonu.
+- **E-Adisyon Ön İzleme & Termal Bilgi Fişi**: Resmi GİB UUID/onay kaydı bulunmayan belgelerde açıkça bilgi fişi uyarısı gösterilir; çok kopyalı termal yazdırma desteklenir ve fiziksel yazdırma başarılıysa tarayıcı penceresi tekrar açılmaz.
+- **Denetim İzi (Audit Log) & Raporlar**: Sayfalanmış denetim logları (`limit`, `offset`, `X-Total-Count`), gün sonu mutabakatı, ürün satış ve maliyet/kârlılık raporları.
 
 ---
 
-## 🐳 Docker ile Çalıştırma
+## Donanım Ajanı & Bakım Araçları
+
+### Yerel Donanım & Terazi Ajanı (`hardware_agent/`)
+
+- `hardware_agent/config.json` içinde varsayılan sunucu adresi `https://boncoreapp.me` şeklindedir; dağıtım öncesi `restaurant_code`, `agent_api_key` ve `terminal_id` alanları işletmeye özel doldurulmalıdır.
+- Windows kurulumu için `hardware_agent/Kurulum.bat` kullanılabilir.
+
+### SQLite Zaman Damgası UTC Migrasyonu (`cmd/migrate_timestamps`)
+
+Eski yerel saat (`Europe/Istanbul`) formatındaki naive SQLite zaman damgalarını güvenli şekilde `.bak` yedeği alarak UTC'ye dönüştürmek için:
 
 ```bash
-docker-compose up --build
+cd backend-go
+
+# Önce değişiklikleri önizle (dry-run)
+go run ./cmd/migrate_timestamps --dir ../backend/data --dry-run
+
+# Onaylı uygulama (.bak yedeği otomatik oluşturulur)
+go run ./cmd/migrate_timestamps --dir ../backend/data --apply
 ```
-PostgreSQL, Redis, FastAPI backend ve React frontend otomatik olarak ayağa kalkar.
+
+---
+
+## Docker & Ters Vekil (Production) Kurulumu
+
+### Kök Docker Compose
+
+Kök `docker-compose.yml`, parolaları sabit kodlamak yerine zorunlu ortam değişkenlerini kullanır:
+
+```bash
+export POSTGRES_PASSWORD="guclu-postgres-parolasi"
+export AUTH_SECRET_KEY="guclu-jwt-hmac-anahtari"
+docker compose up -d --build
+```
+
+### Go + PgBouncer + PostgreSQL + Redis Yığını
+
+Alternatif üretim profili için `backend-go/docker-compose.yml` kullanılabilir; PostgreSQL şema kurulumu için `backend-go/migrations/001_postgresql_schema_and_indexes.sql` mevcuttur. Ters vekil yapılandırmaları `backend-go/deploy/nginx/nginx.conf` (HTTPS, WebSocket Upgrade, `X-Idempotency-Key`, `/sw.js` ve `/index.html` için `no-store`) ve `backend-go/deploy/caddy/Caddyfile` dosyalarındadır.
+
+---
+
+## Test ve Doğrulama Komutları
+
+Tüm backend ve frontend değişikliklerinden sonra çalıştırılabilecek doğrulama paketi:
+
+```bash
+# Backend statik kontrol ve tüm testler
+cd backend-go
+go vet ./...
+go test -count=1 ./...
+
+# Frontend TypeScript tip kontrolü, üretim derlemesi ve gerçek modül testleri
+cd ../frontend
+./node_modules/.bin/tsc --noEmit
+npm run build
+npm test
+```
