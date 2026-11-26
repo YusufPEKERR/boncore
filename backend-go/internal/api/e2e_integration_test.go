@@ -23,6 +23,7 @@ import (
 )
 
 func TestEndToEndPOSFlow_TableOpen_Order_KDS_SettleBill(t *testing.T) {
+	t.Setenv("SQLITE_DATA_DIR", t.TempDir())
 	cfg := config.Load()
 	cfg.DefaultTenantCode = "e2e-test-branch"
 
@@ -95,6 +96,17 @@ func TestEndToEndPOSFlow_TableOpen_Order_KDS_SettleBill(t *testing.T) {
 		IngredientID: ing.ID,
 		Amount:       1.0,
 	})
+	mgSos := models.ModifierGroup{
+		ProductID:    prod.ID,
+		Name:         "Sos",
+		MaxSelection: 3,
+	}
+	tdb.Create(&mgSos)
+	tdb.Create(&models.ModifierOption{
+		GroupID: mgSos.ID,
+		Name:    "Trüf Mayonez",
+		Price:   30.0,
+	})
 
 	wsHub := ws.NewHub("redis://127.0.0.1:6399/0")
 	defer wsHub.Close()
@@ -129,8 +141,10 @@ func TestEndToEndPOSFlow_TableOpen_Order_KDS_SettleBill(t *testing.T) {
 	baseWS := fmt.Sprintf("ws://%s", ln.Addr().String())
 
 	// 1. Connect WebSocket clients: POS (/ws/pos), KDS (/ws/kds), and Table (/ws/table/:id)
+	mgrToken, _ := middleware.CreateAccessToken(cfg, 1, "manager", true, "e2e-test-branch", nil)
 	headers := http.Header{}
 	headers.Set("X-Restaurant-Code", "e2e-test-branch")
+	headers.Set("Authorization", "Bearer "+mgrToken)
 
 	posWS, _, err := websocket.DefaultDialer.Dial(baseWS+"/ws/pos?tenant=e2e-test-branch", headers)
 	if err != nil {
@@ -144,7 +158,9 @@ func TestEndToEndPOSFlow_TableOpen_Order_KDS_SettleBill(t *testing.T) {
 	}
 	defer kdsWS.Close()
 
-	tableWS, _, err := websocket.DefaultDialer.Dial(fmt.Sprintf("%s/ws/table/%d?tenant=e2e-test-branch", baseWS, tbl.ID), headers)
+	tblHeaders := http.Header{}
+	tblHeaders.Set("X-Restaurant-Code", "e2e-test-branch")
+	tableWS, _, err := websocket.DefaultDialer.Dial(fmt.Sprintf("%s/ws/table/%d?tenant=e2e-test-branch", baseWS, tbl.ID), tblHeaders)
 	if err != nil {
 		t.Fatalf("failed to connect /ws/table/%d: %v", tbl.ID, err)
 	}
@@ -171,7 +187,6 @@ func TestEndToEndPOSFlow_TableOpen_Order_KDS_SettleBill(t *testing.T) {
 			},
 		},
 	}
-	mgrToken, _ := middleware.CreateAccessToken(cfg, 1, "manager", true, "e2e-test-branch", nil)
 	bodyBytes, _ := json.Marshal(createPayload)
 	req, _ := http.NewRequest("POST", baseHTTP+"/api/orders/create", bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
@@ -214,6 +229,7 @@ func TestEndToEndPOSFlow_TableOpen_Order_KDS_SettleBill(t *testing.T) {
 	// Verify KDS REST endpoint GET /api/kds/orders
 	kdsReq, _ := http.NewRequest("GET", baseHTTP+"/api/kds/orders?station=all", nil)
 	kdsReq.Header.Set("X-Restaurant-Code", "e2e-test-branch")
+	kdsReq.Header.Set("Authorization", "Bearer "+mgrToken)
 	kdsResp, err := http.DefaultClient.Do(kdsReq)
 	if err != nil {
 		t.Fatalf("GET /api/kds/orders failed: %v", err)
@@ -230,6 +246,7 @@ func TestEndToEndPOSFlow_TableOpen_Order_KDS_SettleBill(t *testing.T) {
 	firstItemID := int(itemsArr[0].(map[string]interface{})["id"].(float64))
 	progReq, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/kds/item/%d/progress?status=ready", baseHTTP, firstItemID), nil)
 	progReq.Header.Set("X-Restaurant-Code", "e2e-test-branch")
+	progReq.Header.Set("Authorization", "Bearer "+mgrToken)
 	progResp, err := http.DefaultClient.Do(progReq)
 	if err != nil || progResp.StatusCode != http.StatusOK {
 		t.Fatalf("POST /api/kds/item/progress failed: %v", err)
@@ -301,6 +318,7 @@ func TestEndToEndPOSFlow_TableOpen_Order_KDS_SettleBill(t *testing.T) {
 }
 
 func TestOrderCreate_InvalidTableID_Returns404(t *testing.T) {
+	t.Setenv("SQLITE_DATA_DIR", t.TempDir())
 	cfg := config.Load()
 	cfg.DefaultTenantCode = "e2e-test-branch"
 

@@ -109,6 +109,20 @@ func BuildProductVATMap(db *gorm.DB) map[int]float64 {
 	return res
 }
 
+// BuildProductVATMapForIDs loads VatRate only for the specified product IDs.
+func BuildProductVATMapForIDs(db *gorm.DB, prodIDs []int) map[int]float64 {
+	res := make(map[int]float64, len(prodIDs))
+	if db == nil || len(prodIDs) == 0 {
+		return res
+	}
+	var prods []models.Product
+	db.Select("id, vat_rate").Where("id IN ?", prodIDs).Find(&prods)
+	for _, p := range prods {
+		res[p.ID] = p.VatRate
+	}
+	return res
+}
+
 // NormalizeVATBucket maps any configured product VAT percentage into Turkey's standard buckets (1, 10, 20).
 func NormalizeVATBucket(rate float64) int {
 	switch {
@@ -121,9 +135,57 @@ func NormalizeVATBucket(rate float64) int {
 	}
 }
 
+// CategorizePaymentMethod normalizes arbitrary payment method aliases into canonical method keys.
+func CategorizePaymentMethod(raw string) string {
+	pm := strings.ToLower(strings.TrimSpace(raw))
+	switch {
+	case pm == "" || pm == "cash" || pm == "nakit" || strings.Contains(pm, "nakit"):
+		return "cash"
+	case pm == "multinet" || strings.Contains(pm, "multinet"):
+		return "multinet"
+	case pm == "sodexo" || strings.Contains(pm, "sodexo"):
+		return "sodexo"
+	case pm == "ticket" || strings.Contains(pm, "ticket"):
+		return "ticket"
+	case pm == "meal_card" || strings.Contains(pm, "yemek") || strings.Contains(pm, "setcard") || strings.Contains(pm, "metropol"):
+		return "meal_card"
+	case pm == "open_account" || strings.Contains(pm, "cari") || strings.Contains(pm, "hesap") || strings.Contains(pm, "open") || strings.Contains(pm, "veresiye"):
+		return "open_account"
+	case pm == "online" || strings.Contains(pm, "online"):
+		return "online"
+	case pm == "credit_card" || strings.Contains(pm, "card") || strings.Contains(pm, "kredi") || strings.Contains(pm, "pos") || strings.Contains(pm, "kart"):
+		return "credit_card"
+	default:
+		return "credit_card"
+	}
+}
+
+// PaymentBucketGroup maps canonical payment methods into the 5 consolidated report buckets.
+func PaymentBucketGroup(canonical string) string {
+	switch CategorizePaymentMethod(canonical) {
+	case "cash":
+		return "cash"
+	case "credit_card":
+		return "credit_card"
+	case "multinet", "sodexo", "ticket", "meal_card":
+		return "sodexo"
+	case "open_account":
+		return "open_account"
+	case "online":
+		return "online"
+	default:
+		return "credit_card"
+	}
+}
+
 // CalculateVATBreakdown computes real tax-inclusive KDV across non-voided, non-treat OrderItems,
 // applying item-level discounts and an optional order-level discount ratio (`order.DiscountAmount / order.Subtotal`).
 func CalculateVATBreakdown(items []models.OrderItem, prodVatMap map[int]float64, orderDiscountRatio float64) VATBreakdown {
+	return CalculateVATBreakdownWithExtras(items, prodVatMap, orderDiscountRatio, 0, 0)
+}
+
+// CalculateVATBreakdownWithExtras computes tax-inclusive KDV across items plus kuverTotal and serviceCharge (at 10% KDV).
+func CalculateVATBreakdownWithExtras(items []models.OrderItem, prodVatMap map[int]float64, orderDiscountRatio float64, kuverTotal float64, serviceCharge float64) VATBreakdown {
 	var out VATBreakdown
 	if orderDiscountRatio < 0 {
 		orderDiscountRatio = 0
@@ -168,6 +230,19 @@ func CalculateVATBreakdown(items []models.OrderItem, prodVatMap map[int]float64,
 		}
 	}
 
+	extrasGross := 0.0
+	if kuverTotal > 0 {
+		extrasGross += kuverTotal
+	}
+	if serviceCharge > 0 {
+		extrasGross += serviceCharge
+	}
+	if extrasGross > 0 {
+		extraBase := extrasGross / 1.10
+		b10 += extraBase
+		t10 += extrasGross - extraBase
+	}
+
 	out.Vat1Base = Round2(b1)
 	out.Vat1Tax = Round2(t1)
 	out.Vat10Base = Round2(b10)
@@ -178,7 +253,7 @@ func CalculateVATBreakdown(items []models.OrderItem, prodVatMap map[int]float64,
 	return out
 }
 
-// CalculateOrdersVATBreakdown aggregates real VAT across multiple orders using their respective items and order-level discounts.
+// CalculateOrdersVATBreakdown aggregates real VAT across multiple orders using their respective items, extras, and order-level discounts.
 func CalculateOrdersVATBreakdown(orders []models.Order, itemsByOrder map[int][]models.OrderItem, prodVatMap map[int]float64) VATBreakdown {
 	var total VATBreakdown
 	for _, o := range orders {
@@ -187,7 +262,7 @@ func CalculateOrdersVATBreakdown(orders []models.Order, itemsByOrder map[int][]m
 		if o.Subtotal > 0 && o.DiscountAmount > 0 {
 			ratio = o.DiscountAmount / o.Subtotal
 		}
-		vb := CalculateVATBreakdown(items, prodVatMap, ratio)
+		vb := CalculateVATBreakdownWithExtras(items, prodVatMap, ratio, o.KuverTotal, o.ServiceCharge)
 		total.Vat1Base = Round2(total.Vat1Base + vb.Vat1Base)
 		total.Vat1Tax = Round2(total.Vat1Tax + vb.Vat1Tax)
 		total.Vat10Base = Round2(total.Vat10Base + vb.Vat10Base)

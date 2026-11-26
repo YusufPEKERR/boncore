@@ -14,7 +14,7 @@ import (
 func RequireFeature(featureKey string, svc *service.Services) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		// Master admin bypasses feature restrictions
-		if claims := GetUserClaims(c); claims != nil && (claims.Role == "master_admin" || claims.Role == "superadmin") {
+		if IsMasterClaims(GetUserClaims(c)) {
 			return c.Next()
 		}
 
@@ -29,9 +29,11 @@ func RequireFeature(featureKey string, svc *service.Services) fiber.Handler {
 		}
 
 		var tenant models.RestaurantTenant
-		if err := mdb.Where("code = ?", tenantCode).First(&tenant).Error; err != nil {
-			// If tenant record is not yet in master DB, allow pass-through
-			return c.Next()
+		if err := mdb.Where("code = ? AND status != ?", tenantCode, "deleted").First(&tenant).Error; err != nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"detail": "Belirtilen işletme bulunamadı veya aktif değil.",
+				"code":   "TENANT_NOT_FOUND",
+			})
 		}
 
 		if !IsFeatureEnabled(&tenant, featureKey) {
@@ -100,7 +102,7 @@ func CheckTenantDelinquencyMiddleware(svc *service.Services) fiber.Handler {
 		}
 
 		// Master admin bypasses delinquency
-		if claims := GetUserClaims(c); claims != nil && (claims.Role == "master_admin" || claims.Role == "superadmin") {
+		if IsMasterClaims(GetUserClaims(c)) {
 			return c.Next()
 		}
 

@@ -149,12 +149,12 @@ func RegisterSaaSBillingRoutes(group fiber.Router, svc *service.Services) {
 		mdb := svc.DBManager.MasterGorm
 		var cfg models.VPOSConfig
 		err := mdb.Where("gateway_provider = ?", provider).First(&cfg).Error
-		if err != nil || cfg.ID == 0 || (strings.TrimSpace(cfg.MerchantID) == "" && strings.TrimSpace(cfg.APIKey) == "") {
+		if err != nil || cfg.ID == 0 || strings.TrimSpace(cfg.MerchantID) == "" || strings.TrimSpace(cfg.APIKey) == "" || strings.TrimSpace(cfg.APISecret) == "" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"success":  false,
 				"provider": provider,
 				"status":   "NOT_CONFIGURED",
-				"message":  fmt.Sprintf("%s için üye işyeri numarası (Merchant ID) veya API anahtarı henüz yapılandırılmamış.", strings.ToUpper(provider)),
+				"message":  fmt.Sprintf("%s için üye işyeri numarası (Merchant ID), API anahtarı ve API gizli anahtarı (Secret Key) tam olarak tanımlanmalıdır.", strings.ToUpper(provider)),
 			})
 		}
 
@@ -167,8 +167,8 @@ func RegisterSaaSBillingRoutes(group fiber.Router, svc *service.Services) {
 			"success":      true,
 			"provider":     provider,
 			"mode":         modeStr,
-			"status":       "CONFIGURED",
-			"message":      fmt.Sprintf("%s sanal POS yapılandırması doğrulandı (%s modu).", strings.ToUpper(provider), modeStr),
+			"status":       "CONFIG_VALIDATED_OFFLINE",
+			"message":      fmt.Sprintf("%s kimlik bilgileri yerel veritabanında doğrulandı (%s modu). Canlı banka provizyon testi için ödeme geçidi SDK bağlantısı gereklidir.", strings.ToUpper(provider), modeStr),
 			"validated_at": time.Now(),
 		})
 	})
@@ -357,26 +357,44 @@ func RegisterSaaSBillingRoutes(group fiber.Router, svc *service.Services) {
 			return fiber.NewError(fiber.StatusInternalServerError, "Fatura güncellenemedi: "+err.Error())
 		}
 
-		// Restore tenant to active status
-		var tenant models.RestaurantTenant
-		if err := mdb.Where("code = ? OR id = ?", invoice.TenantCode, invoice.TenantID).First(&tenant).Error; err == nil {
-			tenant.Status = "active"
-			tenant.ReadOnlyMode = false
-			tenant.SuspensionReason = nil
-			mdb.Save(&tenant)
+		// Count any remaining unpaid overdue invoices before lifting restrictions
+		var remainingOverdue int64
+		mdb.Model(&models.TenantInvoice{}).
+			Where("tenant_code = ? AND id != ? AND status != ? AND (status = ? OR (due_date IS NOT NULL AND due_date < ?))",
+				invoice.TenantCode, invoice.ID, "paid", "overdue", now).
+			Count(&remainingOverdue)
 
-			// Broadcast RESTORE event
-			_ = svc.Broadcaster.BroadcastToChannel(tenant.Code, "all", "ACCOUNT_RESTORED", fiber.Map{
-				"tenant_code": tenant.Code,
-				"status":      "active",
-				"message":     "Ödeme tamamlandı, hesabınız aktifleştirildi.",
-			})
+		// Restore tenant to active status ONLY if zero overdue invoices remain
+		var tenant models.RestaurantTenant
+		restored := false
+		if err := mdb.Where("code = ? OR id = ?", invoice.TenantCode, invoice.TenantID).First(&tenant).Error; err == nil {
+			if remainingOverdue == 0 {
+				tenant.Status = "active"
+				tenant.ReadOnlyMode = false
+				tenant.SuspensionReason = nil
+				mdb.Save(&tenant)
+				svc.DBManager.InvalidateTenantCache()
+				restored = true
+
+				// Broadcast RESTORE event
+				_ = svc.Broadcaster.BroadcastToChannel(tenant.Code, "all", "ACCOUNT_RESTORED", fiber.Map{
+					"tenant_code": tenant.Code,
+					"status":      "active",
+					"message":     "Ödeme tamamlandı, hesabınız aktifleştirildi.",
+				})
+			}
+		}
+
+		msg := "Fatura ödendi olarak işaretlendi ve işletme aktif duruma getirildi."
+		if !restored && remainingOverdue > 0 {
+			msg = fmt.Sprintf("Fatura ödendi; ancak vadesi geçmiş %d adet ödenmemiş fatura bulunduğu için kısıtlama devam etmektedir.", remainingOverdue)
 		}
 
 		return c.JSON(fiber.Map{
-			"success": true,
-			"message": "Fatura ödendi olarak işaretlendi ve işletme aktif duruma getirildi.",
-			"invoice": invoice,
+			"success":                 true,
+			"message":                 msg,
+			"invoice":                 invoice,
+			"remaining_overdue_count": remainingOverdue,
 			"tenant": fiber.Map{
 				"code":           tenant.Code,
 				"status":         tenant.Status,

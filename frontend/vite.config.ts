@@ -2,19 +2,26 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import legacy from '@vitejs/plugin-legacy'
 
+const apiTarget = process.env.VITE_API_TARGET || 'http://127.0.0.1:8000';
+const wsTarget = apiTarget.replace(/^http/i, 'ws');
+
 const sharedProxy = {
   '/api': {
-    target: 'http://127.0.0.1:8000',
+    target: apiTarget,
     changeOrigin: true,
     configure: (proxy: any) => {
-      proxy.on('error', (_err: any, _req: any, _res: any) => {});
+      proxy.on('error', (err: any, _req: any, _res: any) => {
+        console.warn('[vite proxy /api]', err?.message || err);
+      });
     }
   },
   '/ws': {
-    target: 'ws://127.0.0.1:8000',
+    target: wsTarget,
     ws: true,
     configure: (proxy: any) => {
-      proxy.on('error', (_err: any, _req: any, _res: any) => {});
+      proxy.on('error', (err: any, _req: any, _res: any) => {
+        console.warn('[vite proxy /ws]', err?.message || err);
+      });
     }
   }
 }

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
+import { getTRDateString } from '../../utils/format';
 
 interface ReservationItem {
   id: string;
@@ -31,7 +32,7 @@ export const ReservationsView: React.FC = () => {
     guest_name: '',
     phone: '',
     guests_count: 4,
-    date: new Date().toISOString().slice(0, 10),
+    date: getTRDateString(),
     time: '19:30',
     table_name: 'Salon 4',
     notes: '',
@@ -54,7 +55,7 @@ export const ReservationsView: React.FC = () => {
           guest_name: r.guest_name || 'Misafir',
           phone: r.phone || '',
           guests_count: Number(r.guests_count || r.guests || 2),
-          date: r.date || new Date().toISOString().slice(0, 10),
+          date: r.date || getTRDateString(),
           time: r.time || '19:00',
           table_name: r.table_name || 'Masa',
           status: r.status || 'confirmed',
@@ -75,7 +76,7 @@ export const ReservationsView: React.FC = () => {
           guest_name: r.guest_name || 'Misafir',
           phone: r.phone || '',
           guests_count: Number(r.guests_count || r.guests || 2),
-          date: r.date || new Date().toISOString().slice(0, 10),
+          date: r.date || getTRDateString(),
           time: r.time || '19:00',
           table_name: r.table_name || 'Masa',
           status: r.status || 'confirmed',
@@ -107,7 +108,7 @@ export const ReservationsView: React.FC = () => {
         guest_name: '',
         phone: '',
         guests_count: 4,
-        date: new Date().toISOString().slice(0, 10),
+        date: getTRDateString(),
         time: '19:30',
         table_name: 'Salon 4',
         notes: '',

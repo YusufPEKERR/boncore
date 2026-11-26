@@ -66,7 +66,12 @@ self.addEventListener('fetch', (event) => {
         return caches.match(event.request).then((cached) => {
           if (cached) return cached;
           if (event.request.mode === 'navigate') {
-            return caches.match('/') || caches.match('/index.html');
+            return caches.match('/')
+              .then((hit) => hit || caches.match('/index.html'))
+              .then((res) => res || new Response('Çevrimdışı', {
+                status: 503,
+                headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+              }));
           }
           return Promise.reject('no-match');
         });

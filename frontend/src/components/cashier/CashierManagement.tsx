@@ -240,6 +240,7 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
       !p.toLowerCase().includes('fax')
     );
 
+    let anyPhysicalSuccess = false;
     if (physicalPrinters.length > 0 && data) {
       for (const pr of physicalPrinters) {
         const W = localHardware.getPrinterLineWidth(pr);
@@ -319,11 +320,14 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
         lines.push(sep + '\n\n\n\n');
 
         try {
-          await localHardware.printReceipt({
+          const printRes = await localHardware.printReceipt({
             printers: [pr],
             rawText: lines.join('\n'),
             docType: isZ ? 'z_raporu' : 'x_raporu'
           });
+          if (printRes && printRes.success !== false) {
+            anyPhysicalSuccess = true;
+          }
           showToast(`${reportTitle} (${pr}) yazıcısına başarıyla gönderildi!`, 'success');
         } catch (e) {
           console.warn('Fiziksel rapor yazdırma uyarısı:', e);
@@ -331,8 +335,10 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
       }
     }
 
-    // Tarayıcı üzerinden fiş çıktısını hedef yazıcı genişliğiyle tetikle
-    printThermalSlipById('cashier-thermal-slip', isZ ? 'Z-Raporu' : 'X-Raporu');
+    // Yalnızca fiziksel yazıcı başarılı olmadıysa tarayıcı fiş penceresini aç
+    if (!anyPhysicalSuccess) {
+      printThermalSlipById('cashier-thermal-slip', isZ ? 'Z-Raporu' : 'X-Raporu');
+    }
   };
 
   return (
@@ -436,10 +442,11 @@ export const CashierManagement: React.FC<CashierManagementProps> = ({ currentUse
             <button
               type="button"
               onClick={async () => {
-                if (!confirm(`Açıkta bekleyen ${xReport?.open_orders_count || 1} adet masa/adisyon yönetici onayıyla otomatik kapatılacak ve Gün Sonu Z-Raporu alınacak. Emin misiniz?`)) return;
+                const pinInput = window.prompt(`Açıkta bekleyen ${xReport?.open_orders_count || 1} adet masa/adisyon kapatılıp Gün Sonu Z-Raporu alınacak. Onaylamak için Yönetici PIN kodunuzu girin:`);
+                if (!pinInput || !pinInput.trim()) return;
                 sound.beep();
                 try {
-                  const res = await api.closeZReport(currentUser?.name || 'Müdür', '9999', true);
+                  const res = await api.closeZReport(currentUser?.name || 'Müdür', pinInput.trim(), true);
                   setZReportData(res);
                   sound.cashDrawer();
                   showToast('Açık masalar kapatıldı ve Z-Raporu başarıyla oluşturuldu!', 'success');

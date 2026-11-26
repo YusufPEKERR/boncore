@@ -33,6 +33,18 @@ pos.boncore.com.tr, localhost:443 {
 		}
 	}
 
+	# Security & Cache Headers
+	header {
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	@nocache {
+		path /index.html /sw.js
+	}
+	header @nocache Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+
 	# 1. Real-Time WebSocket Tunnel (/ws/pos, /ws/kds, /ws/table/*)
 	@websockets {
 		path /ws/*

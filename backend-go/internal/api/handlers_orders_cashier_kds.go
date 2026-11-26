@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/boncore/pos-backend/internal/api/middleware"
 	"github.com/boncore/pos-backend/internal/models"
 	"github.com/boncore/pos-backend/internal/repository"
 	"github.com/boncore/pos-backend/internal/service"
@@ -17,6 +19,53 @@ import (
 
 func round2(v float64) float64 {
 	return math.Round(v*100) / 100
+}
+
+// ensureNotInClosedShift prevents mutating orders, payments, or expenses belonging to a closed Z-Report shift.
+func ensureNotInClosedShift(db *gorm.DB, recordTime time.Time) error {
+	if db == nil || recordTime.IsZero() {
+		return nil
+	}
+	var lastClosed models.CashRegister
+	if err := db.Where("status = ? AND closed_at IS NOT NULL", "closed").Order("closed_at desc").First(&lastClosed).Error; err == nil && lastClosed.ClosedAt != nil {
+		if !recordTime.After(*lastClosed.ClosedAt) {
+			return fiber.NewError(fiber.StatusConflict, "Kapatılmış Z-Raporu vardiyasına ait kayıtlar değiştirilemez veya silinemez.")
+		}
+	}
+	return nil
+}
+
+// resolveAuditOperator derives the audit operator identity from JWT claims whenever authenticated.
+func resolveAuditOperator(c *fiber.Ctx, db *gorm.DB, fallbackName, fallbackRole string) (string, string) {
+	claims := middleware.GetUserClaims(c)
+	if claims != nil {
+		if middleware.IsMasterClaims(claims) {
+			return "Master Admin", "master_admin"
+		}
+		if claims.Sub > 0 && db != nil {
+			var su models.StaffUser
+			if err := db.Select("id, name, username, role").First(&su, claims.Sub).Error; err == nil {
+				name := strings.TrimSpace(su.Name)
+				if name == "" && su.Username != nil {
+					name = strings.TrimSpace(*su.Username)
+				}
+				role := strings.TrimSpace(su.Role)
+				if role == "" {
+					role = claims.Role
+				}
+				if name != "" {
+					return name, role
+				}
+			}
+		}
+		if strings.TrimSpace(claims.Role) != "" {
+			if strings.TrimSpace(fallbackName) != "" {
+				return strings.TrimSpace(fallbackName), claims.Role
+			}
+			return claims.Role, claims.Role
+		}
+	}
+	return fallbackName, fallbackRole
 }
 
 func resolveKitchenStationCode(db *gorm.DB, raw string) string {
@@ -35,6 +84,65 @@ func resolveKitchenStationCode(db *gorm.DB, raw string) string {
 		}
 	}
 	return strings.ToLower(s)
+}
+
+func resolveServerItemPricing(tx *gorm.DB, itemIn models.OrderItemInput) (models.Product, float64, models.ModifierSlice, float64, error) {
+	var prod models.Product
+	if itemIn.Quantity <= 0 {
+		return prod, 0, nil, 0, fiber.NewError(fiber.StatusBadRequest, "Ürün miktarı sıfırdan büyük olmalıdır.")
+	}
+	if itemIn.UnitPrice != nil && *itemIn.UnitPrice < 0 {
+		return prod, 0, nil, 0, fiber.NewError(fiber.StatusBadRequest, "Ürün birim fiyatı negatif olamaz.")
+	}
+	if err := tx.Preload("Variants").Preload("ModifierGroups.Options").First(&prod, itemIn.ProductID).Error; err != nil {
+		return prod, 0, nil, 0, err
+	}
+
+	basePrice := prod.BasePrice
+	if prod.BasePrice == 0 && itemIn.UnitPrice != nil {
+		basePrice = *itemIn.UnitPrice
+	}
+	if itemIn.VariantName != nil && strings.TrimSpace(*itemIn.VariantName) != "" {
+		vTarget := strings.TrimSpace(*itemIn.VariantName)
+		for _, vr := range prod.Variants {
+			if strings.EqualFold(strings.TrimSpace(vr.Name), vTarget) {
+				basePrice += vr.PriceDelta
+				break
+			}
+		}
+	}
+
+	byGroupAndName := make(map[string]float64)
+	byName := make(map[string]float64)
+	for _, mg := range prod.ModifierGroups {
+		gKey := strings.ToLower(strings.TrimSpace(mg.Name))
+		for _, opt := range mg.Options {
+			oKey := strings.ToLower(strings.TrimSpace(opt.Name))
+			byGroupAndName[gKey+"||"+oKey] = opt.Price
+			if _, exists := byName[oKey]; !exists {
+				byName[oKey] = opt.Price
+			}
+		}
+	}
+
+	modTotal := 0.0
+	modsSlice := make(models.ModifierSlice, 0, len(itemIn.SelectedModifiers))
+	for _, m := range itemIn.SelectedModifiers {
+		gKey := strings.ToLower(strings.TrimSpace(m.Group))
+		oKey := strings.ToLower(strings.TrimSpace(m.Name))
+		authPrice, ok := byGroupAndName[gKey+"||"+oKey]
+		if !ok {
+			authPrice = byName[oKey]
+		}
+		mCopy := m
+		mCopy.Price = authPrice
+		modsSlice = append(modsSlice, mCopy)
+		modTotal += authPrice
+	}
+
+	finalUnit := round2(basePrice + modTotal)
+	lineTotal := round2(finalUnit * itemIn.Quantity)
+	return prod, finalUnit, modsSlice, lineTotal, nil
 }
 
 func recalculateOrderTotals(db *gorm.DB, order *models.Order) {
@@ -66,7 +174,7 @@ func recalculateOrderTotals(db *gorm.DB, order *models.Order) {
 		orderDiscountRatio = ratio
 	}
 	prodVatMap := service.BuildProductVATMap(db)
-	vatBreak := service.CalculateVATBreakdown(items, prodVatMap, orderDiscountRatio)
+	vatBreak := service.CalculateVATBreakdownWithExtras(items, prodVatMap, orderDiscountRatio, order.KuverTotal, order.ServiceCharge)
 	taxTotal := vatBreak.TotalTax
 
 	var payments []models.Payment
@@ -132,7 +240,15 @@ func serializeOrder(db *gorm.DB, order *models.Order) fiber.Map {
 
 	var items []models.OrderItem
 	db.Where("order_id = ?", order.ID).Order("id asc").Find(&items)
-	prodVatMap := service.BuildProductVATMap(db)
+	prodIDs := make([]int, 0, len(items))
+	seenProd := make(map[int]bool, len(items))
+	for _, it := range items {
+		if it.ProductID > 0 && !seenProd[it.ProductID] {
+			seenProd[it.ProductID] = true
+			prodIDs = append(prodIDs, it.ProductID)
+		}
+	}
+	prodVatMap := service.BuildProductVATMapForIDs(db, prodIDs)
 
 	itemsData := make([]fiber.Map, 0, len(items))
 	for _, it := range items {
@@ -144,7 +260,11 @@ func serializeOrder(db *gorm.DB, order *models.Order) fiber.Map {
 		if station == "" {
 			station = "kitchen"
 		}
-		vatRate := float64(service.NormalizeVATBucket(prodVatMap[it.ProductID]))
+		rawVat, ok := prodVatMap[it.ProductID]
+		if !ok {
+			rawVat = 10.0
+		}
+		vatRate := float64(service.NormalizeVATBucket(rawVat))
 		mods := it.SelectedModifiers
 		if mods == nil {
 			mods = models.ModifierSlice{}
@@ -349,21 +469,12 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 			var payments []models.Payment
 			db.Where("order_id IN ?", paidOrderIDs).Find(&payments)
 			for _, p := range payments {
-				pm := strings.ToLower(p.PaymentMethod)
-				target := "cash"
-				if strings.Contains(pm, "card") || strings.Contains(pm, "kredi") || strings.Contains(pm, "pos") {
-					target = "credit_card"
-				} else if strings.Contains(pm, "sodexo") || strings.Contains(pm, "ticket") || strings.Contains(pm, "multinet") || strings.Contains(pm, "yemek") {
-					target = "sodexo"
-				} else if strings.Contains(pm, "cari") || strings.Contains(pm, "hesap") || strings.Contains(pm, "open") {
-					target = "open_account"
-				} else if strings.Contains(pm, "online") {
-					target = "online"
-				}
+				canonical := service.CategorizePaymentMethod(p.PaymentMethod)
+				target := service.PaymentBucketGroup(canonical)
 
 				paymentMap[target].Amount = round2(paymentMap[target].Amount + p.Amount)
 				paymentMap[target].Count++
-				paymentBreakdownLegacy[p.PaymentMethod] = round2(paymentBreakdownLegacy[p.PaymentMethod] + p.Amount)
+				paymentBreakdownLegacy[canonical] = round2(paymentBreakdownLegacy[canonical] + p.Amount)
 				totalTips += p.TipAmount
 			}
 		}
@@ -1541,9 +1652,10 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 				for _, p := range payments {
 					amt, _ := p["amount"].(float64)
 					pMethod, _ := p["method"].(string)
-					if pMethod == "cash" {
+					bucket := service.PaymentBucketGroup(pMethod)
+					if bucket == "cash" {
 						cashTotal += amt
-					} else if pMethod == "credit_card" {
+					} else if bucket == "credit_card" {
 						cardTotal += amt
 					} else {
 						otherTotal += amt
@@ -1573,7 +1685,7 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 	group.Get("/reports/closed-bills", closedBillsHandler)
 	group.Get("/closed-bills", closedBillsHandler)
 
-	group.Post("/create", func(c *fiber.Ctx) error {
+	group.Post("/create", middleware.IdempotencyMiddleware(10*time.Minute), func(c *fiber.Ctx) error {
 		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
@@ -1587,6 +1699,13 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		}
 		if payload.WaiterName == "" {
 			payload.WaiterName = "Kasiyer"
+		}
+
+		if payload.ServiceCharge != nil && *payload.ServiceCharge < 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "Servis ücreti negatif olamaz.")
+		}
+		if payload.KuverCount != nil && *payload.KuverCount < 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "Kuver kişi sayısı negatif olamaz.")
 		}
 
 		if payload.TableID != nil {
@@ -1619,28 +1738,19 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 				var existingOrder models.Order
 				if err := repository.WithRowLock(tx).Where("table_id = ? AND status IN ?", *payload.TableID, []string{"open", "bill_requested"}).First(&existingOrder).Error; err == nil {
 					isAppendedToExisting = true
+					if err := service.ValidateBOMStockForItems(tx, payload.Items); err != nil {
+						return err
+					}
 
 					for _, itemIn := range payload.Items {
-						var prod models.Product
-						if err := tx.First(&prod, itemIn.ProductID).Error; err != nil {
-							continue
+						prod, finalUnit, modsSlice, lineTotal, err := resolveServerItemPricing(tx, itemIn)
+						if err != nil {
+							if errors.Is(err, gorm.ErrRecordNotFound) {
+								continue
+							}
+							return err
 						}
-						unitPrice := prod.BasePrice
-						if itemIn.UnitPrice != nil {
-							unitPrice = *itemIn.UnitPrice
-						}
-						modTotal := 0.0
-						modsSlice := make(models.ModifierSlice, 0, len(itemIn.SelectedModifiers))
-						for _, m := range itemIn.SelectedModifiers {
-							modTotal += m.Price
-							modsSlice = append(modsSlice, m)
-						}
-						finalUnit := unitPrice + modTotal
 						qty := itemIn.Quantity
-						if qty <= 0 {
-							qty = 1
-						}
-						lineTotal := round2(finalUnit * qty)
 						kdsStat := "preparing"
 						if itemIn.IsHold {
 							kdsStat = "hold"
@@ -1718,6 +1828,9 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 					return err
 				}
 			}
+			if err := service.ValidateBOMStockForItems(tx, payload.Items); err != nil {
+				return err
+			}
 
 			now := time.Now().UTC()
 			orderNo := fmt.Sprintf("ADS-%s-%s", now.In(service.TurkeyLoc()).Format("060102150405"), generateRandomTokenSuffix())
@@ -1775,26 +1888,14 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 			}
 
 			for _, itemIn := range payload.Items {
-				var prod models.Product
-				if err := tx.First(&prod, itemIn.ProductID).Error; err != nil {
-					continue
+				prod, finalUnit, modsSlice, lineTotal, err := resolveServerItemPricing(tx, itemIn)
+				if err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						continue
+					}
+					return err
 				}
-				unitPrice := prod.BasePrice
-				if itemIn.UnitPrice != nil {
-					unitPrice = *itemIn.UnitPrice
-				}
-				modTotal := 0.0
-				modsSlice := make(models.ModifierSlice, 0, len(itemIn.SelectedModifiers))
-				for _, m := range itemIn.SelectedModifiers {
-					modTotal += m.Price
-					modsSlice = append(modsSlice, m)
-				}
-				finalUnit := unitPrice + modTotal
 				qty := itemIn.Quantity
-				if qty <= 0 {
-					qty = 1
-				}
-				lineTotal := round2(finalUnit * qty)
 				kdsStat := "preparing"
 				if itemIn.IsHold {
 					kdsStat = "hold"
@@ -1861,10 +1962,11 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 			ref := fmt.Sprintf("%s (#%s)", tblName, order.OrderNo)
 			rc := "MASA_ACILDI"
 			rt := fmt.Sprintf("Masa %s açıldı. Açılış: %s, Garson: %s", tblName, openedAtStr, order.WaiterName)
+			opName, opRole := resolveAuditOperator(c, tx, order.WaiterName, "waiter")
 			tx.Create(&models.AuditLog{
 				ActionType:   "TABLE_OPENED",
-				OperatorName: order.WaiterName,
-				OperatorRole: "waiter",
+				OperatorName: opName,
+				OperatorRole: opRole,
 				TargetRef:    &ref,
 				ReasonCode:   &rc,
 				ReasonText:   &rt,
@@ -1979,6 +2081,9 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 			if err := repository.WithRowLock(tx).First(&order, item.OrderID).Error; err != nil {
 				return fiber.NewError(fiber.StatusNotFound, "Sipariş bulunamadı")
 			}
+			if err := ensureNotInClosedShift(tx, order.CreatedAt); err != nil {
+				return err
+			}
 			if order.Status != "open" && order.Status != "bill_requested" {
 				return fiber.NewError(fiber.StatusBadRequest, "Kapatılmış veya iptal edilmiş adisyondan ürün iptal edilemez.")
 			}
@@ -2020,10 +2125,11 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 
 			ref := order.OrderNo
 			rCode := payload.ReasonCode
+			opName, opRole := resolveAuditOperator(c, tx, payload.OperatorName, "manager")
 			tx.Create(&models.AuditLog{
 				ActionType:   "VOID_ITEM",
-				OperatorName: payload.OperatorName,
-				OperatorRole: "manager",
+				OperatorName: opName,
+				OperatorRole: opRole,
 				TargetRef:    &ref,
 				ReasonCode:   &rCode,
 				ReasonText:   payload.ReasonText,
@@ -2108,6 +2214,9 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		if err := db.First(&order, item.OrderID).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Adisyon bulunamadı")
 		}
+		if err := ensureNotInClosedShift(db, order.CreatedAt); err != nil {
+			return err
+		}
 		if order.Status != "open" && order.Status != "bill_requested" {
 			return fiber.NewError(fiber.StatusBadRequest, "Kapatılmış veya iptal edilmiş adisyona indirim uygulanamaz.")
 		}
@@ -2131,10 +2240,11 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 
 		recalculateOrderTotals(db, &order)
 		ref := order.OrderNo
+		opName, opRole := resolveAuditOperator(c, db, payload.OperatorName, "manager")
 		db.Create(&models.AuditLog{
 			ActionType:   "APPLY_ITEM_DISCOUNT",
-			OperatorName: payload.OperatorName,
-			OperatorRole: "manager",
+			OperatorName: opName,
+			OperatorRole: opRole,
 			TargetRef:    &ref,
 			Details: models.JSONMap{
 				"order_id":        order.ID,
@@ -2176,6 +2286,9 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		var order models.Order
 		if err := db.First(&order, item.OrderID).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Adisyon bulunamadı")
+		}
+		if err := ensureNotInClosedShift(db, order.CreatedAt); err != nil {
+			return err
 		}
 		if order.Status != "open" && order.Status != "bill_requested" {
 			return fiber.NewError(fiber.StatusBadRequest, "Kapatılmış veya iptal edilmiş adisyonda değişiklik yapılamaz.")
@@ -2267,6 +2380,9 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 			if order.Status != "open" {
 				return fiber.NewError(fiber.StatusBadRequest, "Kapatılmış adisyona ürün eklenemez")
 			}
+			if err := service.ValidateBOMStockForItems(tx, payload.Items); err != nil {
+				return err
+			}
 
 			if order.TableID != nil {
 				var tbl models.Table
@@ -2284,26 +2400,14 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 			}
 
 			for _, itemIn := range payload.Items {
-				var prod models.Product
-				if err := tx.First(&prod, itemIn.ProductID).Error; err != nil {
-					continue
+				prod, finalUnit, modsSlice, lineTotal, err := resolveServerItemPricing(tx, itemIn)
+				if err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						continue
+					}
+					return err
 				}
-				unitPrice := prod.BasePrice
-				if itemIn.UnitPrice != nil {
-					unitPrice = *itemIn.UnitPrice
-				}
-				modTotal := 0.0
-				modsSlice := make(models.ModifierSlice, 0, len(itemIn.SelectedModifiers))
-				for _, m := range itemIn.SelectedModifiers {
-					modTotal += m.Price
-					modsSlice = append(modsSlice, m)
-				}
-				finalUnit := unitPrice + modTotal
 				qty := itemIn.Quantity
-				if qty <= 0 {
-					qty = 1
-				}
-				lineTotal := round2(finalUnit * qty)
 				kdsStat := "preparing"
 				if itemIn.IsHold {
 					kdsStat = "hold"
@@ -2406,6 +2510,9 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 			if err := repository.WithRowLock(tx).First(&order, orderID).Error; err != nil {
 				return fiber.NewError(fiber.StatusNotFound, "Sipariş bulunamadı")
 			}
+			if err := ensureNotInClosedShift(tx, order.CreatedAt); err != nil {
+				return err
+			}
 			if order.Status == "paid" || order.Status == "cancelled" {
 				return fiber.NewError(fiber.StatusBadRequest, "Ödenmiş veya zaten iptal edilmiş adisyon iptal edilemez.")
 			}
@@ -2469,10 +2576,11 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 			ref := fmt.Sprintf("%s (#%s)", tblName, order.OrderNo)
 			rCode := payload.ReasonCode
 			rText := fmt.Sprintf("Masa %s siparişi iptal edildi. Açılış: %s, İptal: %s (%d dk). Sebep: %s", tblName, openedAtStr, closedAtStr, durationMin, payload.ReasonText)
+			opName, opRole := resolveAuditOperator(c, tx, payload.OperatorName, "manager")
 			tx.Create(&models.AuditLog{
 				ActionType:   "CANCEL_ORDER",
-				OperatorName: payload.OperatorName,
-				OperatorRole: "manager",
+				OperatorName: opName,
+				OperatorRole: opRole,
 				TargetRef:    &ref,
 				ReasonCode:   &rCode,
 				ReasonText:   &rText,
@@ -2530,6 +2638,9 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		if err := db.First(&order, orderID).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Adisyon bulunamadı")
 		}
+		if err := ensureNotInClosedShift(db, order.CreatedAt); err != nil {
+			return err
+		}
 		if order.Status != "open" && order.Status != "bill_requested" {
 			return fiber.NewError(fiber.StatusBadRequest, "Kapatılmış veya iptal edilmiş adisyona indirim uygulanamaz.")
 		}
@@ -2552,10 +2663,11 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		recalculateOrderTotals(db, &order)
 
 		ref := order.OrderNo
+		opName, opRole := resolveAuditOperator(c, db, payload.OperatorName, "manager")
 		db.Create(&models.AuditLog{
 			ActionType:   "APPLY_DISCOUNT",
-			OperatorName: payload.OperatorName,
-			OperatorRole: "manager",
+			OperatorName: opName,
+			OperatorRole: opRole,
 			TargetRef:    &ref,
 			Details: models.JSONMap{
 				"order_id":        order.ID,
@@ -2601,6 +2713,9 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		if err := db.First(&order, orderID).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Adisyon bulunamadı")
 		}
+		if err := ensureNotInClosedShift(db, order.CreatedAt); err != nil {
+			return err
+		}
 		if order.Status != "open" && order.Status != "bill_requested" {
 			return fiber.NewError(fiber.StatusBadRequest, "Kapatılmış veya iptal edilmiş adisyona toplu indirim uygulanamaz.")
 		}
@@ -2629,6 +2744,54 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		return c.JSON(serialized)
 	})
 
+	group.Post("/:order_id/service-charge", func(c *fiber.Ctx) error {
+		db, tenantCode, err := getTenantDB(c, svc)
+		if err != nil {
+			return err
+		}
+		orderID, _ := strconv.Atoi(c.Params("order_id"))
+		var body struct {
+			Amount float64 `json:"amount"`
+			Note   string  `json:"note"`
+		}
+		if err := c.BodyParser(&body); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz servis ücreti verisi.")
+		}
+		if body.Amount <= 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "Servis ücreti sıfırdan büyük olmalıdır.")
+		}
+		var order models.Order
+		txErr := db.Transaction(func(tx *gorm.DB) error {
+			if err := repository.WithRowLock(tx).First(&order, orderID).Error; err != nil {
+				return fiber.NewError(fiber.StatusNotFound, "Adisyon bulunamadı")
+			}
+			if err := ensureNotInClosedShift(tx, order.CreatedAt); err != nil {
+				return err
+			}
+			if order.Status != "open" && order.Status != "bill_requested" {
+				return fiber.NewError(fiber.StatusBadRequest, "Kapatılmış veya iptal edilmiş adisyona servis ücreti eklenemez.")
+			}
+			order.ServiceCharge = round2(order.ServiceCharge + body.Amount)
+			if strings.TrimSpace(body.Note) != "" {
+				noteLine := strings.TrimSpace(body.Note)
+				if order.Notes != nil && strings.TrimSpace(*order.Notes) != "" {
+					joined := *order.Notes + " | " + noteLine
+					order.Notes = &joined
+				} else {
+					order.Notes = &noteLine
+				}
+			}
+			recalculateOrderTotals(tx, &order)
+			return tx.Save(&order).Error
+		})
+		if txErr != nil {
+			return txErr
+		}
+		serialized := serializeOrder(db, &order)
+		svc.WSHub.BroadcastToChannel(tenantCode, "pos", "ORDER_UPDATED", serialized)
+		return c.JSON(serialized)
+	})
+
 	group.Post("/:order_id/remove-all-discounts", func(c *fiber.Ctx) error {
 		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
@@ -2649,6 +2812,9 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		var order models.Order
 		if err := db.First(&order, orderID).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Adisyon bulunamadı")
+		}
+		if err := ensureNotInClosedShift(db, order.CreatedAt); err != nil {
+			return err
 		}
 		if order.Status != "open" && order.Status != "bill_requested" {
 			return fiber.NewError(fiber.StatusBadRequest, "Kapatılmış veya iptal edilmiş adisyonda değişiklik yapılamaz.")
@@ -2694,6 +2860,9 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		if err := db.First(&order, orderID).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Adisyon bulunamadı")
 		}
+		if err := ensureNotInClosedShift(db, order.CreatedAt); err != nil {
+			return err
+		}
 		if order.Status != "open" && order.Status != "bill_requested" {
 			return fiber.NewError(fiber.StatusBadRequest, "Kapatılmış veya iptal edilmiş adisyonda ikram işlemi yapılamaz.")
 		}
@@ -2707,10 +2876,11 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		order.TreatReason = &r
 		recalculateOrderTotals(db, &order)
 		ref := order.OrderNo
+		opName, opRole := resolveAuditOperator(c, db, payload.OperatorName, "manager")
 		db.Create(&models.AuditLog{
 			ActionType:   "TREAT_ITEMS",
-			OperatorName: payload.OperatorName,
-			OperatorRole: "manager",
+			OperatorName: opName,
+			OperatorRole: opRole,
 			TargetRef:    &ref,
 			Details: models.JSONMap{
 				"order_id": order.ID,
@@ -2751,6 +2921,14 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 		err = db.Transaction(func(tx *gorm.DB) error {
 			if err := repository.WithRowLock(tx).First(&order, orderID).Error; err != nil {
 				return fiber.NewError(fiber.StatusNotFound, "Adisyon bulunamadı")
+			}
+			if err := ensureNotInClosedShift(tx, order.CreatedAt); err != nil {
+				return err
+			}
+			if order.ClosedAt != nil {
+				if err := ensureNotInClosedShift(tx, *order.ClosedAt); err != nil {
+					return err
+				}
 			}
 			if order.Status == "open" {
 				return fiber.NewError(fiber.StatusBadRequest, "Bu adisyon zaten açık durumda")
@@ -2811,10 +2989,11 @@ func RegisterOrdersRoutes(group fiber.Router, svc *service.Services) {
 			ref := fmt.Sprintf("%s (#%s)", tblName, order.OrderNo)
 			rc := "ADISYON_TEKRAR_ACILDI"
 			rt := fmt.Sprintf("Masa %s (#%s) adisyonu tekrar aktif edildi. İlk Açılış: %s", tblName, order.OrderNo, openedAtStr)
+			opName, opRole := resolveAuditOperator(c, tx, payload.OperatorName, "manager")
 			tx.Create(&models.AuditLog{
 				ActionType:   "REOPEN_ORDER",
-				OperatorName: payload.OperatorName,
-				OperatorRole: "manager",
+				OperatorName: opName,
+				OperatorRole: opRole,
 				TargetRef:    &ref,
 				ReasonCode:   &rc,
 				ReasonText:   &rt,
@@ -3287,11 +3466,6 @@ func handleApproveOutOfStockItem(c *fiber.Ctx, svc *service.Services) error {
 			return nil
 		}
 
-		if hasProd && !prod.AllowNegStock {
-			tx.Model(&prod).Update("allow_neg_stock", true)
-			prod.AllowNegStock = true
-		}
-
 		if err := service.DeductOrderIngredients(tx, item.ProductID, item.Quantity, order.OrderNo, 2); err != nil {
 			return err
 		}
@@ -3383,7 +3557,7 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		return c.JSON(calculateReportSummary(db, reg))
 	})
 
-	group.Post("/settle-payment", func(c *fiber.Ctx) error {
+	group.Post("/settle-payment", middleware.IdempotencyMiddleware(10*time.Minute), func(c *fiber.Ctx) error {
 		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
@@ -3412,8 +3586,8 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		if payload.CloseTable != nil {
 			closeTable = *payload.CloseTable
 		}
-		if len(payload.Payments) == 0 {
-			return fiber.NewError(fiber.StatusBadRequest, "En az bir ödeme satırı girilmelidir.")
+		if math.Abs(payload.Rounding) > 10.0 {
+			return fiber.NewError(fiber.StatusBadRequest, "Yuvarlama tutarı ±₺10.00 sınırını aşamaz.")
 		}
 		for _, p := range payload.Payments {
 			if p.Amount <= 0 || p.Tip < 0 {
@@ -3424,6 +3598,7 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		var order models.Order
 		isFullyPaid := false
 		tableStatus := ""
+		changeAmount := 0.0
 
 		// ACID Transaction with Row-Level Locks on Order and Table
 		err = db.Transaction(func(tx *gorm.DB) error {
@@ -3433,16 +3608,43 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 			if order.Status == "paid" || order.Status == "cancelled" {
 				return fiber.NewError(fiber.StatusBadRequest, "Ödenmiş veya iptal edilmiş adisyona ödeme alınamaz.")
 			}
+			if len(payload.Payments) == 0 && !(order.RemainingTotal <= 0.05 && closeTable) {
+				return fiber.NewError(fiber.StatusBadRequest, "En az bir ödeme satırı girilmelidir.")
+			}
+
+			roundingDelta := round2(payload.Rounding)
+			unpaid := math.Max(0.0, round2(order.GrandTotal+roundingDelta-order.PaidTotal))
 
 			for idx, p := range payload.Payments {
+				if unpaid <= 0.01 {
+					return fiber.NewError(fiber.StatusBadRequest, "Bu adisyonda kalan borç bulunmamaktadır.")
+				}
 				rAmt := 0.0
 				if idx == 0 {
-					rAmt = round2(payload.Rounding)
+					rAmt = roundingDelta
 				}
+				method := p.ResolvedMethod()
+				tendered := round2(p.Amount)
+				applied := tendered
+				if method == "cash" {
+					if tendered > unpaid {
+						applied = round2(unpaid)
+						changeAmount = round2(changeAmount + round2(tendered-applied))
+					}
+				} else {
+					if tendered > unpaid+0.05 {
+						return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("%s tutarı kalan borcu (₺%.2f) aşamaz.", getPaymentMethodLabel(method), unpaid))
+					}
+					if tendered > unpaid {
+						applied = round2(unpaid)
+					}
+				}
+				unpaid = math.Max(0.0, round2(unpaid-applied))
+
 				paymentRow := models.Payment{
 					OrderID:        order.ID,
-					PaymentMethod:  p.ResolvedMethod(),
-					Amount:         round2(p.Amount),
+					PaymentMethod:  method,
+					Amount:         applied,
 					TipAmount:      round2(p.Tip),
 					RoundingAmount: rAmt,
 					CashierName:    payload.CashierName,
@@ -3518,10 +3720,11 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 					ref := fmt.Sprintf("%s (#%s)", tblName, order.OrderNo)
 					rc := "HESAP_KAPATILDI"
 					rt := fmt.Sprintf("Masa %s hesabı kapatıldı. Açılış: %s, Kapanış: %s (%d dk). Toplam: ₺%.2f", tblName, openedAtStr, closedAtStr, durationMin, order.GrandTotal)
+					opName, opRole := resolveAuditOperator(c, tx, payload.CashierName, "cashier")
 					tx.Create(&models.AuditLog{
 						ActionType:   "TABLE_CLOSED",
-						OperatorName: payload.CashierName,
-						OperatorRole: "cashier",
+						OperatorName: opName,
+						OperatorRole: opRole,
 						TargetRef:    &ref,
 						ReasonCode:   &rc,
 						ReasonText:   &rt,
@@ -3616,6 +3819,7 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 			"grand_total":     order.GrandTotal,
 			"paid_total":      order.PaidTotal,
 			"remaining_total": order.RemainingTotal,
+			"change_amount":   round2(changeAmount),
 			"is_fully_paid":   isFullyPaid,
 			"is_prepaid":      isFullyPaid && order.Status != "paid",
 			"message":         "Payment recorded successfully",
@@ -3630,7 +3834,7 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		}
 		paymentID, _ := strconv.Atoi(c.Params("payment_id"))
 		operatorName := c.Query("operator_name", "Yönetici")
-		if err := requirePermission(c, svc, db, operatorName, []string{"order_take_payment", "order_refund"}, true, "Ödeme silme / iade yetkiniz bulunmamaktadır."); err != nil {
+		if err := requirePermission(c, svc, db, operatorName, []string{"order_take_payment", "order_refund"}, false, "Ödeme silme / iade yetkiniz bulunmamaktadır."); err != nil {
 			return err
 		}
 
@@ -3641,6 +3845,12 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		var order models.Order
 		if err := db.First(&order, payment.OrderID).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "İlgili adisyon bulunamadı")
+		}
+		if err := ensureNotInClosedShift(db, payment.CreatedAt); err != nil {
+			return err
+		}
+		if err := ensureNotInClosedShift(db, order.CreatedAt); err != nil {
+			return err
 		}
 
 		method := payment.PaymentMethod
@@ -3668,10 +3878,11 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		}
 
 		ref := order.OrderNo
+		opName, opRole := resolveAuditOperator(c, db, operatorName, "manager")
 		db.Create(&models.AuditLog{
 			ActionType:   "DELETE_PAYMENT",
-			OperatorName: operatorName,
-			OperatorRole: "manager",
+			OperatorName: opName,
+			OperatorRole: opRole,
 			TargetRef:    &ref,
 			Details: models.JSONMap{
 				"order_id":   order.ID,
@@ -3758,15 +3969,14 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		endDate := c.Query("end_date")
 		query := db.Model(&models.CashExpense{})
 
-		if startDate != "" {
-			if dt, err := time.Parse("2006-01-02", startDate); err == nil {
-				query = query.Where("created_at >= ?", dt)
-			}
-		}
-		if endDate != "" {
-			if dt, err := time.Parse("2006-01-02", endDate); err == nil {
-				dtEnd := time.Date(dt.Year(), dt.Month(), dt.Day(), 23, 59, 59, 999999999, dt.Location())
-				query = query.Where("created_at <= ?", dtEnd)
+		if startDate != "" || endDate != "" {
+			if sUTC, eUTC, ok := service.ParseTRDateRange("", startDate, endDate); ok {
+				if !sUTC.IsZero() {
+					query = query.Where("created_at >= ?", sUTC)
+				}
+				if !eUTC.IsZero() {
+					query = query.Where("created_at < ?", eUTC)
+				}
 			}
 		}
 		// Tarih parametresi verilmemişse ve active_shift istenmişse sadece aktif kasanın masraflarını getir
@@ -3817,12 +4027,16 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		if err := db.First(&expense, id).Error; err != nil {
 			return fiber.NewError(fiber.StatusNotFound, "Masraf kaydı bulunamadı.")
 		}
+		if err := ensureNotInClosedShift(db, expense.CreatedAt); err != nil {
+			return err
+		}
 		ref := fmt.Sprintf("EXP-%d", expense.ID)
 		rText := fmt.Sprintf("Masraf silindi: %s ₺%.2f", expense.Category, expense.Amount)
+		opName, opRole := resolveAuditOperator(c, db, operatorName, "manager")
 		db.Create(&models.AuditLog{
 			ActionType:   "DELETE_CASH_EXPENSE",
-			OperatorName: operatorName,
-			OperatorRole: "manager",
+			OperatorName: opName,
+			OperatorRole: opRole,
 			TargetRef:    &ref,
 			ReasonText:   &rText,
 			Details: models.JSONMap{
@@ -3859,7 +4073,7 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		return c.JSON(summary)
 	})
 
-	group.Post("/z-report", func(c *fiber.Ctx) error {
+	group.Post("/z-report", middleware.IdempotencyMiddleware(10*time.Minute), func(c *fiber.Ctx) error {
 		db, tenantCode, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
@@ -3869,8 +4083,10 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		if payload.ClosedBy == "" {
 			payload.ClosedBy = "Müdür"
 		}
-		if err := requirePermission(c, svc, db, payload.ClosedBy, []string{"reports_z_close"}, false, "Z-Raporu alma ve gün kapatma yetkiniz bulunmamaktadır."); err != nil {
-			return err
+		if permErr := requirePermission(c, svc, db, payload.ClosedBy, []string{"reports_z_close"}, false, "Z-Raporu alma ve gün kapatma yetkiniz bulunmamaktadır."); permErr != nil {
+			if payload.ManagerPin == nil || strings.TrimSpace(*payload.ManagerPin) == "" || !verifyCancelAuthorization(c, svc, db, payload.ClosedBy, payload.ManagerPin) {
+				return permErr
+			}
 		}
 
 		summary, err := service.ExecuteZReport(db, tenantCode, payload.ClosedBy, payload.ForceClose, svc.WSHub)
@@ -3894,7 +4110,7 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		if err != nil {
 			return err
 		}
-		if err := requirePermission(c, svc, db, "", []string{"reports_z_close", "def_general_settings"}, true, "Otomatik Z-Raporu ayarlarını değiştirme yetkiniz bulunmamaktadır."); err != nil {
+		if err := requirePermission(c, svc, db, "", []string{"reports_z_close", "def_general_settings"}, false, "Otomatik Z-Raporu ayarlarını değiştirme yetkiniz bulunmamaktadır."); err != nil {
 			return err
 		}
 		var payload service.AutoZReportSettings
@@ -3915,7 +4131,7 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 	})
 
 	group.Post("/auto-z-report/test", func(c *fiber.Ctx) error {
-		db, tenantCode, err := getTenantDB(c, svc)
+		db, _, err := getTenantDB(c, svc)
 		if err != nil {
 			return err
 		}
@@ -3923,21 +4139,16 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 			return err
 		}
 		current := service.GetAutoZReportSettings(db)
-		summary, err := service.ExecuteZReport(db, tenantCode, "Otomatik Sistem (Test)", true, svc.WSHub)
-		loc := time.FixedZone("TRT", 3*3600)
+		reg := getOrCreateActiveRegister(db)
+		summary := calculateReportSummary(db, reg)
+		loc := service.TurkeyLoc()
 		now := time.Now().In(loc)
-		if err != nil {
-			current.LastRunStatus = fmt.Sprintf("Hata: %s - %s", err.Error(), now.Format("15:04:05"))
-			service.SaveAutoZReportSettings(db, current)
-			return fiber.NewError(fiber.StatusBadRequest, err.Error())
-		}
-		zNo, _ := summary["z_report_no"].(string)
-		current.LastRunDate = now.Format("2006-01-02")
-		current.LastRunStatus = fmt.Sprintf("Başarılı (%s) - %s (Test)", zNo, now.Format("15:04:05"))
+		current.LastRunStatus = fmt.Sprintf("Test Ön İzleme (Dry-Run) - %s", now.Format("15:04:05"))
 		service.SaveAutoZReportSettings(db, current)
 		return c.JSON(fiber.Map{
 			"status":   "ok",
-			"message":  fmt.Sprintf("Otomatik Z-Raporu test çalıştırması başarılı: %s", zNo),
+			"dry_run":  true,
+			"message":  "Otomatik Z-Raporu dry-run kontrolü başarılı (kasa veya açık masalar kapatılmadı).",
 			"settings": current,
 			"summary":  summary,
 		})
@@ -4009,8 +4220,14 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 			dayStart, dayEnd = service.TRTodayBounds()
 		}
 
+		useInclusiveEnd := targetReg != nil && targetReg.Status == "closed" && targetReg.ClosedAt != nil && !targetReg.ClosedAt.IsZero()
+		endCmp := "created_at < ?"
+		if useInclusiveEnd {
+			endCmp = "created_at <= ?"
+		}
+
 		var orders []models.Order
-		db.Preload("Items").Preload("Payments").Where("created_at >= ? AND created_at < ?", dayStart, dayEnd).Find(&orders)
+		db.Preload("Items").Preload("Payments").Where("created_at >= ? AND "+endCmp, dayStart, dayEnd).Find(&orders)
 
 		var validOrders, paidOrders, openOrders, cancelledOrders []models.Order
 		validOrderIDs := make([]int, 0, len(orders))
@@ -4066,7 +4283,7 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 
 		var payments []models.Payment
 		if len(validOrderIDs) > 0 {
-			db.Where("order_id IN ? AND created_at >= ? AND created_at < ?", validOrderIDs, dayStart, dayEnd).Find(&payments)
+			db.Where("order_id IN ? AND created_at >= ? AND "+endCmp, validOrderIDs, dayStart, dayEnd).Find(&payments)
 		}
 
 		type payAggItem struct {
@@ -4087,33 +4304,25 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 
 		totalTips := 0.0
 		for _, p := range payments {
-			pm := strings.ToLower(p.PaymentMethod)
-			target := "cash"
-			if strings.Contains(pm, "card") || strings.Contains(pm, "kredi") || strings.Contains(pm, "pos") {
-				target = "credit_card"
-			} else if strings.Contains(pm, "sodexo") || strings.Contains(pm, "multinet") || strings.Contains(pm, "ticket") || strings.Contains(pm, "yemek") {
-				target = "sodexo"
-			} else if strings.Contains(pm, "cari") || strings.Contains(pm, "hesap") || strings.Contains(pm, "open") {
-				target = "open_account"
-			} else if strings.Contains(pm, "online") {
-				target = "online"
-			}
+			target := service.PaymentBucketGroup(service.CategorizePaymentMethod(p.PaymentMethod))
 			payAgg[target].Amount = round2(payAgg[target].Amount + p.Amount)
 			payAgg[target].Count++
 			totalTips = round2(totalTips + p.TipAmount)
 		}
 
-		unpaidOpen := 0.0
-		unpaidCount := 0
-		for _, o := range validOrders {
-			if o.Status != "paid" && o.RemainingTotal > 0 {
-				unpaidOpen += o.RemainingTotal
-				unpaidCount++
+		if targetReg == nil || targetReg.Status == "open" {
+			unpaidOpen := 0.0
+			unpaidCount := 0
+			for _, o := range validOrders {
+				if o.Status != "paid" && o.RemainingTotal > 0 {
+					unpaidOpen += o.RemainingTotal
+					unpaidCount++
+				}
 			}
-		}
-		if unpaidOpen > 0 {
-			payAgg["open_account"].Amount = round2(payAgg["open_account"].Amount + unpaidOpen)
-			payAgg["open_account"].Count += unpaidCount
+			if unpaidOpen > 0 {
+				payAgg["open_account"].Amount = round2(payAgg["open_account"].Amount + unpaidOpen)
+				payAgg["open_account"].Count += unpaidCount
+			}
 		}
 
 		totPayAmt := 0.0
@@ -4129,7 +4338,7 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 		openingFloat := reg.OpeningFloat
 
 		var expenses []models.CashExpense
-		db.Where("created_at >= ? AND created_at < ?", dayStart, dayEnd).Find(&expenses)
+		db.Where("created_at >= ? AND "+endCmp, dayStart, dayEnd).Find(&expenses)
 		cashIn := 0.0
 		cashOut := 0.0
 		expensesList := make([]fiber.Map, 0, len(expenses))
@@ -4361,9 +4570,52 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 			if !r.OpenedAt.IsZero() {
 				oStr = r.OpenedAt.In(trLoc).Format(time.RFC3339)
 			}
+			endBound := time.Now().UTC()
 			if r.ClosedAt != nil && !r.ClosedAt.IsZero() {
 				cStr = r.ClosedAt.In(trLoc).Format(time.RFC3339)
+				endBound = *r.ClosedAt
 			}
+
+			var windowPayments []models.Payment
+			db.Where("created_at >= ? AND created_at <= ?", r.OpenedAt, endBound).Find(&windowPayments)
+			var cancelIDs []int
+			pOrderIDs := make([]int, 0, len(windowPayments))
+			for _, wp := range windowPayments {
+				if wp.OrderID > 0 {
+					pOrderIDs = append(pOrderIDs, wp.OrderID)
+				}
+			}
+			cancelledSet := make(map[int]bool)
+			if len(pOrderIDs) > 0 {
+				db.Model(&models.Order{}).Where("id IN ? AND status = ?", pOrderIDs, "cancelled").Pluck("id", &cancelIDs)
+				for _, cid := range cancelIDs {
+					cancelledSet[cid] = true
+				}
+			}
+			regTips := 0.0
+			for _, wp := range windowPayments {
+				if cancelledSet[wp.OrderID] {
+					continue
+				}
+				regTips = round2(regTips + wp.TipAmount)
+			}
+
+			var windowExpenses []models.CashExpense
+			db.Where("created_at >= ? AND created_at <= ?", r.OpenedAt, endBound).Find(&windowExpenses)
+			openingFloat := r.OpeningFloat
+			cashIn := 0.0
+			for _, ex := range windowExpenses {
+				if strings.EqualFold(ex.ExpenseType, "in") {
+					if strings.EqualFold(strings.TrimSpace(ex.Category), "Açılış Avansı") {
+						openingFloat += ex.Amount
+					} else {
+						cashIn += ex.Amount
+					}
+				}
+			}
+			openingFloat = round2(openingFloat)
+			cashIn = round2(cashIn)
+
 			mealCard := round2(r.TotalMultinet + r.TotalSodexo + r.TotalTicket)
 			turnover := round2(r.TotalCash + r.TotalCard + mealCard + r.TotalOther)
 			if r.TotalRevenue > 0 {
@@ -4384,14 +4636,15 @@ func RegisterCashierRoutes(group fiber.Router, svc *service.Services) {
 				"opened_by":            r.OpenedBy,
 				"closed_by":            r.ClosedBy,
 				"status":               r.Status,
-				"opening_float":        r.OpeningFloat,
+				"opening_float":        openingFloat,
+				"cash_in":              cashIn,
 				"cash_sales":           r.TotalCash,
 				"card_sales":           r.TotalCard,
 				"meal_card_sales":      mealCard,
-				"total_tips":           0.0,
+				"total_tips":           regTips,
 				"total_discounts":      r.TotalDiscounts,
 				"total_expenses":       r.TotalExpenses,
-				"closing_cash_counted": round2(r.OpeningFloat + r.TotalCash - r.TotalExpenses),
+				"closing_cash_counted": round2(openingFloat + r.TotalCash + cashIn - r.TotalExpenses),
 				"total_turnover":       turnover,
 				"total_revenue":        turnover,
 			})

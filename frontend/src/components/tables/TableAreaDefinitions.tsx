@@ -9,6 +9,7 @@ import {
 import { Area, Table } from '../../types';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 
 interface TableAreaDefinitionsProps {
   areas: Area[];
@@ -23,6 +24,11 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [viewMode, setViewMode] = useState<'grid' | 'kroki'>('grid');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [confirmState, setConfirmState] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => Promise<void> | void;
+  } | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -264,19 +270,24 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
     }
   };
 
-  const handleDeleteArea = async (a: Area, e: React.MouseEvent) => {
+  const handleDeleteArea = (a: Area, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm(`"${a.name}" bölgesini ve boş masalarını silmek istediğinize emin misiniz?`)) {
-      sound.beep();
-      try {
-        await api.deleteArea(a.id);
-        showToast(`"${a.name}" bölgesi silindi.`, 'success');
-        onRefreshAreas();
-      } catch (err: any) {
-        showToast(err.message || 'Bölge silinemedi.', 'error');
-        sound.warning();
-      }
-    }
+    setConfirmState({
+      title: 'Bölgeyi Sil',
+      message: `"${a.name}" bölgesini ve boş masalarını silmek istediğinize emin misiniz?`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        sound.beep();
+        try {
+          await api.deleteArea(a.id);
+          showToast(`"${a.name}" bölgesi silindi.`, 'success');
+          onRefreshAreas();
+        } catch (err: any) {
+          showToast(err.message || 'Bölge silinemedi.', 'error');
+          sound.warning();
+        }
+      },
+    });
   };
 
   // --- Table Modal Actions ---
@@ -327,18 +338,23 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
     }
   };
 
-  const handleDeleteTable = async (t: Table) => {
-    if (confirm(`"${t.name}" masasını silmek istediğinize emin misiniz?`)) {
-      sound.beep();
-      try {
-        await api.deleteTable(t.id);
-        showToast(`"${t.name}" masası silindi.`, 'success');
-        onRefreshAreas();
-      } catch (err: any) {
-        showToast(err.message || 'Masa silinemedi.', 'error');
-        sound.warning();
-      }
-    }
+  const handleDeleteTable = (t: Table) => {
+    setConfirmState({
+      title: 'Masayı Sil',
+      message: `"${t.name}" masasını silmek istediğinize emin misiniz?`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        sound.beep();
+        try {
+          await api.deleteTable(t.id);
+          showToast(`"${t.name}" masası silindi.`, 'success');
+          onRefreshAreas();
+        } catch (err: any) {
+          showToast(err.message || 'Masa silinemedi.', 'error');
+          sound.warning();
+        }
+      },
+    });
   };
 
   // --- Bulk Create Action ---
@@ -363,9 +379,12 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
     }
   };
 
-  // --- Kroki / Layout Canvas Actions ---
-  const handleKrokiMouseDown = (e: React.MouseEvent, table: Table) => {
+  // --- Kroki / Layout Canvas Actions (Pointer Events: Mouse + Touch) ---
+  const handleKrokiPointerDown = (e: React.PointerEvent<HTMLDivElement>, table: Table) => {
     e.stopPropagation();
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+    } catch {}
     setActiveDragKrokiId(table.id);
     dragStartPos.current = {
       mouseX: e.clientX,
@@ -375,14 +394,17 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
     };
   };
 
-  const handleKrokiMouseMove = (e: React.MouseEvent) => {
+  const handleKrokiPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!activeDragKrokiId || !dragStartPos.current || !canvasRef.current) return;
     const deltaX = e.clientX - dragStartPos.current.mouseX;
     const deltaY = e.clientY - dragStartPos.current.mouseY;
 
-    // 10px snap grid
-    const rawX = Math.max(10, dragStartPos.current.tableX + deltaX);
-    const rawY = Math.max(10, dragStartPos.current.tableY + deltaY);
+    const maxX = Math.max(10, (canvasRef.current.scrollWidth || 800) - 130);
+    const maxY = Math.max(10, (canvasRef.current.scrollHeight || 600) - 120);
+
+    // 10px snap grid + canvas bounds clamp
+    const rawX = Math.max(10, Math.min(maxX, dragStartPos.current.tableX + deltaX));
+    const rawY = Math.max(10, Math.min(maxY, dragStartPos.current.tableY + deltaY));
     const snappedX = Math.round(rawX / 10) * 10;
     const snappedY = Math.round(rawY / 10) * 10;
 
@@ -395,7 +417,7 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
     setHasUnsavedPositions(true);
   };
 
-  const handleKrokiMouseUp = () => {
+  const handleKrokiPointerUp = () => {
     if (activeDragKrokiId) {
       setActiveDragKrokiId(null);
       dragStartPos.current = null;
@@ -745,8 +767,9 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
         {viewMode === 'kroki' && (
           <div
             ref={canvasRef}
-            onMouseMove={handleKrokiMouseMove}
-            onMouseUp={handleKrokiMouseUp}
+            onPointerMove={handleKrokiPointerMove}
+            onPointerUp={handleKrokiPointerUp}
+            onPointerCancel={handleKrokiPointerUp}
             className="flex-1 relative overflow-auto bg-slate-100/70 dark:bg-slate-950 p-4 select-none cursor-default min-h-[600px]"
             style={{
               backgroundImage: 'radial-gradient(circle, #cbd5e1 1px, transparent 1px)',
@@ -773,14 +796,14 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
               return (
                 <div
                   key={t.id}
-                  onMouseDown={(e) => handleKrokiMouseDown(e, t)}
+                  onPointerDown={(e) => handleKrokiPointerDown(e, t)}
                   style={{
                     left: `${posX}px`,
                     top: `${posY}px`,
                     width: '120px',
                     height: '110px'
                   }}
-                  className={`absolute flex flex-col justify-between p-2.5 transition-shadow cursor-move border select-none ${
+                  className={`absolute flex flex-col justify-between p-2.5 transition-shadow cursor-move border select-none touch-none ${
                     isRound ? 'rounded-full text-center' : 'rounded-2xl'
                   } ${
                     isSelected
@@ -1048,6 +1071,15 @@ export const TableAreaDefinitions: React.FC<TableAreaDefinitionsProps> = ({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={Boolean(confirmState)}
+        title={confirmState?.title || 'Onay'}
+        message={confirmState?.message || ''}
+        confirmLabel="Evet, Sil"
+        onConfirm={() => confirmState?.onConfirm()}
+        onCancel={() => setConfirmState(null)}
+      />
     </div>
   );
 };

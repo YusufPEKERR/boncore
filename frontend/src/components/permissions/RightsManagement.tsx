@@ -30,6 +30,7 @@ export const RightsManagement: React.FC<RightsManagementProps> = ({ currentUser 
   const [activeSectionTab, setActiveSectionTab] = useState<'actions' | 'tabs'>('actions');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [activeTestRole, setActiveTestRole] = useState<string>('waiter');
   const [isTestPanelOpen, setIsTestPanelOpen] = useState<boolean>(false);
 
@@ -116,8 +117,14 @@ export const RightsManagement: React.FC<RightsManagementProps> = ({ currentUser 
       });
       try {
         broadcastPermissionsUpdate(next);
-        api.updateSettings({ role_permissions: next }).catch(() => {});
-      } catch {}
+        setSaveError(null);
+        api.updateSettings({ role_permissions: next }).catch((err: any) => {
+          sound.warning();
+          setSaveError(err?.message || 'Yetki değişikliği sunucuya kaydedilemedi.');
+        });
+      } catch (err: any) {
+        setSaveError(err?.message || 'Yetki güncellenemedi.');
+      }
       return next;
     });
   };
@@ -147,8 +154,14 @@ export const RightsManagement: React.FC<RightsManagementProps> = ({ currentUser 
       });
       try {
         broadcastPermissionsUpdate(next);
-        api.updateSettings({ role_permissions: next }).catch(() => {});
-      } catch {}
+        setSaveError(null);
+        api.updateSettings({ role_permissions: next }).catch((err: any) => {
+          sound.warning();
+          setSaveError(err?.message || 'Yetki değişikliği sunucuya kaydedilemedi.');
+        });
+      } catch (err: any) {
+        setSaveError(err?.message || 'Yetki güncellenemedi.');
+      }
       return next;
     });
     setSavedSuccess(true);
@@ -173,8 +186,14 @@ export const RightsManagement: React.FC<RightsManagementProps> = ({ currentUser 
       });
       try {
         broadcastPermissionsUpdate(next);
-        api.updateSettings({ role_permissions: next }).catch(() => {});
-      } catch {}
+        setSaveError(null);
+        api.updateSettings({ role_permissions: next }).catch((err: any) => {
+          sound.warning();
+          setSaveError(err?.message || 'Yetki değişikliği sunucuya kaydedilemedi.');
+        });
+      } catch (err: any) {
+        setSaveError(err?.message || 'Yetki güncellenemedi.');
+      }
       return next;
     });
     setSavedSuccess(true);
@@ -183,14 +202,17 @@ export const RightsManagement: React.FC<RightsManagementProps> = ({ currentUser 
 
   const handleSave = async () => {
     sound.beep();
+    setSaveError(null);
     try {
       broadcastPermissionsUpdate(permissions);
       await api.updateSettings({ role_permissions: permissions });
-    } catch (e) {
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } catch (e: any) {
+      sound.warning();
       console.warn('Failed to save permissions to backend', e);
+      setSaveError(e?.message || 'Yetkiler veritabanına kaydedilemedi.');
     }
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
   };
 
   const actionPermissions = useMemo(
@@ -266,6 +288,12 @@ export const RightsManagement: React.FC<RightsManagementProps> = ({ currentUser 
         </div>
 
         {/* Main Section Switcher Tabs: [İşlem Yetkileri] | [Sekmeler] */}
+        {saveError && (
+          <div className="mx-4 sm:mx-6 mt-3 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center justify-between gap-2">
+            <span>{saveError}</span>
+            <button type="button" onClick={() => setSaveError(null)} className="underline cursor-pointer">Kapat</button>
+          </div>
+        )}
         <div className="px-4 sm:px-6 pt-1">
           <div className="inline-flex p-1 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 gap-1">
             <button

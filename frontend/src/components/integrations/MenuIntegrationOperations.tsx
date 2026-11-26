@@ -18,19 +18,23 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
   const [showWarningToast, setShowWarningToast] = useState<boolean>(false);
   const [availableMap, setAvailableMap] = useState<Record<number, boolean>>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastError, setToastError] = useState<string | null>(null);
 
   const handleToggleProduct = async (prodId: number, currentAvailable: boolean, prodName: string) => {
     sound.beep();
     const newStatus = !currentAvailable;
     setAvailableMap(prev => ({ ...prev, [prodId]: newStatus }));
+    setToastError(null);
     try {
       await api.updateProduct(prodId, { is_available: newStatus });
       if (onRefreshData) onRefreshData();
       setToastMessage(`${prodName} durumu: ${newStatus ? 'Aktif (Satışta)' : 'Pasif (Tükendi)'}`);
       setTimeout(() => setToastMessage(null), 3000);
-    } catch (e) {
+    } catch (e: any) {
       sound.warning();
       setAvailableMap(prev => ({ ...prev, [prodId]: currentAvailable }));
+      setToastError(e?.message || `${prodName} durumu güncellenemedi.`);
+      setTimeout(() => setToastError(null), 4000);
     }
   };
 
@@ -49,6 +53,12 @@ export const MenuIntegrationOperations: React.FC<MenuIntegrationOperationsProps>
   return (
     <div className="flex-1 min-h-full overflow-y-auto p-4 sm:p-6 pb-28 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 select-none animate-fadeIn font-sans transition-colors duration-200 space-y-6">
       {/* Top Header Bar */}
+      {toastError && (
+        <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center justify-between gap-2">
+          <span>{toastError}</span>
+          <button type="button" onClick={() => setToastError(null)} className="underline cursor-pointer">Kapat</button>
+        </div>
+      )}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-black text-slate-900 dark:text-white">Entegrasyon Menü İşlemleri ({filteredProducts.length} Ürün)</h2>

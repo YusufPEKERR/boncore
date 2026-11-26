@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
+import { buildCsvContent, downloadCsv } from '../../utils/csv';
 
 interface ProductAnalysisItem {
   id: number;
@@ -116,8 +117,8 @@ export const CostProfitWizardView: React.FC = () => {
     sound.cashDrawer();
     const headers = ['Ürün Adı', 'Kategori', 'Birim Satış (TL)', 'Reçete Maliyeti (TL)', 'Birim Kar (TL)', 'Kar Marjı (%)', 'Satılan Adet', 'Toplam Ciro (TL)', 'Toplam Net Kar (TL)'];
     const rows = filteredProducts.map(p => [
-      `"${p.name}"`,
-      `"${p.category || 'GENEL'}"`,
+      p.name,
+      p.category || 'GENEL',
       Number(p.unit_price || 0).toFixed(2),
       p.has_recipe ? Number(p.unit_cost || 0).toFixed(2) : 'Reçete Yok',
       p.has_recipe ? Number(p.unit_profit || 0).toFixed(2) : 'Reçete Yok',
@@ -126,14 +127,10 @@ export const CostProfitWizardView: React.FC = () => {
       Number(p.total_revenue || 0).toFixed(2),
       p.has_recipe ? Number(p.total_profit || 0).toFixed(2) : 'Reçete Yok'
     ]);
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `BonCore_Maliyet_Karlilik_Raporu_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCsv(
+      `BonCore_Maliyet_Karlilik_Raporu_${new Date().toISOString().slice(0, 10)}.csv`,
+      buildCsvContent([headers, ...rows], ';', true)
+    );
   };
 
   const grossProfitVal = Number(summary?.gross_profit || 0);
@@ -211,7 +208,7 @@ export const CostProfitWizardView: React.FC = () => {
           <div className={`text-xl font-black mt-1 ${grossProfitVal < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
             ₺{grossProfitVal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
           </div>
-          <div className={`text-[10px] font-bold mt-0.5 ${grossProfitVal < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600'}`}>
+          <div className={`text-[10px] font-bold mt-0.5 ${grossProfitVal < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
             Brüt Marj: %{Number(summary?.gross_margin_percent ?? (Number(summary?.total_revenue || 0) > 0 ? ((grossProfitVal / Number(summary?.total_revenue || 1)) * 100).toFixed(1) : 0))}
           </div>
         </div>

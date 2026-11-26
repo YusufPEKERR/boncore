@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS staff_users (
     name VARCHAR(100) NOT NULL,
     username VARCHAR(50) UNIQUE,
     password_hash VARCHAR(255),
-    pin_code VARCHAR(10) NOT NULL UNIQUE,
+    pin_code VARCHAR(120) NOT NULL UNIQUE,
+    pin_hash VARCHAR(255),
+    pin_lookup_hash VARCHAR(128),
     role VARCHAR(50) NOT NULL DEFAULT 'waiter',
     restaurant_id INTEGER DEFAULT 1,
     is_active BOOLEAN DEFAULT TRUE,
@@ -20,6 +22,7 @@ CREATE TABLE IF NOT EXISTS staff_users (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_staff_users_pin_code ON staff_users (pin_code);
+CREATE INDEX IF NOT EXISTS idx_staff_users_pin_lookup_hash ON staff_users (pin_lookup_hash);
 CREATE INDEX IF NOT EXISTS idx_staff_users_role_active ON staff_users (role, is_active);
 
 -- 2. Areas & Restaurant Tables (areas, tables)
@@ -81,7 +84,8 @@ CREATE TABLE IF NOT EXISTS products (
     calories INTEGER,
     allergens JSONB DEFAULT '[]'::jsonb,
     is_vegan BOOLEAN DEFAULT FALSE,
-    is_spicy BOOLEAN DEFAULT FALSE
+    is_spicy BOOLEAN DEFAULT FALSE,
+    allow_neg_stock BOOLEAN DEFAULT FALSE
 );
 CREATE INDEX IF NOT EXISTS idx_products_category_order ON products (category_id, order_index, id);
 CREATE INDEX IF NOT EXISTS idx_products_allergens_gin ON products USING GIN (allergens);
@@ -326,5 +330,12 @@ CREATE TABLE IF NOT EXISTS restaurant_settings (
     key VARCHAR(100) UNIQUE NOT NULL,
     value TEXT NOT NULL
 );
+
+-- Idempotent column upgrades for existing PostgreSQL deployments
+ALTER TABLE staff_users ALTER COLUMN pin_code TYPE VARCHAR(120);
+ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS pin_hash VARCHAR(255);
+ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS pin_lookup_hash VARCHAR(128);
+CREATE INDEX IF NOT EXISTS idx_staff_users_pin_lookup_hash ON staff_users (pin_lookup_hash);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS allow_neg_stock BOOLEAN DEFAULT FALSE;
 
 COMMIT;

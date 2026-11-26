@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Check, Flame, PauseCircle, PlayCircle, Plus } from 'lucide-react';
 import { Product, ProductVariant, SelectedModifier, OrderItem } from '../../types';
 import { sound } from '../../services/sound';
@@ -16,16 +16,28 @@ export const ProductModifierModal: React.FC<ProductModifierModalProps> = ({
   product,
   onAddToCart
 }) => {
-  if (!isOpen || !product) return null;
-
-  const defaultVariant = product.variants?.find(v => v.is_default) || product.variants?.[0] || null;
-  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(defaultVariant);
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [selectedModifiers, setSelectedModifiers] = useState<SelectedModifier[]>([]);
   const [negativeModifiers, setNegativeModifiers] = useState<string[]>([]);
   const [kitchenNote, setKitchenNote] = useState<string>('');
   const [courseStage, setCourseStage] = useState<number>(1);
   const [isHold, setIsHold] = useState<boolean>(false);
   const [quantity, setQuantity] = useState<number>(1);
+
+  useEffect(() => {
+    if (isOpen && product) {
+      const defVar = product.variants?.find(v => v.is_default) || product.variants?.[0] || null;
+      setSelectedVariant(defVar);
+      setSelectedModifiers([]);
+      setNegativeModifiers([]);
+      setKitchenNote('');
+      setCourseStage(1);
+      setIsHold(false);
+      setQuantity(1);
+    }
+  }, [isOpen, product?.id]);
+
+  if (!isOpen || !product) return null;
 
   // Common negative tags
   const negativeOptions = ["Soğansız", "Buzsuz", "Domatessiz", "Tuzsuz", "Glutensiz", "Acısız", "Yeşilliksiz"];

@@ -167,6 +167,22 @@ func CalculateReportSummary(db *gorm.DB, reg models.CashRegister) fiber.Map {
 	var payments []models.Payment
 	payQuery.Find(&payments)
 
+	payOrderIDSet := make(map[int]bool, len(payments))
+	payOrderIDs := make([]int, 0, len(payments))
+	for _, p := range payments {
+		if p.OrderID > 0 && !cancelledOrderIDs[p.OrderID] && !payOrderIDSet[p.OrderID] {
+			payOrderIDSet[p.OrderID] = true
+			payOrderIDs = append(payOrderIDs, p.OrderID)
+		}
+	}
+	if len(payOrderIDs) > 0 {
+		var extraCancelled []models.Order
+		db.Select("id").Where("id IN ? AND status = ?", payOrderIDs, "cancelled").Find(&extraCancelled)
+		for _, co := range extraCancelled {
+			cancelledOrderIDs[co.ID] = true
+		}
+	}
+
 	methodTotals := map[string]float64{
 		"cash":         0.0,
 		"credit_card":  0.0,
@@ -182,13 +198,8 @@ func CalculateReportSummary(db *gorm.DB, reg models.CashRegister) fiber.Map {
 		if cancelledOrderIDs[p.OrderID] {
 			continue
 		}
-		var linkedOrder models.Order
-		if p.OrderID > 0 {
-			if err := db.Select("id, status").First(&linkedOrder, p.OrderID).Error; err == nil && linkedOrder.Status == "cancelled" {
-				continue
-			}
-		}
-		methodTotals[p.PaymentMethod] = Round2(methodTotals[p.PaymentMethod] + p.Amount)
+		canonical := CategorizePaymentMethod(p.PaymentMethod)
+		methodTotals[canonical] = Round2(methodTotals[canonical] + p.Amount)
 		totalTips = Round2(totalTips + p.TipAmount)
 	}
 
@@ -338,16 +349,24 @@ func ExecuteZReport(db *gorm.DB, tenantCode string, closedBy string, forceClose 
 				nowClosed := time.Now().UTC()
 				closedNote := fmt.Sprintf("Z-Raporu sırasında (%s tarafından) otomatik kapatıldı", closedBy)
 				for i := range openOrders {
-					// Restore stock for non-voided items on open orders closed by force
-					for _, it := range openOrders[i].Items {
-						if !it.IsVoided {
-							_ = RestoreOrderIngredients(tx, it.ProductID, it.Quantity, openOrders[i].OrderNo, 2)
+					if openOrders[i].RemainingTotal <= 0.05 && openOrders[i].PaidTotal > 0 {
+						openOrders[i].Status = "paid"
+						openOrders[i].RemainingTotal = 0.0
+						openOrders[i].ClosedAt = &nowClosed
+					} else if openOrders[i].PaidTotal > 0.01 {
+						return fmt.Errorf("#%s numaralı adisyonda ₺%.2f tutarında kısmi tahsilat bulunmaktadır. Z-Raporu öncesinde kalan ₺%.2f tahsil edilmeli veya ödeme iptal edilmelidir.", openOrders[i].OrderNo, openOrders[i].PaidTotal, openOrders[i].RemainingTotal)
+					} else {
+						// Restore stock for non-voided items on unpaid open orders closed by force
+						for _, it := range openOrders[i].Items {
+							if !it.IsVoided {
+								_ = RestoreOrderIngredients(tx, it.ProductID, it.Quantity, openOrders[i].OrderNo, 2)
+							}
 						}
+						openOrders[i].Status = "cancelled"
+						openOrders[i].Notes = &closedNote
+						openOrders[i].RemainingTotal = 0.0
+						openOrders[i].ClosedAt = &nowClosed
 					}
-					openOrders[i].Status = "cancelled"
-					openOrders[i].Notes = &closedNote
-					openOrders[i].RemainingTotal = 0.0
-					openOrders[i].ClosedAt = &nowClosed
 					if err := tx.Save(&openOrders[i]).Error; err != nil {
 						return err
 					}
@@ -509,7 +528,24 @@ func (s *AutoZReportScheduler) checkAllTenants() {
 		return
 	}
 
-	tenantCodes := s.services.DBManager.GetAllTenantCodes()
+	var tenantCodes []string
+	if s.services.DBManager.MasterGorm != nil {
+		var tenants []models.RestaurantTenant
+		if err := s.services.DBManager.MasterGorm.
+			Select("code").
+			Where("LOWER(status) = ? AND read_only_mode = ?", "active", false).
+			Find(&tenants).Error; err == nil {
+			tenantCodes = make([]string, 0, len(tenants))
+			for _, t := range tenants {
+				if strings.TrimSpace(t.Code) != "" {
+					tenantCodes = append(tenantCodes, t.Code)
+				}
+			}
+		}
+	}
+	if len(tenantCodes) == 0 && s.services.DBManager.MasterGorm == nil {
+		tenantCodes = s.services.DBManager.GetAllTenantCodes()
+	}
 	loc := time.FixedZone("TRT", 3*3600) // Türkiye Saati (UTC+3)
 	now := time.Now().In(loc)
 	todayStr := now.Format("2006-01-02")

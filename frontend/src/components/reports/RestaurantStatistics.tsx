@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   BarChart3, Download, Printer, Filter, Calendar, 
   ChevronRight, TrendingUp, Users, DollarSign, ArrowUpRight, Award,
@@ -12,6 +12,7 @@ import { sound } from '../../services/sound';
 import { api } from '../../services/api';
 import { Ingredient } from '../../types';
 import { ClosedBillsReport } from './ClosedBillsReport';
+import { buildCsvContent, downloadCsv, escapeCsvCell } from '../../utils/csv';
 
 import { useWebSocket } from '../../services/websocket';
 
@@ -34,7 +35,10 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
   const [stats, setStats] = useState<any>(null);
   const [stockItems, setStockItems] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshToast, setRefreshToast] = useState<string | null>(null);
+  const loadSeqRef = useRef<number>(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Sub-filters
   const [chartSegment, setChartSegment] = useState<'hourly' | 'category' | 'trend' | 'payment'>('hourly');
@@ -74,26 +78,44 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
   const dateOptions = Object.keys(DATE_RANGE_MAP);
 
   const loadStatistics = async (selectedLabel: string = dateRange) => {
+    const reqSeq = ++loadSeqRef.current;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
+    setLoadError(null);
     try {
       const apiRange = DATE_RANGE_MAP[selectedLabel] || 'all';
       const [data, ingData] = await Promise.all([
-        api.getRestaurantStatistics(apiRange),
+        api.getRestaurantStatistics(apiRange, { signal: controller.signal }),
         api.getIngredients()
       ]);
+      if (controller.signal.aborted || reqSeq !== loadSeqRef.current) return;
       setStats(data);
       if (Array.isArray(ingData)) {
         setStockItems(ingData);
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.name === 'AbortError' || controller.signal.aborted || reqSeq !== loadSeqRef.current) {
+        return;
+      }
       console.warn('Failed to load restaurant statistics:', e);
+      setLoadError(e?.message || 'İstatistik verileri sunucudan yüklenemedi.');
     } finally {
-      setLoading(false);
+      if (reqSeq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     loadStatistics(dateRange);
+    return () => {
+      abortControllerRef.current?.abort();
+    };
   }, [dateRange]);
 
   useWebSocket('all', (type) => {
@@ -338,37 +360,31 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
         'Birim Tutarı(₺)',
         'Toplam Tutar(₺)'
       ];
-      const csvRows: string[] = [header.join(',')];
+      const csvRows: string[] = [header.map((h) => escapeCsvCell(h, false)).join(',')];
 
       filteredStockItems.forEach((it) => {
-        const code = (it.product_code || '').replace(/"/g, '""');
-        const cat = (it.category_name || it.category || 'DİĞER').replace(/"/g, '""');
-        const name = (it.name || '').includes(',')
-          ? `"${(it.name || '').replace(/"/g, '""')}"`
-          : (it.name || '');
-        const kg = (it.kitchen_group || 'MUTFAK').replace(/"/g, '""');
-        const rev = (it.revenue_center || 'Ana Kanal').replace(/"/g, '""');
         const stock = Number(it.current_stock || 0);
         const crit =
           it.critical_display ||
           (it.min_stock_alert && it.min_stock_alert > 0 ? String(it.min_stock_alert) : '-');
-        const unit = (it.unit || 'Adet').replace(/"/g, '""');
         const unitPrice = Number(it.cost_per_unit || 0);
         const totalVal = Number((it.total_value ?? stock * unitPrice).toFixed(2));
 
-        csvRows.push([code, cat, name, kg, rev, stock, crit, unit, unitPrice, totalVal].join(','));
+        csvRows.push([
+          escapeCsvCell(it.product_code || '', false),
+          escapeCsvCell(it.category_name || it.category || 'DİĞER', false),
+          escapeCsvCell(it.name || '', false),
+          escapeCsvCell(it.kitchen_group || 'MUTFAK', false),
+          escapeCsvCell(it.revenue_center || 'Ana Kanal', false),
+          escapeCsvCell(stock, false),
+          escapeCsvCell(crit, false),
+          escapeCsvCell(it.unit || 'Adet', false),
+          escapeCsvCell(unitPrice, false),
+          escapeCsvCell(totalVal, false)
+        ].join(','));
       });
 
-      const csvContent = '\uFEFF' + csvRows.join('\r\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `Stok_Durum_Raporu_${new Date().toISOString().slice(0, 10)}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadCsv(`Stok_Durum_Raporu_${new Date().toISOString().slice(0, 10)}.csv`, '\uFEFF' + csvRows.join('\r\n'));
       sound.cashDrawer();
       setRefreshToast('✓ Stok Durum Raporu (Excel/CSV) indirildi.');
       setTimeout(() => setRefreshToast(null), 3500);
@@ -386,64 +402,55 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
     }
     sound.beep();
     try {
-      const rows: string[] = [];
-      rows.push('"BONCORE RESTORAN İSTATİSTİK RAPORU"');
-      rows.push(`"Tarih Aralığı";"${dateRange}"`);
-      rows.push(`"Oluşturulma Tarihi";"${new Date().toLocaleString('tr-TR')}"`);
-      rows.push('');
+      const csvRows: Array<Array<unknown>> = [];
+      csvRows.push(['BONCORE RESTORAN İSTATİSTİK RAPORU']);
+      csvRows.push(['Tarih Aralığı', dateRange]);
+      csvRows.push(['Oluşturulma Tarihi', new Date().toLocaleString('tr-TR')]);
+      csvRows.push([]);
 
-      rows.push('"GENEL ÖZET"');
-      rows.push(`"Toplam Net Ciro";"${totalTurnover.toFixed(2)} TL"`);
-      rows.push(`"Toplam Sipariş / Adisyon";"${totalOrders}"`);
-      rows.push(`"Ortalama Hesap";"${avgTicket.toFixed(2)} TL"`);
-      rows.push(`"Toplam İndirim & İkram";"${totalDiscounts.toFixed(2)} TL"`);
-      rows.push('');
+      csvRows.push(['GENEL ÖZET']);
+      csvRows.push(['Toplam Net Ciro', `${totalTurnover.toFixed(2)} TL`]);
+      csvRows.push(['Toplam Sipariş / Adisyon', totalOrders]);
+      csvRows.push(['Ortalama Hesap', `${avgTicket.toFixed(2)} TL`]);
+      csvRows.push(['Toplam İndirim & İkram', `${totalDiscounts.toFixed(2)} TL`]);
+      csvRows.push([]);
 
-      rows.push('"ÖDEME YÖNTEMLERİ DAĞILIMI"');
-      rows.push('"Ödeme Yöntemi";"Tutar (TL)";"İşlem Sayısı";"Pay (%)"');
+      csvRows.push(['ÖDEME YÖNTEMLERİ DAĞILIMI']);
+      csvRows.push(['Ödeme Yöntemi', 'Tutar (TL)', 'İşlem Sayısı', 'Pay (%)']);
       if (dailyData?.payment_breakdown) {
         Object.values(dailyData.payment_breakdown).forEach((p: any) => {
-          rows.push(`"${p.name}";"${p.amount.toFixed(2)}";"${p.count}";"%${p.percent}"`);
+          csvRows.push([p.name, Number(p.amount || 0).toFixed(2), p.count, `%${p.percent}`]);
         });
       }
-      rows.push('');
+      csvRows.push([]);
 
-      rows.push('"SAATLİK SATIŞ PERFORMANSI"');
-      rows.push('"Zaman Dilimi";"Sipariş Sayısı";"Ciro (TL)";"Ortalama Hesap (TL)";"Pay (%)"');
+      csvRows.push(['SAATLİK SATIŞ PERFORMANSI']);
+      csvRows.push(['Zaman Dilimi', 'Sipariş Sayısı', 'Ciro (TL)', 'Ortalama Hesap (TL)', 'Pay (%)']);
       if (dailyData?.hourly_breakdown) {
         dailyData.hourly_breakdown.forEach((h: any) => {
-          rows.push(`"${h.time_range}";"${h.orders_count}";"${h.turnover.toFixed(2)}";"${h.avg_ticket.toFixed(2)}";"%${h.percent}"`);
+          csvRows.push([h.time_range, h.orders_count, Number(h.turnover || 0).toFixed(2), Number(h.avg_ticket || 0).toFixed(2), `%${h.percent}`]);
         });
       }
-      rows.push('');
+      csvRows.push([]);
 
-      rows.push('"SON ADİSYONLAR"');
-      rows.push('"Adisyon No";"Masa / Kanal";"Garson";"Saat";"Tutar (TL)";"Ödeme Yöntemi";"Durum"');
+      csvRows.push(['SON ADİSYONLAR']);
+      csvRows.push(['Adisyon No', 'Masa / Kanal', 'Garson', 'Saat', 'Tutar (TL)', 'Ödeme Yöntemi', 'Durum']);
       if (dailyData?.recent_bills) {
         dailyData.recent_bills.forEach((b: any) => {
-          rows.push(`"${b.order_no}";"${b.table_name}";"${b.waiter}";"${b.time}";"${b.grand_total.toFixed(2)}";"${b.payment_method}";"${b.status}"`);
+          csvRows.push([b.order_no, b.table_name, b.waiter, b.time, Number(b.grand_total || 0).toFixed(2), b.payment_method, b.status]);
         });
       }
-      rows.push('');
+      csvRows.push([]);
 
-      rows.push('"İKRAM EDİLEN ÜRÜNLER"');
-      rows.push('"Adisyon No";"Masa";"Ürün";"Adet";"Tutar (TL)";"Sebep";"Personel";"Saat"');
+      csvRows.push(['İKRAM EDİLEN ÜRÜNLER']);
+      csvRows.push(['Adisyon No', 'Masa', 'Ürün', 'Adet', 'Tutar (TL)', 'Sebep', 'Personel', 'Saat']);
       if (complimentaryData?.treat_items) {
         complimentaryData.treat_items.forEach((t: any) => {
-          rows.push(`"${t.order_no}";"${t.table_name}";"${t.product_name}";"${t.quantity}";"${t.amount.toFixed(2)}";"${t.reason}";"${t.staff}";"${t.time}"`);
+          csvRows.push([t.order_no, t.table_name, t.product_name, t.quantity, Number(t.amount || 0).toFixed(2), t.reason, t.staff, t.time]);
         });
       }
 
-      const csvContent = '\uFEFF' + rows.join('\r\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `BonCore_Rapor_${new Date().toISOString().slice(0, 10)}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadCsv(`BonCore_Rapor_${new Date().toISOString().slice(0, 10)}.csv`, buildCsvContent(csvRows, ';', true));
       sound.cashDrawer();
       setRefreshToast('✓ CSV raporu başarıyla indirildi.');
       setTimeout(() => setRefreshToast(null), 3500);
@@ -587,6 +594,17 @@ export const RestaurantStatistics: React.FC<RestaurantStatisticsProps> = ({ onNa
 
         {/* Dynamic Content Views */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-28">
+          {loadError && (
+            <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{loadError}</span>
+              </div>
+              <button type="button" onClick={() => loadStatistics(dateRange)} className="underline font-black cursor-pointer">
+                Tekrar Dene
+              </button>
+            </div>
+          )}
           {/* ============================================================ */}
           {/* TAB 1: ÖZET                                                 */}
           {/* ============================================================ */}

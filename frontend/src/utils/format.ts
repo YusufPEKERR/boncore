@@ -1,45 +1,48 @@
-/**
- * Safe numeric and formatting utilities for BonCore POS.
- * Prevents TypeError crashes (e.g. Cannot read properties of undefined / reading 'toFixed').
- */
+const TR_TIMEZONE = 'Europe/Istanbul';
+
+function parseDateSafe(input: Date | string | number): Date {
+  if (input instanceof Date) return input;
+  if (typeof input === 'number') return new Date(input);
+  const raw = String(input || '').trim();
+  if (!raw) return new Date(NaN);
+  // Treat naive ISO/SQL timestamps ("YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DDTHH:MM:SS") as UTC
+  const normalized = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(raw)
+    ? `${raw.replace(' ', 'T')}Z`
+    : raw;
+  return new Date(normalized);
+}
 
 /**
- * Safely coerces any input (string, number, null, undefined) to a valid finite number.
- * Returns fallback if the result is NaN or infinite.
+ * Returns YYYY-MM-DD in Europe/Istanbul timezone (avoids UTC midnight drift).
  */
-export function safeNumber(val: unknown, fallback: number = 0): number {
-  if (val === null || val === undefined) return fallback;
-  if (typeof val === 'number') {
-    return Number.isFinite(val) ? val : fallback;
+export function getTRDateString(input: Date | string | number = new Date()): string {
+  const dt = parseDateSafe(input);
+  if (Number.isNaN(dt.getTime())) {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: TR_TIMEZONE }).format(new Date());
   }
-  const parsed = Number(val);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TR_TIMEZONE }).format(dt);
 }
 
-/**
- * Formats a number to fixed decimal places, ensuring zero TypeError exceptions.
- * e.g. safeToFixed(undefined, 2) => "0.00"
- */
-export function safeToFixed(val: unknown, decimals: number = 2): string {
-  return safeNumber(val, 0).toFixed(decimals);
+export function formatTRDate(input: Date | string | number): string {
+  const dt = parseDateSafe(input);
+  if (Number.isNaN(dt.getTime())) return '';
+  return dt.toLocaleDateString('tr-TR', { timeZone: TR_TIMEZONE });
 }
 
-/**
- * Formats value as currency string (e.g. "₺120.50").
- */
-export function formatCurrency(val: unknown, decimals: number = 2, symbol: string = '₺'): string {
-  return `${symbol}${safeToFixed(val, decimals)}`;
+export function formatTRTime(input: Date | string | number): string {
+  const dt = parseDateSafe(input);
+  if (Number.isNaN(dt.getTime())) return '';
+  return dt.toLocaleTimeString('tr-TR', { timeZone: TR_TIMEZONE, hour: '2-digit', minute: '2-digit' });
 }
 
-/**
- * Safely parses a JSON string with fallback, guaranteeing no thrown SyntaxErrors.
- */
-export function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
-  if (!raw) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch (err) {
-    console.warn('safeJsonParse fallback used for input:', raw, err);
-    return fallback;
-  }
+export function formatTRDateTime(input: Date | string | number): string {
+  const dt = parseDateSafe(input);
+  if (Number.isNaN(dt.getTime())) return '';
+  return dt.toLocaleString('tr-TR', { timeZone: TR_TIMEZONE });
+}
+
+export function formatCurrencyTRY(amount: number | string | null | undefined): string {
+  const n = Number(amount || 0);
+  if (!Number.isFinite(n)) return '₺0,00';
+  return `₺${n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }

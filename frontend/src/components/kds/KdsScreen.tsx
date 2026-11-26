@@ -27,6 +27,7 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
   const [stageFilter, setStageFilter] = useState<'all' | 'preparing' | 'ready'>('preparing');
   const [sortAZ, setSortAZ] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
+  const [kdsError, setKdsError] = useState<string | null>(null);
   const [approvingItemId, setApprovingItemId] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
@@ -86,8 +87,10 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
     try {
       const data = await api.getKdsOrders(station);
       setOrders(data);
-    } catch (e) {
+      setKdsError(null);
+    } catch (e: any) {
       console.warn('Failed to load KDS orders', e);
+      setKdsError(e?.message || 'Mutfak siparişleri yüklenemedi.');
     } finally {
       setLoading(false);
     }
@@ -100,9 +103,11 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
         ? 'served'
         : 'ready';
       await api.progressKdsItem(itemId, nextStatus);
+      setKdsError(null);
       await loadKdsOrders();
-    } catch (e) {
+    } catch (e: any) {
       sound.warning();
+      setKdsError(e?.message || 'Ürün durumu güncellenemedi.');
     }
   };
 
@@ -112,9 +117,11 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
     try {
       await api.approveOutOfStockItem(itemId, 'Mutfak KDS');
       sound.kitchenBell();
+      setKdsError(null);
       await loadKdsOrders();
-    } catch (e) {
+    } catch (e: any) {
       sound.warning();
+      setKdsError(e?.message || 'Eksi stok onayı verilemedi.');
     } finally {
       setApprovingItemId(null);
     }
@@ -124,9 +131,11 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
     sound.kitchenBell();
     try {
       await api.markKdsOrderReadyAll(orderId);
+      setKdsError(null);
       await loadKdsOrders();
-    } catch (e) {
+    } catch (e: any) {
       sound.warning();
+      setKdsError(e?.message || 'Sipariş hazır olarak işaretlenemedi.');
     }
   };
 
@@ -268,6 +277,17 @@ export const KdsScreen: React.FC<KdsScreenProps> = ({ onNavigateTab }) => {
           </button>
         </div>
       </div>
+
+      {/* KDS Error Banner */}
+      {kdsError && (
+        <div className="mx-3 sm:mx-6 mt-3 px-4 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-200 text-xs font-bold flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{kdsError}</span>
+          </div>
+          <button type="button" onClick={() => setKdsError(null)} className="underline cursor-pointer">Kapat</button>
+        </div>
+      )}
 
       {/* Order Cards Grid */}
       <div className="flex-1 overflow-y-auto md:overflow-x-auto p-3 sm:p-6 pb-28 flex flex-col md:flex-row gap-4 sm:gap-5 bg-slate-100 dark:bg-slate-950">

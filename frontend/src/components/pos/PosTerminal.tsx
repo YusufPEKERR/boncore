@@ -15,6 +15,7 @@ import { ProductModifierModal } from './ProductModifierModal';
 import { printThermalReceipt } from '../fiscal/FiscalModal';
 import { initialPermissions, mergeWithInitialPermissions, PermissionItem } from '../permissions/RightsManagement';
 import { broadcastPermissionsUpdate } from '../../services/permissions';
+import { ElapsedTimer } from '../common/ElapsedTimer';
 import {
   COMPETITOR_EVENT,
   CourseTag,
@@ -110,7 +111,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [scaleTerminals, setScaleTerminals] = useState<Array<{ id: string; name: string; is_online: boolean; is_default: boolean; scale_enabled?: boolean }>>([]);
   const [selectedTerminalId, setSelectedTerminalId] = useState<string>(() => localStorage.getItem('boncore_pos_terminal_id') || '');
 
-  // Live Timer for table elapsed time
+  // Timer tick only runs while the hourly tariff modal is open (avoids 1s full-screen re-renders)
   const [posNow, setPosNow] = useState<number>(Date.now());
 
   // Rakip Özellikleri: Servis Sırası (Course Firing), Kişi (Seat) Siparişi, Happy Hour, Porsiyon 86 & Süreli Masa
@@ -138,10 +139,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     window.addEventListener(COMPETITOR_EVENT, syncComp);
     return () => window.removeEventListener(COMPETITOR_EVENT, syncComp);
   }, [activeTable?.id]);
+
   useEffect(() => {
+    if (!isTimerModalOpen) return;
+    setPosNow(Date.now());
     const timer = setInterval(() => setPosNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [isTimerModalOpen]);
 
   const getTableElapsedFormatted = (openedAt?: string) => {
     if (!openedAt) return '';
@@ -187,6 +191,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [isPrinterSelectModalOpen, setIsPrinterSelectModalOpen] = useState<boolean>(false);
   const [printerModalMode, setPrinterModalMode] = useState<'print_bill' | 'fast_pay'>('print_bill');
   const [pendingFastPayMethod, setPendingFastPayMethod] = useState<'cash' | 'credit_card' | null>(null);
+  const [pendingTimerFee, setPendingTimerFee] = useState<{ amount: number; note: string } | null>(null);
+  const lastTableIdRef = useRef<number | null>(null);
   const [currentAreas, setCurrentAreas] = useState<Area[]>(areas || []);
 
   useEffect(() => {
@@ -365,15 +371,22 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const canPrintBill = useMemo(() => hasPerm('order_manual_print', true), [hasPerm]);
   const canMoveTable = useMemo(() => hasPerm('order_table_move_merge', true), [hasPerm]);
 
-  // Load existing order
+  // Load existing order (preserving unsaved draft items when the same table refreshes)
   useEffect(() => {
-    setActiveCategoryId('ALL');
-    setSearchQuery('');
-    setSearchResults(null);
-    setDiscountPercent(0);
+    const nextTableId = activeTable?.id ?? null;
+    const isSameTable = lastTableIdRef.current === nextTableId;
+    lastTableIdRef.current = nextTableId;
+
+    if (!isSameTable) {
+      setActiveCategoryId('ALL');
+      setSearchQuery('');
+      setSearchResults(null);
+      setDiscountPercent(0);
+      setPendingTimerFee(null);
+    }
     if (activeTable?.active_order?.id && activeTable.status !== 'empty') {
-      loadOrder(activeTable.active_order.id);
-    } else {
+      loadOrder(activeTable.active_order.id, isSameTable);
+    } else if (!isSameTable) {
       setActiveOrderId(null);
       setExistingOrder(null);
       setCartItems([]);
@@ -426,18 +439,24 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     fetchSettings();
   }, [fetchSettings]);
 
-  const loadOrder = async (orderId: number) => {
+  const loadOrder = async (orderId: number, preserveDrafts: boolean = false) => {
     try {
       const ord = await api.getOrder(orderId);
       if (ord.status === 'paid') {
         setActiveOrderId(null);
         setExistingOrder(null);
         setCartItems([]);
+        setPendingTimerFee(null);
         return;
       }
       setExistingOrder(ord);
       setActiveOrderId(ord.id);
-      setCartItems(ord.items || []);
+      setCartItems((prev) => {
+        const serverItems = ord.items || [];
+        if (!preserveDrafts) return serverItems;
+        const unsavedDrafts = prev.filter((it) => !it.id);
+        return [...serverItems, ...unsavedDrafts];
+      });
       if (ord.notes) setOrderNote(ord.notes);
     } catch (e) {
       console.warn('Failed to load order', e);
@@ -923,7 +942,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         voidReasonCode,
         voidReasonText,
         currentUser?.name || 'Garson',
-        canCancelOrder ? '9999' : voidManagerPin
+        canCancelOrder ? undefined : voidManagerPin
       );
       sound.warning();
       setIsVoidModalOpen(false);
@@ -951,7 +970,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         cancelOrderReasonCode,
         cancelOrderReasonText,
         currentUser?.name || 'Garson',
-        canCancelOrder ? '9999' : voidManagerPin
+        canCancelOrder ? undefined : voidManagerPin
       );
       sound.warning();
       setIsCancelOrderModalOpen(false);
@@ -991,22 +1010,31 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     try {
       if (activeOrderId) {
         const promises: Promise<any>[] = [
-          api.addItemsToOrder(activeOrderId, unsavedItems, currentUser?.name || 'MEHMETABİ')
+          api.addItemsToOrder(activeOrderId, unsavedItems, currentUser?.name || 'Personel')
         ];
         if (orderNote) {
           promises.push(api.updateOrderNotes(activeOrderId, orderNote));
         }
+        if (pendingTimerFee && pendingTimerFee.amount > 0) {
+          promises.push(api.addOrderServiceCharge(activeOrderId, pendingTimerFee.amount, pendingTimerFee.note));
+        }
         await Promise.all(promises);
+        setPendingTimerFee(null);
       } else {
-        const payload = {
+        const combinedNote = [orderNote, pendingTimerFee?.note].filter(Boolean).join(' | ') || null;
+        const payload: any = {
           table_id: activeTable?.id || null,
           order_type: activeTable ? 'dine_in' : 'takeaway',
           items: unsavedItems,
-          waiter_name: currentUser?.name || 'MEHMETABİ',
-          notes: orderNote || null,
-          kuver_count: 0
+          waiter_name: currentUser?.name || 'Personel',
+          notes: combinedNote,
+          kuver_count: 0,
         };
+        if (pendingTimerFee && pendingTimerFee.amount > 0) {
+          payload.service_charge = pendingTimerFee.amount;
+        }
         await api.createOrder(payload);
+        setPendingTimerFee(null);
       }
       unsavedItems.forEach((it) => {
         decrementProductPortion(it.product_id, Number(it.quantity || 1));
@@ -1435,17 +1463,28 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       let targetOrderId = activeOrderId || existingOrder?.id || activeTable?.active_order?.id || (activeTable as any)?.current_order_id;
       const unsavedItems = cartItems.filter(i => !i.id);
       if (!targetOrderId && unsavedItems.length > 0) {
-        const payload = {
+        const payload: any = {
           table_id: activeTable?.id || null,
           order_type: activeTable ? 'dine_in' : 'takeaway',
           items: unsavedItems,
           waiter_name: currentUser?.name || 'Garson',
+          notes: pendingTimerFee?.note || null,
           kuver_count: 0
         };
+        if (pendingTimerFee && pendingTimerFee.amount > 0) {
+          payload.service_charge = pendingTimerFee.amount;
+        }
         const orderRes = await api.createOrder(payload);
         targetOrderId = orderRes.order_id || orderRes.id;
-      } else if (targetOrderId && unsavedItems.length > 0) {
-        await api.addItemsToOrder(targetOrderId, unsavedItems, currentUser?.name || 'Garson');
+        setPendingTimerFee(null);
+      } else if (targetOrderId) {
+        if (unsavedItems.length > 0) {
+          await api.addItemsToOrder(targetOrderId, unsavedItems, currentUser?.name || 'Garson');
+        }
+        if (pendingTimerFee && pendingTimerFee.amount > 0) {
+          await api.addOrderServiceCharge(targetOrderId, pendingTimerFee.amount, pendingTimerFee.note);
+          setPendingTimerFee(null);
+        }
       }
 
       if (!targetOrderId) {
@@ -1594,7 +1633,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         wholeOrder ? null : treatSelectedItems,
         treatReason || 'Müessese İkramı',
         currentUser?.name || 'Yetkili',
-        canTreat ? '9999' : treatManagerPin
+        canTreat ? undefined : treatManagerPin
       );
       sound.cashDrawer();
       await loadOrder(activeOrderId);
@@ -1629,7 +1668,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           val,
           name,
           currentUser?.name || 'Yetkili',
-          '9999'
+          undefined
         );
         sound.cashDrawer();
         await loadOrder(activeOrderId);
@@ -1724,9 +1763,10 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
   // Calculate totals (No kuver)
   const subtotal = cartItems.filter(i => !i.is_voided).reduce((sum, i) => sum + i.total_price, 0);
-  const serviceChargeTotal = settings.serviceType === 'fixed'
+  const autoServiceCharge = settings.serviceType === 'fixed'
     ? (subtotal > 0 ? serviceRate : 0)
     : (subtotal * serviceRate) / 100;
+  const serviceChargeTotal = autoServiceCharge + Number(existingOrder?.service_charge || 0) + Number(pendingTimerFee?.amount || 0);
   const discountTotal = (existingOrder && existingOrder.discount_amount > 0)
     ? existingOrder.discount_amount 
     : (discountPercent > 0 ? (subtotal * discountPercent) / 100 : 0);
@@ -1783,7 +1823,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               {activeTable && (activeTable.active_order?.created_at || activeTable.opened_at) && (
                 <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded flex items-center gap-1">
                   <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                  <span>{getTableElapsedFormatted(activeTable.active_order?.created_at || activeTable.opened_at)}</span>
+                  <span><ElapsedTimer startIso={activeTable.active_order?.created_at || activeTable.opened_at} fallback="" /></span>
                 </span>
               )}
             </div>
@@ -1851,7 +1891,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               {activeTable && (activeTable.active_order?.created_at || activeTable.opened_at) && (
                 <span className="font-mono text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg flex items-center gap-1.5" title="Masa Açılış Süresi">
                   <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span>{getTableElapsedFormatted(activeTable.active_order?.created_at || activeTable.opened_at)}</span>
+                  <span><ElapsedTimer startIso={activeTable.active_order?.created_at || activeTable.opened_at} fallback="" /></span>
                 </span>
               )}
             </div>
@@ -3755,28 +3795,34 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       sound.cashDrawer();
-                      const { elapsedMinutes, amount: charge } = calculateTimerCharge(tableTimer, posNow);
-                      const fallbackProdId = allOrderableProducts[0]?.id || 1;
-                      const timerItem: OrderItem = {
-                        product_id: fallbackProdId,
-                        product_name: `⏱️ ${tableTimer.tariffName} (${elapsedMinutes} dk)`,
-                        unit_price: charge,
-                        quantity: 1,
-                        total_price: charge,
-                        selected_modifiers: [],
-                        negative_modifiers: [],
-                        kitchen_note: `${elapsedMinutes} dk saatlik tarife`,
-                        course_stage: 1,
-                        is_hold: false,
-                        added_by: currentUser?.name || 'Sistem',
-                      };
-                      setCartItems((prev) => [...prev, timerItem]);
-                      clearTableTimer(activeTable.id);
-                      setTableTimer(null);
-                      setIsTimerModalOpen(false);
-                      showToast(`Süreli masa ücreti (₺${charge.toFixed(2)}) adisyona eklendi.`, 'success');
+                      const { elapsedMinutes, amount: charge } = calculateTimerCharge(tableTimer, Date.now());
+                      const timerNote = `⏱️ ${tableTimer.tariffName} (${elapsedMinutes} dk saatlik tarife)`;
+                      if (charge <= 0) {
+                        clearTableTimer(activeTable.id);
+                        setTableTimer(null);
+                        setIsTimerModalOpen(false);
+                        showToast('Süre tutarı ₺0.00 olduğu için ücret eklenmedi.', 'error');
+                        return;
+                      }
+                      try {
+                        if (activeOrderId) {
+                          await api.addOrderServiceCharge(activeOrderId, charge, timerNote);
+                          await loadOrder(activeOrderId, true);
+                        } else {
+                          setPendingTimerFee((prev) => ({
+                            amount: Number(((prev?.amount || 0) + charge).toFixed(2)),
+                            note: prev?.note ? `${prev.note} | ${timerNote}` : timerNote,
+                          }));
+                        }
+                        clearTableTimer(activeTable.id);
+                        setTableTimer(null);
+                        setIsTimerModalOpen(false);
+                        showToast(`Süreli masa servis ücreti (₺${charge.toFixed(2)}) adisyona eklendi.`, 'success');
+                      } catch (err: any) {
+                        showToast(err?.message || 'Süre ücreti eklenemedi.', 'error');
+                      }
                     }}
                     className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs cursor-pointer"
                   >

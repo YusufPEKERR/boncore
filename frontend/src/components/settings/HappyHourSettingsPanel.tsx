@@ -38,7 +38,7 @@ export const HappyHourSettingsPanel: React.FC = () => {
         discountPercent: Math.max(1, Math.min(90, Number(discountPercent) || 10)),
         daysLabel: daysLabel.trim() || 'Her Gün',
         categoryFilter: categoryFilter.trim() || 'Tümü',
-        isActive: true,
+        isActive: false,
       },
     ];
     saveHappyHourRules(next);

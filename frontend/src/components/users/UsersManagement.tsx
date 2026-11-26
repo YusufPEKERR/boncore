@@ -20,56 +20,7 @@ interface ExtendedStaffUser extends StaffUser {
   created_at?: string;
 }
 
-const initialStaff: ExtendedStaffUser[] = [
-  {
-    id: 1,
-    name: 'Restoran Yöneticisi',
-    username: 'admin',
-    role: 'manager',
-    pin_code: '0000',
-    email: 'admin@boncorepos.com',
-    phone: '+90 532 111 22 33',
-    is_active: true,
-    last_login: 'Aktif Oturum',
-    created_at: '01.01.2025'
-  },
-  {
-    id: 2,
-    name: 'Kasa Sorumlusu',
-    username: 'kasiyer',
-    role: 'cashier',
-    pin_code: '1111',
-    email: 'kasiyer@boncorepos.com',
-    phone: '+90 535 333 44 55',
-    is_active: true,
-    last_login: 'Bugün',
-    created_at: '01.01.2025'
-  },
-  {
-    id: 3,
-    name: 'Salon Garsonu',
-    username: 'garson',
-    role: 'waiter',
-    pin_code: '2222',
-    email: 'garson@boncorepos.com',
-    phone: '+90 533 222 33 44',
-    is_active: true,
-    last_login: 'Bugün',
-    created_at: '01.01.2025'
-  },
-  {
-    id: 4,
-    name: 'Mutfak Şefi',
-    username: 'sef',
-    role: 'chef',
-    pin_code: '3333',
-    email: 'mutfak@boncorepos.com',
-    phone: '+90 536 444 55 66',
-    is_active: true,
-    last_login: 'Bugün',
-    created_at: '01.01.2025'
-  }
-];
+const initialStaff: ExtendedStaffUser[] = [];
 
 import { api } from '../../services/api';
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 )
 
@@ -17,8 +16,7 @@ func TestScaleAgentHeartbeatStatusAndIPPreservation(t *testing.T) {
 	testMachineID := "mach-unit-test-999"
 
 	defer func() {
-		delReq := httptest.NewRequest("DELETE", "/api/scale/terminals/"+testTID, nil)
-		delReq.Header.Set("X-Restaurant-Code", "fatihciftligi")
+		delReq := newTenantReq(svc, "fatihciftligi", "manager", "DELETE", "/api/scale/terminals/"+testTID, nil)
 		_ = execTest(t, app, delReq)
 	}()
 
@@ -34,9 +32,8 @@ func TestScaleAgentHeartbeatStatusAndIPPreservation(t *testing.T) {
 		"printers":      []string{"MUTFAK-POS"},
 	}
 	b1, _ := json.Marshal(hb1)
-	req1 := httptest.NewRequest("POST", "/api/scale/agent/heartbeat", bytes.NewReader(b1))
+	req1 := newTenantReq(svc, "fatihciftligi", "manager", "POST", "/api/scale/agent/heartbeat", bytes.NewReader(b1))
 	req1.Header.Set("Content-Type", "application/json")
-	req1.Header.Set("X-Restaurant-Code", "fatihciftligi")
 	resp1 := execTest(t, app, req1)
 	if resp1.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 on heartbeat 1, got %d", resp1.StatusCode)
@@ -51,17 +48,15 @@ func TestScaleAgentHeartbeatStatusAndIPPreservation(t *testing.T) {
 		"version":       "2.4.5",
 	}
 	b2, _ := json.Marshal(hb2)
-	req2 := httptest.NewRequest("POST", "/api/scale/agent/heartbeat", bytes.NewReader(b2))
+	req2 := newTenantReq(svc, "fatihciftligi", "manager", "POST", "/api/scale/agent/heartbeat", bytes.NewReader(b2))
 	req2.Header.Set("Content-Type", "application/json")
-	req2.Header.Set("X-Restaurant-Code", "fatihciftligi")
 	resp2 := execTest(t, app, req2)
 	if resp2.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 on heartbeat 2, got %d", resp2.StatusCode)
 	}
 
 	// 3. /api/scale/agent/status must return frontend camelCase fields (isOnline, localIp, version)
-	statusReq := httptest.NewRequest("GET", "/api/scale/agent/status?terminal_id="+testTID, nil)
-	statusReq.Header.Set("X-Restaurant-Code", "fatihciftligi")
+	statusReq := newTenantReq(svc, "fatihciftligi", "manager", "GET", "/api/scale/agent/status?terminal_id="+testTID, nil)
 	statusResp := execTest(t, app, statusReq)
 	if statusResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 on /agent/status, got %d", statusResp.StatusCode)
@@ -82,8 +77,7 @@ func TestScaleAgentHeartbeatStatusAndIPPreservation(t *testing.T) {
 	}
 
 	// 4. /api/scale/agent/poll keeps terminal alive and succeeds without pending commands
-	pollReq := httptest.NewRequest("GET", "/api/scale/agent/poll?terminal_id="+testTID, nil)
-	pollReq.Header.Set("X-Restaurant-Code", "fatihciftligi")
+	pollReq := newTenantReq(svc, "fatihciftligi", "manager", "GET", "/api/scale/agent/poll?terminal_id="+testTID, nil)
 	pollResp := execTest(t, app, pollReq)
 	if pollResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 on /agent/poll, got %d", pollResp.StatusCode)
@@ -98,13 +92,11 @@ func TestScaleAgentHeartbeatStatusAndIPPreservation(t *testing.T) {
 		"version":       "2.4.5",
 	}
 	b3, _ := json.Marshal(hb3)
-	req3 := httptest.NewRequest("POST", "/api/scale/agent/heartbeat", bytes.NewReader(b3))
+	req3 := newTenantReq(svc, "fatihciftligi", "manager", "POST", "/api/scale/agent/heartbeat", bytes.NewReader(b3))
 	req3.Header.Set("Content-Type", "application/json")
-	req3.Header.Set("X-Restaurant-Code", "fatihciftligi")
 	_ = execTest(t, app, req3)
 
-	termsReq := httptest.NewRequest("GET", "/api/scale/terminals", nil)
-	termsReq.Header.Set("X-Restaurant-Code", "fatihciftligi")
+	termsReq := newTenantReq(svc, "fatihciftligi", "manager", "GET", "/api/scale/terminals", nil)
 	termsResp := execTest(t, app, termsReq)
 	termsBody, _ := io.ReadAll(termsResp.Body)
 	var termsJSON struct {

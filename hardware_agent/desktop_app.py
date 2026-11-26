@@ -103,8 +103,9 @@ def get_app_logo_image(width=44, height=44):
 
 # Varsayılan Konfigürasyon
 DEFAULT_CONFIG = {
-    "server_url": "http://77.67.29.77",
-    "restaurant_code": "fatihciftligi",
+    "server_url": "https://boncoreapp.me",
+    "restaurant_code": "",
+    "agent_api_key": "",
     "terminal_id": "",
     "terminal_name": "Kasa 1",
     "scale_default_ip": "192.168.1.150",
@@ -1424,8 +1425,18 @@ class BonCoreHardwareDesktopApp:
         sess.mount("https://", adapter)
         return sess
 
+    def _build_agent_headers(self):
+        headers = {}
+        rc = self.cfg.get("restaurant_code", "").strip()
+        if rc:
+            headers["X-Restaurant-Code"] = rc
+        ak = self.cfg.get("agent_api_key", "").strip()
+        if ak:
+            headers["X-Agent-Key"] = ak
+        return headers
+
     def _get_effective_server_url(self):
-        cfg_url = self.cfg.get("server_url", "http://77.67.29.77").rstrip("/")
+        cfg_url = self.cfg.get("server_url", "https://boncoreapp.me").rstrip("/")
         if self._resolved_server_url and self._resolved_server_url.replace("https://", "http://") == cfg_url:
             return self._resolved_server_url
         return cfg_url
@@ -1540,7 +1551,7 @@ class BonCoreHardwareDesktopApp:
         if not force and self.current_site_status == status:
             return
         self.current_site_status = status
-        server_url = self.cfg.get("server_url", "http://77.67.29.77").rstrip("/")
+        server_url = self.cfg.get("server_url", "https://boncoreapp.me").rstrip("/")
 
         # 1. System Tray Simgesi & Tooltip
         if self.tray_icon:
@@ -1667,7 +1678,7 @@ class BonCoreHardwareDesktopApp:
             self._refresh_local_ip()
             rc = self.cfg.get("restaurant_code", "").strip()
             hb_payload = self._build_heartbeat_payload(user_configured=True)
-            headers = {"X-Restaurant-Code": rc} if rc else {}
+            headers = self._build_agent_headers()
             sess = self._create_http_session()
             self._request_with_reconnect([sess], "POST", "/api/scale/agent/heartbeat", json=hb_payload, headers=headers, timeout=(4.0, 5.0))
         except Exception:
@@ -1811,7 +1822,7 @@ class BonCoreHardwareDesktopApp:
         f_srv.pack(fill="x", pady=4)
         tk.Label(f_srv, text="Sunucu URL:", font=("Segoe UI", 9, "bold"), fg="#475569", bg="#ffffff", width=14, anchor="w").pack(side="left")
         self.ent_server_url = RoundedEntry(f_srv, bg_color="#f8fafc", border_color="#cbd5e1", focus_color="#10b981", radius=10, width=220, height=36, font=("Segoe UI", 9, "bold"), fg_color="#0f172a")
-        self.ent_server_url.insert(0, self.cfg.get("server_url", "http://77.67.29.77"))
+        self.ent_server_url.insert(0, self.cfg.get("server_url", "https://boncoreapp.me"))
         self.ent_server_url.pack(side="left", fill="x", expand=True, padx=(4, 10))
         btn_save_url = RoundedButton(f_srv, "Kaydet", command=self.save_server_url, bg_color="#10b981", hover_color="#059669", fg_color="#ffffff", radius=10, pad_x=14, pad_y=6)
         btn_save_url.pack(side="right")
@@ -2271,7 +2282,7 @@ class BonCoreHardwareDesktopApp:
 
                 rc = self.cfg.get("restaurant_code", "").strip()
                 hb_payload = self._build_heartbeat_payload()
-                headers = {"X-Restaurant-Code": rc} if rc else {}
+                headers = self._build_agent_headers()
                 hb_resp = self._request_with_reconnect(
                     sess_box,
                     "POST",
@@ -2326,7 +2337,7 @@ class BonCoreHardwareDesktopApp:
             try:
                 t_id = self.cfg.get("terminal_id", "kasa-1")
                 rc = self.cfg.get("restaurant_code", "").strip()
-                headers = {"X-Restaurant-Code": rc} if rc else {}
+                headers = self._build_agent_headers()
                 poll_path = f"/api/scale/agent/poll?terminal_id={urllib.parse.quote(t_id)}"
                 if rc:
                     poll_path += f"&restaurant_code={urllib.parse.quote(rc)}"
@@ -2543,12 +2554,21 @@ class BonCoreHardwareDesktopApp:
             import urllib.request
             import subprocess
             try:
-                server_url = self.cfg.get("server_url", "http://77.67.29.77").rstrip("/")
+                import hashlib
+                server_url = self.cfg.get("server_url", "https://boncoreapp.me").rstrip("/")
                 raw_dl_url = self.latest_version_info.get("download_url", "/api/scale/setup")
                 if raw_dl_url.startswith("http"):
                     dl_url = raw_dl_url
                 else:
                     dl_url = f"{server_url}{raw_dl_url}"
+
+                parsed_dl = urllib.parse.urlparse(dl_url)
+                if parsed_dl.scheme != "https" and parsed_dl.hostname not in ("localhost", "127.0.0.1"):
+                    raise Exception("Güvenlik gereği güncelleme yalnızca HTTPS üzerinden indirilebilir.")
+
+                expected_sha = (self.latest_version_info.get("sha256") or "").strip().lower()
+                if not expected_sha:
+                    raise Exception("Sunucu güncelleme paketi için SHA-256 doğrulama özeti sağlamadı.")
 
                 temp_dir = os.path.join(tempfile.gettempdir(), "BonCoreUpdate")
                 os.makedirs(temp_dir, exist_ok=True)
@@ -2557,11 +2577,23 @@ class BonCoreHardwareDesktopApp:
                 self.show_toast("Güncelleme İndiriliyor", "Yeni sürüm indiriliyor, lütfen bekleyin...", force=True)
 
                 req = urllib.request.Request(dl_url, headers={"User-Agent": f"BonCoreAgent/{AGENT_VERSION}"})
+                h = hashlib.sha256()
                 with urllib.request.urlopen(req, timeout=45) as r, open(installer_path, "wb") as f:
-                    shutil.copyfileobj(r, f)
+                    while True:
+                        chunk = r.read(65536)
+                        if not chunk:
+                            break
+                        h.update(chunk)
+                        f.write(chunk)
 
                 if not os.path.exists(installer_path) or os.path.getsize(installer_path) < 5000000:
                     raise Exception("İndirilen kurulum dosyası eksik veya doğrulanamadı.")
+                if h.hexdigest().lower() != expected_sha:
+                    try:
+                        os.remove(installer_path)
+                    except Exception:
+                        pass
+                    raise Exception("Güncelleme dosyası SHA-256 bütünlük doğrulamasından geçemedi.")
 
                 self.show_toast("Güncelleme Kuruluyor", "Kurulum başlatılıyor, uygulama birazdan otomatik açılacak...", force=True)
 

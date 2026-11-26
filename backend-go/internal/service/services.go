@@ -70,7 +70,7 @@ func (ps *PermissionService) NormalizeRoleKey(rawRole string) string {
 		return "manager"
 	case "kasa", "kasiyer", "cashier":
 		return "cashier"
-	case "mutfak", "kitchen":
+	case "mutfak", "kitchen", "chef", "şef", "sef":
 		return "kitchen"
 	case "kurye", "courier":
 		return "courier"

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"html"
 	"math"
@@ -28,11 +29,11 @@ func NormalizeStockName(s string) string {
 	return strings.ToLower(strings.Join(strings.Fields(s), " "))
 }
 
-// FindIngredientIDByName ürün adıyla eşleşen stok kartının ID'sini Unicode güvenli şekilde bulur.
-func FindIngredientIDByName(tx *gorm.DB, name string) (int, bool) {
-	target := NormalizeStockName(name)
-	if target == "" {
-		return 0, false
+// BuildIngredientNameMap yüklenen tüm stok kartlarının Unicode-güvenli ad -> ID haritasını tek sorguda oluşturur.
+func BuildIngredientNameMap(tx *gorm.DB) map[string]int {
+	res := make(map[string]int)
+	if tx == nil {
+		return res
 	}
 	type row struct {
 		ID   int
@@ -40,14 +41,35 @@ func FindIngredientIDByName(tx *gorm.DB, name string) (int, bool) {
 	}
 	var rows []row
 	if err := tx.Model(&models.Ingredient{}).Select("id, name").Find(&rows).Error; err != nil {
-		return 0, false
+		return res
 	}
 	for _, r := range rows {
-		if NormalizeStockName(r.Name) == target {
-			return r.ID, true
+		norm := NormalizeStockName(r.Name)
+		if norm != "" {
+			if _, exists := res[norm]; !exists {
+				res[norm] = r.ID
+			}
 		}
 	}
-	return 0, false
+	return res
+}
+
+// FindIngredientIDFromMap önceden yüklenmiş haritadan Unicode güvenli stok kartı ID'sini döndürür.
+func FindIngredientIDFromMap(ingMap map[string]int, name string) (int, bool) {
+	if ingMap == nil {
+		return 0, false
+	}
+	target := NormalizeStockName(name)
+	if target == "" {
+		return 0, false
+	}
+	id, ok := ingMap[target]
+	return id, ok
+}
+
+// FindIngredientIDByName ürün adıyla eşleşen stok kartının ID'sini Unicode güvenli şekilde bulur.
+func FindIngredientIDByName(tx *gorm.DB, name string) (int, bool) {
+	return FindIngredientIDFromMap(BuildIngredientNameMap(tx), name)
 }
 
 // CalculateBOMStock computes the bottleneck producible stock count for a product with BOM recipes,
@@ -169,7 +191,7 @@ func GetProductAvailableStock(tx *gorm.DB, prod models.Product) (bool, float64, 
 }
 
 // ValidateBOMStockForItems validates that all BOM recipe ingredients have sufficient stock before order creation,
-// returning a 400 Bad Request Fiber error with the exact message expected by the frontend if any ingredient is out of stock.
+// including recipe WastePercentage and shared-ingredient aggregation across multiple products in the same order.
 func ValidateBOMStockForItems(tx *gorm.DB, items []models.OrderItemInput) error {
 	if len(items) == 0 {
 		return nil
@@ -198,6 +220,11 @@ func ValidateBOMStockForItems(tx *gorm.DB, items []models.OrderItemInput) error 
 		prodsMap[p.ID] = p
 	}
 
+	// Track cumulative shared ingredient demand across all products in the order
+	totalNeededByIng := make(map[int]float64)
+	ingByID := make(map[int]*models.Ingredient)
+	usedByProducts := make(map[int][]string)
+
 	for _, pid := range prodIDs {
 		totalQty := qtyByProd[pid]
 		prod, ok := prodsMap[pid]
@@ -205,7 +232,6 @@ func ValidateBOMStockForItems(tx *gorm.DB, items []models.OrderItemInput) error 
 			continue
 		}
 
-		var outOfStockMsgs []string
 		cleanProdName := strings.ToLower(strings.TrimSpace(prod.Name))
 
 		for _, r := range prod.Recipes {
@@ -217,32 +243,70 @@ func ValidateBOMStockForItems(tx *gorm.DB, items []models.OrderItemInput) error 
 				continue
 			}
 
-			avail := Round3(ing.CurrentStock)
-			needed := Round3(r.Amount * totalQty)
-			unitLbl := ing.Unit
-			if unitLbl == "" {
-				unitLbl = "Adet"
+			fireMultiplier := 1.0 + (r.WastePercentage / 100.0)
+			if fireMultiplier < 1.0 {
+				fireMultiplier = 1.0
 			}
-
-			if avail <= 0 {
-				outOfStockMsgs = append(outOfStockMsgs, fmt.Sprintf("• %s: STOK BİTTİ (Mevcut Stok: 0 %s, Gereken: %g %s)", ing.Name, unitLbl, needed, unitLbl))
-			} else if avail < needed {
-				outOfStockMsgs = append(outOfStockMsgs, fmt.Sprintf("• %s: STOK YETERSİZ (Mevcut Stok: %g %s, Gereken: %g %s)", ing.Name, avail, unitLbl, needed, unitLbl))
-			}
-		}
-
-		if len(outOfStockMsgs) > 0 {
-			joined := strings.Join(outOfStockMsgs, "\n")
-			detail := fmt.Sprintf(
-				"\"%s\" ürününün reçetesinde bulunan malzeme(ler)in stoğu bitmiştir / yetersizdir:\n%s\nSipariş girebilmek için lütfen Stok/Envanter ekranından bu ürünün stoğunu güncelleyin veya Ürün Reçetesi (BOM) ekranından reçeteden kaldırın.",
-				prod.Name,
-				joined,
-			)
-			return fiber.NewError(fiber.StatusBadRequest, detail)
+			needed := Round3(r.Amount * fireMultiplier * totalQty)
+			totalNeededByIng[ing.ID] = Round3(totalNeededByIng[ing.ID] + needed)
+			ingByID[ing.ID] = ing
+			usedByProducts[ing.ID] = append(usedByProducts[ing.ID], prod.Name)
 		}
 	}
 
+	var outOfStockMsgs []string
+	var ingIDs []int
+	for id := range totalNeededByIng {
+		ingIDs = append(ingIDs, id)
+	}
+	sort.Ints(ingIDs)
+
+	for _, ingID := range ingIDs {
+		ing := ingByID[ingID]
+		avail := Round3(ing.CurrentStock)
+		needed := totalNeededByIng[ingID]
+		unitLbl := ing.Unit
+		if unitLbl == "" {
+			unitLbl = "Adet"
+		}
+		if avail <= 0 {
+			outOfStockMsgs = append(outOfStockMsgs, fmt.Sprintf("• %s (%s): STOK BİTTİ (Mevcut Stok: 0 %s, Toplam Gereken: %g %s)", ing.Name, strings.Join(usedByProducts[ingID], ", "), unitLbl, needed, unitLbl))
+		} else if avail < needed {
+			outOfStockMsgs = append(outOfStockMsgs, fmt.Sprintf("• %s (%s): STOK YETERSİZ (Mevcut Stok: %g %s, Toplam Gereken: %g %s)", ing.Name, strings.Join(usedByProducts[ingID], ", "), avail, unitLbl, needed, unitLbl))
+		}
+	}
+
+	if len(outOfStockMsgs) > 0 {
+		detail := fmt.Sprintf(
+			"Sipariş edilen ürün(ler)in reçetesindeki malzeme stoğu bitmiştir / yetersizdir:\n%s\nSipariş girebilmek için lütfen Stok/Envanter ekranından bu ürünün stoğunu güncelleyin veya Ürün Reçetesi (BOM) ekranından reçeteden kaldırın.",
+			strings.Join(outOfStockMsgs, "\n"),
+		)
+		return fiber.NewError(fiber.StatusBadRequest, detail)
+	}
+
 	return nil
+}
+
+// SyncWarehouseStock updates warehouse_stocks for a given warehouse & ingredient atomically inside tx.
+func SyncWarehouseStock(tx *gorm.DB, warehouseID int, ing models.Ingredient, delta float64) {
+	if tx == nil || warehouseID <= 0 || ing.ID <= 0 || math.Abs(delta) <= 0.000001 {
+		return
+	}
+	var wsRow models.WarehouseStock
+	err := repository.WithRowLock(tx).Where("warehouse_id = ? AND ingredient_id = ?", warehouseID, ing.ID).First(&wsRow).Error
+	if err == nil {
+		tx.Model(&wsRow).Update("quantity", Round3(wsRow.Quantity+delta))
+		return
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		newRow := models.WarehouseStock{
+			WarehouseID:   warehouseID,
+			IngredientID:  ing.ID,
+			Quantity:      Round3(ing.CurrentStock),
+			MinAlertLevel: ing.MinStockAlert,
+		}
+		_ = tx.Create(&newRow).Error
+	}
 }
 
 // DeductOrderIngredients deducts BOM recipe or direct product stock within an active ACID transaction,
@@ -268,10 +332,8 @@ func DeductOrderIngredients(tx *gorm.DB, productID int, quantity float64, orderN
 				deductAmt := quantity
 				newStock := Round3(directIng.CurrentStock - deductAmt)
 				tx.Model(&directIng).Update("current_stock", newStock)
-				if newStock < 0 && prod.ID > 0 && !prod.AllowNegStock {
-					tx.Model(&models.Product{}).Where("id = ?", prod.ID).Update("allow_neg_stock", true)
-					prod.AllowNegStock = true
-				}
+				directIng.CurrentStock = newStock
+				SyncWarehouseStock(tx, warehouseID, directIng, -deductAmt)
 
 				whID := warehouseID
 				note := fmt.Sprintf("Sipariş Doğrudan Satış Düşümü: %gx", quantity)
@@ -335,10 +397,8 @@ func DeductOrderIngredients(tx *gorm.DB, productID int, quantity float64, orderN
 
 		newStock := Round3(ingredient.CurrentStock - totalDeduct)
 		tx.Model(&ingredient).Update("current_stock", newStock)
-		if newStock < 0 && hasProd && prod.ID > 0 && !prod.AllowNegStock {
-			tx.Model(&models.Product{}).Where("id = ?", prod.ID).Update("allow_neg_stock", true)
-			prod.AllowNegStock = true
-		}
+		ingredient.CurrentStock = newStock
+		SyncWarehouseStock(tx, warehouseID, ingredient, -totalDeduct)
 
 		if recipe.Amount > 0 {
 			r := int(math.Floor(newStock / recipe.Amount))
@@ -400,6 +460,8 @@ func RestoreOrderIngredients(tx *gorm.DB, productID int, quantity float64, order
 				restoreAmt := quantity
 				newStock := Round3(directIng.CurrentStock + restoreAmt)
 				tx.Model(&directIng).Update("current_stock", newStock)
+				directIng.CurrentStock = newStock
+				SyncWarehouseStock(tx, warehouseID, directIng, restoreAmt)
 
 				whID := warehouseID
 				note := fmt.Sprintf("Sipariş/Ürün İptali Stok İadesi: %gx", quantity)
@@ -440,6 +502,8 @@ func RestoreOrderIngredients(tx *gorm.DB, productID int, quantity float64, order
 
 		newStock := Round3(ingredient.CurrentStock + totalRestore)
 		tx.Model(&ingredient).Update("current_stock", newStock)
+		ingredient.CurrentStock = newStock
+		SyncWarehouseStock(tx, warehouseID, ingredient, totalRestore)
 
 		if recipe.Amount > 0 {
 			r := int(math.Floor(newStock / recipe.Amount))

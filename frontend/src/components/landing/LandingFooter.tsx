@@ -148,16 +148,6 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
                   <span>→ Yönetim Girişi</span>
                 </button>
               </li>
-              {onOpenMasterAdmin && (
-                <li>
-                  <button 
-                    onClick={() => { sound.beep(); onOpenMasterAdmin(); }}
-                    className="text-amber-400 font-bold hover:text-amber-300 transition cursor-pointer flex items-center gap-1.5"
-                  >
-                    <span>🔐 SaaS Master Admin</span>
-                  </button>
-                </li>
-              )}
               <li>
                 <button 
                   onClick={() => { sound.beep(); onOpenDemo(); }}
@@ -207,10 +197,10 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({ onOpenLogin, onOpe
           <div className="flex items-center gap-4 text-[11px] font-bold text-slate-500">
             <span className="flex items-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-              <span>256-Bit SSL Şifreleme</span>
+              <span>HTTPS / TLS Güvenli Bağlantı</span>
             </span>
             <span>•</span>
-            <span>GİB E-Adisyon Entegratörü</span>
+            <span>E-Adisyon & Termal Fiş Desteği</span>
             <span>•</span>
             <span>Offline-First Sync</span>
           </div>

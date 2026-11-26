@@ -3,6 +3,7 @@ package config
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,11 +12,13 @@ import (
 
 // Config holds all environment and runtime parameters for the BonCore Go Backend.
 type Config struct {
+	Env                 string
 	AppName             string
 	AppVersion          string
 	APIV1Prefix         string
 	Host                string
 	Port                string
+	PublicBaseURL       string
 	DatabaseURL         string
 	MasterDatabaseURL   string
 	SQLiteDataDir       string
@@ -27,6 +30,7 @@ type Config struct {
 	ManagerOverridePIN  string
 	MasterAdminPassword string
 	DefaultTenantCode   string
+	AllowDemoSeed       bool
 	DBMaxConns          int32
 	DBMinConns          int32
 	PgBouncerMode       bool
@@ -41,25 +45,46 @@ func Load() *Config {
 		backendDataDir = filepath.Join(cwd, "backend", "data")
 	}
 
+	env := strings.ToLower(getEnv("BONCORE_ENV", "development"))
+	if env == "production" && strings.TrimSpace(os.Getenv("BONCORE_SECRET_KEY")) == "" {
+		log.Fatal("[FATAL] BONCORE_ENV=production iken BONCORE_SECRET_KEY ortam değişkeni zorunludur.")
+	}
 	secret := loadOrGenerateSecret(cwd)
 
+	masterPwd := strings.TrimSpace(os.Getenv("BONCORE_MASTER_PASSWORD"))
+	if masterPwd == "" {
+		if env == "production" {
+			log.Fatal("[FATAL] BONCORE_ENV=production iken BONCORE_MASTER_PASSWORD ortam değişkeni zorunludur.")
+		}
+		randBytes := make([]byte, 12)
+		if _, err := rand.Read(randBytes); err == nil {
+			masterPwd = hex.EncodeToString(randBytes)
+		} else {
+			masterPwd = "dev-ephemeral-master-password"
+		}
+		log.Printf("[DEV] BONCORE_MASTER_PASSWORD tanımlı değil; geçici geliştirme parolası oluşturuldu: %s", masterPwd)
+	}
+
 	return &Config{
+		Env:                 env,
 		AppName:             getEnv("APP_NAME", "BonCore POS & Restoran Yönetim Sistemi"),
 		AppVersion:          getEnv("APP_VERSION", "2.0.0"),
 		APIV1Prefix:         getEnv("API_V1_STR", "/api"),
 		Host:                getEnv("HOST", "0.0.0.0"),
 		Port:                getEnv("PORT", "8000"),
-		DatabaseURL:         getEnv("DATABASE_URL", "postgres://boncore:boncore@localhost:5432/boncore?sslmode=disable"),
-		MasterDatabaseURL:   getEnv("MASTER_DATABASE_URL", "postgres://boncore:boncore@localhost:5432/boncore_master?sslmode=disable"),
+		PublicBaseURL:       strings.TrimRight(getEnv("PUBLIC_BASE_URL", "https://boncoreapp.me"), "/"),
+		DatabaseURL:         getEnv("DATABASE_URL", ""),
+		MasterDatabaseURL:   getEnv("MASTER_DATABASE_URL", ""),
 		SQLiteDataDir:       getEnv("SQLITE_DATA_DIR", backendDataDir),
-		RedisURL:            getEnv("REDIS_URL", "redis://localhost:6379/0"),
+		RedisURL:            getEnv("REDIS_URL", ""),
 		SecretKey:           secret,
 		TokenTTLSeconds:     getEnvInt64("BONCORE_TOKEN_TTL", 12*60*60),
 		RememberTTLSeconds:  7 * 24 * 60 * 60,
 		DefaultKuverPrice:   getEnvFloat("DEFAULT_KUVER_PRICE", 35.0),
 		ManagerOverridePIN:  getEnv("MANAGER_OVERRIDE_PIN", ""),
-		MasterAdminPassword: getEnv("BONCORE_MASTER_PASSWORD", "boncore2026master"),
+		MasterAdminPassword: masterPwd,
 		DefaultTenantCode:   getEnv("DEFAULT_TENANT_CODE", "fatihciftligi"),
+		AllowDemoSeed:       getEnvBool("BONCORE_ALLOW_DEMO_SEED", false),
 		DBMaxConns:          int32(getEnvInt64("DB_MAX_CONNS", 50)),
 		DBMinConns:          int32(getEnvInt64("DB_MIN_CONNS", 10)),
 		PgBouncerMode:       getEnvBool("PGBOUNCER_MODE", true),

@@ -1,8 +1,8 @@
 package api
 
 import (
+	"errors"
 	"fmt"
-	"math"
 	"regexp"
 	"sort"
 	"strconv"
@@ -17,10 +17,43 @@ import (
 	"gorm.io/gorm"
 )
 
+var loginLimiter = middleware.NewLoginRateLimiter(15, 5*time.Minute)
+
+var allowedTenantStaffRoles = map[string]bool{
+	"manager":     true,
+	"cashier":     true,
+	"waiter":      true,
+	"kitchen":     true,
+	"chef":        true,
+	"courier":     true,
+	"call_center": true,
+}
+
+func validateTenantStaffRole(rawRole string) (string, error) {
+	trimmed := strings.TrimSpace(rawRole)
+	if trimmed == "" {
+		return "waiter", nil
+	}
+	low := strings.ToLower(trimmed)
+	if low == "master_admin" || low == "superadmin" || low == "master" || low == "technical" {
+		return "", fiber.NewError(fiber.StatusBadRequest, "Geçersiz veya izin verilmeyen personel rolü.")
+	}
+	if allowedTenantStaffRoles[low] {
+		if low == "chef" {
+			return "kitchen", nil
+		}
+		return low, nil
+	}
+	return "", fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("Geçersiz personel rolü: %s", trimmed))
+}
+
 func getTenantDB(c *fiber.Ctx, svc *service.Services) (*gorm.DB, string, error) {
 	tenantCode := middleware.GetTenantCode(c)
 	db, err := svc.DBManager.GetTenantDB(tenantCode)
 	if err != nil || db == nil {
+		if errors.Is(err, repository.ErrTenantNotFound) {
+			return nil, tenantCode, fiber.NewError(fiber.StatusNotFound, "Belirtilen işletme bulunamadı.")
+		}
 		return nil, tenantCode, fiber.NewError(fiber.StatusServiceUnavailable, "Veritabanı bağlantısı kurulamadı.")
 	}
 	return db, tenantCode, nil
@@ -47,6 +80,41 @@ func requirePermission(c *fiber.Ctx, svc *service.Services, db *gorm.DB, operato
 	return nil
 }
 
+func findActiveStaffByPIN(svc *service.Services, db *gorm.DB, pin string, rolesFilter []string) (models.StaffUser, bool) {
+	var user models.StaffUser
+	cleanPin := strings.TrimSpace(pin)
+	if cleanPin == "" || db == nil {
+		return user, false
+	}
+	lookupHash := middleware.HashPinLookup(svc.Config, cleanPin)
+	if lookupHash != "" {
+		q := db.Where("pin_lookup_hash = ? AND is_active = ?", lookupHash, true)
+		if len(rolesFilter) > 0 {
+			q = q.Where("LOWER(role) IN ?", rolesFilter)
+		}
+		if err := q.First(&user).Error; err == nil {
+			if user.PinHash != nil && middleware.VerifyPassword(cleanPin, user.PinHash) {
+				return user, true
+			}
+		}
+	}
+	var legacy models.StaffUser
+	qLegacy := db.Where("pin_code = ? AND is_active = ?", cleanPin, true)
+	if len(rolesFilter) > 0 {
+		qLegacy = qLegacy.Where("LOWER(role) IN ?", rolesFilter)
+	}
+	if err := qLegacy.First(&legacy).Error; err == nil {
+		if legacy.PinHash != nil && *legacy.PinHash != "" {
+			if middleware.VerifyPassword(cleanPin, legacy.PinHash) {
+				return legacy, true
+			}
+			return legacy, false
+		}
+		return legacy, true
+	}
+	return user, false
+}
+
 func verifyCancelAuthorization(c *fiber.Ctx, svc *service.Services, db *gorm.DB, operatorName string, managerPIN *string) bool {
 	if claims := middleware.GetUserClaims(c); claims != nil {
 		roleKey := svc.Permissions.NormalizeRoleKey(claims.Role)
@@ -62,10 +130,8 @@ func verifyCancelAuthorization(c *fiber.Ctx, svc *service.Services, db *gorm.DB,
 		if svc.Config.ManagerOverridePIN != "" && pin == svc.Config.ManagerOverridePIN {
 			return true
 		}
-		var mgr models.StaffUser
-		if err := db.Where("pin_code = ? AND LOWER(role) IN ? AND is_active = ?", pin, []string{"manager", "admin", "superadmin", "müdür", "mudur", "yönetici", "yonetici"}, true).First(&mgr).Error; err == nil {
-			return true
-		}
+		_, ok := findActiveStaffByPIN(svc, db, pin, []string{"manager", "admin", "superadmin", "müdür", "mudur", "yönetici", "yonetici"})
+		return ok
 	}
 	return false
 }
@@ -79,16 +145,18 @@ func serializeStaffUser(u models.StaffUser, includePIN bool) fiber.Map {
 	if !u.CreatedAt.IsZero() {
 		createdStr = u.CreatedAt.Format("02.01.2006")
 	}
+	hasPin := (u.PinHash != nil && *u.PinHash != "") || (strings.TrimSpace(u.PinCode) != "" && !strings.HasPrefix(u.PinCode, "nopin:"))
 	m := fiber.Map{
-		"id":            u.ID,
-		"name":          u.Name,
-		"username":      u.Username,
-		"role":          u.Role,
-		"is_active":     u.IsActive,
-		"last_login_at": lastLogin,
-		"created_at":    createdStr,
+		"id":             u.ID,
+		"name":           u.Name,
+		"username":       u.Username,
+		"role":           u.Role,
+		"is_active":      u.IsActive,
+		"last_login_at":  lastLogin,
+		"created_at":     createdStr,
+		"pin_configured": hasPin,
 	}
-	if includePIN {
+	if includePIN && !repository.IsHashedPinSentinel(u.PinCode) {
 		m["pin_code"] = u.PinCode
 	}
 	return m
@@ -99,6 +167,16 @@ func serializeStaffUser(u models.StaffUser, includePIN bool) fiber.Map {
 // ============================================================================
 
 func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
+	// POST /api/auth/ws-ticket - Issues a short-lived (60s) WebSocket connection ticket for authenticated users
+	group.Post("/ws-ticket", func(c *fiber.Ctx) error {
+		claims := middleware.GetUserClaims(c)
+		if claims == nil {
+			return fiber.NewError(fiber.StatusUnauthorized, "Oturum gereklidir.")
+		}
+		ticket, exp := middleware.CreateWSTicket(svc.Config, claims)
+		return c.JSON(fiber.Map{"ticket": ticket, "expires_at": exp})
+	})
+
 	group.Post("/login", func(c *fiber.Ctx) error {
 		var payload models.LoginRequest
 		if err := c.BodyParser(&payload); err != nil {
@@ -106,11 +184,17 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 		}
 		username := strings.TrimSpace(payload.Username)
 		cleanPwd := strings.TrimSpace(payload.Password)
+		uLow := strings.ToLower(username)
+
+		rateKey := "login:" + c.IP() + ":" + uLow
+		if !loginLimiter.Allow(rateKey) {
+			return fiber.NewError(fiber.StatusTooManyRequests, "Çok fazla başarısız giriş denemesi. Lütfen birkaç dakika sonra tekrar deneyin.")
+		}
 
 		// 1. Master Admin check
-		uLow := strings.ToLower(username)
-		if (uLow == "master" || uLow == "superadmin") && cleanPwd == svc.Config.MasterAdminPassword {
-			token, exp := middleware.CreateAccessToken(svc.Config, 999999, "master_admin", payload.Remember, "master", nil)
+		if (uLow == "master" || uLow == "superadmin") && cleanPwd != "" && cleanPwd == svc.Config.MasterAdminPassword {
+			loginLimiter.Reset(rateKey)
+			token, exp := middleware.CreateMasterAccessToken(svc.Config, 999999, payload.Remember)
 			return c.JSON(fiber.Map{
 				"access_token": token,
 				"token_type":   "bearer",
@@ -133,9 +217,12 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 		}
 		if len(allTenants) == 0 {
 			allTenants = []models.RestaurantTenant{
-				{ID: 1, Code: svc.Config.DefaultTenantCode, Name: "BonCore Kadıköy", Plan: "pro", Status: "active"},
+				{ID: 1, Code: svc.Config.DefaultTenantCode, Name: "BonCore Demo İşletme", Plan: "pro", Status: "active"},
 			}
 		}
+
+		// Optional explicit restaurant header narrows tenant lookup when provided
+		reqTenantHint := repository.CleanTenantCode(c.Get("X-Restaurant-Code"), "")
 
 		alnumRe := regexp.MustCompile(`[^a-z0-9]`)
 		cleanSlug := alnumRe.ReplaceAllString(uLow, "")
@@ -154,10 +241,23 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 			}
 		}
 
-		// 3. Direct exact staff username lookup across non-suspended tenants
+		verifyStaffLogin := func(u *models.StaffUser, secret string) bool {
+			if u.PasswordHash != nil && *u.PasswordHash != "" {
+				return middleware.VerifyPassword(secret, u.PasswordHash)
+			}
+			if u.PinHash != nil && *u.PinHash != "" {
+				return middleware.VerifyPassword(secret, u.PinHash)
+			}
+			return strings.TrimSpace(u.PinCode) != "" && strings.TrimSpace(u.PinCode) == secret
+		}
+
+		// 3. Direct exact staff username lookup (prioritize hinted tenant if provided, never stop on first wrong password across tenants)
 		if targetTenant == nil {
 			for i := range allTenants {
 				cand := &allTenants[i]
+				if reqTenantHint != "" && repository.CleanTenantCode(cand.Code, "") != reqTenantHint {
+					continue
+				}
 				tDB, err := svc.DBManager.GetTenantDB(cand.Code)
 				if err != nil || tDB == nil {
 					continue
@@ -170,13 +270,9 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 					if u.Username != nil {
 						uname = strings.ToLower(strings.TrimSpace(*u.Username))
 					}
-					if uname != "" && uname == uLow {
-						pwdOK := middleware.VerifyPassword(cleanPwd, u.PasswordHash) || strings.TrimSpace(u.PinCode) == cleanPwd
-						if !pwdOK {
-							return fiber.NewError(fiber.StatusUnauthorized, fmt.Sprintf("'%s' kullanıcısı için girilen şifre veya PIN kodu hatalı.", username))
-						}
+					if uname != "" && uname == uLow && verifyStaffLogin(u, cleanPwd) {
 						if strings.EqualFold(cand.Status, "suspended") {
-							return fiber.NewError(fiber.StatusForbidden, fmt.Sprintf("'%s' restoranının aboneliği askıya alınmıştır.", cand.Name))
+							return fiber.NewError(fiber.StatusForbidden, "İşletme aboneliği askıya alınmıştır.")
 						}
 						now := time.Now().UTC()
 						tDB.Model(u).Update("last_login_at", now)
@@ -192,10 +288,10 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 			}
 		}
 
-		// 4. Tenant + Staff PIN/Password lookup
+		// 4. Tenant + Staff Password/PIN lookup
 		if targetTenant != nil && matchedUser == nil {
 			if strings.EqualFold(targetTenant.Status, "suspended") {
-				return fiber.NewError(fiber.StatusForbidden, fmt.Sprintf("'%s' restoranının aboneliği askıya alınmıştır.", targetTenant.Name))
+				return fiber.NewError(fiber.StatusForbidden, "İşletme aboneliği askıya alınmıştır.")
 			}
 			tDB, err := svc.DBManager.GetTenantDB(targetTenant.Code)
 			if err == nil && tDB != nil {
@@ -203,8 +299,7 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 				tDB.Where("is_active = ?", true).Find(&users)
 				for j := range users {
 					u := &users[j]
-					pwdOK := middleware.VerifyPassword(cleanPwd, u.PasswordHash) || strings.TrimSpace(u.PinCode) == cleanPwd
-					if pwdOK {
+					if verifyStaffLogin(u, cleanPwd) {
 						now := time.Now().UTC()
 						tDB.Model(u).Update("last_login_at", now)
 						u.LastLoginAt = &now
@@ -213,14 +308,13 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 					}
 				}
 			}
-			if matchedUser == nil {
-				return fiber.NewError(fiber.StatusUnauthorized, fmt.Sprintf("Girilen şifre veya PIN kodu '%s' restoranına kayıtlı hiçbir personele ait değil.", targetTenant.Name))
-			}
 		}
 
 		if matchedUser == nil || targetTenant == nil {
-			return fiber.NewError(fiber.StatusUnauthorized, fmt.Sprintf("'%s' adına kayıtlı bir restoran veya kullanıcı bulunamadı. Lütfen restoran kullanıcı adını kontrol edin.", username))
+			loginLimiter.RecordFailure(rateKey)
+			return fiber.NewError(fiber.StatusUnauthorized, "Kullanıcı adı, restoran kodu veya parola hatalı.")
 		}
+		loginLimiter.Reset(rateKey)
 
 		tid := targetTenant.ID
 		token, exp := middleware.CreateAccessToken(svc.Config, matchedUser.ID, matchedUser.Role, payload.Remember, targetTenant.Code, &tid)
@@ -231,6 +325,7 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 			Path:     "/",
 			MaxAge:   7 * 24 * 3600,
 			SameSite: "Lax",
+			HTTPOnly: true,
 		})
 
 		return c.JSON(fiber.Map{
@@ -253,30 +348,38 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 		if err != nil {
 			return err
 		}
+		rateKey := "pin:" + c.IP() + ":" + tenantCode
+		if !loginLimiter.Allow(rateKey) {
+			return fiber.NewError(fiber.StatusTooManyRequests, "Çok fazla hatalı PIN denemesi. Lütfen birkaç dakika sonra tekrar deneyin.")
+		}
 		var payload models.PinAuthRequest
 		if err := c.BodyParser(&payload); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz PIN verisi.")
 		}
 		pin := strings.TrimSpace(payload.PinCode)
 		if pin == "" {
+			loginLimiter.RecordFailure(rateKey)
 			return fiber.NewError(fiber.StatusUnauthorized, "Geçersiz PIN Kodu!")
 		}
-		var user models.StaffUser
-		if err := db.Where("pin_code = ? AND is_active = ?", pin, true).First(&user).Error; err != nil {
+		user, found := findActiveStaffByPIN(svc, db, pin, nil)
+		if !found {
 			if svc.Config.ManagerOverridePIN != "" && pin == svc.Config.ManagerOverridePIN {
+				loginLimiter.Reset(rateKey)
 				token, _ := middleware.CreateAccessToken(svc.Config, 999, "manager", false, tenantCode, nil)
 				uname := "admin"
 				return c.JSON(models.StaffUserResponse{
 					ID:          999,
-					Name:        "Yönetici (Master)",
+					Name:        "Yönetici",
 					Username:    &uname,
 					Role:        "manager",
 					IsActive:    true,
 					AccessToken: &token,
 				})
 			}
+			loginLimiter.RecordFailure(rateKey)
 			return fiber.NewError(fiber.StatusUnauthorized, "Geçersiz PIN Kodu!")
 		}
+		loginLimiter.Reset(rateKey)
 		now := time.Now().UTC()
 		db.Model(&user).Update("last_login_at", now)
 		token, _ := middleware.CreateAccessToken(svc.Config, user.ID, user.Role, false, tenantCode, user.RestaurantID)
@@ -303,8 +406,8 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 			return fiber.NewError(fiber.StatusBadRequest, "Yönetici PIN kodu gereklidir.")
 		}
 		pin := strings.TrimSpace(payload.PinCode)
-		var mgr models.StaffUser
-		if err := db.Where("pin_code = ? AND LOWER(role) IN ? AND is_active = ?", pin, []string{"manager", "admin", "superadmin", "müdür", "mudur", "yönetici", "yonetici"}, true).First(&mgr).Error; err != nil {
+		mgr, foundMgr := findActiveStaffByPIN(svc, db, pin, []string{"manager", "admin", "superadmin", "müdür", "mudur", "yönetici", "yonetici"})
+		if !foundMgr {
 			if svc.Config.ManagerOverridePIN != "" && pin == svc.Config.ManagerOverridePIN {
 				return c.JSON(fiber.Map{"valid": true, "manager_name": "Yönetici"})
 			}
@@ -327,6 +430,49 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 			return fiber.NewError(fiber.StatusUnauthorized, "Kullanıcı bulunamadı.")
 		}
 		return c.JSON(serializeStaffUser(user, false))
+	})
+
+	group.Put("/me", func(c *fiber.Ctx) error {
+		db, _, err := getTenantDB(c, svc)
+		if err != nil {
+			return err
+		}
+		claims := middleware.GetUserClaims(c)
+		if claims == nil {
+			return fiber.NewError(fiber.StatusUnauthorized, "Oturum açmanız gerekiyor.")
+		}
+		var user models.StaffUser
+		if err := db.First(&user, claims.Sub).Error; err != nil {
+			return fiber.NewError(fiber.StatusUnauthorized, "Kullanıcı bulunamadı.")
+		}
+		var payload struct {
+			Name     *string `json:"name"`
+			Username *string `json:"username"`
+		}
+		if err := c.BodyParser(&payload); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz profil verisi.")
+		}
+		if payload.Name != nil {
+			trimmed := strings.TrimSpace(*payload.Name)
+			if trimmed == "" {
+				return fiber.NewError(fiber.StatusBadRequest, "Ad soyad boş olamaz.")
+			}
+			user.Name = trimmed
+		}
+		if payload.Username != nil {
+			uname := strings.ToLower(strings.TrimSpace(*payload.Username))
+			if uname != "" {
+				var dup models.StaffUser
+				if err := db.Where("LOWER(username) = ? AND id != ?", uname, user.ID).First(&dup).Error; err == nil {
+					return fiber.NewError(fiber.StatusConflict, "Bu kullanıcı adı başka bir personel tarafından kullanılıyor.")
+				}
+				user.Username = &uname
+			}
+		}
+		if err := db.Save(&user).Error; err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "Profil güncellenemedi.")
+		}
+		return c.JSON(fiber.Map{"status": "ok", "user": serializeStaffUser(user, false)})
 	})
 
 	group.Post("/change-password", func(c *fiber.Ctx) error {
@@ -402,18 +548,18 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 		if payload.IsActive != nil {
 			active = *payload.IsActive
 		}
-		role := payload.Role
-		if role == "" {
-			role = "waiter"
+		role, rErr := validateTenantStaffRole(payload.Role)
+		if rErr != nil {
+			return rErr
 		}
 		newUser := models.StaffUser{
 			Name:         strings.TrimSpace(payload.Name),
 			Username:     &uname,
 			PasswordHash: pwdHash,
 			Role:         role,
-			PinCode:      payload.PinCode,
 			IsActive:     active,
 		}
+		repository.ApplyHashedStaffPin(svc.Config, &newUser, payload.PinCode)
 		if err := db.Create(&newUser).Error; err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Bu kullanıcı adı veya PIN kodu zaten kullanılıyor.")
 		}
@@ -464,10 +610,17 @@ func RegisterAuthRoutes(group fiber.Router, svc *service.Services) {
 			user.PasswordHash = middleware.HashPassword(*payload.Password)
 		}
 		if payload.Role != nil && *payload.Role != "" {
-			user.Role = *payload.Role
+			validatedRole, rErr := validateTenantStaffRole(*payload.Role)
+			if rErr != nil {
+				return rErr
+			}
+			user.Role = validatedRole
 		}
 		if payload.PinCode != nil {
-			user.PinCode = *payload.PinCode
+			trimmedPin := strings.TrimSpace(*payload.PinCode)
+			if trimmedPin != "" && !repository.IsHashedPinSentinel(trimmedPin) && trimmedPin != "••••" && trimmedPin != "Gizli" {
+				repository.ApplyHashedStaffPin(svc.Config, &user, trimmedPin)
+			}
 		}
 		if payload.IsActive != nil {
 			user.IsActive = *payload.IsActive
@@ -1019,9 +1172,7 @@ func RegisterQRRoutes(group fiber.Router, svc *service.Services) {
 				tx.Model(&table).Update("waiter_call_reason", waiterReason)
 			}
 
-			order.Subtotal = service.Round2(order.Subtotal + addedAmount)
-			order.GrandTotal = math.Max(0.0, service.Round2(order.Subtotal-order.DiscountAmount-order.TreatAmount+order.KuverTotal+order.ServiceCharge))
-			order.RemainingTotal = math.Max(0.0, service.Round2(order.GrandTotal-order.PaidTotal))
+			recalculateOrderTotals(tx, &order)
 			return tx.Save(&order).Error
 		})
 		if txErr != nil {
@@ -2249,7 +2400,7 @@ func RegisterProductsRoutes(group fiber.Router, svc *service.Services) {
 		if err != nil {
 			return err
 		}
-		if err := requirePermission(c, svc, db, "", []string{"prod_manage_menu"}, true, "Kategori silme yetkiniz bulunmamaktadır."); err != nil {
+		if err := requirePermission(c, svc, db, "", []string{"prod_manage_menu"}, false, "Kategori silme yetkiniz bulunmamaktadır."); err != nil {
 			return err
 		}
 		catID, _ := strconv.Atoi(c.Params("cat_id"))

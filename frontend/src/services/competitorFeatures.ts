@@ -50,10 +50,11 @@ export async function hydrateAllFeatureStores(): Promise<void> {
     SYNCED_FEATURE_KEYS.map(async (key) => {
       try {
         const res = await api.getFeatureStore(key);
-        if (res && res.data !== undefined && res.data !== null) {
-          const hasData = Array.isArray(res.data) ? res.data.length > 0 : Object.keys(res.data || {}).length > 0;
+        const remoteVal = res?.value !== undefined ? res.value : res?.data;
+        if (remoteVal !== undefined && remoteVal !== null) {
+          const hasData = Array.isArray(remoteVal) ? remoteVal.length > 0 : Object.keys(remoteVal || {}).length > 0;
           if (hasData) {
-            localStorage.setItem(scopedKey(key), JSON.stringify(res.data));
+            localStorage.setItem(scopedKey(key), JSON.stringify(remoteVal));
             window.dispatchEvent(new CustomEvent(COMPETITOR_EVENT, { detail: { key } }));
           }
         }
@@ -87,7 +88,7 @@ const DEFAULT_HAPPY_HOURS: HappyHourRule[] = [
     discountPercent: 20,
     daysLabel: 'Hafta İçi (Pzt-Cum)',
     categoryFilter: 'ALL',
-    isActive: true,
+    isActive: false,
   },
   {
     id: 'hh_allday_promo',

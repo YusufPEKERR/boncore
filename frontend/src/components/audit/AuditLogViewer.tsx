@@ -14,7 +14,11 @@ export const AuditLogViewer: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [debouncedSearch, setDebouncedSearch] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [hasMore, setHasMore] = useState<boolean>(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
+  const PAGE_SIZE = 100;
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -24,19 +28,29 @@ export const AuditLogViewer: React.FC = () => {
   }, [searchQuery]);
 
   useEffect(() => {
-    loadLogs(debouncedSearch);
+    loadLogs(debouncedSearch, false);
   }, [filterType, debouncedSearch]);
 
-  const loadLogs = async (customSearch?: string) => {
-    setLoading(true);
+  const loadLogs = async (customSearch?: string, append: boolean = false) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
+    setLoadError(null);
     try {
       const qSearch = customSearch !== undefined ? customSearch : searchQuery;
-      const data = await api.getAuditLogs(filterType || undefined, qSearch || undefined);
-      setLogs(Array.isArray(data) ? data : []);
-    } catch (e) {
+      const offset = append ? logs.length : 0;
+      const data = await api.getAuditLogs(filterType || undefined, qSearch || undefined, PAGE_SIZE, offset);
+      const list = Array.isArray(data) ? data : [];
+      setLogs((prev) => (append ? [...prev, ...list] : list));
+      setHasMore(list.length >= PAGE_SIZE);
+    } catch (e: any) {
       console.warn('Failed to load audit logs', e);
+      setLoadError(e?.message || 'Denetim logları yüklenemedi.');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
@@ -216,6 +230,14 @@ export const AuditLogViewer: React.FC = () => {
         </div>
       </div>
 
+      {/* Error Banner */}
+      {loadError && (
+        <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center justify-between gap-2">
+          <span>{loadError}</span>
+          <button type="button" onClick={() => loadLogs()} className="underline cursor-pointer">Tekrar Dene</button>
+        </div>
+      )}
+
       {/* Metrics Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -394,6 +416,18 @@ export const AuditLogViewer: React.FC = () => {
             </tbody>
           </table>
         </div>
+        {hasMore && (
+          <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-center">
+            <button
+              type="button"
+              onClick={() => loadLogs(debouncedSearch, true)}
+              disabled={loadingMore}
+              className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition disabled:opacity-50 cursor-pointer"
+            >
+              {loadingMore ? 'Yükleniyor...' : 'Daha Fazla Yükle'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Detail Modal */}

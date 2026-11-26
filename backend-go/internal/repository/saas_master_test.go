@@ -19,8 +19,9 @@ func TestMasterSaaSSchemaAndSeeding(t *testing.T) {
 		t.Fatalf("failed to open in-memory db: %v", err)
 	}
 
+	t.Setenv("SQLITE_DATA_DIR", t.TempDir())
 	cfg := &config.Config{
-		MasterDatabaseURL: "postgres://mock",
+		SQLiteDataDir: t.TempDir(),
 	}
 	dm, err := repository.NewDatabaseManager(cfg)
 	if err != nil {
@@ -100,7 +101,10 @@ func TestMasterSaaSSchemaAndSeeding(t *testing.T) {
 		}
 	}
 
-	// 5. Run SeedMasterSaaSData on in-memory db
+	// 5. Run SeedMasterSaaSData on in-memory db (close file-backed MasterGorm first so Windows TempDir cleanup succeeds)
+	if sqlDB, err := dm.MasterGorm.DB(); err == nil {
+		_ = sqlDB.Close()
+	}
 	dm.MasterGorm = db
 	if err := repository.SeedMasterSaaSData(dm); err != nil {
 		t.Fatalf("SeedMasterSaaSData failed: %v", err)
@@ -126,7 +130,7 @@ func TestMasterSaaSSchemaAndSeeding(t *testing.T) {
 		t.Errorf("enterprise plan invalid: %+v", p)
 	}
 
-	// 7. Verify fatihciftligi
+	// 7. Verify fatihciftligi (default primary tenant without fake revenue or brand-master sample data)
 	var fatih models.RestaurantTenant
 	if err := db.Where("code = ?", "fatihciftligi").First(&fatih).Error; err != nil {
 		t.Fatalf("fatihciftligi not found: %v", err)
@@ -138,30 +142,25 @@ func TestMasterSaaSSchemaAndSeeding(t *testing.T) {
 	if fatih.Plan != "enterprise" || fatih.PlanCode != "enterprise" || fatih.Status != "active" {
 		t.Errorf("expected fatihciftligi enterprise active, got plan=%s, plan_code=%s, status=%s", fatih.Plan, fatih.PlanCode, fatih.Status)
 	}
-	if !fatih.IsBrandMaster {
-		t.Errorf("expected fatihciftligi is_brand_master to be true")
-	}
 
-	// 8. Verify VPOS Configs
+	// 8. Verify VPOS template configs exist with empty secrets
 	var vpos []models.VPOSConfig
 	db.Find(&vpos)
 	if len(vpos) != 2 {
 		t.Fatalf("expected 2 VPOS configs, got %d", len(vpos))
 	}
-
-	// 9. Verify Franchise Brand
-	var brand models.FranchiseBrand
-	if err := db.Where("code = ?", "fatih-group").First(&brand).Error; err != nil {
-		t.Fatalf("fatih-group brand not found: %v", err)
+	for _, v := range vpos {
+		if v.MerchantID != "" || v.APIKey != "" || v.APISecret != "" || v.MerchantSalt != "" {
+			t.Errorf("expected empty secrets on seeded VPOS template %s", v.GatewayProvider)
+		}
 	}
 
-	// 10. Verify Storage Quota
-	var quota models.TenantStorageQuota
-	if err := db.Where("tenant_code = ?", "fatihciftligi").First(&quota).Error; err != nil {
-		t.Fatalf("storage quota not found: %v", err)
-	}
-	if quota.AllocatedQuotaMB != 10240 {
-		t.Errorf("expected 10240 MB quota, got %d", quota.AllocatedQuotaMB)
+	// 9. Verify no demo leads or sample invoices were seeded automatically
+	var leadCount, invCount int64
+	db.Model(&models.TenantLead{}).Count(&leadCount)
+	db.Model(&models.TenantInvoice{}).Count(&invCount)
+	if leadCount != 0 || invCount != 0 {
+		t.Errorf("expected zero demo leads and invoices on clean seed, got leads=%d invoices=%d", leadCount, invCount)
 	}
 
 	// 11. Verify Idempotency: Run seed again

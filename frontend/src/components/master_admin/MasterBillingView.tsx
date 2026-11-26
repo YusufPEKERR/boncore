@@ -54,23 +54,23 @@ export const MasterBillingView: React.FC<MasterBillingViewProps> = ({
     paytr: {
       gateway_provider: 'paytr',
       is_production: false,
-      merchant_id: '492810',
-      api_key: 'PAYTR_KEY_DEMO_2026',
+      merchant_id: '',
+      api_key: '',
       api_secret: '',
       merchant_salt: '',
-      callback_url: 'https://api.boncore.com/api/payment/paytr/callback',
-      is_active: true,
+      callback_url: '',
+      is_active: false,
       notes: 'PayTR Online Tahsilat & Taksit Altyapısı'
     },
     iyzico: {
       gateway_provider: 'iyzico',
       is_production: false,
-      merchant_id: 'sandbox-iyzico-1029',
-      api_key: 'sandbox-api-key-boncore',
+      merchant_id: '',
+      api_key: '',
       api_secret: '',
       merchant_salt: '',
-      callback_url: 'https://api.boncore.com/api/payment/iyzico/callback',
-      is_active: true,
+      callback_url: '',
+      is_active: false,
       notes: 'iyzico Checkout & Abonelik API'
     }
   });
@@ -85,10 +85,22 @@ export const MasterBillingView: React.FC<MasterBillingViewProps> = ({
     fetchVposSettings();
   }, []);
 
+  const getMasterHeaders = (json: boolean = false): Record<string, string> => {
+    const h: Record<string, string> = {};
+    if (json) h['Content-Type'] = 'application/json';
+    try {
+      const tok = localStorage.getItem('boncore_master_token') || localStorage.getItem('boncore_token');
+      if (tok) h['Authorization'] = `Bearer ${tok}`;
+    } catch {}
+    return h;
+  };
+
   const fetchVposSettings = async () => {
     setLoadingVpos(true);
     try {
-      const res = await fetch(`/api/master/billing/gateway-settings?_t=${Date.now()}`);
+      const res = await fetch(`/api/master/billing/gateway-settings?_t=${Date.now()}`, {
+        headers: getMasterHeaders(false)
+      });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -129,7 +141,7 @@ export const MasterBillingView: React.FC<MasterBillingViewProps> = ({
     try {
       const res = await fetch('/api/master/billing/test-connection', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getMasterHeaders(true),
         body: JSON.stringify({ gateway_provider: provider })
       });
       if (res.ok) {
@@ -157,7 +169,7 @@ export const MasterBillingView: React.FC<MasterBillingViewProps> = ({
     try {
       const res = await fetch('/api/master/billing/gateway-settings', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getMasterHeaders(true),
         body: JSON.stringify({
           gateway_provider: activeProvider,
           is_production: cfg.is_production,
@@ -472,7 +484,26 @@ export const MasterBillingView: React.FC<MasterBillingViewProps> = ({
 
                 <div>
                   <label className="block mb-1 text-slate-300 font-bold">
-                    {activeProvider === 'paytr' ? 'Mağaza Gizli Anahtarı (Merchant Salt)' : 'Gizli Anahtar (Secret Key)'}
+                    {activeProvider === 'paytr' ? 'Mağaza API Gizli Anahtarı (API Secret)' : 'API Gizli Anahtarı (API Secret)'}
+                  </label>
+                  <input
+                    type="password"
+                    value={currentCfg.api_secret || ''}
+                    onChange={(e) => setVposConfigs(prev => ({
+                      ...prev,
+                      [activeProvider]: { ...prev[activeProvider], api_secret: e.target.value }
+                    }))}
+                    placeholder={currentCfg.api_secret_set ? '•••••••••••••••• (kayıtlı)' : 'Yeni API Secret girin'}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    {currentCfg.api_secret_set ? 'Kayıtlı gizli anahtar maskelenmiştir; değiştirmek için yeni değeri yazın.' : 'Henüz API Secret tanımlanmamış.'}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block mb-1 text-slate-300 font-bold">
+                    {activeProvider === 'paytr' ? 'Mağaza Gizli Anahtarı (Merchant Salt)' : 'İmza Tuz Anahtarı (Merchant Salt)'}
                   </label>
                   <input
                     type="password"
@@ -481,11 +512,11 @@ export const MasterBillingView: React.FC<MasterBillingViewProps> = ({
                       ...prev,
                       [activeProvider]: { ...prev[activeProvider], merchant_salt: e.target.value }
                     }))}
-                    placeholder="••••••••••••••••"
+                    placeholder={currentCfg.merchant_salt_set ? '•••••••••••••••• (kayıtlı)' : 'Yeni Merchant Salt girin'}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                   <p className="text-[10px] text-slate-500 mt-0.5">
-                    Mevcut gizli anahtar maskelenmiştir; değiştirmek için yeni değeri yazın.
+                    Mevcut gizli tuz maskelenmiştir; değiştirmek için yeni değeri yazın.
                   </p>
                 </div>
 

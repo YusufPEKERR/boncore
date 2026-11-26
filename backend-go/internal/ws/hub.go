@@ -59,6 +59,8 @@ type Client struct {
 	tableID    *int
 	tenantCode string
 	send       chan []byte
+	sendMu     sync.RWMutex
+	closed     bool
 	closeOnce  sync.Once
 }
 
@@ -74,8 +76,13 @@ func NewClient(hub *Hub, conn *websocket.Conn, channel string, tableID *int, ten
 	}
 }
 
-// SendQueued pushes raw JSON bytes to the client's outbound buffer without blocking.
+// SendQueued pushes raw JSON bytes to the client's outbound buffer safely without panicking on closed channels.
 func (c *Client) SendQueued(payload []byte) bool {
+	c.sendMu.RLock()
+	defer c.sendMu.RUnlock()
+	if c.closed {
+		return false
+	}
 	select {
 	case c.send <- payload:
 		return true
@@ -88,7 +95,10 @@ func (c *Client) SendQueued(payload []byte) bool {
 
 func (c *Client) closeSend() {
 	c.closeOnce.Do(func() {
+		c.sendMu.Lock()
+		c.closed = true
 		close(c.send)
+		c.sendMu.Unlock()
 	})
 }
 
@@ -240,17 +250,18 @@ func (h *Hub) IsRedisActive() bool {
 	return h.isRedis
 }
 
-// Register subscribes a client to its requested channel, the global "all" channel,
-// and optionally a specific QR customer table channel (`table_id`).
+// Register subscribes a client to its requested channel (or isolated QR table channel when channel is empty).
 func (h *Hub) Register(client *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if _, exists := h.channels[client.channel]; !exists {
-		h.channels[client.channel] = make(map[*Client]struct{})
+	if client.channel != "" {
+		if _, exists := h.channels[client.channel]; !exists {
+			h.channels[client.channel] = make(map[*Client]struct{})
+		}
+		h.channels[client.channel][client] = struct{}{}
+		h.channels["all"][client] = struct{}{}
 	}
-	h.channels[client.channel][client] = struct{}{}
-	h.channels["all"][client] = struct{}{}
 
 	if client.tableID != nil {
 		tid := *client.tableID
@@ -266,11 +277,13 @@ func (h *Hub) Unregister(client *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if chMap, exists := h.channels[client.channel]; exists {
-		delete(chMap, client)
-	}
-	if allMap, exists := h.channels["all"]; exists {
-		delete(allMap, client)
+	if client.channel != "" {
+		if chMap, exists := h.channels[client.channel]; exists {
+			delete(chMap, client)
+		}
+		if allMap, exists := h.channels["all"]; exists {
+			delete(allMap, client)
+		}
 	}
 
 	if client.tableID != nil {

@@ -3,25 +3,33 @@ import { Area, Category } from '../types';
 
 export interface QueuedOfflineOrder {
   id?: number;
+  idempotency_key?: string;
   tenant_code?: string;
   table_id: number | null;
   order_type: string;
   items: any[];
   waiter_name: string;
   notes?: string;
+  service_charge?: number;
   created_at: string;
   is_synced: boolean;
+  failed_permanent?: boolean;
+  last_error?: string;
 }
 
 export interface QueuedOfflinePayment {
   id?: number;
+  idempotency_key?: string;
   tenant_code?: string;
   order_id: number;
   payments: any[];
   rounding: number;
   cashier_name: string;
+  close_table?: boolean;
   created_at: string;
   is_synced: boolean;
+  failed_permanent?: boolean;
+  last_error?: string;
 }
 
 function getActiveTenantCode(): string {
@@ -136,39 +144,69 @@ export async function saveCategoriesToOfflineCache(cats: Category[]) {
   }
 }
 
-export async function queueOfflineOrder(payload: any) {
+function generateOfflineKey(prefix: string): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `${prefix}-${crypto.randomUUID()}`;
+    }
+  } catch {}
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export async function queueOfflineOrder(payload: any): Promise<number | null> {
   const db = getOfflineDb();
   if (!db) return null;
-  return await db.offlineOrdersQueue.add({
+  const id = await db.offlineOrdersQueue.add({
     ...payload,
+    idempotency_key: payload?.idempotency_key || generateOfflineKey('ord'),
     tenant_code: payload?.tenant_code || getActiveTenantCode(),
     created_at: new Date().toISOString(),
     is_synced: false
   });
+  return typeof id === 'number' ? id : Number(id);
 }
 
-export async function queueOfflinePayment(payload: any) {
+export async function queueOfflinePayment(payload: any): Promise<number | null> {
   const db = getOfflineDb();
   if (!db) return null;
-  return await db.offlinePaymentsQueue.add({
+  const id = await db.offlinePaymentsQueue.add({
     ...payload,
+    idempotency_key: payload?.idempotency_key || generateOfflineKey('pay'),
     tenant_code: payload?.tenant_code || getActiveTenantCode(),
     created_at: new Date().toISOString(),
     is_synced: false
   });
+  return typeof id === 'number' ? id : Number(id);
 }
 
-function buildReplayHeaders(tenantCode: string): Record<string, string> {
+function buildReplayHeaders(tenantCode: string, idempotencyKey?: string): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   try {
     const token = localStorage.getItem('boncore_token');
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (tenantCode) headers['X-Restaurant-Code'] = tenantCode;
+    if (idempotencyKey) headers['X-Idempotency-Key'] = idempotencyKey;
   } catch {}
   return headers;
 }
 
+function isPermanent4xx(status: number): boolean {
+  return status >= 400 && status < 500 && status !== 408 && status !== 429;
+}
+
+let _syncInFlight: Promise<{ syncedOrders: number; syncedPayments: number }> | null = null;
+
 export async function syncOfflineQueue(): Promise<{ syncedOrders: number; syncedPayments: number }> {
+  if (_syncInFlight) {
+    return _syncInFlight;
+  }
+  _syncInFlight = runOfflineSync().finally(() => {
+    _syncInFlight = null;
+  });
+  return _syncInFlight;
+}
+
+async function runOfflineSync(): Promise<{ syncedOrders: number; syncedPayments: number }> {
   let syncedOrders = 0;
   let syncedPayments = 0;
   const activeTenant = getActiveTenantCode();
@@ -182,18 +220,19 @@ export async function syncOfflineQueue(): Promise<{ syncedOrders: number; synced
       if (ord.tenant_code && activeTenant && ord.tenant_code !== activeTenant) {
         continue;
       }
-      if (!ord.is_synced && ord.id) {
+      if (!ord.is_synced && !ord.failed_permanent && ord.id) {
         try {
           const replayTenant = ord.tenant_code || activeTenant;
           const res = await fetch('/api/orders/create', {
             method: 'POST',
-            headers: buildReplayHeaders(replayTenant),
+            headers: buildReplayHeaders(replayTenant, ord.idempotency_key),
             body: JSON.stringify({
               table_id: ord.table_id,
               order_type: ord.order_type,
               items: ord.items,
               waiter_name: ord.waiter_name,
-              notes: ord.notes
+              notes: ord.notes,
+              service_charge: ord.service_charge
             })
           });
           if (res.ok) {
@@ -209,6 +248,13 @@ export async function syncOfflineQueue(): Promise<{ syncedOrders: number; synced
             }
             await db.offlineOrdersQueue.delete(ord.id);
             syncedOrders++;
+          } else if (isPermanent4xx(res.status)) {
+            const errBody = await res.text().catch(() => '');
+            await db.offlineOrdersQueue.update(ord.id, {
+              failed_permanent: true,
+              last_error: `${res.status}: ${errBody.slice(0, 200)}`
+            });
+            console.warn('[OfflineDB] Dead-lettered permanent 4xx offline order:', ord.id, res.status);
           }
         } catch (e) {
           console.warn('[OfflineDB] Sync order failed, network may still be offline', e);
@@ -222,23 +268,30 @@ export async function syncOfflineQueue(): Promise<{ syncedOrders: number; synced
       if (pay.tenant_code && activeTenant && pay.tenant_code !== activeTenant) {
         continue;
       }
-      if (!pay.is_synced && pay.id) {
+      if (!pay.is_synced && !pay.failed_permanent && pay.id) {
         try {
           const replayTenant = pay.tenant_code || activeTenant;
           const res = await fetch('/api/cashier/settle-payment', {
             method: 'POST',
-            headers: buildReplayHeaders(replayTenant),
+            headers: buildReplayHeaders(replayTenant, pay.idempotency_key),
             body: JSON.stringify({
               order_id: pay.order_id,
               payments: pay.payments,
               rounding: pay.rounding,
               cashier_name: pay.cashier_name,
-              close_table: true
+              close_table: pay.close_table ?? true
             })
           });
           if (res.ok) {
             await db.offlinePaymentsQueue.delete(pay.id);
             syncedPayments++;
+          } else if (isPermanent4xx(res.status)) {
+            const errBody = await res.text().catch(() => '');
+            await db.offlinePaymentsQueue.update(pay.id, {
+              failed_permanent: true,
+              last_error: `${res.status}: ${errBody.slice(0, 200)}`
+            });
+            console.warn('[OfflineDB] Dead-lettered permanent 4xx offline payment:', pay.id, res.status);
           }
         } catch (e) {
           console.warn('[OfflineDB] Sync payment failed, network may still be offline', e);

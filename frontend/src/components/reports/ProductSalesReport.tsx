@@ -8,6 +8,7 @@ import {
 import { api } from '../../services/api';
 import { sound } from '../../services/sound';
 import { useWebSocket } from '../../services/websocket';
+import { buildCsvContent, downloadCsv } from '../../utils/csv';
 
 interface ProductSalesItem {
   product_id: number;
@@ -192,10 +193,10 @@ export const ProductSalesReport: React.FC = () => {
     if (!filteredAndSortedItems.length) return;
     const headers = ['Ürün Adı', 'Kategori', 'İstasyon', 'Birim', 'Birim Fiyat (TL)', 'Satılan Miktar', 'Toplam Satış Tutarı (TL)', 'Ciro Payı (%)', 'Sipariş Sayısı', 'İkram Adedi'];
     const rows = filteredAndSortedItems.map(i => [
-      `"${i.product_name}"`,
-      `"${i.category_name}"`,
-      `"${i.station}"`,
-      `"${i.unit}"`,
+      i.product_name,
+      i.category_name,
+      i.station,
+      i.unit,
       (i.avg_price || 0).toFixed(2),
       i.total_quantity || 0,
       (i.total_turnover || 0).toFixed(2),
@@ -204,14 +205,10 @@ export const ProductSalesReport: React.FC = () => {
       i.treat_count || 0
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(';'), ...rows.map(e => e.join(';'))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Urun_Satis_Raporu_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCsv(
+      `Urun_Satis_Raporu_${new Date().toISOString().slice(0, 10)}.csv`,
+      buildCsvContent([headers, ...rows], ';', true)
+    );
     setRefreshNotice('Excel / CSV dosyası indirildi.');
     setTimeout(() => setRefreshNotice(null), 3000);
   };

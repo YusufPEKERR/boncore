@@ -56,6 +56,7 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
   }, [activeSubTab]);
 
   const [savedMessage, setSavedMessage] = useState<boolean>(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // --- CAS CL-3000 Ethernet Terazi Durumu ---
   const [scaleConfig, setScaleConfig] = useState<{
@@ -663,10 +664,12 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     setTimeout(() => setPaymentNotice(null), 3000);
 
     // Instantly persist to backend database
+    setSaveError(null);
     try {
       await api.updateSettings({ payment_methods: updated });
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Could not auto-save payment method toggle:', err);
+      setSaveError(err?.message || 'Ödeme yöntemi ayarı sunucuya kaydedilemedi.');
     }
   };
 
@@ -688,13 +691,14 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     setNewPayDesc('');
     setIsPaymentModalOpen(false);
 
-    setPaymentNotice(`"${newMethod.name}" başarıyla eklendi ve aktif edildi.`);
-    setTimeout(() => setPaymentNotice(null), 3000);
-
+    setSaveError(null);
     try {
       await api.updateSettings({ payment_methods: updated });
-    } catch (err) {
+      setPaymentNotice(`"${newMethod.name}" başarıyla eklendi ve aktif edildi.`);
+      setTimeout(() => setPaymentNotice(null), 3000);
+    } catch (err: any) {
       console.warn('Could not auto-save new payment method:', err);
+      setSaveError(err?.message || 'Yeni ödeme yöntemi sunucuya kaydedilemedi.');
     }
   };
 
@@ -705,13 +709,14 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     setPaymentMethods(updated);
     localStorage.setItem('boncore_payment_methods', JSON.stringify(updated));
 
-    setPaymentNotice(`"${target?.name}" silindi.`);
-    setTimeout(() => setPaymentNotice(null), 3000);
-
+    setSaveError(null);
     try {
       await api.updateSettings({ payment_methods: updated });
-    } catch (err) {
+      setPaymentNotice(`"${target?.name}" silindi.`);
+      setTimeout(() => setPaymentNotice(null), 3000);
+    } catch (err: any) {
       console.warn('Could not auto-save deleted payment method:', err);
+      setSaveError(err?.message || 'Ödeme yöntemi silme işlemi sunucuya kaydedilemedi.');
     }
   };
 
@@ -766,22 +771,25 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     if (restaurantName) localStorage.setItem('boncore_active_restaurant_name', restaurantName);
 
     // Save to SQLite Database
+    setSaveError(null);
     try {
       await api.updateSettings(payload);
       try {
         await api.updateScaleConfig(scaleConfig);
-      } catch (e) {
+      } catch (e: any) {
         console.error('Scale save err:', e);
+        setSaveError(e?.message || 'Terazi ayarları kaydedilemedi.');
       }
       if (onSettingsUpdated && restaurantName) {
         onSettingsUpdated(restaurantName);
       }
-    } catch (err) {
+      setSavedMessage(true);
+      setTimeout(() => setSavedMessage(false), 3000);
+    } catch (err: any) {
+      sound.warning();
       console.warn('Settings database update failed:', err);
+      setSaveError(err?.message || 'Ayarlar veritabanına kaydedilemedi.');
     }
-
-    setSavedMessage(true);
-    setTimeout(() => setSavedMessage(false), 3000);
   };
 
   const handleAddDiscount = async (e: React.FormEvent) => {
@@ -801,10 +809,12 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     localStorage.setItem('boncore_discounts', JSON.stringify(updated));
     setNewDiscName('');
     setIsDiscountModalOpen(false);
+    setSaveError(null);
     try {
       await api.updateSettings({ discounts: updated });
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Could not auto-save new discount:', err);
+      setSaveError(err?.message || 'Yeni indirim sunucuya kaydedilemedi.');
     }
   };
 
@@ -813,10 +823,12 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
     const updated = discounts.filter(d => d.id !== id);
     setDiscounts(updated);
     localStorage.setItem('boncore_discounts', JSON.stringify(updated));
+    setSaveError(null);
     try {
       await api.updateSettings({ discounts: updated });
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Could not auto-save deleted discount:', err);
+      setSaveError(err?.message || 'İndirim silme işlemi sunucuya kaydedilemedi.');
     }
   };
 
@@ -878,6 +890,15 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
 
         {/* Tab Body */}
         <div className="p-6 md:p-8">
+          {saveError && (
+            <div className="mb-4 p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded-xl text-xs font-bold flex items-center justify-between gap-2 animate-fadeIn">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{saveError}</span>
+              </div>
+              <button type="button" onClick={() => setSaveError(null)} className="underline cursor-pointer">Kapat</button>
+            </div>
+          )}
           {savedMessage && (
             <div className="mb-6 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -1086,6 +1107,110 @@ export const AdisyoSettings: React.FC<AdisyoSettingsProps> = ({ onSettingsUpdate
                     <div className="p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300 font-mono">
                       {autoZReportLastRunStatus || 'Henüz otomatik rapor çalışmadı.'}
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Kuver (Kişi Başı Hizmet) Ayarları */}
+              <div className="p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white">Kuver &amp; Kişi Başı Hizmet</h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Masa açılışında veya adisyonlarda kişi başı kuver bedelini yapılandırın</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isKuverEnabled}
+                      onChange={(e) => {
+                        sound.beep();
+                        setIsKuverEnabled(e.target.checked);
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-semibold">
+                  <div>
+                    <label className="text-slate-500 block mb-1">Kuver Başlığı:</label>
+                    <input
+                      type="text"
+                      value={kuverTitle}
+                      onChange={(e) => setKuverTitle(e.target.value)}
+                      disabled={!isKuverEnabled}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-slate-900 dark:text-white font-bold disabled:opacity-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-500 block mb-1">Kişi Başı Kuver Tutarı (₺):</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={kuverPrice}
+                      onChange={(e) => setKuverPrice(Math.max(0, Number(e.target.value) || 0))}
+                      disabled={!isKuverEnabled}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-slate-900 dark:text-white font-bold disabled:opacity-50"
+                    />
+                  </div>
+                  <div className="flex flex-col justify-end">
+                    <label className="flex items-center gap-2 cursor-pointer p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={autoKuverOnTableOpen}
+                        onChange={(e) => setAutoKuverOnTableOpen(e.target.checked)}
+                        disabled={!isKuverEnabled}
+                        className="w-4 h-4 rounded text-brand-600 accent-brand-600"
+                      />
+                      <span className="text-[11px] text-slate-700 dark:text-slate-300 font-bold">
+                        Masa açılışında kuver kişi sayısı sor
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. Döviz Kurları (USD / EUR / GBP) */}
+              <div className="p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-4">
+                <div className="border-b border-slate-200 dark:border-slate-700 pb-3">
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white">Döviz Kurları (Opsiyonel Tahsilat Karşılığı)</h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Yabancı para birimi ödemeleri veya bilgi fişleri için referans kur değerleri</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-semibold">
+                  <div>
+                    <label className="text-slate-500 block mb-1">USD (₺):</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={usdRate}
+                      onChange={(e) => setUsdRate(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-slate-900 dark:text-white font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-500 block mb-1">EUR (₺):</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={eurRate}
+                      onChange={(e) => setEurRate(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-slate-900 dark:text-white font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-500 block mb-1">GBP (₺):</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={gbpRate}
+                      onChange={(e) => setGbpRate(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 font-mono text-slate-900 dark:text-white font-bold"
+                    />
                   </div>
                 </div>
               </div>

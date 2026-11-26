@@ -121,7 +121,7 @@ func RegisterSaaSSupportRoutes(masterGroup fiber.Router, rootApi fiber.Router, s
 			destPath := filepath.Join(uploadsDir, destFilename)
 
 			if sErr := c.SaveFile(fileHeader, destPath); sErr == nil {
-				url := "/static/uploads/tickets/" + destFilename
+				url := "/api/support/attachments/" + destFilename
 				attachmentURL = &url
 			}
 		}
@@ -237,7 +237,38 @@ func RegisterSaaSSupportRoutes(masterGroup fiber.Router, rootApi fiber.Router, s
 		})
 	})
 
-	// GET /api/master/tickets - List all tickets with status, category, tenant filters
+	// GET /api/support/attachments/:filename - Authenticated, tenant-isolated attachment download
+	rootApi.Get("/support/attachments/:filename", func(c *fiber.Ctx) error {
+		claims := middleware.GetUserClaims(c)
+		if claims == nil {
+			return fiber.NewError(fiber.StatusUnauthorized, "Dosya görüntülemek için oturum açmanız gerekmektedir.")
+		}
+		safeName := filepath.Base(strings.TrimSpace(c.Params("filename")))
+		if safeName == "" || safeName == "." || safeName == ".." || strings.Contains(safeName, "/") || strings.Contains(safeName, "\\") {
+			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz dosya adı.")
+		}
+		if !middleware.IsMasterClaims(claims) {
+			tenantCode := middleware.GetTenantCode(c)
+			var count int64
+			svc.DBManager.MasterGorm.Model(&models.SupportTicket{}).
+				Where("tenant_code = ? AND attachment_url LIKE ?", tenantCode, "%/"+safeName).
+				Count(&count)
+			if count == 0 {
+				return fiber.NewError(fiber.StatusForbidden, "Bu dosyaya erişim yetkiniz yok.")
+			}
+		}
+		targetPath := filepath.Join(uploadsDir, safeName)
+		rel, rErr := filepath.Rel(uploadsDir, targetPath)
+		if rErr != nil || strings.HasPrefix(rel, "..") {
+			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz dosya yolu.")
+		}
+		if _, err := os.Stat(targetPath); err != nil {
+			return fiber.NewError(fiber.StatusNotFound, "Dosya bulunamadı.")
+		}
+		return c.SendFile(targetPath)
+	})
+
+	// POST /api/master/tickets - Alias for listing all tickets
 	masterGroup.Get("/tickets", func(c *fiber.Ctx) error {
 		if err := requireMasterAdmin(c, svc); err != nil {
 			return err

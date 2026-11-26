@@ -8,6 +8,7 @@ import {
   TrendingUp, CheckCheck, XCircle, RotateCcw
 } from 'lucide-react';
 import { sound } from '../../services/sound';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 
 interface MasterTenantsViewProps {
   tenants: any[];
@@ -199,6 +200,16 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
   const [editingTenant, setEditingTenant] = useState<any | null>(null);
   const [editingFeatures, setEditingFeatures] = useState<TenantFeatureState>(getRecommendedFeatures('pro'));
   const [loadingFeatures, setLoadingFeatures] = useState<boolean>(false);
+  const [featuresError, setFeaturesError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
+
+  const notifyAction = (text: string, type: 'success' | 'error' = 'success') => {
+    setActionNotice({ type, text });
+    if (type === 'success') {
+      setTimeout(() => setActionNotice(null), 6000);
+    }
+  };
 
   // New Tenant Form state
   const [newForm, setNewForm] = useState({ ...INITIAL_NEW_FORM });
@@ -301,6 +312,7 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
     sound.beep();
     setEditingTenant({ ...tenant, original_code: tenant.code });
     setLoadingFeatures(true);
+    setFeaturesError(null);
     // Initialize with recommended defaults first
     setEditingFeatures(getRecommendedFeatures(tenant.plan || 'pro'));
 
@@ -308,24 +320,27 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
       const res = await fetch(`/api/master/tenants/${tenant.id}/features?_t=${Date.now()}`, {
         headers: getMasterHeaders(false)
       });
-      if (res.ok) {
-        const d = await res.json();
-        setEditingFeatures({
-          feature_qr_menu: Boolean(d.feature_qr_menu),
-          feature_kds: Boolean(d.feature_kds),
-          feature_delivery: Boolean(d.feature_delivery),
-          feature_integrations: Boolean(d.feature_integrations),
-          feature_e_invoice: Boolean(d.feature_e_invoice),
-          feature_stock_recipe: Boolean(d.feature_stock_recipe),
-          feature_loyalty: Boolean(d.feature_loyalty),
-          feature_hotel: d.feature_hotel !== undefined ? Boolean(d.feature_hotel) : true,
-          feature_kiosk: d.feature_kiosk !== undefined ? Boolean(d.feature_kiosk) : true,
-          feature_reservations: d.feature_reservations !== undefined ? Boolean(d.feature_reservations) : true,
-          feature_cost_profit: d.feature_cost_profit !== undefined ? Boolean(d.feature_cost_profit) : true,
-        });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || err.error || err.message || 'Modül yetkileri okunamadı.');
       }
-    } catch (e) {
+      const d = await res.json();
+      setEditingFeatures({
+        feature_qr_menu: Boolean(d.feature_qr_menu),
+        feature_kds: Boolean(d.feature_kds),
+        feature_delivery: Boolean(d.feature_delivery),
+        feature_integrations: Boolean(d.feature_integrations),
+        feature_e_invoice: Boolean(d.feature_e_invoice),
+        feature_stock_recipe: Boolean(d.feature_stock_recipe),
+        feature_loyalty: Boolean(d.feature_loyalty),
+        feature_hotel: d.feature_hotel !== undefined ? Boolean(d.feature_hotel) : true,
+        feature_kiosk: d.feature_kiosk !== undefined ? Boolean(d.feature_kiosk) : true,
+        feature_reservations: d.feature_reservations !== undefined ? Boolean(d.feature_reservations) : true,
+        feature_cost_profit: d.feature_cost_profit !== undefined ? Boolean(d.feature_cost_profit) : true,
+      });
+    } catch (e: any) {
       console.warn('Failed to fetch tenant features', e);
+      setFeaturesError(e?.message || 'Modül lisansları yüklenirken hata oluştu.');
     } finally {
       setLoadingFeatures(false);
     }
@@ -349,11 +364,11 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
   const handleCreateTenant = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newForm.name.trim()) {
-      alert('Lütfen restoran adını girin.');
+      notifyAction('Lütfen restoran adını girin.', 'error');
       return;
     }
     if (!newForm.owner_name.trim()) {
-      alert('Lütfen yetkili adı soyadını girin.');
+      notifyAction('Lütfen yetkili adı soyadını girin.', 'error');
       return;
     }
 
@@ -397,14 +412,17 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
         }).catch(() => null);
       }
 
-      alert(`✅ Restoran başarıyla oluşturuldu!\n\n🏢 Restoran Kodu: @${tenantCode}\n👤 Yetkili Adı: ${ownerDisplay}\n🪪 Yönetici Kullanıcı: ${adminUser}\n🔑 Şifre: ${adminPass}\n🔢 Hızlı PIN: ${adminPin}`);
+      notifyAction(
+        `Restoran oluşturuldu (@${tenantCode}) — Yetkili: ${ownerDisplay} | Kullanıcı: ${adminUser} | Şifre: ${adminPass} | PIN: ${adminPin}`,
+        'success'
+      );
       setIsAddModalOpen(false);
       setCodeManuallyEdited(false);
       setNewForm({ ...INITIAL_NEW_FORM });
       setNewFeatures(getRecommendedFeatures('pro'));
       onRefresh();
     } catch (err: any) {
-      alert(err.message || 'Hata oluştu.');
+      notifyAction(err.message || 'Hata oluştu.', 'error');
     }
   };
 
@@ -463,7 +481,8 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
       });
 
       if (!featRes.ok) {
-        console.warn('Feature update warning');
+        const featErr = await featRes.json().catch(() => ({}));
+        throw new Error(featErr.detail || featErr.error || featErr.message || 'Modül lisansları güncellenemedi.');
       }
 
       try {
@@ -472,30 +491,36 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
         }
       } catch {}
 
-      alert(`Restoran bilgileri (@${updatedCode}) ve 11 modül lisansı başarıyla kaydedildi!`);
+      notifyAction(`Restoran bilgileri (@${updatedCode}) ve 11 modül lisansı başarıyla kaydedildi!`, 'success');
       setEditingTenant(null);
       onRefresh();
     } catch (err: any) {
-      alert(err.message || 'Hata oluştu.');
+      notifyAction(err.message || 'Hata oluştu.', 'error');
     }
   };
 
-  const handleDeleteTenant = async (id: number, name: string) => {
+  const handleDeleteTenant = (id: number, name: string) => {
     sound.warning();
-    if (window.confirm(`"${name}" restoran kaydını ve tüm aboneliğini silmek istediğinize emin misiniz?`)) {
-      try {
-        const res = await fetch(`/api/master/tenants/${id}`, {
-          method: 'DELETE',
-          headers: getMasterHeaders(false)
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.detail || err.error || err.message || 'Restoran silinemedi.');
-        }
-        onRefresh();
-      } catch (e: any) {
-        alert(e.message || 'Silinemedi.');
+    setDeleteTarget({ id, name });
+  };
+
+  const confirmDeleteTenant = async () => {
+    if (!deleteTarget) return;
+    const { id, name } = deleteTarget;
+    setDeleteTarget(null);
+    try {
+      const res = await fetch(`/api/master/tenants/${id}`, {
+        method: 'DELETE',
+        headers: getMasterHeaders(false)
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || err.error || err.message || 'Restoran silinemedi.');
       }
+      notifyAction(`"${name}" restoran kaydı silindi.`, 'success');
+      onRefresh();
+    } catch (e: any) {
+      notifyAction(e.message || 'Silinemedi.', 'error');
     }
   };
 
@@ -522,6 +547,26 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
           <span>Yeni Restoran Ekle</span>
         </button>
       </div>
+
+      {/* Action Notice Banner */}
+      {actionNotice && (
+        <div className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-between gap-2 ${
+          actionNotice.type === 'success'
+            ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
+            : 'bg-rose-950/60 border-rose-500/40 text-rose-200'
+        }`}>
+          <span>{actionNotice.text}</span>
+          <button type="button" onClick={() => setActionNotice(null)} className="underline cursor-pointer">Kapat</button>
+        </div>
+      )}
+
+      {/* Features Error Banner */}
+      {featuresError && (
+        <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-200 text-xs font-bold flex items-center justify-between gap-2">
+          <span>{featuresError}</span>
+          <button type="button" onClick={() => setFeaturesError(null)} className="underline cursor-pointer">Kapat</button>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="flex flex-col md:flex-row items-center gap-3 p-3 rounded-2xl bg-slate-900 border border-slate-800">
@@ -1211,6 +1256,15 @@ export const MasterTenantsView: React.FC<MasterTenantsViewProps> = ({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={Boolean(deleteTarget)}
+        title="Restoran Kaydını Sil"
+        message={`"${deleteTarget?.name || ''}" restoran kaydını ve tüm aboneliğini silmek istediğinize emin misiniz?`}
+        confirmLabel="Evet, Sil"
+        onConfirm={confirmDeleteTenant}
+        onCancel={() => setDeleteTarget(null)}
+      />
 
     </div>
   );

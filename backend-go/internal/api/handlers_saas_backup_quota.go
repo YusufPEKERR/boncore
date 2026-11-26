@@ -7,13 +7,17 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/boncore/pos-backend/internal/models"
 	"github.com/boncore/pos-backend/internal/service"
 	"github.com/gofiber/fiber/v2"
 )
+
+var backupRestoreMu sync.Mutex
 
 // RegisterSaaSBackupQuotaRoutes mounts R7 Database Backup & Storage Quota routes
 func RegisterSaaSBackupQuotaRoutes(group fiber.Router, svc *service.Services) {
@@ -35,6 +39,9 @@ func RegisterSaaSBackupQuotaRoutes(group fiber.Router, svc *service.Services) {
 		tenantDB, tErr := svc.DBManager.GetTenantDB(tenant.Code)
 		if tErr != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "İşletme veritabanı açılamadı: "+tErr.Error())
+		}
+		if tenantDB.Dialector.Name() == "postgres" {
+			return fiber.NewError(fiber.StatusNotImplemented, "PostgreSQL modunda yedekleme işlemleri pg_dump aracılığıyla yapılmalıdır.")
 		}
 
 		// Flush WAL journal
@@ -130,11 +137,32 @@ func RegisterSaaSBackupQuotaRoutes(group fiber.Router, svc *service.Services) {
 			return fiber.NewError(fiber.StatusNotFound, "Yedek kaydı bulunamadı: "+id)
 		}
 
-		if _, err := os.Stat(backup.FilePath); os.IsNotExist(err) {
-			return fiber.NewError(fiber.StatusNotFound, "Yedek dosyası diskte bulunamadı: "+backup.FilePath)
+		absBackupsDir, _ := filepath.Abs(backupsDir)
+		absTarget, _ := filepath.Abs(backup.FilePath)
+		if absBackupsDir == "" || !strings.HasPrefix(absTarget, absBackupsDir+string(filepath.Separator)) {
+			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz yedek dosya yolu.")
 		}
 
-		return c.Download(backup.FilePath, backup.BackupName)
+		info, err := os.Stat(absTarget)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return fiber.NewError(fiber.StatusNotFound, "Yedek dosyası diskte bulunamadı: "+backup.BackupName)
+			}
+			return fiber.NewError(fiber.StatusInternalServerError, "Yedek dosyası okunamadı: "+err.Error())
+		}
+		f, err := os.Open(absTarget)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "Yedek dosyası açılamadı: "+err.Error())
+		}
+		defer f.Close()
+
+		c.Attachment(backup.BackupName)
+		c.Set("Content-Type", "application/octet-stream")
+		c.Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+		if _, err := io.Copy(c.Response().BodyWriter(), f); err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "Yedek dosyası aktarılamadı: "+err.Error())
+		}
+		return nil
 	})
 
 	// POST /api/master/backups/:id/restore - Safely restore tenant database from backup
@@ -142,6 +170,9 @@ func RegisterSaaSBackupQuotaRoutes(group fiber.Router, svc *service.Services) {
 		if err := requireMasterAdmin(c, svc); err != nil {
 			return err
 		}
+		backupRestoreMu.Lock()
+		defer backupRestoreMu.Unlock()
+
 		mdb := svc.DBManager.MasterGorm
 		id := c.Params("id")
 
@@ -150,17 +181,38 @@ func RegisterSaaSBackupQuotaRoutes(group fiber.Router, svc *service.Services) {
 			return fiber.NewError(fiber.StatusNotFound, "Yedek kaydı bulunamadı: "+id)
 		}
 
-		if _, err := os.Stat(backup.FilePath); os.IsNotExist(err) {
-			return fiber.NewError(fiber.StatusNotFound, "Geri yüklenecek yedek dosyası diskte mevcut değil: "+backup.FilePath)
+		absBackupsDir, _ := filepath.Abs(backupsDir)
+		absTarget, _ := filepath.Abs(backup.FilePath)
+		if absBackupsDir == "" || !strings.HasPrefix(absTarget, absBackupsDir+string(filepath.Separator)) {
+			return fiber.NewError(fiber.StatusBadRequest, "Geçersiz yedek dosya yolu.")
+		}
+
+		if _, err := os.Stat(absTarget); os.IsNotExist(err) {
+			return fiber.NewError(fiber.StatusNotFound, "Geri yüklenecek yedek dosyası diskte mevcut değil: "+backup.BackupName)
+		}
+
+		if existingDB, dbErr := svc.DBManager.GetTenantDB(backup.TenantCode); dbErr == nil && existingDB != nil && existingDB.Dialector.Name() == "postgres" {
+			return fiber.NewError(fiber.StatusNotImplemented, "PostgreSQL modunda geri yükleme işlemleri pg_restore aracılığıyla yapılmalıdır.")
+		}
+
+		if backup.ChecksumSHA256 != nil && strings.TrimSpace(*backup.ChecksumSHA256) != "" {
+			actualHash := computeFileSHA256(absTarget)
+			if actualHash == "" || !strings.EqualFold(actualHash, strings.TrimSpace(*backup.ChecksumSHA256)) {
+				return fiber.NewError(fiber.StatusUnprocessableEntity, "Yedek dosyasının SHA-256 doğrulaması başarısız (dosya bozuk veya değiştirilmiş).")
+			}
 		}
 
 		targetDBPath := svc.DBManager.GetTenantDBPath(backup.TenantCode)
 
 		// 1. Take safety pre-restore snapshot
+		safeTenant := strings.ReplaceAll(strings.ReplaceAll(backup.TenantCode, "/", "_"), "\\", "_")
 		ts := time.Now().Format("20060102_150405")
-		safetyPath := filepath.Join(backupsDir, fmt.Sprintf("%s_prerestore_%s.bak", backup.TenantCode, ts))
+		safetyPath := filepath.Join(backupsDir, fmt.Sprintf("%s_prerestore_%s.bak", safeTenant, ts))
+		hasSafety := false
 		if _, statErr := os.Stat(targetDBPath); statErr == nil {
-			_ = copyFile(targetDBPath, safetyPath)
+			if err := copyFile(targetDBPath, safetyPath); err == nil {
+				hasSafety = true
+			}
 		}
 
 		// 2. Safely close active connection pool
@@ -174,18 +226,30 @@ func RegisterSaaSBackupQuotaRoutes(group fiber.Router, svc *service.Services) {
 		_ = os.Remove(targetDBPath + "-shm")
 
 		// 3. Replace tenant database with backup
-		if err := copyFile(backup.FilePath, targetDBPath); err != nil {
+		if err := copyFile(absTarget, targetDBPath); err != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "Geri yükleme kopyalama hatası: "+err.Error())
 		}
 
-		// 4. Re-open connection
+		// 4. Re-open connection and verify integrity
 		newDB, reOpenErr := svc.DBManager.GetTenantDB(backup.TenantCode)
 		if reOpenErr != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "Yedekten geri yükleme sonrası veritabanı açılamadı: "+reOpenErr.Error())
 		}
 		_ = newDB.Exec("PRAGMA journal_mode=WAL;").Error
 		_ = newDB.Exec("PRAGMA busy_timeout=5000;").Error
-		_ = newDB.Exec("PRAGMA integrity_check;").Error
+		var integrityRes string
+		_ = newDB.Raw("PRAGMA integrity_check;").Scan(&integrityRes).Error
+		if !strings.EqualFold(strings.TrimSpace(integrityRes), "ok") {
+			if hasSafety {
+				_ = svc.DBManager.CloseTenantDB(backup.TenantCode)
+				time.Sleep(50 * time.Millisecond)
+				_ = os.Remove(targetDBPath + "-wal")
+				_ = os.Remove(targetDBPath + "-shm")
+				_ = copyFile(safetyPath, targetDBPath)
+				_, _ = svc.DBManager.GetTenantDB(backup.TenantCode)
+			}
+			return fiber.NewError(fiber.StatusInternalServerError, fmt.Sprintf("Yedek bütünlük doğrulamasından geçemedi (%s); önceki veritabanı geri yüklendi.", integrityRes))
+		}
 
 		// Record restored_at on backup
 		now := time.Now()

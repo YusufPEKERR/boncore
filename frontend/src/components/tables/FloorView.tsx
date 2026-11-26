@@ -8,6 +8,7 @@ import { Area, Table, StaffUser } from '../../types';
 import { sound } from '../../services/sound';
 import { MergeTableModal, TransferItemsModal } from './TableActionModals';
 import { useRolePermissions } from '../../services/permissions';
+import { ElapsedTimer } from '../common/ElapsedTimer';
 
 interface FloorViewProps {
   areas: Area[];
@@ -88,36 +89,6 @@ export const FloorView: React.FC<FloorViewProps> = ({
   const [isMergeOpen, setIsMergeOpen] = useState<boolean>(false);
   const [isTransferItemsOpen, setIsTransferItemsOpen] = useState<boolean>(false);
   const [activeActionTableId, setActiveActionTableId] = useState<number | null>(null);
-  const [currentNow, setCurrentNow] = useState<number>(Date.now());
-
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const getTableElapsedFormatted = (openedAt?: string) => {
-    if (!openedAt) return 'Yeni Açıldı';
-    const normalized = /[Zz]|[+-]\d{2}:\d{2}$/.test(openedAt) ? openedAt : `${openedAt}Z`;
-    const start = new Date(normalized).getTime();
-    if (isNaN(start)) return 'Yeni Açıldı';
-    const diffSec = Math.max(0, Math.floor((currentNow - start) / 1000));
-    const days = Math.floor(diffSec / 86400);
-    const hours = Math.floor((diffSec % 86400) / 3600);
-    const mins = Math.floor((diffSec % 3600) / 60);
-    const secs = diffSec % 60;
-
-    const parts: string[] = [];
-    if (days > 0) {
-      parts.push(`${days} gün`);
-      parts.push(`${hours} saat`);
-    } else if (hours > 0) {
-      parts.push(`${hours} saat`);
-    }
-    parts.push(`${mins} dk`);
-    parts.push(`${String(secs).padStart(2, '0')} sn`);
-
-    return parts.join(' ');
-  };
 
   const getTableTimestamp = (t: Table): number => {
     const timeStr = t.active_order?.created_at || t.opened_at;
@@ -584,7 +555,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
                         {isOccupied ? (
                           <span className="font-mono text-slate-600 dark:text-slate-300 flex items-center gap-1 truncate" title="Masa Açılış Süresi">
                             <Clock className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span className="truncate">{getTableElapsedFormatted(table.active_order?.created_at || table.opened_at)}</span>
+                            <span className="truncate"><ElapsedTimer startIso={table.active_order?.created_at || table.opened_at} fallback="Yeni Açıldı" /></span>
                           </span>
                         ) : (
                           <span className="text-[10px] text-slate-400">{currentArea?.name}</span>
@@ -720,7 +691,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
                     <div className="text-[10px] text-slate-400 text-center truncate">
                       {isOccupied ? (
                         <span className="font-mono text-slate-500 dark:text-slate-400">
-                          {getTableElapsedFormatted(table.active_order?.created_at || table.opened_at)}
+                          <ElapsedTimer startIso={table.active_order?.created_at || table.opened_at} fallback="Yeni Açıldı" />
                         </span>
                       ) : (
                         <span>{table.waiter_name || currentArea?.name}</span>
@@ -861,7 +832,7 @@ export const FloorView: React.FC<FloorViewProps> = ({
                         {/* Live Timer */}
                         <div className="flex items-center gap-1 font-mono font-bold text-slate-700 dark:text-slate-200">
                           <Clock className="w-3 h-3 text-emerald-600 shrink-0" />
-                          <span>{getTableElapsedFormatted(activeOrder?.created_at || table.opened_at)}</span>
+                          <span><ElapsedTimer startIso={activeOrder?.created_at || table.opened_at} fallback="Yeni Açıldı" /></span>
                         </div>
 
                         {/* Waiter Name */}

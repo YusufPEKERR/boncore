@@ -15,15 +15,15 @@ func TestHubBroadcastAndSub5msLatency(t *testing.T) {
 	kdsClient := NewClient(hub, nil, "kds", nil, "fatihciftligi")
 	allClient := NewClient(hub, nil, "all", nil, "fatihciftligi")
 	table12ID := 12
-	qrTable12Client := NewClient(hub, nil, "pos", &table12ID, "fatihciftligi")
+	qrTable12Client := NewClient(hub, nil, "", &table12ID, "fatihciftligi")
 
 	hub.Register(posClient)
 	hub.Register(kdsClient)
 	hub.Register(allClient)
 	hub.Register(qrTable12Client)
 
-	if count := hub.ActiveClientCount(); count != 4 {
-		t.Fatalf("expected 4 active clients, got %d", count)
+	if count := hub.ActiveClientCount(); count != 3 {
+		t.Fatalf("expected 3 channel clients (QR table isolated), got %d", count)
 	}
 
 	// 1. Test BroadcastToChannel("kds") -> should deliver to kdsClient and allClient (and NOT duplicate to kdsClient)

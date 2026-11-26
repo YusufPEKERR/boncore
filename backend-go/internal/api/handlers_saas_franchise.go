@@ -159,16 +159,27 @@ func RegisterSaaSFranchiseRoutes(group fiber.Router, svc *service.Services) {
 			branchActiveTables := 0
 
 			if tdb, tErr := svc.DBManager.GetTenantDB(b.Code); tErr == nil && tdb != nil {
+				todayStart, todayEnd, _ := service.ParseTRDateRange("today", "", "")
+				monthStart, monthEnd, _ := service.ParseTRDateRange("this_month", "", "")
+
 				var todayRes struct{ Total float64 }
-				tdb.Raw("SELECT COALESCE(SUM(amount), 0.0) as total FROM payments WHERE DATE(created_at) = CURRENT_DATE").Scan(&todayRes)
+				tdb.Model(&models.Payment{}).
+					Select("COALESCE(SUM(amount), 0.0) as total").
+					Where("created_at >= ? AND created_at < ?", todayStart, todayEnd).
+					Scan(&todayRes)
 				branchRevToday = todayRes.Total
 
 				var monthRes struct{ Total float64 }
-				tdb.Raw("SELECT COALESCE(SUM(amount), 0.0) as total FROM payments WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')").Scan(&monthRes)
+				tdb.Model(&models.Payment{}).
+					Select("COALESCE(SUM(amount), 0.0) as total").
+					Where("created_at >= ? AND created_at < ?", monthStart, monthEnd).
+					Scan(&monthRes)
 				branchRevMonth = monthRes.Total
 
 				var oToday int64
-				tdb.Raw("SELECT COUNT(*) FROM orders WHERE DATE(created_at) = CURRENT_DATE").Scan(&oToday)
+				tdb.Model(&models.Order{}).
+					Where("created_at >= ? AND created_at < ?", todayStart, todayEnd).
+					Count(&oToday)
 				branchOrdersToday = int(oToday)
 
 				var aTables int64
@@ -280,26 +291,39 @@ func RegisterSaaSFranchiseRoutes(group fiber.Router, svc *service.Services) {
 
 			// Transaction per target branch
 			txErr := targetDB.Transaction(func(tx *gorm.DB) error {
-				// Copy categories
-				for _, sc := range sourceCategories {
-					var existingCat models.Category
-					if err := tx.Where("name = ?", sc.Name).First(&existingCat).Error; err == nil {
-						catIDMap[sc.ID] = existingCat.ID
-					} else {
-						newCat := models.Category{
-							Name:          sc.Name,
-							Icon:          sc.Icon,
-							Color:         sc.Color,
-							OrderIndex:    sc.OrderIndex,
-							TargetStation: sc.TargetStation,
-							ShowInPos:     sc.ShowInPos,
+				// Copy categories only when CloneCategories is true; otherwise map existing categories by name
+				if payload.CloneCategories {
+					for _, sc := range sourceCategories {
+						var existingCat models.Category
+						if err := tx.Where("name = ?", sc.Name).First(&existingCat).Error; err == nil {
+							catIDMap[sc.ID] = existingCat.ID
+						} else {
+							newCat := models.Category{
+								Name:          sc.Name,
+								Icon:          sc.Icon,
+								Color:         sc.Color,
+								OrderIndex:    sc.OrderIndex,
+								TargetStation: sc.TargetStation,
+								ShowInPos:     sc.ShowInPos,
+							}
+							if err := tx.Create(&newCat).Error; err != nil {
+								return err
+							}
+							catIDMap[sc.ID] = newCat.ID
+							totalCategoriesCopied++
 						}
-						if err := tx.Create(&newCat).Error; err != nil {
-							return err
-						}
-						catIDMap[sc.ID] = newCat.ID
-						totalCategoriesCopied++
 					}
+				} else {
+					for _, sc := range sourceCategories {
+						var existingCat models.Category
+						if err := tx.Where("name = ?", sc.Name).First(&existingCat).Error; err == nil {
+							catIDMap[sc.ID] = existingCat.ID
+						}
+					}
+				}
+
+				if !payload.CloneProducts {
+					return nil
 				}
 
 				// Copy products

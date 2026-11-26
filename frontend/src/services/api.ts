@@ -48,7 +48,15 @@ if (typeof window !== 'undefined' && window.fetch) {
         ? input.toString() 
         : (input as Request).url;
 
-    if (urlStr.includes('/api/')) {
+    let isSameOriginApi = false;
+    try {
+      const parsed = new URL(urlStr, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+      isSameOriginApi = (typeof window === 'undefined' || parsed.origin === window.location.origin) && parsed.pathname.startsWith('/api/');
+    } catch {
+      isSameOriginApi = urlStr.startsWith('/api/');
+    }
+
+    if (isSameOriginApi) {
       const customInit: RequestInit = init ? { ...init } : {};
       const headers = new Headers(customInit.headers || {});
 
@@ -79,6 +87,27 @@ if (typeof window !== 'undefined' && window.fetch) {
 
       customInit.headers = headers;
       const response = await originalFetch.call(this, input, customInit);
+
+      if (
+        response.status === 401 &&
+        typeof window !== 'undefined' &&
+        !urlStr.includes('/api/auth/login') &&
+        !urlStr.includes('/api/auth/login-pin') &&
+        !urlStr.includes('/api/auth/pin-login') &&
+        !urlStr.includes('/api/auth/verify-manager-pin') &&
+        !urlStr.includes('/api/master/')
+      ) {
+        try {
+          if (localStorage.getItem('boncore_token')) {
+            const nowTs = Date.now();
+            const lastDispatched = (window as any).__boncoreLastAuthExpiredAt || 0;
+            if (nowTs - lastDispatched > 3000) {
+              (window as any).__boncoreLastAuthExpiredAt = nowTs;
+              window.dispatchEvent(new CustomEvent('boncore_auth_expired', { detail: { url: urlStr } }));
+            }
+          }
+        } catch {}
+      }
 
       // Wrap response.json() so non-JSON responses (500, 502, 504 HTML error pages)
       // do not throw unhandled JSON parse SyntaxErrors, and surface clean error toasts.
@@ -510,10 +539,14 @@ export const api = {
   },
 
   async createOrder(payload: any): Promise<any> {
+    const idemKey = `ord-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     try {
       const res = await fetch(`${API_BASE}/orders/create`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Idempotency-Key': idemKey
+        },
         body: JSON.stringify(payload)
       });
       if (!res.ok) {
@@ -534,9 +567,19 @@ export const api = {
       if (!isNetworkFailure) {
         throw err;
       }
-      await queueOfflineOrder({ ...payload, tenant_code: getResolvedRestaurantCode() });
-      return { status: 'offline_queued', order_id: Date.now(), order_no: 'OFFLINE-' + Date.now() };
+      const queuedId = await queueOfflineOrder({ ...payload, idempotency_key: idemKey, tenant_code: getResolvedRestaurantCode() });
+      const resolvedId = typeof queuedId === 'number' && queuedId > 0 ? queuedId : Date.now();
+      return { status: 'offline_queued', order_id: resolvedId, id: resolvedId, order_no: 'OFFLINE-' + resolvedId };
     }
+  },
+
+  async addOrderServiceCharge(orderId: number, amount: number, note?: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/orders/${orderId}/service-charge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount, note })
+    });
+    return ensureOkJson(res, 'Servis/tarife ücreti eklenemedi.');
   },
 
   async addItemsToOrder(orderId: number, items: any[], waiterName: string): Promise<any> {
@@ -702,10 +745,14 @@ export const api = {
 
   // Cashier & Payments
   async settlePayment(payload: any): Promise<any> {
+    const idemKey = `pay-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     try {
       const res = await fetch(`${API_BASE}/cashier/settle-payment`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Idempotency-Key': idemKey
+        },
         body: JSON.stringify(payload)
       });
       if (!res.ok) {
@@ -726,8 +773,8 @@ export const api = {
       if (!isNetworkFailure) {
         throw err;
       }
-      await queueOfflinePayment({ ...payload, tenant_code: getResolvedRestaurantCode() });
-      return { status: 'offline_queued', is_fully_paid: true, remaining_total: 0.0 };
+      const queuedId = await queueOfflinePayment({ ...payload, idempotency_key: idemKey, tenant_code: getResolvedRestaurantCode() });
+      return { status: 'offline_queued', queued_id: queuedId, is_fully_paid: true, remaining_total: 0.0 };
     }
   },
 
@@ -1097,10 +1144,12 @@ export const api = {
   },
 
   // Audit Logs
-  async getAuditLogs(actionType?: string, search?: string): Promise<AuditLog[]> {
+  async getAuditLogs(actionType?: string, search?: string, limit: number = 100, offset: number = 0): Promise<AuditLog[]> {
     const q = new URLSearchParams();
     if (actionType && actionType !== 'all') q.append('action_type', actionType);
     if (search) q.append('search', search);
+    q.append('limit', String(limit));
+    if (offset > 0) q.append('offset', String(offset));
     const qs = q.toString() ? `?${q.toString()}` : '';
     const res = await fetch(`${API_BASE}/audit/logs${qs}`);
     return ensureOkJson(res, 'Denetim kayıtları alınamadı.');
@@ -1133,7 +1182,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/settings/feature-store/${encodeURIComponent(key)}`, {
       method: 'PUT',
       headers: getAuthHeaders(true),
-      body: JSON.stringify({ data })
+      body: JSON.stringify({ value: data })
     });
     return ensureOkJson(res, 'Özellik ayarları kaydedilemedi.');
   },
@@ -1241,8 +1290,10 @@ export const api = {
   },
 
   // Analytics & Statistics API
-  async getRestaurantStatistics(dateRange: string = 'all'): Promise<any> {
-    const res = await fetch(`${API_BASE}/orders/analytics/statistics?date_range=${encodeURIComponent(dateRange)}`);
+  async getRestaurantStatistics(dateRange: string = 'all', options?: { signal?: AbortSignal }): Promise<any> {
+    const res = await fetch(`${API_BASE}/orders/analytics/statistics?date_range=${encodeURIComponent(dateRange)}`, {
+      signal: options?.signal,
+    });
     return ensureOkJson(res, 'İstatistikler alınamadı.');
   },
 

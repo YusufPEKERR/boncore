@@ -508,23 +508,14 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({
       }
 
       if (targetOrderId) {
-        const orderDet = await api.getOrder(targetOrderId);
-        const orderRem = Number(orderDet.remaining_total || orderDet.grand_total || 0);
-        const payNet = splitMode === 'full' ? orderRem : Math.min(orderRem, splitBaseAmount);
-        const isFullPayment = splitMode === 'full' || payNet >= orderRem - 0.05;
-        await api.settlePayment({
-          order_id: targetOrderId,
-          payments: [{ method: 'online', amount: Number(payNet.toFixed(2)), tip: qrTipAmount }],
-          cashier_name: `Online Sanal POS (${splitMode === 'items' ? 'Alman Usulü' : splitMode === 'equal' ? `1/${splitPeopleCount} Bölüş` : 'Tam'})`,
-          close_table: false
-        });
-        sound.cashDrawer();
-        showNotice(
-          isFullPayment
-            ? `Ön ödemeniz (₺${qrPayableFinal.toFixed(2)}) alındı! Siparişiniz mutfakta hazırlanıyor.`
-            : `Kısmi ödemeniz (₺${qrPayableFinal.toFixed(2)}) hesaptan düşüldü!`,
-          false
-        );
+        const splitLabel =
+          splitMode === 'items'
+            ? 'Alman Usulü'
+            : splitMode === 'equal'
+              ? `1/${splitPeopleCount} Bölüş`
+              : 'Tam Hesap';
+        const tipPart = qrTipAmount > 0 ? ` + ₺${qrTipAmount.toFixed(2)} Bahşiş` : '';
+        await handleCallWaiter(`Masada Ödeme / POS Talebi (${splitLabel} · ₺${qrPayableFinal.toFixed(2)}${tipPart})`);
         setSelectedSplitKeys({});
         setIsVirtualPosOpen(false);
         await loadTableQrMenu(selectedTableId);
@@ -532,7 +523,7 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({
         showNotice('Ödenecek aktif sipariş bulunamadı.', true);
       }
     } catch (err: any) {
-      showNotice(err.message || 'Ödeme işlemi başarısız.', true);
+      showNotice(err.message || 'Ödeme talebi gönderilemedi.', true);
       sound.warning();
     } finally {
       setLoading(false);
@@ -1631,7 +1622,7 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({
               <div className="flex items-center gap-2">
                 <CreditCard className={`w-5 h-5 ${isLightQr ? 'text-blue-600' : 'text-blue-400'}`} />
                 <h3 className={`text-base font-bold ${isLightQr ? 'text-slate-900' : 'text-white'}`}>
-                  Masada Sanal POS Ödeme (3D Secure)
+                  Masada Ödeme / Hesap Talebi
                 </h3>
               </div>
               <button
@@ -1778,39 +1769,12 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({
               </div>
             )}
 
-            <div className="space-y-2 text-xs">
-              <div>
-                <label className={`block mb-1 ${isLightQr ? 'text-slate-600' : 'text-slate-400'}`}>Kart Numarası:</label>
-                <input
-                  type="text"
-                  defaultValue="5401 2345 6789 0123"
-                  className={`w-full border rounded-xl p-2.5 font-mono ${
-                    isLightQr ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-800 border-slate-700 text-white'
-                  }`}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className={`block mb-1 ${isLightQr ? 'text-slate-600' : 'text-slate-400'}`}>Son Kullanma:</label>
-                  <input
-                    type="text"
-                    defaultValue="12/28"
-                    className={`w-full border rounded-xl p-2.5 font-mono text-center ${
-                      isLightQr ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-800 border-slate-700 text-white'
-                    }`}
-                  />
-                </div>
-                <div>
-                  <label className={`block mb-1 ${isLightQr ? 'text-slate-600' : 'text-slate-400'}`}>CVV:</label>
-                  <input
-                    type="text"
-                    defaultValue="342"
-                    className={`w-full border rounded-xl p-2.5 font-mono text-center ${
-                      isLightQr ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-800 border-slate-700 text-white'
-                    }`}
-                  />
-                </div>
-              </div>
+            <div className={`p-3 rounded-xl border text-[11px] leading-relaxed ${
+              isLightQr
+                ? 'bg-blue-50 border-blue-200 text-blue-800'
+                : 'bg-blue-950/40 border-blue-800/60 text-blue-200'
+            }`}>
+              Online 3D Secure kart çekimi entegrasyonu henüz aktif değildir. Talebi onayladığınızda varsa sepetiniz mutfağa iletilir ve garsonunuza <strong>POS cihazı / hesap talebi</strong> bildirilir.
             </div>
 
             <button
@@ -1818,7 +1782,7 @@ export const QrMenuSimulator: React.FC<QrMenuSimulatorProps> = ({
               disabled={loading}
               className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black text-xs shadow-lg shadow-emerald-500/30 disabled:opacity-50"
             >
-              {loading ? 'Ödeme İşleniyor...' : '3D SECURE İLE ÖDE & TAMAMLA'}
+              {loading ? 'Talep Gönderiliyor...' : 'GARSON / POS CİHAZI ÇAĞIR'}
             </button>
           </div>
         </div>

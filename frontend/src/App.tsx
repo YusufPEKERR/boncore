@@ -358,6 +358,26 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('boncore_toast', handleCustomToast);
   }, []);
 
+  // Redirect cleanly to login if JWT expires / backend returns 401
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      try {
+        localStorage.removeItem('boncore_token');
+        localStorage.removeItem('boncore_auth');
+        localStorage.removeItem('boncore_user');
+      } catch {}
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      setViewMode((prev) => (prev === 'landing' || prev === 'master_login' || prev === 'master_admin' ? prev : 'login'));
+      if (typeof window !== 'undefined' && window.location.hash !== '#landing') {
+        window.location.hash = 'login';
+      }
+      addToast('Oturum süreniz doldu. Lütfen tekrar giriş yapın.', 'warning');
+    };
+    window.addEventListener('boncore_auth_expired', handleAuthExpired);
+    return () => window.removeEventListener('boncore_auth_expired', handleAuthExpired);
+  }, []);
+
   // Auto-sync offline transactions when network is online or on application start
   useEffect(() => {
     const runOfflineSync = async () => {

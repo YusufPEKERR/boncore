@@ -89,9 +89,10 @@ export const DeliveryHub: React.FC<DeliveryHubProps> = ({ categories = [] }) => 
       const profile = await api.simulateCallerId(callerPhone);
       setCallerProfile(profile);
       setCustomerNameInput(profile?.customer_name || profile?.name || 'Müşteri');
-      setCustomerAddressInput(profile?.address || (profile?.addresses && profile.addresses[0]) || 'Moda Cad. Kadıköy / İstanbul');
-    } catch (e) {
+      setCustomerAddressInput(profile?.address || (profile?.addresses && profile.addresses[0]) || '');
+    } catch (e: any) {
       console.warn(e);
+      showToast(e?.message || 'Müşteri bilgisi sorgulanamadı.', 'error');
     }
   };
 
@@ -105,7 +106,7 @@ export const DeliveryHub: React.FC<DeliveryHubProps> = ({ categories = [] }) => 
         channel: 'telefon',
         customer_name: customerNameInput.trim() || callerProfile?.customer_name || 'Kayıtlı Müşteri',
         customer_phone: callerPhone,
-        delivery_address: customerAddressInput.trim() || callerProfile?.address || 'Moda Cad. Kadıköy / İstanbul',
+        delivery_address: customerAddressInput.trim() || callerProfile?.address || 'Adres belirtilmedi',
         items: [
           {
             product_id: selectedProductId,
@@ -169,6 +170,7 @@ export const DeliveryHub: React.FC<DeliveryHubProps> = ({ categories = [] }) => 
   };
 
   const handleSimulateOnlineOrder = async (platformName: string) => {
+    if (!(import.meta as any).env?.DEV) return;
     sound.beep();
     if (realProducts.length === 0) {
       showToast('Sipariş alabilmek için önce menüye en az bir ürün ekleyin.', 'error');
@@ -268,7 +270,7 @@ export const DeliveryHub: React.FC<DeliveryHubProps> = ({ categories = [] }) => 
                 </div>
                 <div className="text-slate-600 dark:text-slate-300 flex items-start gap-1">
                   <MapPin className="w-3.5 h-3.5 flex-shrink-0 text-slate-400 mt-0.5" />
-                  <span>{callerProfile.address || 'Moda Cad. Kadıköy / İstanbul'}</span>
+                  <span>{callerProfile.address || 'Kayıtlı adres bulunamadı'}</span>
                 </div>
                 {callerProfile.favorite_items && callerProfile.favorite_items.length > 0 && (
                   <div className="text-[11px] text-slate-500 dark:text-slate-400">

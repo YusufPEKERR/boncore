@@ -320,14 +320,17 @@ export const printThermalReceipt = async (doc: any, targetPrinters?: string[]) =
         printerLineWidth,
         design
       );
+      const copies = localHardware.getPostPaymentCopies(prKey);
       try {
-        const res = await localHardware.printReceipt({
-          printers: [prKey],
-          document: doc,
-          rawText: rawTextForPrinter
-        });
-        if (res && res.success) {
-          anySuccess = true;
+        for (let copyIdx = 0; copyIdx < copies; copyIdx++) {
+          const res = await localHardware.printReceipt({
+            printers: [prKey],
+            document: doc,
+            rawText: rawTextForPrinter
+          });
+          if (res && res.success) {
+            anySuccess = true;
+          }
         }
       } catch (e) {
         console.warn(`Fiziksel termal yazdırma hatası (${prKey}):`, e);
@@ -636,6 +639,7 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
   const [escposText, setEscposText] = useState<string>('');
   const [viewMode, setViewMode] = useState<'e_adisyon' | 'escpos'>('e_adisyon');
   const [loading, setLoading] = useState<boolean>(true);
+  const [fiscalError, setFiscalError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && orderId) {
@@ -645,6 +649,7 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
 
   const loadFiscalData = async (id: number) => {
     setLoading(true);
+    setFiscalError(null);
     try {
       const [doc, slip] = await Promise.all([
         api.getEAdisyon(id),
@@ -652,32 +657,65 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
       ]);
       setFiscalDoc(doc);
       setEscposText(slip.slip_text);
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Failed to load fiscal doc', e);
+      setFiscalError(e?.message || 'Belge verileri yüklenemedi.');
     } finally {
       setLoading(false);
     }
   };
 
-  if (!isOpen || !fiscalDoc) return null;
+  if (!isOpen) return null;
 
   const handleDownloadXml = async () => {
     sound.beep();
+    setFiscalError(null);
     try {
       await api.downloadAuthenticatedFile(`/api/fiscal/e-adisyon/${orderId}/xml`, `e-adisyon-${orderId}.xml`);
-    } catch (e) {
+    } catch (e: any) {
       console.warn('XML download failed', e);
+      setFiscalError(e?.message || 'GİB XML dosyası indirilemedi.');
     }
   };
 
   const handleDownloadPdf = async () => {
     sound.beep();
+    setFiscalError(null);
     try {
       await api.downloadAuthenticatedFile(`/api/fiscal/e-adisyon/${orderId}/pdf`, `e-adisyon-${orderId}.pdf`, true);
-    } catch (e) {
+    } catch (e: any) {
       console.warn('PDF download failed', e);
+      setFiscalError(e?.message || 'PDF dosyası indirilemedi.');
     }
   };
+
+  if (!fiscalDoc) {
+    return (
+      <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4 select-none">
+        <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-6 text-center space-y-4">
+          <div className="text-sm font-bold text-white">
+            {loading ? 'E-Adisyon belgesi hazırlanıyor...' : (fiscalError || 'Belge yüklenemedi.')}
+          </div>
+          {!loading && fiscalError && (
+            <button
+              type="button"
+              onClick={() => orderId && loadFiscalData(orderId)}
+              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold cursor-pointer"
+            >
+              Tekrar Dene
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer"
+          >
+            Kapat
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4 select-none">
@@ -689,7 +727,7 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
               <ShieldCheck className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-lg font-extrabold text-white">GİB Uyumlu E-Adisyon & Termal Fiş</h3>
+              <h3 className="text-lg font-extrabold text-white">E-Adisyon Ön İzleme & Termal Bilgi Fişi</h3>
               <p className="text-xs text-slate-400 font-mono">ETTN: {fiscalDoc.ettn}</p>
             </div>
           </div>
@@ -701,7 +739,7 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
                 viewMode === 'e_adisyon' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Resmi E-Adisyon
+              Resmi / E-Adisyon Önizleme
             </button>
             <button
               onClick={() => { sound.beep(); setViewMode('escpos'); }}
@@ -717,6 +755,16 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Error Notice */}
+        {fiscalError && (
+          <div className="mx-4 mt-3 px-4 py-2.5 rounded-xl bg-rose-950/70 border border-rose-500/40 text-rose-200 text-xs font-bold flex items-center justify-between gap-2">
+            <span>{fiscalError}</span>
+            <button type="button" onClick={() => setFiscalError(null)} className="text-rose-300 hover:text-white cursor-pointer">
+              Kapat
+            </button>
+          </div>
+        )}
 
         {/* Body View */}
         <div className="flex-1 overflow-y-auto p-6 bg-slate-950 flex justify-center">
@@ -807,7 +855,11 @@ export const FiscalModal: React.FC<FiscalModalProps> = ({ isOpen, onClose, order
                   <div className="font-mono text-[9px] break-all max-w-[280px]">
                     {fiscalDoc.qr_code_content}
                   </div>
-                  <div className="font-bold text-slate-700">Bu belge 509 Sıra No.lu VUK Genel Tebliği uyarınca düzenlenmiştir.</div>
+                  <div className="font-bold text-slate-700">
+                    {fiscalDoc?.gib_uuid || fiscalDoc?.official_status === 'approved'
+                      ? 'Bu belge 509 Sıra No.lu VUK Genel Tebliği uyarınca düzenlenmiştir.'
+                      : 'BİLGİ AMAÇLI BELGE — MALİ DEĞERİ YOKTUR (Ön İzleme / Bilgi Fişi)'}
+                  </div>
                 </div>
                 <QrCode className="w-12 h-12 text-slate-900 flex-shrink-0" />
               </div>

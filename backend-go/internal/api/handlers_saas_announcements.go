@@ -11,7 +11,49 @@ import (
 	"github.com/boncore/pos-backend/internal/models"
 	"github.com/boncore/pos-backend/internal/service"
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 )
+
+func resolveAnnouncementTargetTenants(mdb *gorm.DB, a *models.BroadcastAnnouncement) []string {
+	if a == nil || mdb == nil {
+		return nil
+	}
+	switch a.TargetType {
+	case "all":
+		return []string{""}
+	case "specific_tenants":
+		var targets []string
+		if err := json.Unmarshal([]byte(a.TargetTenantIDs), &targets); err != nil {
+			for _, part := range strings.Split(a.TargetTenantIDs, ",") {
+				if p := strings.TrimSpace(part); p != "" {
+					targets = append(targets, p)
+				}
+			}
+		}
+		return targets
+	case "plan":
+		var tenants []models.RestaurantTenant
+		mdb.Where("status != ?", "deleted").Find(&tenants)
+		var out []string
+		for _, t := range tenants {
+			if (t.Plan != "" && strings.Contains(a.TargetPlans, t.Plan)) || (t.PlanCode != "" && strings.Contains(a.TargetPlans, t.PlanCode)) {
+				out = append(out, t.Code)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func broadcastAnnouncementEvent(svc *service.Services, mdb *gorm.DB, a *models.BroadcastAnnouncement, eventType string, payload fiber.Map) {
+	if svc == nil || svc.Broadcaster == nil {
+		return
+	}
+	for _, tCode := range resolveAnnouncementTargetTenants(mdb, a) {
+		_ = svc.Broadcaster.BroadcastToChannel(tCode, "all", eventType, payload)
+	}
+}
 
 // RegisterSaaSAnnouncementRoutes mounts R5 Broadcast Announcements routes
 func RegisterSaaSAnnouncementRoutes(masterGroup fiber.Router, rootApi fiber.Router, svc *service.Services) {
@@ -93,20 +135,7 @@ func RegisterSaaSAnnouncementRoutes(masterGroup fiber.Router, rootApi fiber.Rout
 			"expires_at":    announcement.ExpiresAt,
 		}
 
-		if announcement.TargetType == "all" {
-			_ = svc.Broadcaster.BroadcastToChannel("", "all", "ANNOUNCEMENT_BROADCAST", wsData)
-		} else if announcement.TargetType == "specific_tenants" {
-			var targets []string
-			if err := json.Unmarshal([]byte(announcement.TargetTenantIDs), &targets); err == nil && len(targets) > 0 {
-				for _, tCode := range targets {
-					_ = svc.Broadcaster.BroadcastToChannel(tCode, "all", "ANNOUNCEMENT_BROADCAST", wsData)
-				}
-			} else {
-				_ = svc.Broadcaster.BroadcastToChannel("", "all", "ANNOUNCEMENT_BROADCAST", wsData)
-			}
-		} else {
-			_ = svc.Broadcaster.BroadcastToChannel("", "all", "ANNOUNCEMENT_BROADCAST", wsData)
-		}
+		broadcastAnnouncementEvent(svc, mdb, &announcement, "ANNOUNCEMENT_BROADCAST", wsData)
 
 		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 			"success":      true,
@@ -197,7 +226,7 @@ func RegisterSaaSAnnouncementRoutes(masterGroup fiber.Router, rootApi fiber.Rout
 			return fiber.NewError(fiber.StatusInternalServerError, "Duyuru güncellenemedi: "+err.Error())
 		}
 
-		// If announcement is active, broadcast update to POS terminals
+		// If announcement is active, broadcast update to targeted POS terminals
 		if item.IsActive {
 			wsData := fiber.Map{
 				"id":            item.ID,
@@ -210,24 +239,7 @@ func RegisterSaaSAnnouncementRoutes(masterGroup fiber.Router, rootApi fiber.Rout
 				"created_at":    item.CreatedAt,
 				"expires_at":    item.ExpiresAt,
 			}
-			if item.TargetType == "all" {
-				_ = svc.Broadcaster.BroadcastToChannel("", "all", "ANNOUNCEMENT_BROADCAST", wsData)
-				_ = svc.Broadcaster.BroadcastToChannel("", "pos", "ANNOUNCEMENT_BROADCAST", wsData)
-			} else if item.TargetType == "specific_tenants" {
-				var targets []string
-				if err := json.Unmarshal([]byte(item.TargetTenantIDs), &targets); err == nil && len(targets) > 0 {
-					for _, tCode := range targets {
-						_ = svc.Broadcaster.BroadcastToChannel(tCode, "all", "ANNOUNCEMENT_BROADCAST", wsData)
-						_ = svc.Broadcaster.BroadcastToChannel(tCode, "pos", "ANNOUNCEMENT_BROADCAST", wsData)
-					}
-				} else {
-					_ = svc.Broadcaster.BroadcastToChannel("", "all", "ANNOUNCEMENT_BROADCAST", wsData)
-					_ = svc.Broadcaster.BroadcastToChannel("", "pos", "ANNOUNCEMENT_BROADCAST", wsData)
-				}
-			} else {
-				_ = svc.Broadcaster.BroadcastToChannel("", "all", "ANNOUNCEMENT_BROADCAST", wsData)
-				_ = svc.Broadcaster.BroadcastToChannel("", "pos", "ANNOUNCEMENT_BROADCAST", wsData)
-			}
+			broadcastAnnouncementEvent(svc, mdb, &item, "ANNOUNCEMENT_BROADCAST", wsData)
 		}
 
 		return c.JSON(fiber.Map{
@@ -257,7 +269,7 @@ func RegisterSaaSAnnouncementRoutes(masterGroup fiber.Router, rootApi fiber.Rout
 			return fiber.NewError(fiber.StatusInternalServerError, "Duyuru durumu güncellenemedi: "+err.Error())
 		}
 
-		// Broadcast real-time change to POS clients
+		// Broadcast real-time change to targeted POS clients
 		if item.IsActive {
 			wsData := fiber.Map{
 				"id":            item.ID,
@@ -270,15 +282,13 @@ func RegisterSaaSAnnouncementRoutes(masterGroup fiber.Router, rootApi fiber.Rout
 				"created_at":    item.CreatedAt,
 				"expires_at":    item.ExpiresAt,
 			}
-			_ = svc.Broadcaster.BroadcastToChannel("", "all", "ANNOUNCEMENT_BROADCAST", wsData)
-			_ = svc.Broadcaster.BroadcastToChannel("", "pos", "ANNOUNCEMENT_BROADCAST", wsData)
+			broadcastAnnouncementEvent(svc, mdb, &item, "ANNOUNCEMENT_BROADCAST", wsData)
 		} else {
 			deactData := fiber.Map{
 				"id":      item.ID,
 				"message": "Duyuru yayından kaldırıldı",
 			}
-			_ = svc.Broadcaster.BroadcastToChannel("", "all", "ANNOUNCEMENT_DEACTIVATED", deactData)
-			_ = svc.Broadcaster.BroadcastToChannel("", "pos", "ANNOUNCEMENT_DEACTIVATED", deactData)
+			broadcastAnnouncementEvent(svc, mdb, &item, "ANNOUNCEMENT_DEACTIVATED", deactData)
 		}
 
 		statusMsg := "Duyuru yayına alındı (aktif edildi)."
@@ -335,14 +345,12 @@ func RegisterSaaSAnnouncementRoutes(masterGroup fiber.Router, rootApi fiber.Rout
 				"created_at":    item.CreatedAt,
 				"expires_at":    item.ExpiresAt,
 			}
-			_ = svc.Broadcaster.BroadcastToChannel("", "all", "ANNOUNCEMENT_BROADCAST", wsData)
-			_ = svc.Broadcaster.BroadcastToChannel("", "pos", "ANNOUNCEMENT_BROADCAST", wsData)
+			broadcastAnnouncementEvent(svc, mdb, &item, "ANNOUNCEMENT_BROADCAST", wsData)
 		} else {
 			deactData := fiber.Map{
 				"id": item.ID,
 			}
-			_ = svc.Broadcaster.BroadcastToChannel("", "all", "ANNOUNCEMENT_DEACTIVATED", deactData)
-			_ = svc.Broadcaster.BroadcastToChannel("", "pos", "ANNOUNCEMENT_DEACTIVATED", deactData)
+			broadcastAnnouncementEvent(svc, mdb, &item, "ANNOUNCEMENT_DEACTIVATED", deactData)
 		}
 
 		return c.JSON(fiber.Map{
@@ -376,8 +384,7 @@ func RegisterSaaSAnnouncementRoutes(masterGroup fiber.Router, rootApi fiber.Rout
 		deactData := fiber.Map{
 			"id": id,
 		}
-		_ = svc.Broadcaster.BroadcastToChannel("", "all", "ANNOUNCEMENT_DEACTIVATED", deactData)
-		_ = svc.Broadcaster.BroadcastToChannel("", "pos", "ANNOUNCEMENT_DEACTIVATED", deactData)
+		broadcastAnnouncementEvent(svc, mdb, &item, "ANNOUNCEMENT_DEACTIVATED", deactData)
 
 		return c.JSON(fiber.Map{
 			"success": true,

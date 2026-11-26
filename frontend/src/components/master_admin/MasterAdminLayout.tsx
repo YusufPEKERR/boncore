@@ -138,14 +138,41 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
     setActiveTab('users');
   };
 
-  const handleImpersonateTenant = (tenant: any) => {
+  const handleImpersonateTenant = async (tenant: any) => {
     sound.cashDrawer();
-    alert(`"${tenant.name}" restoranının POS paneline geçiliyor...`);
-    onGoToPos();
+    try {
+      const token = localStorage.getItem('boncore_master_token') || localStorage.getItem('boncore_token') || '';
+      const res = await fetch(`/api/master/tenants/${encodeURIComponent(String(tenant.id || tenant.code))}/impersonate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.detail || err?.message || 'Restoran oturumu açılamadı.');
+      }
+      const data = await res.json();
+      if (data?.access_token) {
+        localStorage.setItem('boncore_token', data.access_token);
+        localStorage.setItem('boncore_auth', 'true');
+        localStorage.setItem('boncore_restaurant_code', data.tenant_code || tenant.code);
+        localStorage.setItem('boncore_active_restaurant_name', data.tenant_name || tenant.name || 'Restoran');
+        if (data.user) {
+          localStorage.setItem('boncore_user', JSON.stringify(data.user));
+        }
+        onGoToPos();
+      }
+    } catch (err: any) {
+      sound.warning();
+      alert(err?.message || 'Restoran POS paneline geçilemedi.');
+    }
   };
 
   const onlineFleetCount = fleetList.filter(f => f.is_online).length;
   const newTicketsCount = ticketList.filter(t => t.status === 'new').length;
+  const newLeadsCount = leads.filter(l => l.status === 'yeni' || l.status === 'new').length;
 
   const navItems = [
     { id: 'dashboard', label: 'Genel Bakış & Gelirler', icon: LayoutDashboard },
@@ -157,7 +184,7 @@ export const MasterAdminLayout: React.FC<MasterAdminLayoutProps> = ({
     { id: 'tickets', label: 'Destek & Talep Yönetimi', icon: LifeBuoy, badge: newTicketsCount > 0 ? newTicketsCount : undefined },
     { id: 'backups', label: 'Yedekleme & Veri Kotası', icon: HardDrive },
     { id: 'users', label: 'Restoran Kullanıcıları & Şifre', icon: KeyRound },
-    { id: 'leads', label: 'Gelen Müşteri Talepleri', icon: Sparkles, badge: leads.filter(l => l.status === 'yeni').length || undefined }
+    { id: 'leads', label: 'Gelen Müşteri Talepleri', icon: Sparkles, badge: newLeadsCount || undefined }
   ];
 
   return (

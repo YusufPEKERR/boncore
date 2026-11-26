@@ -6,6 +6,7 @@ import (
 
 	"github.com/boncore/pos-backend/internal/api/middleware"
 	"github.com/boncore/pos-backend/internal/models"
+	"github.com/boncore/pos-backend/internal/repository"
 	"github.com/boncore/pos-backend/internal/service"
 	"github.com/gofiber/fiber/v2"
 )
@@ -30,8 +31,18 @@ func RegisterSaaSFleetRoutes(masterGroup fiber.Router, rootApi fiber.Router, svc
 		if tenantCode == "" {
 			tenantCode = middleware.GetTenantCode(c)
 		}
+		if claims := middleware.GetUserClaims(c); claims != nil && !middleware.IsMasterClaims(claims) && claims.RC != "" {
+			tenantCode = claims.RC
+		}
+		tenantCode = repository.CleanTenantCode(tenantCode, "")
 		if tenantCode == "" {
-			tenantCode = "fatihciftligi"
+			return fiber.NewError(fiber.StatusBadRequest, "Geçerli işletme kodu gereklidir.")
+		}
+
+		mdb := svc.DBManager.MasterGorm
+		var regTenant models.RestaurantTenant
+		if tErr := mdb.Where("code = ? AND status != ?", tenantCode, "deleted").First(&regTenant).Error; tErr != nil {
+			return fiber.NewError(fiber.StatusNotFound, "Kayıtlı işletme bulunamadı.")
 		}
 
 		if payload.DeviceID == "" {
@@ -47,7 +58,6 @@ func RegisterSaaSFleetRoutes(masterGroup fiber.Router, rootApi fiber.Router, svc
 			payload.IPAddress = c.IP()
 		}
 
-		mdb := svc.DBManager.MasterGorm
 		now := time.Now()
 
 		// 1. Upsert into fleet_heartbeats in Master DB

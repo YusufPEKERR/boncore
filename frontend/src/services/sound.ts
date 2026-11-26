@@ -2,13 +2,15 @@ class SoundEngine {
   private ctx: AudioContext | null = null;
   public enabled: boolean = true;
 
-  private getContext(): AudioContext {
+  private getContext(): AudioContext | null {
+    if (typeof window === 'undefined') return null;
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return null;
       this.ctx = new AudioCtx();
     }
     if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      this.ctx.resume().catch(() => {});
     }
     return this.ctx;
   }

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -21,12 +22,14 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-var nonAlnumRegex = regexp.MustCompile(`[^a-z0-9\-_]`)
+var (
+	nonAlnumRegex   = regexp.MustCompile(`[^a-z0-9\-_]`)
+	validPGSchemaRe = regexp.MustCompile(`^[a-z0-9_]{2,48}$`)
+	// ErrTenantNotFound is returned when an unknown or deleted tenant code is requested.
+	ErrTenantNotFound = errors.New("işletme bulunamadı veya aktif değil")
+)
 
-// DatabaseManager manages PostgreSQL connection pools (pgxpool + GORM) with PgBouncer
-// transaction-pooling compatibility, row-level locking (`SELECT ... FOR UPDATE`),
-// JSONB GIN indexing, and automatic local SQLite fallback when a local PostgreSQL
-// service is not running.
+// DatabaseManager manages PostgreSQL connection pools (GORM) or SQLite tenant databases.
 type DatabaseManager struct {
 	cfg           *config.Config
 	MasterGorm    *gorm.DB
@@ -36,46 +39,74 @@ type DatabaseManager struct {
 	tenantGorms   map[string]*gorm.DB
 	tenantPools   map[string]*pgxpool.Pool
 	mu            sync.RWMutex
+
+	aliasMu       sync.RWMutex
+	tenantAliases map[string]string
+	knownTenants  map[string]bool
+	aliasLoadedAt time.Time
 }
 
-// NewDatabaseManager initializes the PostgreSQL connection pools or falls back to the local SQLite data store.
+// NewDatabaseManager initializes PostgreSQL or local SQLite data store.
 func NewDatabaseManager(cfg *config.Config) (*DatabaseManager, error) {
+	baseDir := resolveBackendDataDir(cfg)
 	dm := &DatabaseManager{
 		cfg:           cfg,
-		sqliteBaseDir: resolveBackendDataDir(),
+		sqliteBaseDir: baseDir,
 		tenantGorms:   make(map[string]*gorm.DB),
 		tenantPools:   make(map[string]*pgxpool.Pool),
+		tenantAliases: make(map[string]string),
+		knownTenants:  make(map[string]bool),
 	}
 
-	// 1. Try connecting to PostgreSQL Master DB Pool
-	masterGorm, masterPool, err := dm.connectPostgres(cfg.MasterDatabaseURL)
-	if err == nil {
-		dm.MasterGorm = masterGorm
-		dm.MasterPool = masterPool
-		dm.isPostgres = true
-		_ = dm.AutoMigrateMaster()
-		_ = SeedMasterSaaSData(dm)
-		log.Printf("[BonCore DB] PostgreSQL Master & PgBouncer Pool aktif.")
-		return dm, nil
+	// 1. Try connecting to PostgreSQL Master DB Pool only when configured
+	if strings.TrimSpace(cfg.MasterDatabaseURL) != "" {
+		masterGorm, err := dm.connectPostgres(cfg.MasterDatabaseURL)
+		if err == nil {
+			dm.MasterGorm = masterGorm
+			dm.isPostgres = true
+			_ = dm.AutoMigrateMaster()
+			_ = SeedMasterSaaSData(dm)
+			log.Printf("[BonCore DB] PostgreSQL Master Pool aktif.")
+			return dm, nil
+		}
+		log.Printf("[BonCore DB] PostgreSQL bağlantısı başarısız (%v) — SQLite yedek moduna geçiliyor.", err)
 	}
 
-	// 2. Fallback to existing BonCore SQLite database directory (`backend/data/master.db` with graceful fallback to `backend/master.db`)
+	// 2. Local SQLite data store
 	masterSQLitePath := filepath.Join(dm.sqliteBaseDir, "data", "master.db")
 	if _, err := os.Stat(masterSQLitePath); os.IsNotExist(err) {
-		masterSQLitePath = filepath.Join(dm.sqliteBaseDir, "master.db")
+		legacyMaster := filepath.Join(dm.sqliteBaseDir, "master.db")
+		if _, legErr := os.Stat(legacyMaster); legErr == nil {
+			masterSQLitePath = legacyMaster
+		}
 	}
 	sqliteMaster, sErr := dm.connectSQLite(masterSQLitePath)
-	if sErr == nil {
-		dm.MasterGorm = sqliteMaster
-		_ = dm.AutoMigrateMaster()
-		_ = SeedMasterSaaSData(dm)
-		log.Printf("[BonCore DB] PostgreSQL sunucusuna ulasilamadi (%v) -> Mevcut veritabani (%s) uzerinden ACID modunda baslatildi.", err, masterSQLitePath)
+	if sErr != nil {
+		return nil, fmt.Errorf("master sqlite open failed: %w", sErr)
 	}
+	dm.MasterGorm = sqliteMaster
+	_ = dm.AutoMigrateMaster()
+	_ = SeedMasterSaaSData(dm)
+	log.Printf("[BonCore DB] SQLite ACID modunda baslatildi (%s).", masterSQLitePath)
 
 	return dm, nil
 }
 
-func resolveBackendDataDir() string {
+func resolveBackendDataDir(cfg *config.Config) string {
+	if cfg != nil && strings.TrimSpace(cfg.SQLiteDataDir) != "" {
+		envExplicit := strings.TrimSpace(os.Getenv("SQLITE_DATA_DIR")) != ""
+		// If test or caller explicitly overrode SQLiteDataDir away from default ../backend/data
+		absCfg, _ := filepath.Abs(cfg.SQLiteDataDir)
+		base := filepath.Base(absCfg)
+		if base == "data" {
+			parent := filepath.Dir(absCfg)
+			if envExplicit || !strings.HasSuffix(filepath.Clean(parent), string(filepath.Separator)+"backend") {
+				return parent
+			}
+		} else if envExplicit || !strings.Contains(absCfg, string(filepath.Separator)+"backend") {
+			return absCfg
+		}
+	}
 	candidates := []string{
 		"../backend",
 		"backend",
@@ -91,6 +122,10 @@ func resolveBackendDataDir() string {
 			return abs
 		}
 	}
+	if cfg != nil && strings.TrimSpace(cfg.SQLiteDataDir) != "" {
+		abs, _ := filepath.Abs(cfg.SQLiteDataDir)
+		return abs
+	}
 	abs, _ := filepath.Abs("../backend")
 	return abs
 }
@@ -99,29 +134,8 @@ func (dm *DatabaseManager) IsPostgres() bool {
 	return dm.isPostgres
 }
 
-func (dm *DatabaseManager) connectPostgres(dsn string) (*gorm.DB, *pgxpool.Pool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
-	defer cancel()
-
-	poolCfg, err := pgxpool.ParseConfig(dsn)
-	if err != nil {
-		return nil, nil, err
-	}
-	poolCfg.MaxConns = dm.cfg.DBMaxConns
-	poolCfg.MinConns = dm.cfg.DBMinConns
-	poolCfg.MaxConnLifetime = 30 * time.Minute
-	poolCfg.MaxConnIdleTime = 5 * time.Minute
-
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, nil, err
-	}
-
-	// GORM with PreferSimpleProtocol=true ensures 100% PgBouncer transaction pooling compatibility
+func (dm *DatabaseManager) connectPostgres(dsn string) (*gorm.DB, error) {
+	// GORM with PreferSimpleProtocol=true ensures PgBouncer transaction pooling compatibility.
 	gormDB, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  dsn,
 		PreferSimpleProtocol: dm.cfg.PgBouncerMode,
@@ -129,20 +143,29 @@ func (dm *DatabaseManager) connectPostgres(dsn string) (*gorm.DB, *pgxpool.Pool,
 		Logger:                 logger.Default.LogMode(logger.Silent),
 		SkipDefaultTransaction: true,
 		PrepareStmt:            !dm.cfg.PgBouncerMode,
+		NowFunc:                func() time.Time { return time.Now().UTC() },
 	})
 	if err != nil {
-		pool.Close()
-		return nil, nil, err
+		return nil, err
 	}
 
 	sqlDB, err := gormDB.DB()
-	if err == nil {
-		sqlDB.SetMaxOpenConns(int(dm.cfg.DBMaxConns))
-		sqlDB.SetMaxIdleConns(int(dm.cfg.DBMinConns))
-		sqlDB.SetConnMaxLifetime(30 * time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	sqlDB.SetMaxOpenConns(int(dm.cfg.DBMaxConns))
+	sqlDB.SetMaxIdleConns(int(dm.cfg.DBMinConns))
+	sqlDB.SetConnMaxLifetime(30 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if pingErr := sqlDB.PingContext(ctx); pingErr != nil {
+		_ = sqlDB.Close()
+		return nil, pingErr
 	}
 
-	return gormDB, pool, nil
+	return gormDB, nil
 }
 
 func (dm *DatabaseManager) connectSQLite(dbFilePath string) (*gorm.DB, error) {
@@ -151,6 +174,7 @@ func (dm *DatabaseManager) connectSQLite(dbFilePath string) (*gorm.DB, error) {
 	gormDB, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger:                 logger.Default.LogMode(logger.Silent),
 		SkipDefaultTransaction: true,
+		NowFunc:                func() time.Time { return time.Now().UTC() },
 	})
 	if err != nil {
 		return nil, err
@@ -185,27 +209,100 @@ func CleanTenantCode(code string, fallback string) string {
 	return cleaned
 }
 
-// GetTenantDB returns the isolated GORM instance for a given restaurant tenant code.
-func (dm *DatabaseManager) GetTenantDB(tenantCode string) (*gorm.DB, error) {
-	cleanCode := CleanTenantCode(tenantCode, dm.cfg.DefaultTenantCode)
+// InvalidateTenantCache forces the next tenant lookup to refresh aliases from Master DB.
+func (dm *DatabaseManager) InvalidateTenantCache() {
+	dm.aliasMu.Lock()
+	dm.aliasLoadedAt = time.Time{}
+	dm.aliasMu.Unlock()
+}
 
-	// Resolve slugified restaurant names/aliases (e.g. restoran=fatih-ciftligi -> fatihciftligi) via Master DB
-	if dm.MasterGorm != nil {
+func (dm *DatabaseManager) resolveRegisteredTenant(cleanCode string) (string, bool) {
+	if dm.MasterGorm == nil {
+		return cleanCode, true
+	}
+
+	now := time.Now()
+	dm.aliasMu.RLock()
+	fresh := !dm.aliasLoadedAt.IsZero() && now.Sub(dm.aliasLoadedAt) < 30*time.Second
+	if fresh {
+		if dm.knownTenants[cleanCode] {
+			dm.aliasMu.RUnlock()
+			return cleanCode, true
+		}
 		noDash := strings.ReplaceAll(cleanCode, "-", "")
-		var allTenants []models.RestaurantTenant
-		if err := dm.MasterGorm.Find(&allTenants).Error; err == nil {
-			for _, t := range allTenants {
-				tCodeClean := CleanTenantCode(t.Code, t.Code)
-				tNameClean := CleanTenantCode(t.Name, "")
-				if tCodeClean == cleanCode ||
-					strings.ReplaceAll(tCodeClean, "-", "") == noDash ||
-					(tNameClean != "" && (tNameClean == cleanCode || strings.ReplaceAll(tNameClean, "-", "") == noDash)) {
-					cleanCode = tCodeClean
-					break
-				}
-			}
+		if resolved, ok := dm.tenantAliases[cleanCode]; ok {
+			dm.aliasMu.RUnlock()
+			return resolved, true
+		}
+		if resolved, ok := dm.tenantAliases[noDash]; ok {
+			dm.aliasMu.RUnlock()
+			return resolved, true
+		}
+		dm.aliasMu.RUnlock()
+		return "", false
+	}
+	dm.aliasMu.RUnlock()
+
+	var allTenants []models.RestaurantTenant
+	if err := dm.MasterGorm.Where("status != ?", "deleted").Find(&allTenants).Error; err != nil {
+		return cleanCode, true
+	}
+
+	aliases := make(map[string]string, len(allTenants)*3)
+	known := make(map[string]bool, len(allTenants))
+	for _, t := range allTenants {
+		tCodeClean := CleanTenantCode(t.Code, t.Code)
+		if tCodeClean == "" {
+			continue
+		}
+		known[tCodeClean] = true
+		aliases[tCodeClean] = tCodeClean
+		aliases[strings.ReplaceAll(tCodeClean, "-", "")] = tCodeClean
+		if tNameClean := CleanTenantCode(t.Name, ""); tNameClean != "" {
+			aliases[tNameClean] = tCodeClean
+			aliases[strings.ReplaceAll(tNameClean, "-", "")] = tCodeClean
 		}
 	}
+
+	dm.aliasMu.Lock()
+	dm.tenantAliases = aliases
+	dm.knownTenants = known
+	dm.aliasLoadedAt = now
+	dm.aliasMu.Unlock()
+
+	if known[cleanCode] {
+		return cleanCode, true
+	}
+	if resolved, ok := aliases[cleanCode]; ok {
+		return resolved, true
+	}
+	if resolved, ok := aliases[strings.ReplaceAll(cleanCode, "-", "")]; ok {
+		return resolved, true
+	}
+	return "", false
+}
+
+// ProvisionTenantDB refreshes the tenant cache and initializes the database for a newly registered tenant.
+func (dm *DatabaseManager) ProvisionTenantDB(tenantCode string) (*gorm.DB, error) {
+	dm.InvalidateTenantCache()
+	return dm.GetTenantDB(tenantCode)
+}
+
+// GetTenantDB returns the isolated GORM instance for a registered restaurant tenant code.
+func (dm *DatabaseManager) GetTenantDB(tenantCode string) (*gorm.DB, error) {
+	if strings.TrimSpace(tenantCode) == "" && dm.cfg != nil {
+		tenantCode = dm.cfg.DefaultTenantCode
+	}
+	cleanCode := CleanTenantCode(tenantCode, "")
+	if cleanCode == "" {
+		return nil, ErrTenantNotFound
+	}
+
+	resolvedCode, ok := dm.resolveRegisteredTenant(cleanCode)
+	if !ok {
+		return nil, ErrTenantNotFound
+	}
+	cleanCode = resolvedCode
 
 	dm.mu.RLock()
 	if db, ok := dm.tenantGorms[cleanCode]; ok && db != nil {
@@ -223,25 +320,54 @@ func (dm *DatabaseManager) GetTenantDB(tenantCode string) (*gorm.DB, error) {
 
 	if dm.isPostgres {
 		schemaName := strings.ReplaceAll(cleanCode, "-", "_")
-		if dm.MasterGorm != nil {
-			dm.MasterGorm.Exec(fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s";`, schemaName))
+		if !validPGSchemaRe.MatchString(schemaName) {
+			return nil, fmt.Errorf("geçersiz şema adı: %s", schemaName)
 		}
-		dsn := fmt.Sprintf("%s&search_path=%s,public", dm.cfg.DatabaseURL, schemaName)
-		if !strings.Contains(dm.cfg.DatabaseURL, "?") {
-			dsn = fmt.Sprintf("%s?search_path=%s,public", dm.cfg.DatabaseURL, schemaName)
+		if dm.MasterGorm != nil {
+			if err := dm.MasterGorm.Exec(fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s";`, schemaName)).Error; err != nil {
+				return nil, fmt.Errorf("postgresql şema oluşturulamadı: %w", err)
+			}
+		}
+		baseURL := dm.cfg.DatabaseURL
+		if strings.TrimSpace(baseURL) == "" {
+			baseURL = dm.cfg.MasterDatabaseURL
+		}
+		dsn := baseURL
+		if !dm.cfg.PgBouncerMode {
+			sep := "?"
+			if strings.Contains(baseURL, "?") {
+				sep = "&"
+			}
+			dsn = fmt.Sprintf("%s%ssearch_path=%s,public", baseURL, sep, schemaName)
 		}
 
-		gormDB, pool, err := dm.connectPostgres(dsn)
-		if err == nil {
-			_ = dm.AutoMigrateTenant(gormDB)
-			dm.EnsureTenantManager(gormDB, cleanCode)
-			dm.tenantGorms[cleanCode] = gormDB
-			dm.tenantPools[cleanCode] = pool
-			return gormDB, nil
+		gormDB, err := dm.connectPostgres(dsn)
+		if err != nil {
+			// NEVER silently fall back to ephemeral SQLite when PostgreSQL mode is active
+			return nil, fmt.Errorf("postgresql tenant bağlantısı kurulamadı (%s): %w", cleanCode, err)
 		}
+		if dm.cfg.PgBouncerMode {
+			_ = gormDB.Callback().Query().Before("gorm:query").Register("boncore:set_schema", func(tx *gorm.DB) {
+				_ = tx.Exec(fmt.Sprintf(`SET search_path TO "%s", public;`, schemaName)).Error
+			})
+			_ = gormDB.Callback().Create().Before("gorm:create").Register("boncore:set_schema", func(tx *gorm.DB) {
+				_ = tx.Exec(fmt.Sprintf(`SET search_path TO "%s", public;`, schemaName)).Error
+			})
+			_ = gormDB.Callback().Update().Before("gorm:update").Register("boncore:set_schema", func(tx *gorm.DB) {
+				_ = tx.Exec(fmt.Sprintf(`SET search_path TO "%s", public;`, schemaName)).Error
+			})
+			_ = gormDB.Callback().Delete().Before("gorm:delete").Register("boncore:set_schema", func(tx *gorm.DB) {
+				_ = tx.Exec(fmt.Sprintf(`SET search_path TO "%s", public;`, schemaName)).Error
+			})
+			_ = gormDB.Exec(fmt.Sprintf(`SET search_path TO "%s", public;`, schemaName)).Error
+		}
+		_ = dm.AutoMigrateTenant(gormDB)
+		dm.EnsureTenantManager(gormDB, cleanCode)
+		dm.tenantGorms[cleanCode] = gormDB
+		return gormDB, nil
 	}
 
-	// Resolve SQLite file path matching Python `get_tenant_db_path(tenant_code)`
+	// Resolve SQLite file path
 	var dbPath string
 	tenantsDir := filepath.Join(dm.sqliteBaseDir, "data", "tenants")
 	_ = os.MkdirAll(tenantsDir, 0755)
@@ -367,67 +493,21 @@ func (dm *DatabaseManager) seedMasterRecords(db *gorm.DB) error {
 			if err := db.Create(&p).Error; err != nil {
 				return fmt.Errorf("failed to create plan %s: %w", p.Code, err)
 			}
-		} else {
-			existing.Name = p.Name
-			existing.Description = p.Description
-			existing.PriceMonthly = p.PriceMonthly
-			existing.PriceYearly = p.PriceYearly
-			existing.MaxDevices = p.MaxDevices
-			existing.MaxBranches = p.MaxBranches
-			existing.StorageQuotaMB = p.StorageQuotaMB
-			existing.IncludedModules = p.IncludedModules
-			existing.IsActive = p.IsActive
-			db.Save(&existing)
 		}
 	}
 
-	// 2. Seed Sample Franchise Brand ('fatih-group')
-	var brand models.FranchiseBrand
-	if err := db.Where("code = ?", "fatih-group").First(&brand).Error; err != nil {
-		taxNo := "1234567890"
-		taxOff := "Kadıköy"
-		hqAddr := "Bağdat Caddesi No:100 Kadıköy, İstanbul"
-		cPerson := "Fatih Yılmaz"
-		cPhone := "0532 555 0101"
-		cEmail := "fatih@fatihciftligi.com"
-		brand = models.FranchiseBrand{
-			Code:                "fatih-group",
-			Name:                "Fatih Çiftliği Grubu",
-			TaxNumber:           &taxNo,
-			TaxOffice:           &taxOff,
-			HeadquartersAddress: &hqAddr,
-			ContactPerson:       &cPerson,
-			ContactPhone:        &cPhone,
-			ContactEmail:        &cEmail,
-			PrimaryTenantCode:   "fatihciftligi",
-			Status:              "active",
-		}
-		if err := db.Create(&brand).Error; err != nil {
-			return fmt.Errorf("failed to create brand: %w", err)
-		}
+	// 2. Seed primary default tenant ONLY when tenants table is completely empty (no startup overwrite!)
+	var tenantCount int64
+	db.Model(&models.RestaurantTenant{}).Count(&tenantCount)
+	defaultCode := "fatihciftligi"
+	if dm.cfg != nil && strings.TrimSpace(dm.cfg.DefaultTenantCode) != "" {
+		defaultCode = CleanTenantCode(dm.cfg.DefaultTenantCode, "fatihciftligi")
 	}
-
-	// 3. Ensure primary flagship tenant exists and has all 11 feature flags enabled (respecting renamed code)
-	var fatih models.RestaurantTenant
-	branchCode := "IST-HQ-01"
-	branchName := "Fatih Çiftliği Merkez"
-	if err := db.Where("code = ? OR id = 1 OR name = ?", "fatihciftligi", "Fatih Çiftliği").Order("id asc").First(&fatih).Error; err != nil {
-		ownerName := "Fatih Bey"
-		phone := "0532 555 0101"
-		email := "info@fatihciftligi.com"
-		taxNo := "1234567890"
-		taxOff := "Kadıköy"
-		addr := "Kadıköy, İstanbul"
-		fatih = models.RestaurantTenant{
-			Code:                "fatihciftligi",
-			Name:                "Fatih Çiftliği",
-			OwnerName:           &ownerName,
-			Phone:               &phone,
-			Email:               &email,
+	if tenantCount == 0 {
+		defaultTenant := models.RestaurantTenant{
+			Code:                defaultCode,
+			Name:                "BonCore Demo İşletme",
 			City:                "İstanbul",
-			TaxNumber:           &taxNo,
-			TaxOffice:           &taxOff,
-			Address:             &addr,
 			Plan:                "enterprise",
 			PlanCode:            "enterprise",
 			MonthlyPrice:        3990.0,
@@ -445,124 +525,44 @@ func (dm *DatabaseManager) seedMasterRecords(db *gorm.DB) error {
 			FeatureReservations: true,
 			FeatureCostProfit:   true,
 			ReadOnlyMode:        false,
-			BrandID:             &brand.ID,
-			IsBrandMaster:       true,
-			BranchCode:          &branchCode,
-			BranchName:          &branchName,
 		}
-		if err := db.Create(&fatih).Error; err != nil {
-			return fmt.Errorf("failed to create fatihciftligi tenant: %w", err)
+		if err := db.Create(&defaultTenant).Error; err != nil {
+			return fmt.Errorf("failed to create default tenant: %w", err)
 		}
-	} else {
-		fatih.Plan = "enterprise"
-		fatih.PlanCode = "enterprise"
-		fatih.Status = "active"
-		fatih.FeatureQRMenu = true
-		fatih.FeatureKDS = true
-		fatih.FeatureDelivery = true
-		fatih.FeatureIntegrations = true
-		fatih.FeatureEInvoice = true
-		fatih.FeatureStockRecipe = true
-		fatih.FeatureLoyalty = true
-		fatih.FeatureHotel = true
-		fatih.FeatureKiosk = true
-		fatih.FeatureReservations = true
-		fatih.FeatureCostProfit = true
-		fatih.ReadOnlyMode = false
-		fatih.BrandID = &brand.ID
-		fatih.IsBrandMaster = true
-		if fatih.BranchCode == nil {
-			fatih.BranchCode = &branchCode
-		}
-		if fatih.BranchName == nil {
-			fatih.BranchName = &branchName
-		}
-		db.Save(&fatih)
 	}
 
-	// 4. Default test VPOS config for PayTR and iyzico in sandbox mode (is_production = false)
-	paytrNotes := "PayTR Sandbox Test Ortamı"
-	iyzicoNotes := "iyzico Sandbox Test Ortamı"
-	vposConfigs := []models.VPOSConfig{
-		{
-			GatewayProvider: "paytr",
-			IsProduction:    false,
-			MerchantID:      "TEST_PAYTR_MERCHANT_12345",
-			APIKey:          "test_paytr_api_key_sample",
-			APISecret:       "test_paytr_api_secret_sample",
-			MerchantSalt:    "test_paytr_salt_sample",
-			CallbackURL:     "http://localhost:8000/api/billing/webhook/paytr",
-			IsActive:        true,
-			Notes:           &paytrNotes,
-		},
-		{
-			GatewayProvider: "iyzico",
-			IsProduction:    false,
-			MerchantID:      "TEST_IYZICO_MERCHANT_67890",
-			APIKey:          "sandbox-iyzico-api-key-sample",
-			APISecret:       "sandbox-iyzico-secret-sample",
-			MerchantSalt:    "",
-			CallbackURL:     "http://localhost:8000/api/billing/webhook/iyzico",
-			IsActive:        true,
-			Notes:           &iyzicoNotes,
-		},
-	}
-	for _, cfg := range vposConfigs {
-		var existing models.VPOSConfig
-		if err := db.Where("gateway_provider = ? AND is_production = ?", cfg.GatewayProvider, cfg.IsProduction).First(&existing).Error; err != nil {
+	// 3. Seed empty-secret VPOS template rows only if table is empty
+	var vposCount int64
+	db.Model(&models.VPOSConfig{}).Count(&vposCount)
+	if vposCount == 0 {
+		paytrNotes := "PayTR Sandbox Test Ortamı"
+		iyzicoNotes := "iyzico Sandbox Test Ortamı"
+		vposConfigs := []models.VPOSConfig{
+			{
+				GatewayProvider: "paytr",
+				IsProduction:    false,
+				IsActive:        false,
+				Notes:           &paytrNotes,
+			},
+			{
+				GatewayProvider: "iyzico",
+				IsProduction:    false,
+				IsActive:        false,
+				Notes:           &iyzicoNotes,
+			},
+		}
+		for _, cfg := range vposConfigs {
 			db.Create(&cfg)
 		}
 	}
 
-	// 5. Initial Storage Quota & Live Metrics for primary tenant (using current Code)
-	primaryCode := fatih.Code
-	if strings.TrimSpace(primaryCode) == "" {
-		primaryCode = "fatihciftligi"
-	}
-	var quota models.TenantStorageQuota
-	if err := db.Where("tenant_code = ?", primaryCode).First(&quota).Error; err != nil {
-		quota = models.TenantStorageQuota{
-			TenantCode:       primaryCode,
-			AllocatedQuotaMB: 10240,
-			UsedDBBytes:      856064,
-			UsedMediaBytes:   0,
-			TotalUsedMB:      0.82,
-			UsagePercentage:  0.01,
-			IsQuotaExceeded:  false,
-		}
-		db.Create(&quota)
-	} else if quota.AllocatedQuotaMB < 10240 {
-		quota.AllocatedQuotaMB = 10240
-		db.Save(&quota)
-	}
-
-	var liveMetric models.TenantLiveMetric
-	if err := db.Where("tenant_code = ?", primaryCode).First(&liveMetric).Error; err != nil {
-		liveMetric = models.TenantLiveMetric{
-			TenantCode:         primaryCode,
-			TenantName:         fatih.Name,
-			IsOnline:           true,
-			LastSeenAt:         time.Now(),
-			ConnectedTablets:   2,
-			ConnectedHandhelds: 1,
-			ConnectedKDS:       1,
-			ActiveTablesCount:  5,
-			ActiveOrdersCount:  4,
-			TodayRevenue:       18450.0,
-			TodayOrdersCount:   42,
-		}
-		db.Create(&liveMetric)
-	}
-
-	// 6. Backfill invoice tenant codes, subtotal, and tax if empty
+	// 4. Backfill invoice tenant codes, subtotal, and tax if empty
 	var invoices []models.TenantInvoice
 	if err := db.Where("tenant_code = '' OR tenant_code IS NULL").Find(&invoices).Error; err == nil {
 		for _, inv := range invoices {
 			var t models.RestaurantTenant
 			if err := db.Select("code").Where("id = ?", inv.TenantID).First(&t).Error; err == nil && t.Code != "" {
 				inv.TenantCode = t.Code
-			} else if strings.Contains(strings.ToLower(inv.TenantName), "fatih") {
-				inv.TenantCode = "fatihciftligi"
 			}
 			if inv.Subtotal == 0 && inv.Amount > 0 {
 				inv.Subtotal = inv.Amount / 1.20
@@ -572,6 +572,7 @@ func (dm *DatabaseManager) seedMasterRecords(db *gorm.DB) error {
 		}
 	}
 
+	dm.InvalidateTenantCache()
 	return nil
 }
 
@@ -708,13 +709,14 @@ func (dm *DatabaseManager) AutoMigrateTenant(db *gorm.DB) error {
 		db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_details_gin ON audit_logs USING GIN (details);`)
 	}
 
+	BackfillHashedStaffPINs(dm.cfg, db)
 	return nil
 }
 
-// EnsureTenantManager guarantees that every restaurant tenant database always has at least
-// one active manager/admin user, preventing permanent lockout.
+// EnsureTenantManager seeds a demo manager ONLY when BONCORE_ALLOW_DEMO_SEED is explicitly enabled.
+// Production SaaS tenant provisioning creates its own manager credentials explicitly without hidden PIN backdoors.
 func (dm *DatabaseManager) EnsureTenantManager(db *gorm.DB, tenantCode string) {
-	if db == nil {
+	if db == nil || dm.cfg == nil || !dm.cfg.AllowDemoSeed {
 		return
 	}
 	var count int64
@@ -724,14 +726,17 @@ func (dm *DatabaseManager) EnsureTenantManager(db *gorm.DB, tenantCode string) {
 		if strings.TrimSpace(tenantCode) == "" {
 			uname = "admin"
 		}
-		pin := "9999"
+		pin := dm.cfg.ManagerOverridePIN
+		if strings.TrimSpace(pin) == "" {
+			return
+		}
 		defaultMgr := models.StaffUser{
-			Name:     "Kemal Müdür",
+			Name:     "Demo Yönetici",
 			Role:     "manager",
-			PinCode:  pin,
 			Username: &uname,
 			IsActive: true,
 		}
+		ApplyHashedStaffPin(dm.cfg, &defaultMgr, pin)
 		_ = db.Create(&defaultMgr)
 	}
 }
@@ -752,6 +757,13 @@ func (dm *DatabaseManager) Close() {
 
 	if dm.MasterPool != nil {
 		dm.MasterPool.Close()
+		dm.MasterPool = nil
+	}
+	if dm.MasterGorm != nil {
+		if sqlDB, err := dm.MasterGorm.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+		dm.MasterGorm = nil
 	}
 	for _, pool := range dm.tenantPools {
 		if pool != nil {
@@ -816,11 +828,13 @@ func (dm *DatabaseManager) RenameTenantCode(oldCode string, newCode string) erro
 		_ = dm.CloseTenantDB(newClean)
 		oldSchema := strings.ReplaceAll(oldClean, "-", "_")
 		newSchema := strings.ReplaceAll(newClean, "-", "_")
+		if !validPGSchemaRe.MatchString(oldSchema) || !validPGSchemaRe.MatchString(newSchema) {
+			return fmt.Errorf("geçersiz şema adı")
+		}
 		if dm.MasterGorm != nil && oldSchema != newSchema {
 			_ = dm.MasterGorm.Exec(fmt.Sprintf(`ALTER SCHEMA IF EXISTS "%s" RENAME TO "%s";`, oldSchema, newSchema)).Error
 		}
-		_, err := dm.GetTenantDB(newClean)
-		return err
+		return dm.InvalidateAndWarmTenant(newClean)
 	}
 
 	if oldDB != nil {
@@ -842,13 +856,18 @@ func (dm *DatabaseManager) RenameTenantCode(oldCode string, newCode string) erro
 		}
 	}
 
-	newDB, err := dm.GetTenantDB(newClean)
+	newDB, err := dm.ProvisionTenantDB(newClean)
 	if err == nil && newDB != nil {
 		dm.mu.Lock()
 		dm.tenantGorms[oldClean] = newDB
 		dm.tenantGorms[newClean] = newDB
 		dm.mu.Unlock()
 	}
+	return err
+}
+
+func (dm *DatabaseManager) InvalidateAndWarmTenant(code string) error {
+	_, err := dm.ProvisionTenantDB(code)
 	return err
 }
 

@@ -6,6 +6,15 @@ import { localHardware } from '../services/localHardware';
  * YALNIZCA ilgili rapor veya adisyon fişini yazdırır.
  * Hedef yazıcının yapılandırılmış genişliğine göre (80mm / 58mm) otomatik boyutlanır.
  */
+export function escapeHtml(raw: string): string {
+  return String(raw || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export const printThermalSlipById = (
   elementId: string,
   title: string = 'Rapor',
@@ -61,7 +70,7 @@ export const printThermalSlipById = (
     <html lang="tr">
       <head>
         <meta charset="utf-8" />
-        <title>${title}</title>
+        <title>${escapeHtml(title)}</title>
         <style>
           @page {
             size: ${pageSize};

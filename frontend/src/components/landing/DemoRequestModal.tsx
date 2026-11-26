@@ -53,7 +53,8 @@ export const DemoRequestModal: React.FC<DemoRequestModalProps> = ({
         let errText = 'Demo talebi gönderilemedi. Lütfen tekrar deneyin.';
         try {
           const errJson = await res.json();
-          if (errJson?.error) errText = String(errJson.error);
+          const detailMsg = errJson?.detail || errJson?.message || errJson?.error;
+          if (detailMsg) errText = String(detailMsg);
         } catch {}
         setFormError(errText);
         setLoading(false);

@@ -36,11 +36,34 @@ LOCAL_CONFIG_FILE = os.path.join(EXE_DIR, "config.json")
 
 # Default Config
 CONFIG = {
-    "server_url": "http://77.67.29.77",
+    "server_url": "https://boncoreapp.me",
+    "restaurant_code": "",
+    "agent_api_key": "",
     "terminal_name": "Kasa 1",
     "scale_default_ip": "192.168.1.150",
     "scale_default_port": 2004
 }
+
+def _is_allowed_scale_ip(ip_str: str) -> bool:
+    try:
+        addr = ipaddress.IPv4Address(ip_str.strip())
+        if addr.is_link_local or addr.is_multicast or addr.is_unspecified or addr.is_loopback:
+            return False
+        # Only allow private LAN subnets (RFC1918) for physical TCP scales
+        return addr.is_private
+    except Exception:
+        return False
+
+def _is_allowed_origin(origin: str) -> bool:
+    if not origin:
+        return False
+    low = origin.strip().lower()
+    if low.startswith("http://localhost") or low.startswith("http://127.0.0.1") or low.startswith("https://localhost"):
+        return True
+    srv = (CONFIG.get("server_url") or "").strip().lower().rstrip("/")
+    if srv and low == srv:
+        return True
+    return low in ("https://boncoreapp.me", "https://www.boncoreapp.me")
 
 def load_config():
     global CONFIG
@@ -458,9 +481,10 @@ def cloud_relay_worker():
     local_ip = get_local_ip()
     server_url = CONFIG.get("server_url", "").rstrip("/")
     if not server_url:
-        server_url = "https://contributing-sustained-cure-posting.trycloudflare.com"
+        server_url = "https://boncoreapp.me"
 
     restaurant_code = CONFIG.get("restaurant_code", "").strip()
+    agent_api_key = CONFIG.get("agent_api_key", "").strip()
 
     last_hb = 0.0
     last_ip_refresh = 0.0
@@ -476,6 +500,8 @@ def cloud_relay_worker():
             headers = {"Content-Type": "application/json"}
             if restaurant_code:
                 headers["X-Restaurant-Code"] = restaurant_code
+            if agent_api_key:
+                headers["X-Agent-Key"] = agent_api_key
 
             # 1. Heartbeat (Her 3 saniyede bir)
             if now - last_hb > 3.0:
@@ -565,16 +591,35 @@ class LocalHttpHandler(BaseHTTPRequestHandler):
     def _send_cors_headers(self, status=200):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = (self.headers.get("Origin") or "").strip()
+        if _is_allowed_origin(origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "*")
-        self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Local-Agent-Token")
+
+    def _require_allowed_origin(self) -> bool:
+        origin = (self.headers.get("Origin") or "").strip()
+        if origin and not _is_allowed_origin(origin):
+            self._send_cors_headers(403)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Origin not allowed"}).encode("utf-8"))
+            return False
+        return True
 
     def do_OPTIONS(self):
+        origin = (self.headers.get("Origin") or "").strip()
+        if origin and not _is_allowed_origin(origin):
+            self.send_response(403)
+            self.end_headers()
+            return
         self._send_cors_headers(204)
         self.end_headers()
 
     def do_GET(self):
+        if not self._require_allowed_origin():
+            return
         parsed = urlparse(self.path)
         path = parsed.path
         query = parse_qs(parsed.query)
@@ -595,6 +640,11 @@ class LocalHttpHandler(BaseHTTPRequestHandler):
             ip = query.get("ip", [CONFIG.get("scale_default_ip", "192.168.1.150")])[0].strip()
             port = int(query.get("port", [2004])[0])
             timeout = float(query.get("timeout", [2.5])[0])
+            if not _is_allowed_scale_ip(ip) or not (1 <= port <= 65535):
+                self._send_cors_headers(403)
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Yalnızca yerel LAN IP adreslerine izin verilir."}).encode("utf-8"))
+                return
             result = read_cas_from_local_network(ip, port, timeout)
             self._send_cors_headers(200)
             self.end_headers()
@@ -605,6 +655,11 @@ class LocalHttpHandler(BaseHTTPRequestHandler):
             ip = query.get("ip", [CONFIG.get("scale_default_ip", "192.168.1.150")])[0].strip()
             port = int(query.get("port", [2004])[0])
             timeout = float(query.get("timeout", [2.0])[0])
+            if not _is_allowed_scale_ip(ip) or not (1 <= port <= 65535):
+                self._send_cors_headers(403)
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Yalnızca yerel LAN IP adreslerine izin verilir."}).encode("utf-8"))
+                return
             result = test_local_connection(ip, port, timeout)
             self._send_cors_headers(200)
             self.end_headers()

@@ -7,15 +7,15 @@ services:
     container_name: boncore_postgres
     restart: always
     environment:
-      POSTGRES_USER: boncore_user
-      POSTGRES_PASSWORD: boncore_password
-      POSTGRES_DB: boncore_db
+      POSTGRES_USER: ${POSTGRES_USER:-boncore_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-boncore_db}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U boncore_user -d boncore_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-boncore_user} -d $${POSTGRES_DB:-boncore_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -30,18 +30,22 @@ services:
     volumes:
       - redis_data:/data
 
-  # 3. Asenkron Backend & WebSocket API (Python FastAPI)
+  # 3. High-Performance Go Backend & WebSocket API (Fiber)
   backend:
     build:
-      context: ./backend
+      context: ./backend-go
       dockerfile: Dockerfile
     container_name: boncore_backend
     restart: always
     environment:
-      - DATABASE_URL=postgresql+asyncpg://boncore_user:boncore_password@postgres:5432/boncore_db
+      - AUTH_SECRET_KEY=${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}
+      - MASTER_DATABASE_URL=postgres://${POSTGRES_USER:-boncore_user}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-boncore_db}?sslmode=disable
       - REDIS_URL=redis://redis:6379/0
+      - PORT=8000
     ports:
       - "8000:8000"
+    volumes:
+      - boncore_data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,3 +77,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  boncore_data:

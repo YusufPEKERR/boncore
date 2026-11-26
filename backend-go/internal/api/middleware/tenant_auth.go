@@ -13,24 +13,48 @@ import (
 	"time"
 
 	"github.com/boncore/pos-backend/internal/config"
+	"github.com/boncore/pos-backend/internal/models"
 	"github.com/boncore/pos-backend/internal/repository"
 	"github.com/gofiber/fiber/v2"
 	"golang.org/x/crypto/pbkdf2"
 )
 
 const (
-	PBKDF2Iterations = 200000
-	ContextTenantKey = "tenant_code"
+	PBKDF2Iterations  = 200000
+	ContextTenantKey  = "tenant_code"
 	ContextUserClaims = "user_claims"
 )
 
-// TokenClaims matches the exact JSON payload signed by Python's `create_access_token` in `backend/app/security.py`.
+// TokenClaims holds the signed HMAC claims for tenant staff or master platform sessions.
 type TokenClaims struct {
 	Sub  int    `json:"sub"`
 	Role string `json:"role"`
 	RC   string `json:"rc"`
 	RID  *int   `json:"rid"`
+	Aud  string `json:"aud,omitempty"`
 	Exp  int64  `json:"exp"`
+}
+
+// IsMasterClaims validates that a token is genuinely issued for the SaaS Master Platform.
+func IsMasterClaims(claims *TokenClaims) bool {
+	if claims == nil {
+		return false
+	}
+	if claims.Aud != "master_platform" || claims.RC != "master" {
+		return false
+	}
+	r := strings.ToLower(strings.TrimSpace(claims.Role))
+	return r == "master_admin" || r == "superadmin"
+}
+
+// HashPinLookup computes a deterministic HMAC-SHA256 digest of a PIN for O(1) lookup without storing plaintext PINs.
+func HashPinLookup(cfg *config.Config, pin string) string {
+	if cfg == nil {
+		return ""
+	}
+	mac := hmac.New(sha256.New, cfg.SecretKey)
+	mac.Write([]byte("boncore-pin-lookup:" + strings.TrimSpace(pin)))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // HashPassword generates a `pbkdf2_sha256$200000$<salt_hex>$<digest_hex>` password hash
@@ -66,7 +90,7 @@ func VerifyPassword(password string, storedHash *string) bool {
 	return hmac.Equal([]byte(derivedHex), []byte(expectedHex))
 }
 
-// CreateAccessToken generates a 100% compatible `<base64url_payload>.<base64url_hmac_sha256>` token.
+// CreateAccessToken generates a signed `<base64url_payload>.<base64url_hmac_sha256>` tenant staff token.
 func CreateAccessToken(cfg *config.Config, userID int, role string, remember bool, restaurantCode string, restaurantID *int) (string, int64) {
 	ttl := cfg.TokenTTLSeconds
 	if remember {
@@ -78,8 +102,45 @@ func CreateAccessToken(cfg *config.Config, userID int, role string, remember boo
 		Role: role,
 		RC:   restaurantCode,
 		RID:  restaurantID,
+		Aud:  "tenant",
 		Exp:  exp,
 	}
+	return signTokenClaims(cfg, claims), exp
+}
+
+// CreateMasterAccessToken generates an isolated Master SaaS Platform token.
+func CreateMasterAccessToken(cfg *config.Config, userID int, remember bool) (string, int64) {
+	ttl := cfg.TokenTTLSeconds
+	if remember {
+		ttl = cfg.RememberTTLSeconds
+	}
+	exp := time.Now().Unix() + ttl
+	claims := TokenClaims{
+		Sub:  userID,
+		Role: "master_admin",
+		RC:   "master",
+		RID:  nil,
+		Aud:  "master_platform",
+		Exp:  exp,
+	}
+	return signTokenClaims(cfg, claims), exp
+}
+
+// CreateWSTicket generates a short-lived (60s) WebSocket connection ticket bound to the authenticated claims.
+func CreateWSTicket(cfg *config.Config, base *TokenClaims) (string, int64) {
+	exp := time.Now().Unix() + 60
+	claims := TokenClaims{
+		Sub:  base.Sub,
+		Role: base.Role,
+		RC:   base.RC,
+		RID:  base.RID,
+		Aud:  "ws_ticket",
+		Exp:  exp,
+	}
+	return signTokenClaims(cfg, claims), exp
+}
+
+func signTokenClaims(cfg *config.Config, claims TokenClaims) string {
 	payloadJSON, _ := json.Marshal(claims)
 	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
 
@@ -87,7 +148,7 @@ func CreateAccessToken(cfg *config.Config, userID int, role string, remember boo
 	mac.Write([]byte(payloadB64))
 	sigB64 := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 
-	return fmt.Sprintf("%s.%s", payloadB64, sigB64), exp
+	return fmt.Sprintf("%s.%s", payloadB64, sigB64)
 }
 
 // DecodeAccessToken validates the HMAC-SHA256 signature and expiration timestamp.
@@ -126,11 +187,8 @@ func DecodeAccessToken(cfg *config.Config, token string) (*TokenClaims, error) {
 // 2. Otherwise (unauthenticated public/QR/WS/login or master_admin), check Header -> Cookie -> Query Param -> fallback.
 func ResolveTenantCodeFromRequest(c *fiber.Ctx, fallback string, verifiedClaims *TokenClaims) string {
 	// 1. Authenticated non-master tenant claim takes strict precedence over client headers
-	if verifiedClaims != nil && verifiedClaims.RC != "" {
-		roleLow := strings.ToLower(strings.TrimSpace(verifiedClaims.Role))
-		if roleLow != "master_admin" && roleLow != "superadmin" {
-			return repository.CleanTenantCode(verifiedClaims.RC, fallback)
-		}
+	if verifiedClaims != nil && verifiedClaims.RC != "" && !IsMasterClaims(verifiedClaims) {
+		return repository.CleanTenantCode(verifiedClaims.RC, fallback)
 	}
 
 	// 2. Custom Header (for QR, Hardware Agent, or Master Admin inspection)
@@ -199,4 +257,80 @@ func GetUserClaims(c *fiber.Ctx) *TokenClaims {
 		return claims
 	}
 	return nil
+}
+
+// isPublicAPIRoute lists endpoints accessible without a staff/master JWT.
+func isPublicAPIRoute(method, path string) bool {
+	if method == fiber.MethodOptions {
+		return true
+	}
+	switch {
+	case path == "/api/auth/login" || path == "/api/auth/login-pin":
+		return true
+	case path == "/api/master/login":
+		return true
+	case method == fiber.MethodPost && path == "/api/master/leads":
+		return true
+	case strings.HasPrefix(path, "/api/qr/"):
+		return true
+	case method == fiber.MethodPost && strings.HasPrefix(path, "/api/tables/") && strings.HasSuffix(path, "/call-waiter"):
+		return true
+	case method == fiber.MethodGet && (path == "/api/scale/agent/version" || path == "/api/scale/setup"):
+		return true
+	default:
+		return false
+	}
+}
+
+// isHardwareAgentRoute identifies hardware bridge polling/reporting routes that accept a per-tenant X-Agent-Key.
+func isHardwareAgentRoute(path string) bool {
+	return path == "/api/scale/agent/heartbeat" ||
+		path == "/api/scale/agent/poll" ||
+		path == "/api/scale/agent/report"
+}
+
+// verifyTenantAgentKey validates X-Agent-Key against the tenant's configured hardware agent key.
+func verifyTenantAgentKey(dm *repository.DatabaseManager, tenantCode, providedKey string) bool {
+	providedKey = strings.TrimSpace(providedKey)
+	if providedKey == "" || dm == nil {
+		return false
+	}
+	tdb, err := dm.GetTenantDB(tenantCode)
+	if err != nil || tdb == nil {
+		return false
+	}
+	var row models.RestaurantSetting
+	if err := tdb.Where("key = ?", "agent_api_key").First(&row).Error; err != nil {
+		return false
+	}
+	stored := strings.Trim(strings.TrimSpace(row.Value), `"`)
+	if stored == "" {
+		return false
+	}
+	return hmac.Equal([]byte(providedKey), []byte(stored))
+}
+
+// RequireAuthMiddleware enforces default-deny authentication on all /api/* routes except the explicit public allowlist.
+func RequireAuthMiddleware(dm *repository.DatabaseManager) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		path := c.Path()
+		method := c.Method()
+		if isPublicAPIRoute(method, path) {
+			return c.Next()
+		}
+		if claims := GetUserClaims(c); claims != nil && claims.Aud != "ws_ticket" {
+			return c.Next()
+		}
+		if isHardwareAgentRoute(path) {
+			agentKey := c.Get("X-Agent-Key")
+			if agentKey == "" {
+				agentKey = c.Query("agent_key")
+			}
+			tenantCode := GetTenantCode(c)
+			if verifyTenantAgentKey(dm, tenantCode, agentKey) {
+				return c.Next()
+			}
+		}
+		return fiber.NewError(fiber.StatusUnauthorized, "Bu işlem için geçerli bir oturum açmanız gerekmektedir.")
+	}
 }

@@ -43,6 +43,7 @@ services:
       DEFAULT_POOL_SIZE: 64
       MIN_POOL_SIZE: 16
       RESERVE_POOL_SIZE: 16
+      IGNORE_STARTUP_PARAMETERS: "extra_float_digits,options"
     ports:
       - "6432:5432"
 
@@ -79,6 +80,8 @@ services:
       PGBOUNCER_MODE: "true"
       REDIS_URL: "redis://redis:6379/0"
       DEFAULT_TENANT_CODE: "fatihciftligi"
+    volumes:
+      - boncore_data:/app/data
     ports:
       - "8000:8000"
 
@@ -97,3 +100,4 @@ services:
 volumes:
   pg_data:
   redis_data:
+  boncore_data:

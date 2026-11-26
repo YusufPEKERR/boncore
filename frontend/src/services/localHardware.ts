@@ -411,6 +411,21 @@ export const localHardware = {
     await this.savePrinterConfigs(updated);
   },
 
+  getPostPaymentCopies(printerKey?: string): number {
+    const configs = this.getPrinterConfigs();
+    if (!configs || configs.length === 0) return 1;
+    const match = printerKey
+      ? configs.find((c) => {
+          const plain = printerKey.includes('::') ? printerKey.split('::')[1].trim() : printerKey;
+          const cPlain = c.target_printer && c.target_printer.includes('::') ? c.target_printer.split('::')[1].trim() : c.target_printer;
+          return c.target_printer === printerKey || c.id === printerKey || cPlain === plain || c.name === plain;
+        })
+      : configs[0];
+    const rawCopies = Number(match?.settings?.copies?.post_payment ?? 1);
+    if (!Number.isFinite(rawCopies) || rawCopies < 1) return 1;
+    return Math.min(5, Math.floor(rawCopies));
+  },
+
   /**
    * Mutfak sipariş fişini, kategori eşleşmelerine göre ilgili yazıcılara otomatik yönlendirir.
    * KURAL:

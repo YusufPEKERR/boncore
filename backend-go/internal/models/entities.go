@@ -113,16 +113,18 @@ func (j *JSONMap) Scan(value interface{}) error {
 
 // StaffUser -> table: staff_users
 type StaffUser struct {
-	ID           int        `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name         string     `gorm:"size:100;not null" json:"name"`
-	Username     *string    `gorm:"size:50;uniqueIndex" json:"username"`
-	PasswordHash *string    `gorm:"size:255" json:"-"`
-	PinCode      string     `gorm:"size:10;not null;uniqueIndex" json:"pin_code,omitempty"`
-	Role         string     `gorm:"size:50;not null;default:waiter" json:"role"`
-	RestaurantID *int       `gorm:"index;default:1" json:"restaurant_id,omitempty"`
-	IsActive     bool       `gorm:"default:true" json:"is_active"`
-	LastLoginAt  *time.Time `json:"last_login_at"`
-	CreatedAt    time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	ID            int        `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name          string     `gorm:"size:100;not null" json:"name"`
+	Username      *string    `gorm:"size:50;uniqueIndex" json:"username"`
+	PasswordHash  *string    `gorm:"size:255" json:"-"`
+	PinCode       string     `gorm:"size:120;not null" json:"-"`
+	PinHash       *string    `gorm:"size:255" json:"-"`
+	PinLookupHash *string    `gorm:"size:128;index" json:"-"`
+	Role          string     `gorm:"size:50;not null;default:waiter" json:"role"`
+	RestaurantID  *int       `gorm:"index;default:1" json:"restaurant_id,omitempty"`
+	IsActive      bool       `gorm:"default:true" json:"is_active"`
+	LastLoginAt   *time.Time `json:"last_login_at"`
+	CreatedAt     time.Time  `gorm:"autoCreateTime" json:"created_at"`
 }
 
 func (StaffUser) TableName() string { return "staff_users" }

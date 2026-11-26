@@ -9,6 +9,8 @@ import { api } from '../../services/api';
 import { sound } from '../../services/sound';
 import { useWebSocket } from '../../services/websocket';
 import { printThermalSlipById } from '../../utils/printReceipt';
+import { buildCsvContent, downloadCsv } from '../../utils/csv';
+import { getTRDateString } from '../../utils/format';
 import { StaffUser } from '../../types';
 
 interface PaymentMethodSummary {
@@ -90,7 +92,7 @@ interface DayEndReportProps {
 }
 
 export const DayEndReport: React.FC<DayEndReportProps> = ({ currentUser }) => {
-  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [selectedDate, setSelectedDate] = useState<string>(() => getTRDateString());
   const [loading, setLoading] = useState<boolean>(true);
   const [report, setReport] = useState<DayEndData | null>(null);
   const [activeTab, setActiveTab] = useState<'payments' | 'cash' | 'vat' | 'channels' | 'staff'>('payments');
@@ -230,12 +232,10 @@ export const DayEndReport: React.FC<DayEndReportProps> = ({ currentUser }) => {
       ['Genel KDV Toplamı', Number(report.vat_breakdown?.total_base ?? 0).toFixed(2), Number(report.vat_breakdown?.total_tax ?? 0).toFixed(2), (Number(report.vat_breakdown?.total_base ?? 0) + Number(report.vat_breakdown?.total_tax ?? 0)).toFixed(2)]
     ];
 
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + rows.map(r => r.join(';')).join('\n');
-    const encoded = encodeURI(csvContent);
-    const a = document.createElement('a');
-    a.href = encoded;
-    a.download = `Gun_Sonu_Z_Raporu_${report.date}.csv`;
-    a.click();
+    downloadCsv(
+      `Gun_Sonu_Z_Raporu_${report.date}.csv`,
+      buildCsvContent(rows, ';', true)
+    );
     setToastMessage('Gün sonu CSV raporu indirildi.');
     setTimeout(() => setToastMessage(null), 3000);
   };

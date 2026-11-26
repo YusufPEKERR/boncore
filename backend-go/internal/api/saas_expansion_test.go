@@ -22,6 +22,8 @@ import (
 )
 
 func setupTestApp(t *testing.T) (*fiber.App, *service.Services) {
+	t.Helper()
+	t.Setenv("SQLITE_DATA_DIR", t.TempDir())
 	cfg := config.Load()
 	cfg.DefaultTenantCode = "fatihciftligi"
 
@@ -59,8 +61,16 @@ func execTest(t *testing.T, app *fiber.App, req *http.Request) *http.Response {
 
 func newMasterReq(svc *service.Services, method, path string, body io.Reader) *http.Request {
 	req := httptest.NewRequest(method, path, body)
-	tok, _ := middleware.CreateAccessToken(svc.Config, 999999, "master_admin", true, "master", nil)
+	tok, _ := middleware.CreateMasterAccessToken(svc.Config, 999999, true)
 	req.Header.Set("Authorization", "Bearer "+tok)
+	return req
+}
+
+func newTenantReq(svc *service.Services, tenantCode, role, method, path string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, path, body)
+	tok, _ := middleware.CreateAccessToken(svc.Config, 1, role, false, tenantCode, nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("X-Restaurant-Code", tenantCode)
 	return req
 }
 
@@ -117,8 +127,7 @@ func TestR1_FeatureFlagsAndPlans(t *testing.T) {
 	}
 
 	// 4. GET /api/modules/status (tenant caller endpoint)
-	req = httptest.NewRequest("GET", "/api/modules/status", nil)
-	req.Header.Set("X-Restaurant-Code", "fatihciftligi")
+	req = newTenantReq(svc, "fatihciftligi", "manager", "GET", "/api/modules/status", nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/modules/status failed: status %d", resp.StatusCode)
@@ -145,10 +154,9 @@ func TestR1_FeatureFlagsAndPlans(t *testing.T) {
 			Status:        "active",
 		}
 		mdb.Create(&noQRTenant)
-	} else {
-		existing.FeatureQRMenu = false
-		mdb.Save(&existing)
 	}
+	mdb.Model(&models.RestaurantTenant{}).Where("code = ?", testTenantCode).Update("feature_qr_menu", false)
+	svc.DBManager.InvalidateTenantCache()
 
 	// Request protected QR endpoint as test-no-qr tenant -> expect 403 Forbidden
 	req = httptest.NewRequest("GET", "/api/qr/table/1/menu", nil)
@@ -177,7 +185,7 @@ func TestR2_FleetMonitoringAndHeartbeat(t *testing.T) {
 		"tenant_code": "fatihciftligi",
 	}
 	pBytes, _ := json.Marshal(hbPayload)
-	req := httptest.NewRequest("POST", "/api/heartbeat", bytes.NewReader(pBytes))
+	req := newTenantReq(svc, "fatihciftligi", "manager", "POST", "/api/heartbeat", bytes.NewReader(pBytes))
 	req.Header.Set("Content-Type", "application/json")
 	resp := execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
@@ -194,7 +202,7 @@ func TestR2_FleetMonitoringAndHeartbeat(t *testing.T) {
 		"tenant_code": "fatihciftligi",
 	}
 	pBytes2, _ := json.Marshal(hbPayload2)
-	req2 := httptest.NewRequest("POST", "/api/heartbeat", bytes.NewReader(pBytes2))
+	req2 := newTenantReq(svc, "fatihciftligi", "manager", "POST", "/api/heartbeat", bytes.NewReader(pBytes2))
 	req2.Header.Set("Content-Type", "application/json")
 	resp2 := execTest(t, app, req2)
 	if resp2.StatusCode != http.StatusOK {
@@ -257,6 +265,7 @@ func TestR3_BillingAndDelinquency(t *testing.T) {
 		"gateway_provider": "paytr",
 		"merchant_id":      "PAYTR_TEST_12345",
 		"api_key":          "API_KEY_TEST_PAYTR",
+		"api_secret":       "API_SECRET_TEST_PAYTR",
 		"is_production":    false,
 	}
 	pBytes, _ := json.Marshal(putPayload)
@@ -335,8 +344,7 @@ func TestR3_BillingAndDelinquency(t *testing.T) {
 		mdb.Save(&suspTenant)
 	}
 
-	req = httptest.NewRequest("GET", "/api/tables", nil)
-	req.Header.Set("X-Restaurant-Code", suspTenantCode)
+	req = newTenantReq(svc, suspTenantCode, "manager", "GET", "/api/tables", nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("Expected 403 Forbidden for suspended tenant, got: %d", resp.StatusCode)
@@ -359,17 +367,15 @@ func TestR3_BillingAndDelinquency(t *testing.T) {
 	}
 
 	// GET request -> allowed
-	req = httptest.NewRequest("GET", "/api/tables", nil)
-	req.Header.Set("X-Restaurant-Code", roTenantCode)
+	req = newTenantReq(svc, roTenantCode, "manager", "GET", "/api/tables", nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode == http.StatusForbidden {
 		t.Fatalf("Expected read requests to be allowed in read-only mode, got 403")
 	}
 
 	// POST request (write operation) -> blocked with 403 Forbidden
-	req = httptest.NewRequest("POST", "/api/orders", bytes.NewReader([]byte(`{"table_id": 1}`)))
+	req = newTenantReq(svc, roTenantCode, "manager", "POST", "/api/orders", bytes.NewReader([]byte(`{"table_id": 1}`)))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Restaurant-Code", roTenantCode)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("Expected 403 Forbidden for write request in read-only mode, got: %d", resp.StatusCode)
@@ -463,8 +469,7 @@ func TestR5_BroadcastAnnouncements(t *testing.T) {
 	}
 
 	// 2. GET /api/announcements/active (POS client query)
-	req = httptest.NewRequest("GET", "/api/announcements/active", nil)
-	req.Header.Set("X-Restaurant-Code", "fatihciftligi")
+	req = newTenantReq(svc, "fatihciftligi", "manager", "GET", "/api/announcements/active", nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/announcements/active failed: status %d", resp.StatusCode)
@@ -494,9 +499,8 @@ func TestR6_SupportTicketing(t *testing.T) {
 		"device_info":       "Epson TM-T88VI Terminal-1",
 	}
 	tBytes, _ := json.Marshal(ticketPayload)
-	req := httptest.NewRequest("POST", "/api/support/tickets", bytes.NewReader(tBytes))
+	req := newTenantReq(svc, "fatihciftligi", "cashier", "POST", "/api/support/tickets", bytes.NewReader(tBytes))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Restaurant-Code", "fatihciftligi")
 	resp := execTest(t, app, req)
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("POST /api/support/tickets failed: status %d", resp.StatusCode)
@@ -508,8 +512,7 @@ func TestR6_SupportTicketing(t *testing.T) {
 	ticketID := int(ticketData["id"].(float64))
 
 	// 2. GET /api/support/tickets (POS list)
-	req = httptest.NewRequest("GET", "/api/support/tickets", nil)
-	req.Header.Set("X-Restaurant-Code", "fatihciftligi")
+	req = newTenantReq(svc, "fatihciftligi", "cashier", "GET", "/api/support/tickets", nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/support/tickets failed: status %d", resp.StatusCode)
@@ -567,8 +570,11 @@ func TestR7_BackupAndStorageQuota(t *testing.T) {
 	req = newMasterReq(svc, "GET", fmt.Sprintf("/api/master/backups/%d/download", backupID), nil)
 	resp = execTest(t, app, req)
 	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
 		t.Fatalf("GET /api/master/backups/:id/download failed: status %d", resp.StatusCode)
 	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
 
 	// 4. GET /api/master/tenants/fatihciftligi/quota (storage quota calculation)
 	req = newMasterReq(svc, "GET", "/api/master/tenants/fatihciftligi/quota", nil)

@@ -1,24 +1,15 @@
 package api
 
 import (
-	"os"
-	"path/filepath"
-
 	"github.com/boncore/pos-backend/internal/api/middleware"
 	"github.com/boncore/pos-backend/internal/service"
 	"github.com/gofiber/fiber/v2"
 )
 
-// RegisterRoutes mounts the /health endpoint, /ws WebSocket endpoints, and all 16 /api router groups
-// with 100% route-level parity to `backend/app/main.py`.
+// RegisterRoutes mounts the /health endpoint, /ws WebSocket endpoints, and all /api router groups.
 func RegisterRoutes(app *fiber.App, svc *service.Services) {
 	// Global Multi-Tenant & Optional Bearer Token Resolution Middleware
 	app.Use(middleware.TenantAndAuthMiddleware(svc.Config))
-
-	// Static file serving for uploads (tickets, attachments, photos)
-	uploadsDir := filepath.Join(svc.DBManager.GetSqliteBaseDir(), "static", "uploads")
-	_ = os.MkdirAll(uploadsDir, 0755)
-	app.Static("/static/uploads", uploadsDir)
 
 	// Health Check Endpoint (/health)
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -31,9 +22,12 @@ func RegisterRoutes(app *fiber.App, svc *service.Services) {
 	})
 
 	// Real-Time WebSocket Endpoints (/ws/:channel and /ws/table/:table_id)
-	RegisterWebSocketRoutes(app, svc.WSHub)
+	RegisterWebSocketRoutes(app, svc)
 
 	apiGroup := app.Group(svc.Config.APIV1Prefix)
+
+	// Default-Deny Authentication Guard (enforces 401 on all non-public /api/* routes)
+	apiGroup.Use(middleware.RequireAuthMiddleware(svc.DBManager))
 
 	// SaaS Account Delinquency & Read-Only Guard Middleware (enforces 403 for suspended/read-only tenants)
 	apiGroup.Use(middleware.CheckTenantDelinquencyMiddleware(svc))
@@ -84,6 +78,8 @@ func RegisterRoutes(app *fiber.App, svc *service.Services) {
 	modulesGroup.Use("/reservations", middleware.RequireFeature("reservations", svc))
 	modulesGroup.Use("/cost-profit", middleware.RequireFeature("cost_profit", svc))
 	modulesGroup.Use("/costs", middleware.RequireFeature("cost_profit", svc))
+	modulesGroup.Use("/hotel", middleware.RequireFeature("hotel", svc))
+	modulesGroup.Use("/kiosk-order", middleware.RequireFeature("kiosk", svc))
 	RegisterModulesRoutes(modulesGroup, svc)
 	RegisterTenantModuleStatusRoute(modulesGroup, svc)
 
